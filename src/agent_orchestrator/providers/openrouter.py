@@ -1,14 +1,19 @@
 """OpenRouter provider — access 200+ models via a single API.
 
 OpenRouter uses an OpenAI-compatible API at https://openrouter.ai/api/v1.
+Includes automatic retry with fallback to other free models on 429 rate limits.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 
-from ..core.provider import ModelCapabilities
+from ..core.provider import Completion, Message, ModelCapabilities, ToolDefinition
 from .openai import OpenAIProvider
+
+logger = logging.getLogger(__name__)
 
 
 class OpenRouterProvider(OpenAIProvider):
@@ -161,3 +166,56 @@ class OpenRouterProvider(OpenAIProvider):
     def output_cost_per_million(self) -> float:
         info = self.MODELS.get(self._model, list(self.MODELS.values())[0])
         return info["output_cost"]
+
+    # Fallback order: best free models sorted by coding quality
+    FALLBACK_ORDER = [
+        "qwen/qwen3-coder:free",
+        "qwen/qwen3-235b-a22b-thinking-2507",
+        "openai/gpt-oss-120b:free",
+        "nousresearch/hermes-3-llama-3.1-405b:free",
+        "qwen/qwen3-next-80b-a3b-instruct:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemma-3-27b-it:free",
+        "mistralai/mistral-small-3.1-24b-instruct:free",
+        "nvidia/nemotron-3-nano-30b-a3b:free",
+    ]
+
+    async def complete(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
+        system: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+    ) -> Completion:
+        """Complete with automatic fallback on 429 rate limits."""
+        # Build list: requested model first, then fallbacks
+        models_to_try = [self._model]
+        for m in self.FALLBACK_ORDER:
+            if m != self._model:
+                models_to_try.append(m)
+
+        last_error = None
+        for model in models_to_try:
+            original_model = self._model
+            self._model = model
+            try:
+                result = await super().complete(
+                    messages=messages,
+                    tools=tools,
+                    system=system,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                if model != original_model:
+                    logger.info("Fallback: %s rate-limited, used %s", original_model, model)
+                return result
+            except Exception as exc:
+                self._model = original_model
+                if "429" in str(exc) or "rate" in str(exc).lower():
+                    logger.warning("Rate limited on %s, trying next...", model)
+                    last_error = exc
+                    await asyncio.sleep(0.5)
+                    continue
+                raise
+        raise last_error  # type: ignore[misc]
