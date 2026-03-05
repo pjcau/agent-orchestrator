@@ -122,7 +122,7 @@
 
   function updateModelSelector() {
     const provider = $promptProvider.value;
-    const models = provider === "openrouter" ? allModels.openrouter : allModels.ollama;
+    const models = (provider === "openrouter" ? allModels.openrouter : allModels.ollama) || [];
     $promptModel.innerHTML = "";
 
     if (!models.length) {
