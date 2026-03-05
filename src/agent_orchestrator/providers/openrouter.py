@@ -15,72 +15,115 @@ class OpenRouterProvider(OpenAIProvider):
     """Access any model via OpenRouter (OpenAI-compatible)."""
 
     MODELS = {
-        "anthropic/claude-sonnet-4": {
-            "input_cost": 3.0,
-            "output_cost": 15.0,
-            "context": 200_000,
-            "coding": 0.90,
-            "reasoning": 0.85,
-        },
-        "anthropic/claude-haiku-4": {
-            "input_cost": 0.80,
-            "output_cost": 4.0,
-            "context": 200_000,
-            "coding": 0.70,
-            "reasoning": 0.65,
-        },
-        "openai/gpt-4o": {
-            "input_cost": 2.50,
-            "output_cost": 10.0,
-            "context": 128_000,
-            "coding": 0.85,
-            "reasoning": 0.80,
-        },
-        "openai/gpt-4o-mini": {
-            "input_cost": 0.15,
-            "output_cost": 0.60,
-            "context": 128_000,
-            "coding": 0.65,
-            "reasoning": 0.55,
-        },
-        "google/gemini-2.5-flash-preview": {
-            "input_cost": 0.15,
-            "output_cost": 0.60,
-            "context": 1_000_000,
-            "coding": 0.80,
-            "reasoning": 0.80,
-        },
-        "deepseek/deepseek-chat-v3": {
-            "input_cost": 0.27,
-            "output_cost": 1.10,
-            "context": 128_000,
-            "coding": 0.80,
-            "reasoning": 0.75,
-        },
-        "meta-llama/llama-4-maverick": {
-            "input_cost": 0.20,
-            "output_cost": 0.60,
-            "context": 1_000_000,
-            "coding": 0.75,
+        # --- Free models (big brands) ---
+        # Google
+        "google/gemma-3-27b-it:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 131_072,
+            "coding": 0.72,
             "reasoning": 0.70,
         },
-        "qwen/qwen3-235b-a22b": {
-            "input_cost": 0.20,
-            "output_cost": 0.60,
+        "google/gemma-3-12b-it:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 32_768,
+            "coding": 0.65,
+            "reasoning": 0.62,
+        },
+        # Meta
+        "meta-llama/llama-3.3-70b-instruct:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 128_000,
+            "coding": 0.78,
+            "reasoning": 0.75,
+        },
+        "meta-llama/llama-3.2-3b-instruct:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 131_072,
+            "coding": 0.50,
+            "reasoning": 0.45,
+        },
+        # Qwen (Alibaba)
+        "qwen/qwen3-coder:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 262_000,
+            "coding": 0.88,
+            "reasoning": 0.80,
+        },
+        "qwen/qwen3-235b-a22b-thinking-2507": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 131_072,
+            "coding": 0.85,
+            "reasoning": 0.88,
+        },
+        "qwen/qwen3-next-80b-a3b-instruct:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 262_144,
+            "coding": 0.80,
+            "reasoning": 0.78,
+        },
+        "qwen/qwen3-4b:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
             "context": 40_960,
+            "coding": 0.55,
+            "reasoning": 0.50,
+        },
+        # OpenAI
+        "openai/gpt-oss-120b:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 131_072,
             "coding": 0.82,
             "reasoning": 0.80,
         },
-        "qwen/qwen3.5-plus-02-15": {
-            "input_cost": 0.30,
-            "output_cost": 1.20,
+        "openai/gpt-oss-20b:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
             "context": 131_072,
-            "coding": 0.85,
-            "reasoning": 0.85,
+            "coding": 0.65,
+            "reasoning": 0.60,
+        },
+        # Mistral
+        "mistralai/mistral-small-3.1-24b-instruct:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 128_000,
+            "coding": 0.72,
+            "reasoning": 0.70,
+        },
+        # NVIDIA
+        "nvidia/nemotron-3-nano-30b-a3b:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 256_000,
+            "coding": 0.70,
+            "reasoning": 0.68,
+        },
+        "nvidia/nemotron-nano-9b-v2:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 128_000,
+            "coding": 0.60,
+            "reasoning": 0.58,
+        },
+        # Nous Research
+        "nousresearch/hermes-3-llama-3.1-405b:free": {
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "context": 131_072,
+            "coding": 0.80,
+            "reasoning": 0.78,
         },
     }
 
-    def __init__(self, model: str = "anthropic/claude-sonnet-4", api_key: str | None = None):
+    def __init__(self, model: str = "qwen/qwen3-coder:free", api_key: str | None = None):
         self._model = model
         self._api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
         self._client = None
