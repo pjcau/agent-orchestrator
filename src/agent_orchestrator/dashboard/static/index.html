@@ -21,95 +21,80 @@
                 <span class="metric-label">Cost</span>
                 <span id="total-cost" class="metric-value">$0.000</span>
             </div>
-            <div class="metric">
-                <span class="metric-label">Events</span>
-                <span id="event-count" class="metric-value">0</span>
-            </div>
             <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
         </div>
     </header>
 
     <main>
-        <!-- Left column: Agents + Graph -->
+        <!-- Left: Agent tree -->
         <section class="panel agents-panel">
-            <h2>Agents</h2>
-            <div id="agents-grid" class="agents-grid">
-                <div class="empty-state">No agents spawned yet</div>
+            <h2>Agents & Skills</h2>
+            <div id="agent-tree" class="agent-tree"></div>
+
+            <h2>Inter-Agent Messages</h2>
+            <div id="agent-messages" class="agent-messages">
+                <div class="empty-state">No messages yet</div>
             </div>
         </section>
 
-        <!-- Center column: Response + Timeline -->
-        <section class="panel timeline-panel">
-            <div id="response-area" class="response-area hidden">
-                <div class="response-header">
-                    <h2>Response</h2>
-                    <button id="btn-dismiss-response" class="btn-small" title="Dismiss">x</button>
+        <!-- Center: Chat + Graph -->
+        <section class="panel center-panel">
+            <!-- Graph visualization -->
+            <div class="graph-section">
+                <h2>Graph</h2>
+                <div id="graph-canvas" class="graph-canvas">
+                    <div class="empty-state">Submit a prompt to see the graph</div>
                 </div>
-                <div id="response-content" class="response-content"></div>
             </div>
 
-            <h2>Timeline</h2>
-            <div class="timeline-controls">
+            <!-- Chat area -->
+            <div class="chat-section">
+                <div id="chat-messages" class="chat-messages"></div>
+                <div class="chat-input-bar">
+                    <div class="chat-settings">
+                        <select id="prompt-model" title="Ollama model">
+                            <option value="">Loading...</option>
+                        </select>
+                        <select id="prompt-graph" title="Graph type">
+                            <option value="auto">Auto</option>
+                            <option value="review">Code Review</option>
+                            <option value="chat">Chat</option>
+                            <option value="chain">Analyze+Fix</option>
+                            <option value="parallel">Parallel</option>
+                        </select>
+                    </div>
+                    <textarea id="prompt-input" class="chat-input" rows="1"
+                              placeholder="Type a prompt..."></textarea>
+                    <button id="btn-send" class="btn-send" title="Send (Enter)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right: Logs / Details -->
+        <section class="panel logs-panel">
+            <h2>Logs</h2>
+            <div class="logs-controls">
                 <select id="filter-type">
-                    <option value="all">All events</option>
-                    <option value="agent">Agent events</option>
-                    <option value="graph">Graph events</option>
-                    <option value="cooperation">Cooperation</option>
-                    <option value="metrics">Metrics</option>
+                    <option value="all">All</option>
+                    <option value="agent">Agent</option>
+                    <option value="graph">Graph</option>
+                    <option value="cooperation">Coop</option>
                 </select>
-                <button id="btn-clear" title="Clear timeline">Clear</button>
-                <label class="toggle">
-                    <input type="checkbox" id="auto-scroll" checked>
-                    Auto-scroll
-                </label>
+                <button id="btn-clear">Clear</button>
             </div>
             <div id="timeline" class="timeline"></div>
-        </section>
-
-        <!-- Right column: Task plan + Graph + Details -->
-        <section class="panel plan-panel">
-            <h2>Task Plan</h2>
-            <div id="task-plan" class="task-plan">
-                <div class="empty-state">No tasks assigned yet</div>
-            </div>
-
-            <h2>Graph</h2>
-            <div id="graph-view" class="graph-view">
-                <div class="empty-state">No graph running</div>
-            </div>
 
             <h2>Details</h2>
             <div id="detail-view" class="detail-view">
-                <div class="empty-state">Click an event for details</div>
+                <div class="empty-state">Click a graph node or event</div>
             </div>
         </section>
     </main>
-
-    <!-- Prompt bar at bottom -->
-    <footer class="prompt-bar">
-        <div class="prompt-container">
-            <div class="prompt-settings">
-                <select id="prompt-model" title="Select Ollama model">
-                    <option value="">Loading models...</option>
-                </select>
-                <select id="prompt-graph" title="Select graph type">
-                    <option value="auto">Auto (classify + route)</option>
-                    <option value="review">Code Review</option>
-                    <option value="chat">Chat</option>
-                    <option value="chain">Analyze + Fix</option>
-                    <option value="parallel">Parallel Review</option>
-                </select>
-            </div>
-            <textarea id="prompt-input" class="prompt-input" rows="1"
-                      placeholder="Type a prompt to trigger the orchestrator..."></textarea>
-            <button id="btn-send" class="btn-send" title="Send (Enter)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-            </button>
-        </div>
-    </footer>
 
     <script src="/static/app.js"></script>
 </body>

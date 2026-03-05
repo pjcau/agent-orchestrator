@@ -1,4 +1,4 @@
-/** Agent Orchestrator Dashboard — real-time monitoring UI with interactive prompt */
+/** Agent Orchestrator Dashboard — redesigned UI with chat, agent tree, interactive graph */
 
 (function () {
   "use strict";
@@ -14,33 +14,30 @@
     graph: { nodes: [], edges: [] },
     event_count: 0,
   };
+  let agentRegistry = null; // loaded from /api/agents
   let events = [];
   let isRunning = false;
+  let activeSkills = new Set();
+  let graphNodeStates = {}; // node_name -> "active" | "done" | "error"
   const MAX_EVENTS = 500;
 
   // --- DOM refs ---
   const $status = document.getElementById("status-badge");
   const $tokens = document.getElementById("total-tokens");
   const $cost = document.getElementById("total-cost");
-  const $eventCount = document.getElementById("event-count");
   const $wsIndicator = document.getElementById("ws-indicator");
-  const $agentsGrid = document.getElementById("agents-grid");
-  const $timeline = document.getElementById("timeline");
-  const $taskPlan = document.getElementById("task-plan");
-  const $graphView = document.getElementById("graph-view");
-  const $detailView = document.getElementById("detail-view");
-  const $filterType = document.getElementById("filter-type");
-  const $autoScroll = document.getElementById("auto-scroll");
-  const $btnClear = document.getElementById("btn-clear");
-
-  // Prompt elements
+  const $agentTree = document.getElementById("agent-tree");
+  const $agentMessages = document.getElementById("agent-messages");
+  const $graphCanvas = document.getElementById("graph-canvas");
+  const $chatMessages = document.getElementById("chat-messages");
   const $promptInput = document.getElementById("prompt-input");
   const $btnSend = document.getElementById("btn-send");
   const $promptModel = document.getElementById("prompt-model");
   const $promptGraph = document.getElementById("prompt-graph");
-  const $responseArea = document.getElementById("response-area");
-  const $responseContent = document.getElementById("response-content");
-  const $btnDismiss = document.getElementById("btn-dismiss-response");
+  const $filterType = document.getElementById("filter-type");
+  const $btnClear = document.getElementById("btn-clear");
+  const $timeline = document.getElementById("timeline");
+  const $detailView = document.getElementById("detail-view");
 
   // --- WebSocket ---
   function connect() {
@@ -64,7 +61,8 @@
       const payload = JSON.parse(msg.data);
       if (payload.type === "snapshot") {
         snapshot = payload.data;
-        renderAll();
+        renderHeader();
+        renderGraph();
       } else if (payload.type === "event") {
         handleEvent(payload.data);
       }
@@ -88,7 +86,6 @@
         opt.textContent = `${m.name} (${m.size})`;
         $promptModel.appendChild(opt);
       });
-      // Select coding model by default if available
       const coderModel = models.find((m) => m.name.includes("coder") || m.name.includes("qwen2.5-coder"));
       if (coderModel) $promptModel.value = coderModel.name;
     } catch (e) {
@@ -96,7 +93,281 @@
     }
   }
 
-  // --- Send prompt ---
+  // --- Load agent registry ---
+  async function loadAgents() {
+    try {
+      const resp = await fetch("/api/agents");
+      const data = await resp.json();
+      agentRegistry = data;
+      renderAgentTree();
+    } catch (e) {
+      agentRegistry = null;
+      renderAgentTree();
+    }
+  }
+
+  // --- Agent Tree ---
+  function renderAgentTree() {
+    if (!agentRegistry || !agentRegistry.agents) {
+      $agentTree.innerHTML = '<div class="empty-state">No agent registry</div>';
+      return;
+    }
+
+    const leader = agentRegistry.agents.find((a) => a.name === "team-lead");
+    const subAgents = agentRegistry.agents.filter((a) => a.name !== "team-lead");
+
+    let html = "";
+
+    // Team lead node
+    if (leader) {
+      html += renderAgentNode(leader, true);
+    }
+
+    // Sub-agents
+    html += '<div class="agent-sub-agents">';
+    subAgents.forEach((agent) => {
+      html += renderAgentNode(agent, false);
+    });
+    html += "</div>";
+
+    $agentTree.innerHTML = html;
+  }
+
+  function renderAgentNode(agent, isLead) {
+    const statusClass = getAgentStatus(agent.name);
+    const skills = agent.skills || [];
+
+    let skillsHtml = "";
+    if (skills.length) {
+      skillsHtml = '<div class="skill-list">';
+      skills.forEach((sk) => {
+        const isActive = activeSkills.has(sk);
+        skillsHtml += `<span class="skill-tag${isActive ? " active" : ""}">${esc(sk)}</span>`;
+      });
+      skillsHtml += "</div>";
+    }
+
+    return `
+      <div class="agent-node ${isLead ? "lead" : ""} ${statusClass}">
+        <div class="agent-node-header">
+          <span class="agent-node-name">${esc(agent.name)}</span>
+          <span class="agent-node-model">${esc(agent.model || "")}</span>
+          <span class="agent-status-dot ${statusClass}"></span>
+        </div>
+        ${agent.description ? `<div class="agent-node-desc">${esc(truncate(agent.description, 80))}</div>` : ""}
+        ${skillsHtml}
+      </div>
+    `;
+  }
+
+  function getAgentStatus(name) {
+    const a = snapshot.agents[name];
+    if (!a) return "idle";
+    return a.status || "idle";
+  }
+
+  // --- Inter-Agent Messages ---
+  function renderAgentMessages() {
+    const tasks = snapshot.tasks || [];
+    if (!tasks.length) {
+      $agentMessages.innerHTML = '<div class="empty-state">No messages yet</div>';
+      return;
+    }
+
+    $agentMessages.innerHTML = tasks
+      .slice(-20) // show last 20
+      .map(
+        (t) => `
+        <div class="agent-msg">
+          <span class="agent-msg-from">${esc(t.from_agent || "?")}</span>
+          <span class="agent-msg-arrow">&rarr;</span>
+          <span class="agent-msg-to">${esc(t.to_agent || "?")}</span>
+          <span class="agent-msg-text">${esc(truncate(t.description, 60))}</span>
+          <span class="agent-msg-status ${t.status || "pending"}"></span>
+        </div>
+      `
+      )
+      .join("");
+  }
+
+  // --- Interactive Graph ---
+  function renderGraph() {
+    const g = snapshot.graph;
+    if (!g || (!g.nodes.length && !g.edges.length)) {
+      $graphCanvas.innerHTML = '<div class="empty-state">Submit a prompt to see the graph</div>';
+      return;
+    }
+
+    // Build adjacency for layout
+    const nodes = g.nodes || [];
+    const edges = g.edges || [];
+
+    // Compute layers using topological ordering
+    const layers = computeLayers(nodes, edges);
+
+    let html = "";
+    layers.forEach((layer, layerIdx) => {
+      html += '<div class="graph-row">';
+      layer.forEach((nodeName) => {
+        const state = graphNodeStates[nodeName] || "";
+        const isSpecial = nodeName === "__start__" || nodeName === "__end__";
+        const displayName = nodeName === "__start__" ? "START" : nodeName === "__end__" ? "END" : nodeName;
+        const specialClass = nodeName === "__start__" ? "start" : nodeName === "__end__" ? "end" : "";
+
+        html += `
+          <div class="gnode ${state} ${specialClass}" data-node="${esc(nodeName)}" onclick="window._showNodeDetail('${esc(nodeName)}')">
+            <div class="gnode-box">${esc(displayName)}</div>
+          </div>
+        `;
+      });
+      html += "</div>";
+
+      // Add connector between layers (except after last)
+      if (layerIdx < layers.length - 1) {
+        html += '<div class="graph-connector">';
+        // Draw arrows for edges from this layer to next
+        const currentNodes = new Set(layer);
+        const nextNodes = new Set(layers[layerIdx + 1] || []);
+        edges.forEach((e) => {
+          const src = e.source;
+          if (currentNodes.has(src)) {
+            const targets = e.target ? [e.target] : e.routes || [];
+            targets.forEach((tgt) => {
+              if (nextNodes.has(tgt)) {
+                const label = e.type === "conditional" ? "?" : "";
+                html += `<span class="graph-arrow">${label}&darr;</span>`;
+              }
+            });
+          }
+        });
+        html += "</div>";
+      }
+    });
+
+    $graphCanvas.innerHTML = html;
+  }
+
+  function computeLayers(nodes, edges) {
+    // Simple topological layer assignment
+    const inDegree = {};
+    const adjList = {};
+    nodes.forEach((n) => {
+      inDegree[n] = 0;
+      adjList[n] = [];
+    });
+
+    edges.forEach((e) => {
+      const src = e.source;
+      const targets = e.target ? [e.target] : e.routes || [];
+      targets.forEach((tgt) => {
+        if (adjList[src]) adjList[src].push(tgt);
+        if (inDegree[tgt] !== undefined) inDegree[tgt]++;
+      });
+    });
+
+    const layers = [];
+    const visited = new Set();
+    let queue = nodes.filter((n) => inDegree[n] === 0);
+    if (!queue.length && nodes.length) queue = [nodes[0]]; // fallback
+
+    while (queue.length && visited.size < nodes.length) {
+      layers.push([...queue]);
+      queue.forEach((n) => visited.add(n));
+
+      const nextQueue = [];
+      queue.forEach((n) => {
+        (adjList[n] || []).forEach((tgt) => {
+          if (!visited.has(tgt)) {
+            inDegree[tgt]--;
+            if (inDegree[tgt] <= 0 && !nextQueue.includes(tgt)) {
+              nextQueue.push(tgt);
+            }
+          }
+        });
+      });
+      queue = nextQueue;
+    }
+
+    // Add any remaining nodes
+    const remaining = nodes.filter((n) => !visited.has(n));
+    if (remaining.length) layers.push(remaining);
+
+    return layers;
+  }
+
+  // Global handler for node clicks
+  window._showNodeDetail = function (nodeName) {
+    // Find relevant events for this node
+    const nodeEvents = events.filter(
+      (e) => e.node_name === nodeName || (e.data && (e.data.node === nodeName || e.data.from === nodeName || e.data.to === nodeName))
+    );
+
+    if (!nodeEvents.length) {
+      $detailView.innerHTML = `<div class="detail-node-title">${esc(nodeName)}</div><div class="empty-state">No events for this node yet</div>`;
+      return;
+    }
+
+    let html = `<div class="detail-node-title">${esc(nodeName)}</div>`;
+    nodeEvents.forEach((evt) => {
+      const time = formatTime(evt.timestamp);
+      html += `<div class="detail-event">
+        <span class="detail-event-time">${time}</span>
+        <span class="detail-event-type">${esc(evt.event_type)}</span>
+        <pre class="detail-event-data">${formatJson(evt.data || {})}</pre>
+      </div>`;
+    });
+
+    $detailView.innerHTML = html;
+  };
+
+  // --- Chat ---
+  function addChatBubble(role, content) {
+    const bubble = document.createElement("div");
+    bubble.className = `chat-bubble ${role}`;
+
+    if (role === "assistant" && typeof content === "object") {
+      // Structured response with steps
+      let html = "";
+      const steps = content.steps || [];
+      if (steps.length) {
+        steps.forEach((step) => {
+          html += `<div class="chat-step"><span class="chat-step-label">${esc(step.node)}</span><span class="chat-step-text">${formatOutput(step.output || "")}</span></div>`;
+        });
+      } else if (content.output) {
+        html = `<span class="chat-step-text">${formatOutput(content.output)}</span>`;
+      }
+      if (content.usage) {
+        html += `<div class="chat-usage">${content.usage.input_tokens} in / ${content.usage.output_tokens} out &middot; ${esc(content.usage.model || "")} &middot; ${content.elapsed_s || 0}s</div>`;
+      }
+      bubble.innerHTML = html;
+    } else {
+      bubble.textContent = content;
+    }
+
+    $chatMessages.appendChild(bubble);
+    $chatMessages.scrollTop = $chatMessages.scrollHeight;
+  }
+
+  function addChatLoading() {
+    const bubble = document.createElement("div");
+    bubble.className = "chat-bubble assistant loading";
+    bubble.id = "chat-loading";
+    bubble.innerHTML = '<div class="chat-spinner"></div><span>Running graph...</span>';
+    $chatMessages.appendChild(bubble);
+    $chatMessages.scrollTop = $chatMessages.scrollHeight;
+  }
+
+  function removeChatLoading() {
+    const el = document.getElementById("chat-loading");
+    if (el) el.remove();
+  }
+
+  function formatOutput(text) {
+    // Basic formatting: preserve newlines, escape HTML
+    return esc(text).replace(/\n/g, "<br>");
+  }
+
+  // --- Send Prompt ---
   async function sendPrompt() {
     const text = $promptInput.value.trim();
     if (!text || isRunning) return;
@@ -112,10 +383,15 @@
     isRunning = true;
     $btnSend.disabled = true;
     $promptInput.disabled = true;
+    $promptInput.value = "";
+    $promptInput.style.height = "auto";
 
-    // Show response area with loading spinner
-    $responseArea.classList.remove("hidden");
-    $responseContent.innerHTML = '<div class="response-loading"><div class="spinner"></div>Running graph...</div>';
+    // Add user message to chat
+    addChatBubble("user", text);
+    addChatLoading();
+
+    // Reset graph node states
+    graphNodeStates = {};
 
     try {
       const resp = await fetch("/api/prompt", {
@@ -125,13 +401,22 @@
       });
       const data = await resp.json();
 
+      removeChatLoading();
+
       if (data.success) {
-        renderResponse(data);
+        addChatBubble("assistant", data);
+        // Update token counter
+        if (data.usage) {
+          const total = (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0);
+          snapshot.total_tokens = (snapshot.total_tokens || 0) + total;
+          renderHeader();
+        }
       } else {
-        $responseContent.innerHTML = `<span style="color:var(--red)">Error: ${esc(data.error || "Unknown error")}</span>`;
+        addChatBubble("assistant", `Error: ${data.error || "Unknown error"}`);
       }
     } catch (e) {
-      $responseContent.innerHTML = `<span style="color:var(--red)">Request failed: ${esc(e.message)}</span>`;
+      removeChatLoading();
+      addChatBubble("assistant", `Request failed: ${e.message}`);
     } finally {
       isRunning = false;
       $btnSend.disabled = false;
@@ -140,36 +425,51 @@
     }
   }
 
-  function renderResponse(data) {
-    let html = "";
-    const steps = data.steps || [];
-    if (steps.length > 0) {
-      steps.forEach((step) => {
-        html += `<span class="step-label">${esc(step.node)}</span>`;
-        html += `<span class="step-text">${esc(step.output || "")}</span>`;
-      });
-    } else if (data.output) {
-      html = `<span class="step-text">${esc(data.output)}</span>`;
-    }
-    if (data.usage) {
-      html += `<span class="step-label">Usage</span>`;
-      html += `<span class="step-text">${data.usage.input_tokens} in / ${data.usage.output_tokens} out tokens | model: ${esc(data.usage.model || "")}</span>`;
-    }
-    $responseContent.innerHTML = html;
-  }
-
   // --- Event handling ---
   function handleEvent(evt) {
     events.push(evt);
     if (events.length > MAX_EVENTS) events = events.slice(-MAX_EVENTS);
 
     updateSnapshotFromEvent(evt);
-    renderAll();
+    renderHeader();
     renderTimelineEvent(evt);
+    renderAgentTree();
+    renderAgentMessages();
 
-    if ($autoScroll.checked) {
-      $timeline.scrollTop = $timeline.scrollHeight;
+    // Update graph node states
+    if (evt.event_type === "graph.start") {
+      snapshot.graph = {
+        nodes: evt.data.nodes || [],
+        edges: evt.data.edges || [],
+      };
+      graphNodeStates = {};
+      renderGraph();
+    } else if (evt.event_type === "graph.node.enter") {
+      graphNodeStates[evt.node_name || evt.data.node] = "active";
+      renderGraph();
+    } else if (evt.event_type === "graph.node.exit") {
+      graphNodeStates[evt.node_name || evt.data.node] = "done";
+      renderGraph();
+    } else if (evt.event_type === "graph.end") {
+      // Mark all remaining active as done
+      Object.keys(graphNodeStates).forEach((k) => {
+        if (graphNodeStates[k] === "active") graphNodeStates[k] = "done";
+      });
+      renderGraph();
     }
+
+    // Track active skills
+    if (evt.event_type === "agent.tool_call" && evt.data.tool_name) {
+      activeSkills.add(evt.data.tool_name);
+      renderAgentTree();
+      setTimeout(() => {
+        activeSkills.delete(evt.data.tool_name);
+        renderAgentTree();
+      }, 3000);
+    }
+
+    // Auto-scroll timeline
+    $timeline.scrollTop = $timeline.scrollHeight;
   }
 
   function updateSnapshotFromEvent(evt) {
@@ -209,7 +509,7 @@
         priority: evt.data.priority || "normal",
       });
     } else if (t === "cooperation.task_completed") {
-      const task = snapshot.tasks.find((t) => t.task_id === evt.data.task_id);
+      const task = snapshot.tasks.find((tk) => tk.task_id === evt.data.task_id);
       if (task) task.status = evt.data.success ? "completed" : "failed";
     } else if (t === "metrics.cost_update") {
       snapshot.total_cost_usd = evt.data.total_cost_usd || snapshot.total_cost_usd;
@@ -219,61 +519,16 @@
         snapshot.agents[evt.agent_name].tokens = evt.data.agent_tokens || 0;
         snapshot.agents[evt.agent_name].cost_usd = evt.data.agent_cost_usd || 0;
       }
-    } else if (t === "graph.start") {
-      snapshot.graph = {
-        nodes: evt.data.nodes || [],
-        edges: evt.data.edges || [],
-      };
     }
   }
 
   // --- Rendering ---
-  function renderAll() {
-    renderHeader();
-    renderAgents();
-    renderTaskPlan();
-    renderGraph();
-  }
-
   function renderHeader() {
     const s = snapshot.orchestrator_status;
     $status.textContent = s.toUpperCase();
     $status.className = `badge ${s}`;
     $tokens.textContent = formatNumber(snapshot.total_tokens);
-    $cost.textContent = `$${(snapshot.total_cost_usd || 0).toFixed(4)}`;
-    $eventCount.textContent = formatNumber(snapshot.event_count || 0);
-  }
-
-  function renderAgents() {
-    const agents = Object.values(snapshot.agents);
-    if (!agents.length) {
-      $agentsGrid.innerHTML = '<div class="empty-state">No agents spawned yet</div>';
-      return;
-    }
-
-    $agentsGrid.innerHTML = agents
-      .map(
-        (a) => `
-      <div class="agent-card ${a.status}">
-        <div class="agent-header">
-          <span class="agent-name">${esc(a.name)}</span>
-          <span class="agent-status ${a.status}">${a.status}</span>
-        </div>
-        <div class="agent-meta">${esc(a.provider)} &middot; ${esc(truncate(a.role, 60))}</div>
-        <div class="agent-stats">
-          <span>Steps: ${a.steps}</span>
-          <span>Tok: ${formatNumber(a.tokens)}</span>
-          <span>$${(a.cost_usd || 0).toFixed(4)}</span>
-        </div>
-        ${
-          a.tools && a.tools.length
-            ? `<div class="agent-tools">${a.tools.map((t) => `<span class="tool-tag">${esc(t)}</span>`).join("")}</div>`
-            : ""
-        }
-      </div>
-    `
-      )
-      .join("");
+    $cost.textContent = `$${(snapshot.total_cost_usd || 0).toFixed(3)}`;
   }
 
   function renderTimelineEvent(evt) {
@@ -295,63 +550,11 @@
         <div class="event-desc">${esc(desc)}</div>
       </div>
     `;
-    el.addEventListener("click", () => showDetail(evt));
+    el.addEventListener("click", () => showEventDetail(evt));
     $timeline.appendChild(el);
   }
 
-  function renderTaskPlan() {
-    if (!snapshot.tasks.length) {
-      $taskPlan.innerHTML = '<div class="empty-state">No tasks assigned yet</div>';
-      return;
-    }
-
-    $taskPlan.innerHTML = snapshot.tasks
-      .map(
-        (t) => `
-      <div class="task-item">
-        <div class="task-header">
-          <span class="task-id">${esc(t.task_id || "")}</span>
-          <span class="task-status-dot ${t.status}"></span>
-        </div>
-        <div class="task-desc">${esc(truncate(t.description, 120))}</div>
-        <div class="task-meta">
-          <span>${esc(t.from_agent || "?")}</span>
-          <span class="arrow">-></span>
-          <span>${esc(t.to_agent || "?")}</span>
-          <span>&middot; ${t.priority}</span>
-        </div>
-      </div>
-    `
-      )
-      .join("");
-  }
-
-  function renderGraph() {
-    const g = snapshot.graph;
-    if (!g || (!g.nodes.length && !g.edges.length)) {
-      $graphView.innerHTML = '<div class="empty-state">No graph running</div>';
-      return;
-    }
-
-    const nodesHtml = g.nodes
-      .map((n) => `<span class="graph-node">${esc(n)}</span>`)
-      .join("");
-
-    const edgesHtml = g.edges
-      .map((e) => {
-        const target = e.target || (e.routes ? `{${e.routes.join("|")}}` : "?");
-        const typ = e.type === "conditional" ? " (cond)" : "";
-        return `<div>${esc(e.source)} <span class="arrow-sym">-></span> ${esc(target)}${typ}</div>`;
-      })
-      .join("");
-
-    $graphView.innerHTML = `
-      <div class="graph-nodes">${nodesHtml}</div>
-      ${edgesHtml ? `<div class="graph-edge-list">${edgesHtml}</div>` : ""}
-    `;
-  }
-
-  function showDetail(evt) {
+  function showEventDetail(evt) {
     $detailView.innerHTML = `<pre>${formatJson(evt)}</pre>`;
   }
 
@@ -380,13 +583,15 @@
       case "agent.step":
         return `${agent}step ${d.step || ""}`;
       case "agent.tool_call":
-        return `${agent}calling ${d.tool_name || "?"}(${truncate(JSON.stringify(d.arguments || {}), 60)})`;
+        return `${agent}calling ${d.tool_name || "?"}`;
       case "agent.tool_result":
         return `${agent}tool result: ${truncate(d.result || "", 80)}`;
       case "agent.complete":
-        return `${agent}completed: ${truncate(d.output || "", 80)}`;
+        return `${agent}completed`;
       case "agent.error":
         return `${agent}error: ${d.error || "unknown"}`;
+      case "graph.start":
+        return `graph started (${(d.nodes || []).length} nodes)`;
       case "graph.node.enter":
         return `${node}entering`;
       case "graph.node.exit":
@@ -395,12 +600,12 @@
         return `${d.from || "?"} -> ${d.to || "?"}`;
       case "graph.parallel":
         return `parallel: ${(d.nodes || []).join(", ")}`;
+      case "graph.end":
+        return `graph ended (${d.success ? "ok" : "fail"}) ${d.elapsed_s || 0}s`;
       case "cooperation.task_assigned":
         return `${d.from_agent || "?"} -> ${d.to_agent || "?"}: ${truncate(d.description || "", 60)}`;
       case "cooperation.task_completed":
         return `${d.agent_name || "?"} finished ${d.task_id || ""}`;
-      case "metrics.cost_update":
-        return `total: $${(d.total_cost_usd || 0).toFixed(4)}`;
       case "metrics.token_update":
         return `total: ${formatNumber(d.total_tokens || 0)} tokens`;
       default:
@@ -427,7 +632,7 @@
   function esc(s) {
     if (!s) return "";
     const div = document.createElement("div");
-    div.textContent = s;
+    div.textContent = String(s);
     return div.innerHTML;
   }
 
@@ -450,10 +655,6 @@
     events = [];
   });
 
-  $btnDismiss.addEventListener("click", () => {
-    $responseArea.classList.add("hidden");
-  });
-
   $btnSend.addEventListener("click", sendPrompt);
 
   $promptInput.addEventListener("keydown", (e) => {
@@ -471,6 +672,7 @@
 
   // --- Init ---
   loadModels();
+  loadAgents();
 
   fetch("/api/events?limit=200")
     .then((r) => r.json())
@@ -485,7 +687,9 @@
     .then((r) => r.json())
     .then((data) => {
       snapshot = data;
-      renderAll();
+      renderHeader();
+      renderGraph();
+      renderAgentMessages();
     })
     .catch(() => {});
 })();

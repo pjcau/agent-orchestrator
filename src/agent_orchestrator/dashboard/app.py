@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .events import EventBus
 from .graphs import run_graph, list_ollama_models
+from .agents_registry import get_agent_registry
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -45,6 +46,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     async def events(limit: int = 100):
         history = bus.get_history()
         return JSONResponse(content=[e.to_dict() for e in history[-limit:]])
+
+    @app.get("/api/agents")
+    async def agents():
+        """Return the agent hierarchy and skills registry."""
+        return JSONResponse(content=get_agent_registry())
 
     @app.get("/api/models")
     async def models():
