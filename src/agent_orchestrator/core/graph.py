@@ -54,6 +54,32 @@ class NodeConfig:
 class GraphConfig:
     recursion_limit: int = 25
     timeout_seconds: float = 300.0
+    enable_parallel: bool = True  # Run independent nodes in parallel
+
+
+class InterruptType(str, Enum):
+    HUMAN_INPUT = "human_input"
+    APPROVAL = "approval"
+    CUSTOM = "custom"
+
+
+@dataclass
+class Interrupt:
+    """Request to pause graph execution for external input."""
+
+    interrupt_type: InterruptType
+    message: str
+    node: str
+    options: list[str] | None = None  # For approval: ["approve", "reject"]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class GraphInterrupt(Exception):
+    """Raised by a node to pause execution and wait for input."""
+
+    def __init__(self, interrupt: Interrupt):
+        self.interrupt = interrupt
+        super().__init__(f"Graph interrupted at '{interrupt.node}': {interrupt.message}")
 
 
 @dataclass
@@ -62,6 +88,7 @@ class GraphResult:
     steps: list[StepRecord]
     success: bool
     error: str | None = None
+    interrupted: Interrupt | None = None  # Set when graph pauses for input
 
 
 @dataclass
@@ -70,6 +97,7 @@ class StepRecord:
     state_before: State
     state_after: State
     step_index: int
+    parallel_group: list[str] | None = None  # Nodes executed in parallel
 
 
 class StateGraph:
@@ -206,6 +234,7 @@ class CompiledGraph:
         initial_state: State,
         thread_id: str | None = None,
         resume_from: str | None = None,
+        human_input: dict[str, Any] | None = None,
     ) -> GraphResult:
         """Execute the graph from START to END.
 
@@ -213,6 +242,8 @@ class CompiledGraph:
             initial_state: Starting state dict
             thread_id: Optional thread ID for checkpointing
             resume_from: Optional checkpoint ID to resume from
+            human_input: Input to provide when resuming from a human-in-the-loop
+                        interrupt. Merged into state before continuing.
         """
         thread_id = thread_id or str(uuid.uuid4())
         steps: list[StepRecord] = []
@@ -224,6 +255,11 @@ class CompiledGraph:
             if checkpoint:
                 state = dict(checkpoint.state)
                 current_nodes = checkpoint.next_nodes
+                step_index = checkpoint.step_index
+                thread_id = checkpoint.thread_id  # Preserve original thread
+                # Merge human input into state when resuming from interrupt
+                if human_input:
+                    state = self._apply_update(state, human_input)
             else:
                 raise ValueError(f"Checkpoint not found: {resume_from}")
         else:
@@ -231,71 +267,53 @@ class CompiledGraph:
             current_nodes = self._get_next_nodes(START, state)
 
         while current_nodes and step_index < self._config.recursion_limit:
-            for node_name in current_nodes:
-                if node_name == END:
-                    return GraphResult(state=state, steps=steps, success=True)
+            # Check for END in the node list
+            if END in current_nodes:
+                return GraphResult(state=state, steps=steps, success=True)
 
-                node = self._nodes.get(node_name)
-                if not node:
-                    return GraphResult(
-                        state=state,
-                        steps=steps,
-                        success=False,
-                        error=f"Node not found: {node_name}",
-                    )
-
-                state_before = dict(state)
-
-                # Execute node with timeout
-                try:
-                    update = await asyncio.wait_for(
-                        node.func(state),
-                        timeout=self._config.timeout_seconds,
-                    )
-                except asyncio.TimeoutError:
-                    return GraphResult(
-                        state=state,
-                        steps=steps,
-                        success=False,
-                        error=f"Node '{node_name}' timed out after {self._config.timeout_seconds}s",
-                    )
-                except Exception as e:
-                    return GraphResult(
-                        state=state,
-                        steps=steps,
-                        success=False,
-                        error=f"Node '{node_name}' failed: {e}",
-                    )
-
-                # Apply state update via reducers
-                if update:
-                    state = self._apply_update(state, update)
-
-                steps.append(
-                    StepRecord(
-                        node=node_name,
-                        state_before=state_before,
-                        state_after=dict(state),
-                        step_index=step_index,
-                    )
+            # Filter to actual executable nodes
+            exec_nodes = [n for n in current_nodes if n != END and n in self._nodes]
+            if not exec_nodes:
+                return GraphResult(
+                    state=state,
+                    steps=steps,
+                    success=False,
+                    error=f"No executable nodes found in: {current_nodes}",
                 )
 
-                # Checkpoint after each node
-                next_nodes = self._get_next_nodes(node_name, state)
-                if self._checkpointer:
-                    await self._checkpointer.save(
-                        Checkpoint(
-                            checkpoint_id=f"{thread_id}:{step_index}",
-                            thread_id=thread_id,
-                            state=dict(state),
-                            next_nodes=next_nodes,
-                            step_index=step_index,
-                        )
-                    )
+            # Execute nodes — parallel if multiple and enabled, else sequential
+            if len(exec_nodes) > 1 and self._config.enable_parallel:
+                result = await self._execute_parallel(
+                    exec_nodes, state, steps, step_index, thread_id
+                )
+            else:
+                result = await self._execute_single(
+                    exec_nodes[0], state, steps, step_index, thread_id
+                )
 
-                current_nodes = next_nodes
-                step_index += 1
-                break  # Process one node per step (sequential execution)
+            if result.interrupted or not result.success:
+                return result
+
+            state = result.state
+            steps = result.steps
+            step_index += 1
+
+            # Determine next nodes from all executed nodes
+            all_next: list[str] = []
+            executed = (
+                exec_nodes
+                if len(exec_nodes) > 1 and self._config.enable_parallel
+                else [exec_nodes[0]]
+            )
+            for node_name in executed:
+                all_next.extend(self._get_next_nodes(node_name, state))
+            # Deduplicate while preserving order
+            seen: set[str] = set()
+            current_nodes = []
+            for n in all_next:
+                if n not in seen:
+                    seen.add(n)
+                    current_nodes.append(n)
 
         if step_index >= self._config.recursion_limit:
             return GraphResult(
@@ -306,6 +324,172 @@ class CompiledGraph:
             )
 
         return GraphResult(state=state, steps=steps, success=True)
+
+    async def _execute_single(
+        self,
+        node_name: str,
+        state: State,
+        steps: list[StepRecord],
+        step_index: int,
+        thread_id: str,
+    ) -> GraphResult:
+        """Execute a single node."""
+        node = self._nodes[node_name]
+        state_before = dict(state)
+
+        try:
+            update = await asyncio.wait_for(
+                node.func(state),
+                timeout=self._config.timeout_seconds,
+            )
+        except GraphInterrupt as gi:
+            # Human-in-the-loop: save checkpoint and return interrupt
+            if self._checkpointer:
+                next_nodes = [node_name]  # Re-execute this node on resume
+                await self._checkpointer.save(
+                    Checkpoint(
+                        checkpoint_id=f"{thread_id}:{step_index}",
+                        thread_id=thread_id,
+                        state=dict(state),
+                        next_nodes=next_nodes,
+                        step_index=step_index,
+                        metadata={"interrupt": gi.interrupt.message},
+                    )
+                )
+            return GraphResult(
+                state=state,
+                steps=steps,
+                success=False,
+                interrupted=gi.interrupt,
+            )
+        except asyncio.TimeoutError:
+            return GraphResult(
+                state=state,
+                steps=steps,
+                success=False,
+                error=f"Node '{node_name}' timed out after {self._config.timeout_seconds}s",
+            )
+        except Exception as e:
+            return GraphResult(
+                state=state,
+                steps=steps,
+                success=False,
+                error=f"Node '{node_name}' failed: {e}",
+            )
+
+        if update:
+            state = self._apply_update(state, update)
+
+        steps.append(
+            StepRecord(
+                node=node_name,
+                state_before=state_before,
+                state_after=dict(state),
+                step_index=step_index,
+            )
+        )
+
+        # Checkpoint
+        if self._checkpointer:
+            next_nodes = self._get_next_nodes(node_name, state)
+            await self._checkpointer.save(
+                Checkpoint(
+                    checkpoint_id=f"{thread_id}:{step_index}",
+                    thread_id=thread_id,
+                    state=dict(state),
+                    next_nodes=next_nodes,
+                    step_index=step_index,
+                )
+            )
+
+        return GraphResult(state=state, steps=steps, success=True)
+
+    async def _execute_parallel(
+        self,
+        node_names: list[str],
+        state: State,
+        steps: list[StepRecord],
+        step_index: int,
+        thread_id: str,
+    ) -> GraphResult:
+        """Execute multiple nodes in parallel, then merge their updates."""
+        state_before = dict(state)
+
+        async def run_node(name: str) -> tuple[str, State | None, Exception | None]:
+            node = self._nodes[name]
+            try:
+                update = await asyncio.wait_for(
+                    node.func(dict(state)),  # Each node gets a copy
+                    timeout=self._config.timeout_seconds,
+                )
+                return (name, update, None)
+            except GraphInterrupt as gi:
+                return (name, None, gi)
+            except Exception as e:
+                return (name, None, e)
+
+        results = await asyncio.gather(*[run_node(n) for n in node_names])
+
+        # Check for interrupts or errors
+        for name, update, error in results:
+            if isinstance(error, GraphInterrupt):
+                if self._checkpointer:
+                    await self._checkpointer.save(
+                        Checkpoint(
+                            checkpoint_id=f"{thread_id}:{step_index}",
+                            thread_id=thread_id,
+                            state=dict(state),
+                            next_nodes=[name],
+                            step_index=step_index,
+                            metadata={"interrupt": error.interrupt.message},
+                        )
+                    )
+                return GraphResult(
+                    state=state,
+                    steps=steps,
+                    success=False,
+                    interrupted=error.interrupt,
+                )
+            if error is not None:
+                return GraphResult(
+                    state=state,
+                    steps=steps,
+                    success=False,
+                    error=f"Node '{name}' failed: {error}",
+                )
+
+        # Merge all updates into state
+        merged_state = dict(state)
+        for name, update, _ in results:
+            if update:
+                merged_state = self._apply_update(merged_state, update)
+
+        steps.append(
+            StepRecord(
+                node=",".join(node_names),
+                state_before=state_before,
+                state_after=dict(merged_state),
+                step_index=step_index,
+                parallel_group=node_names,
+            )
+        )
+
+        # Checkpoint
+        if self._checkpointer:
+            all_next: list[str] = []
+            for name in node_names:
+                all_next.extend(self._get_next_nodes(name, merged_state))
+            await self._checkpointer.save(
+                Checkpoint(
+                    checkpoint_id=f"{thread_id}:{step_index}",
+                    thread_id=thread_id,
+                    state=dict(merged_state),
+                    next_nodes=list(set(all_next)),
+                    step_index=step_index,
+                )
+            )
+
+        return GraphResult(state=merged_state, steps=steps, success=True)
 
     def _get_next_nodes(self, current: str, state: State) -> list[str]:
         """Determine next nodes based on edges from current node."""
