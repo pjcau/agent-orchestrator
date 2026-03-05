@@ -12,6 +12,9 @@ Provider-agnostic AI agent orchestration framework. Abstracts the concepts of sk
 
 ```
 agent-orchestrator/
+├── docker/
+│   └── app/Dockerfile           # Python dev container (OrbStack)
+├── docker-compose.yml           # All services (app, test, lint, format)
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
@@ -47,18 +50,56 @@ agent-orchestrator/
 - **Orchestrator** — Coordinates agents, task decomposition, anti-stall enforcement.
 - **Cooperation** — Inter-agent messaging: delegation, results, conflict resolution.
 
-## Agents
+## Agents (7)
 
 ```
-team-lead (sonnet) ---- orchestrator
-  ├── backend (sonnet)
-  ├── frontend (sonnet)
-  └── devops (sonnet)
+team-lead (sonnet) ──── orchestrator, 0 skills
+  ├── backend (sonnet) ──────── API, database, server logic
+  ├── frontend (sonnet) ─────── UI, state management, styling
+  ├── devops (sonnet) ───────── Docker/OrbStack, CI/CD, infra
+  ├── platform-engineer (sonnet) system design, scalability, observability
+  └── ai-engineer (opus) ────── LLM integration, prompt engineering
+
+scout (opus) ── /scout (GitHub pattern discovery, periodic runs)
 ```
+
+### Cross-Agent Dependencies
+
+```
+Backend ↔ Frontend:  API contracts, data models
+Backend ↔ Platform:  database, caching, queues
+DevOps  ↔ All:       Docker, CI/CD, deployment
+AI-Eng  ↔ Backend:   provider implementations, LLM integration
+Scout   →  All:       discovers patterns, creates PRs for integration
+```
+
+### Skills Map (7 total)
+
+| Skill | Agent | Description |
+|-------|-------|-------------|
+| `/docker-build` | devops | Build and manage containers via OrbStack |
+| `/test-runner` | all | Run pytest suite via Docker |
+| `/lint-check` | all | Ruff linting and formatting checks |
+| `/code-review` | all | Automated quality/security review |
+| `/deploy` | devops | Container deployment via docker-compose |
+| `/scout` | scout | GitHub pattern discovery |
+| `/website-dev` | frontend | Documentation site development |
+
+## Container Runtime: OrbStack
+
+All containers run on **OrbStack** (not Docker Desktop). Same `docker` / `docker-compose` commands, zero code changes.
+
+- Container startup: **0.2s** (vs 3.2s Docker Desktop) — **16x faster**
+- Idle RAM: ~180 MB (vs 2+ GB) — **11x less memory**
 
 ## Development
 
 ```bash
+# Via Docker (preferred — runs on OrbStack)
+docker compose run --rm test
+docker compose run --rm lint
+
+# Local (if deps installed)
 pip install -e ".[dev]"
 pytest
 ```
@@ -67,6 +108,8 @@ pytest
 
 | Trigger | Matcher | Action |
 |---------|---------|--------|
+| UserPromptSubmit | (all prompts) | Suggests relevant skills based on keyword matching |
+| PreToolUse | `Bash` | Safety guard (prevents dangerous operations) |
 | PostToolUse | `Edit` (project source files) | Reminds to run tests |
 
 Config: `.claude/settings.json` · Scripts: `.claude/hooks/`

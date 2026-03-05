@@ -1,0 +1,48 @@
+services:
+  # Python development environment
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace/src
+    command: sleep infinity
+
+  # Test runner
+  test:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    volumes:
+      - .:/workspace:ro
+      - test-results:/results
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace/src
+    command: pytest --tb=short --junitxml=/results/report.xml
+
+  # Linter
+  lint:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    volumes:
+      - .:/workspace:ro
+    working_dir: /workspace
+    command: ruff check src/ tests/
+
+  # Format checker
+  format:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    volumes:
+      - .:/workspace:ro
+    working_dir: /workspace
+    command: ruff format --check src/ tests/
+
+volumes:
+  test-results:
