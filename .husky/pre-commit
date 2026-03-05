@@ -21,4 +21,11 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+echo "==> Pre-commit: checking documentation..."
+./.husky/check-docs.sh
+if [ $? -ne 0 ]; then
+  echo "DOCS CHECK FAILED — update documentation before committing"
+  exit 1
+fi
+
 echo "==> Pre-commit: all checks passed"

@@ -14,7 +14,7 @@ Provider-agnostic AI agent orchestration framework. Abstracts the concepts of sk
 agent-orchestrator/
 ├── docker/
 │   └── app/Dockerfile           # Python dev container (OrbStack)
-├── docker-compose.yml           # All services (app, test, lint, format)
+├── docker-compose.yml           # All services (app, test, lint, format, dashboard, postgres)
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
@@ -33,6 +33,12 @@ agent-orchestrator/
 │       │   ├── openai.py        # GPT provider
 │       │   ├── google.py        # Gemini provider
 │       │   └── local.py         # Local models (Ollama, vLLM)
+│       ├── dashboard/
+│       │   ├── app.py           # FastAPI dashboard (REST + WebSocket)
+│       │   ├── events.py        # EventBus, Event types
+│       │   ├── instrument.py    # Monkey-patches core classes to emit events
+│       │   ├── server.py        # CLI entrypoint (uvicorn)
+│       │   └── static/          # HTML/CSS/JS dashboard UI
 │       └── skills/
 │           ├── filesystem.py    # File read/write/search
 │           ├── shell.py         # Shell command execution
@@ -92,6 +98,14 @@ All containers run on **OrbStack** (not Docker Desktop). Same `docker` / `docker
 - Container startup: **0.2s** (vs 3.2s Docker Desktop) — **16x faster**
 - Idle RAM: ~180 MB (vs 2+ GB) — **11x less memory**
 
+## Dashboard
+
+Real-time monitoring UI for the orchestrator. Shows agent interactions, technical metrics, task plan, and graph visualization.
+
+```bash
+docker compose up dashboard    # http://localhost:5005
+```
+
 ## Development
 
 ```bash
@@ -99,8 +113,11 @@ All containers run on **OrbStack** (not Docker Desktop). Same `docker` / `docker
 docker compose run --rm test
 docker compose run --rm lint
 
+# Dashboard
+docker compose up dashboard
+
 # Local (if deps installed)
-pip install -e ".[dev]"
+pip install -e ".[dev,dashboard]"
 pytest
 ```
 
@@ -111,5 +128,8 @@ pytest
 | UserPromptSubmit | (all prompts) | Suggests relevant skills based on keyword matching |
 | PreToolUse | `Bash` | Safety guard (prevents dangerous operations) |
 | PostToolUse | `Edit` (project source files) | Reminds to run tests |
+| Pre-commit (git) | all commits | Lint, format, test, **docs check** |
 
-Config: `.claude/settings.json` · Scripts: `.claude/hooks/`
+The **docs check** (`.husky/check-docs.sh`) verifies that CLAUDE.md stays in sync with the actual codebase: modules, docker services, hook scripts, test coverage.
+
+Config: `.claude/settings.json` · Scripts: `.claude/hooks/` · Git hooks: `.husky/`

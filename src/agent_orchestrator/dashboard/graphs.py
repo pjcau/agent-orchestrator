@@ -7,7 +7,8 @@ Emits events to the EventBus so the dashboard shows real-time progress.
 from __future__ import annotations
 
 import time
-from typing import Any
+import uuid
+from typing import Any, Callable
 
 import httpx
 
@@ -97,6 +98,7 @@ async def run_graph(
         "chat": _build_chat_graph,
         "chain": _build_chain_graph,
         "parallel": _build_parallel_graph,
+        "team": _build_team_graph,
     }
 
     builder = builders.get(graph_type, _build_chat_graph)
@@ -348,5 +350,208 @@ def _build_auto_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
     graph.add_edge("bug_fix", END)
     graph.add_edge("question", END)
     graph.add_edge("task", END)
+
+    return graph, {"input": prompt}
+
+
+# --- Agent-aware node wrapper ---
+
+
+def _agent_node(
+    agent_name: str,
+    provider: Provider,
+    system: str,
+    prompt_key: str | None = None,
+    prompt_template: Callable | None = None,
+    output_key: str = "response",
+    role: str = "",
+    event_bus: EventBus | None = None,
+    parent_agent: str | None = None,
+    task_description: str = "",
+) -> Callable:
+    """Wrap an LLM call to emit agent lifecycle + cooperation events."""
+    inner = llm_node(
+        provider=provider,
+        system=system,
+        prompt_key=prompt_key,
+        prompt_template=prompt_template,
+        output_key=output_key,
+    )
+
+    async def wrapper(state: dict[str, Any]) -> dict[str, Any]:
+        bus = event_bus or EventBus.get()
+        task_id = str(uuid.uuid4())[:8]
+
+        # Agent spawn
+        await bus.emit(
+            Event(
+                event_type=EventType.AGENT_SPAWN,
+                agent_name=agent_name,
+                data={
+                    "provider": provider.model_id,
+                    "role": role,
+                    "tools": [],
+                },
+            )
+        )
+
+        # Task delegation from parent
+        if parent_agent:
+            await bus.emit(
+                Event(
+                    event_type=EventType.TASK_ASSIGNED,
+                    data={
+                        "task_id": task_id,
+                        "from_agent": parent_agent,
+                        "to_agent": agent_name,
+                        "description": task_description or f"Process: {output_key}",
+                        "priority": "normal",
+                    },
+                )
+            )
+
+        # Agent step
+        await bus.emit(
+            Event(
+                event_type=EventType.AGENT_STEP,
+                agent_name=agent_name,
+                data={"step": "llm_call", "model": provider.model_id},
+            )
+        )
+
+        # Run the actual LLM node
+        result = await inner(state)
+
+        # Task completed
+        if parent_agent:
+            await bus.emit(
+                Event(
+                    event_type=EventType.TASK_COMPLETED,
+                    data={
+                        "task_id": task_id,
+                        "from_agent": agent_name,
+                        "to_agent": parent_agent,
+                        "success": True,
+                        "summary": str(result.get(output_key, ""))[:100],
+                    },
+                )
+            )
+
+        # Agent complete
+        await bus.emit(
+            Event(
+                event_type=EventType.AGENT_COMPLETE,
+                agent_name=agent_name,
+                data={"output_key": output_key},
+            )
+        )
+
+        return result
+
+    return wrapper
+
+
+# --- Team graph: multi-agent orchestration ---
+
+
+def _build_team_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
+    """Team orchestration: team-lead classifies, delegates to sub-agents, summarizes.
+
+    Flow:
+      team-lead (classify) -> [backend-dev, frontend-dev] in parallel -> team-lead (summarize)
+
+    Emits agent.spawn, cooperation.task_assigned, agent.complete, cooperation.task_completed
+    events so the dashboard shows real multi-agent interaction.
+    """
+    bus = EventBus.get()
+
+    # Team-lead: classify the task
+    classify = _agent_node(
+        agent_name="team-lead",
+        provider=provider,
+        system=(
+            "You are the team lead. Classify this task and decide which sub-agents should handle it.\n"
+            "Reply with a brief task breakdown (2-3 lines):\n"
+            "- What the backend-dev should do\n"
+            "- What the frontend-dev should do\n"
+            "Be concise."
+        ),
+        prompt_key="input",
+        output_key="plan",
+        role="Team Lead — task decomposition",
+        event_bus=bus,
+    )
+
+    # Backend sub-agent
+    backend = _agent_node(
+        agent_name="backend-dev",
+        provider=provider,
+        system=(
+            "You are a backend developer. Focus on server-side logic, APIs, data models, "
+            "and infrastructure. Be concise and practical."
+        ),
+        prompt_template=lambda s: (
+            f"Team lead's plan:\n{s.get('plan', '')}\n\n"
+            f"Original request:\n{s['input']}\n\n"
+            f"Provide your backend analysis/solution:"
+        ),
+        output_key="backend_output",
+        role="Backend Developer",
+        event_bus=bus,
+        parent_agent="team-lead",
+        task_description="Handle backend/API aspects of the task",
+    )
+
+    # Frontend sub-agent
+    frontend = _agent_node(
+        agent_name="frontend-dev",
+        provider=provider,
+        system=(
+            "You are a frontend developer. Focus on UI/UX, client-side logic, "
+            "and user experience. Be concise and practical."
+        ),
+        prompt_template=lambda s: (
+            f"Team lead's plan:\n{s.get('plan', '')}\n\n"
+            f"Original request:\n{s['input']}\n\n"
+            f"Provide your frontend analysis/solution:"
+        ),
+        output_key="frontend_output",
+        role="Frontend Developer",
+        event_bus=bus,
+        parent_agent="team-lead",
+        task_description="Handle frontend/UI aspects of the task",
+    )
+
+    # Team-lead: summarize results
+    summarize = _agent_node(
+        agent_name="team-lead",
+        provider=provider,
+        system=(
+            "You are the team lead. Combine the backend and frontend outputs "
+            "into a coherent final answer. Be concise but complete."
+        ),
+        prompt_template=lambda s: (
+            f"Original request:\n{s['input']}\n\n"
+            f"Backend developer:\n{s.get('backend_output', '')}\n\n"
+            f"Frontend developer:\n{s.get('frontend_output', '')}\n\n"
+            f"Provide the final combined answer:"
+        ),
+        output_key="response",
+        role="Team Lead — synthesis",
+        event_bus=bus,
+    )
+
+    graph = StateGraph()
+    graph.add_node("team-lead-plan", classify)
+    graph.add_node("backend-dev", backend)
+    graph.add_node("frontend-dev", frontend)
+    graph.add_node("team-lead-summarize", summarize)
+
+    graph.add_edge(START, "team-lead-plan")
+    graph.add_edge("team-lead-plan", "backend-dev")
+    graph.add_edge("team-lead-plan", "frontend-dev")
+    graph.add_edge("backend-dev", "team-lead-summarize")
+    graph.add_edge("frontend-dev", "team-lead-summarize")
+    graph.add_edge("team-lead-summarize", END)
 
     return graph, {"input": prompt}

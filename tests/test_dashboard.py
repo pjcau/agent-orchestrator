@@ -1,4 +1,4 @@
-"""Tests for the dashboard event bus, snapshot, and instrumentation."""
+"""Tests for the dashboard event bus, snapshot, instrumentation, and team graph."""
 
 import asyncio
 from typing import AsyncIterator
@@ -10,6 +10,7 @@ from agent_orchestrator.dashboard.instrument import (
     _instrument_graph,
     _instrument_cooperation,
 )
+from agent_orchestrator.dashboard.graphs import _agent_node, _build_team_graph
 from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
 from agent_orchestrator.core.skill import SkillRegistry
 from agent_orchestrator.core.cooperation import (
@@ -459,3 +460,161 @@ class TestInstrumentCooperation:
         finally:
             CooperationProtocol.assign = orig_assign
             CooperationProtocol.complete = orig_complete
+
+
+# ===== Agent Node Wrapper =====
+
+
+class TestAgentNode:
+    @pytest.mark.asyncio
+    async def test_agent_node_emits_lifecycle_events(self, bus):
+        """_agent_node should emit agent.spawn, agent.step, agent.complete."""
+        provider = MockProvider()
+        node = _agent_node(
+            agent_name="test-agent",
+            provider=provider,
+            system="Be concise.",
+            prompt_key="input",
+            output_key="result",
+            role="tester",
+            event_bus=bus,
+        )
+
+        state = await node({"input": "hello"})
+        assert "result" in state
+
+        types = [e.event_type for e in bus.get_history()]
+        assert EventType.AGENT_SPAWN in types
+        assert EventType.AGENT_STEP in types
+        assert EventType.AGENT_COMPLETE in types
+
+        spawn = next(e for e in bus.get_history() if e.event_type == EventType.AGENT_SPAWN)
+        assert spawn.agent_name == "test-agent"
+        assert spawn.data["provider"] == "mock-1"
+        assert spawn.data["role"] == "tester"
+
+    @pytest.mark.asyncio
+    async def test_agent_node_with_parent_emits_cooperation(self, bus):
+        """_agent_node with parent_agent should emit task_assigned and task_completed."""
+        provider = MockProvider()
+        node = _agent_node(
+            agent_name="sub-agent",
+            provider=provider,
+            system="Be concise.",
+            prompt_key="input",
+            output_key="result",
+            role="worker",
+            event_bus=bus,
+            parent_agent="lead",
+            task_description="Do work",
+        )
+
+        await node({"input": "test"})
+
+        types = [e.event_type for e in bus.get_history()]
+        assert EventType.TASK_ASSIGNED in types
+        assert EventType.TASK_COMPLETED in types
+
+        assigned = next(e for e in bus.get_history() if e.event_type == EventType.TASK_ASSIGNED)
+        assert assigned.data["from_agent"] == "lead"
+        assert assigned.data["to_agent"] == "sub-agent"
+        assert assigned.data["description"] == "Do work"
+
+        completed = next(e for e in bus.get_history() if e.event_type == EventType.TASK_COMPLETED)
+        assert completed.data["from_agent"] == "sub-agent"
+        assert completed.data["to_agent"] == "lead"
+        assert completed.data["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_agent_node_without_parent_no_cooperation(self, bus):
+        """_agent_node without parent_agent should NOT emit cooperation events."""
+        provider = MockProvider()
+        node = _agent_node(
+            agent_name="solo",
+            provider=provider,
+            system="Be concise.",
+            prompt_key="input",
+            output_key="result",
+            event_bus=bus,
+        )
+
+        await node({"input": "test"})
+
+        types = [e.event_type for e in bus.get_history()]
+        assert EventType.TASK_ASSIGNED not in types
+        assert EventType.TASK_COMPLETED not in types
+
+
+# ===== Team Graph =====
+
+
+class TestTeamGraph:
+    def test_team_graph_structure(self):
+        """_build_team_graph should produce correct graph topology."""
+        provider = MockProvider()
+        graph, initial_state = _build_team_graph(provider, "Build a todo app")
+
+        assert "input" in initial_state
+        assert initial_state["input"] == "Build a todo app"
+
+        compiled = graph.compile()
+        info = compiled.get_graph_info()
+
+        # Should have 6 nodes: __start__, team-lead-plan, backend-dev, frontend-dev,
+        #                       team-lead-summarize, __end__
+        assert "team-lead-plan" in info["nodes"]
+        assert "backend-dev" in info["nodes"]
+        assert "frontend-dev" in info["nodes"]
+        assert "team-lead-summarize" in info["nodes"]
+
+    @pytest.mark.asyncio
+    async def test_team_graph_execution(self):
+        """Team graph should run end-to-end and produce output keys."""
+        bus = EventBus()
+        # Set singleton so _build_team_graph picks it up
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(provider, "Build an API")
+            compiled = graph.compile()
+            result = await compiled.invoke(initial_state)
+
+            assert result.success
+            # Should have all output keys
+            assert "plan" in result.state
+            assert "backend_output" in result.state
+            assert "frontend_output" in result.state
+            assert "response" in result.state
+
+            # Should have emitted agent events
+            types = [e.event_type for e in bus.get_history()]
+            assert types.count(EventType.AGENT_SPAWN) >= 3  # team-lead, backend, frontend
+            assert EventType.TASK_ASSIGNED in types
+            assert EventType.TASK_COMPLETED in types
+            assert EventType.AGENT_COMPLETE in types
+        finally:
+            EventBus._instance = old_instance
+
+    @pytest.mark.asyncio
+    async def test_team_graph_emits_delegation(self):
+        """Team graph should show delegation from team-lead to sub-agents."""
+        bus = EventBus()
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(provider, "Test task")
+            compiled = graph.compile()
+            await compiled.invoke(initial_state)
+
+            assignments = [e for e in bus.get_history() if e.event_type == EventType.TASK_ASSIGNED]
+            # backend-dev and frontend-dev should each get a task from team-lead
+            assert len(assignments) == 2
+            agents_assigned = {a.data["to_agent"] for a in assignments}
+            assert "backend-dev" in agents_assigned
+            assert "frontend-dev" in agents_assigned
+            for a in assignments:
+                assert a.data["from_agent"] == "team-lead"
+        finally:
+            EventBus._instance = old_instance
