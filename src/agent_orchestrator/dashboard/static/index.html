@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Orchestrator Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Agent Orchestrator</h1>
+            <span id="status-badge" class="badge idle">IDLE</span>
+        </div>
+        <div class="header-right">
+            <div class="metric">
+                <span class="metric-label">Tokens</span>
+                <span id="total-tokens" class="metric-value">0</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Cost</span>
+                <span id="total-cost" class="metric-value">$0.000</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Events</span>
+                <span id="event-count" class="metric-value">0</span>
+            </div>
+            <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
+        </div>
+    </header>
+
+    <main>
+        <!-- Left column: Agents + Graph -->
+        <section class="panel agents-panel">
+            <h2>Agents</h2>
+            <div id="agents-grid" class="agents-grid">
+                <div class="empty-state">No agents spawned yet</div>
+            </div>
+        </section>
+
+        <!-- Center column: Interactions timeline -->
+        <section class="panel timeline-panel">
+            <h2>Interactions</h2>
+            <div class="timeline-controls">
+                <select id="filter-type">
+                    <option value="all">All events</option>
+                    <option value="agent">Agent events</option>
+                    <option value="graph">Graph events</option>
+                    <option value="cooperation">Cooperation</option>
+                    <option value="metrics">Metrics</option>
+                </select>
+                <button id="btn-clear" title="Clear timeline">Clear</button>
+                <label class="toggle">
+                    <input type="checkbox" id="auto-scroll" checked>
+                    Auto-scroll
+                </label>
+            </div>
+            <div id="timeline" class="timeline"></div>
+        </section>
+
+        <!-- Right column: Task plan + Details -->
+        <section class="panel plan-panel">
+            <h2>Task Plan</h2>
+            <div id="task-plan" class="task-plan">
+                <div class="empty-state">No tasks assigned yet</div>
+            </div>
+
+            <h2>Graph</h2>
+            <div id="graph-view" class="graph-view">
+                <div class="empty-state">No graph running</div>
+            </div>
+
+            <h2>Details</h2>
+            <div id="detail-view" class="detail-view">
+                <div class="empty-state">Click an event for details</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
