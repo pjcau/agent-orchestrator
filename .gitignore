@@ -1,0 +1,18 @@
+# Claude Code
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.env
+
+# Python
+*.egg-info/
+dist/
+build/
+.venv/

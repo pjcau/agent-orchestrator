@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/post-edit-remind.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
