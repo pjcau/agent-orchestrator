@@ -19,12 +19,14 @@
   let isRunning = false;
   let activeSkills = new Set();
   let graphNodeStates = {}; // node_name -> "active" | "done" | "error"
+  let lastTokenSpeed = 0; // tok/s from last response
   const MAX_EVENTS = 500;
 
   // --- DOM refs ---
   const $status = document.getElementById("status-badge");
   const $tokens = document.getElementById("total-tokens");
   const $cost = document.getElementById("total-cost");
+  const $tokenSpeed = document.getElementById("token-speed");
   const $wsIndicator = document.getElementById("ws-indicator");
   const $agentTree = document.getElementById("agent-tree");
   const $agentMessages = document.getElementById("agent-messages");
@@ -337,7 +339,10 @@
         html = `<span class="chat-step-text">${formatOutput(content.output)}</span>`;
       }
       if (content.usage) {
-        html += `<div class="chat-usage">${content.usage.input_tokens} in / ${content.usage.output_tokens} out &middot; ${esc(content.usage.model || "")} &middot; ${content.elapsed_s || 0}s</div>`;
+        const elapsed = content.elapsed_s || 0;
+        const outTok = content.usage.output_tokens || 0;
+        const speed = elapsed > 0 ? (outTok / elapsed).toFixed(1) : 0;
+        html += `<div class="chat-usage">${content.usage.input_tokens} in / ${outTok} out &middot; ${speed} tok/s &middot; ${esc(content.usage.model || "")} &middot; ${elapsed}s</div>`;
       }
       bubble.innerHTML = html;
     } else {
@@ -405,10 +410,14 @@
 
       if (data.success) {
         addChatBubble("assistant", data);
-        // Update token counter
+        // Update token counter and speed
         if (data.usage) {
           const total = (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0);
           snapshot.total_tokens = (snapshot.total_tokens || 0) + total;
+          const elapsed = data.elapsed_s || 0;
+          if (elapsed > 0) {
+            lastTokenSpeed = (data.usage.output_tokens || 0) / elapsed;
+          }
           renderHeader();
         }
       } else {
@@ -529,6 +538,7 @@
     $status.className = `badge ${s}`;
     $tokens.textContent = formatNumber(snapshot.total_tokens);
     $cost.textContent = `$${(snapshot.total_cost_usd || 0).toFixed(3)}`;
+    $tokenSpeed.textContent = lastTokenSpeed > 0 ? `${lastTokenSpeed.toFixed(1)} tok/s` : "- tok/s";
   }
 
   function renderTimelineEvent(evt) {
