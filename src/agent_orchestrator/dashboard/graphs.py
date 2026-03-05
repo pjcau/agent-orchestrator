@@ -25,17 +25,77 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
     if not api_key:
         return []
 
-    # Return curated list of popular models with known pricing
+    # Curated free models from big brands (sorted by brand, best first)
     return [
-        {"name": "anthropic/claude-sonnet-4", "size": "$3/$15", "provider": "openrouter"},
-        {"name": "anthropic/claude-haiku-4", "size": "$0.8/$4", "provider": "openrouter"},
-        {"name": "openai/gpt-4o", "size": "$2.5/$10", "provider": "openrouter"},
-        {"name": "openai/gpt-4o-mini", "size": "$0.15/$0.6", "provider": "openrouter"},
-        {"name": "google/gemini-2.5-flash-preview", "size": "$0.15/$0.6", "provider": "openrouter"},
-        {"name": "deepseek/deepseek-chat-v3", "size": "$0.27/$1.1", "provider": "openrouter"},
-        {"name": "meta-llama/llama-4-maverick", "size": "$0.2/$0.6", "provider": "openrouter"},
-        {"name": "qwen/qwen3-235b-a22b", "size": "$0.2/$0.6", "provider": "openrouter"},
-        {"name": "qwen/qwen3.5-plus-02-15", "size": "$0.3/$1.2", "provider": "openrouter"},
+        # Google
+        {
+            "name": "google/gemma-3-27b-it:free",
+            "size": "Free · 27B · 131K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "google/gemma-3-12b-it:free",
+            "size": "Free · 12B · 32K",
+            "provider": "openrouter",
+        },
+        # Meta
+        {
+            "name": "meta-llama/llama-3.3-70b-instruct:free",
+            "size": "Free · 70B · 128K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "meta-llama/llama-3.2-3b-instruct:free",
+            "size": "Free · 3B · 131K",
+            "provider": "openrouter",
+        },
+        # Qwen (Alibaba)
+        {
+            "name": "qwen/qwen3-coder:free",
+            "size": "Free · 480B MoE · 262K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "qwen/qwen3-235b-a22b-thinking-2507",
+            "size": "Free · 235B MoE · 131K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "qwen/qwen3-next-80b-a3b-instruct:free",
+            "size": "Free · 80B MoE · 262K",
+            "provider": "openrouter",
+        },
+        {"name": "qwen/qwen3-4b:free", "size": "Free · 4B · 41K", "provider": "openrouter"},
+        # OpenAI
+        {
+            "name": "openai/gpt-oss-120b:free",
+            "size": "Free · 120B · 131K",
+            "provider": "openrouter",
+        },
+        {"name": "openai/gpt-oss-20b:free", "size": "Free · 20B · 131K", "provider": "openrouter"},
+        # Mistral
+        {
+            "name": "mistralai/mistral-small-3.1-24b-instruct:free",
+            "size": "Free · 24B · 128K",
+            "provider": "openrouter",
+        },
+        # NVIDIA
+        {
+            "name": "nvidia/nemotron-3-nano-30b-a3b:free",
+            "size": "Free · 30B MoE · 256K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "nvidia/nemotron-nano-9b-v2:free",
+            "size": "Free · 9B · 128K",
+            "provider": "openrouter",
+        },
+        # Nous Research (Meta 405B)
+        {
+            "name": "nousresearch/hermes-3-llama-3.1-405b:free",
+            "size": "Free · 405B · 131K",
+            "provider": "openrouter",
+        },
     ]
 
 
