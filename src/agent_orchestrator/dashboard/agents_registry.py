@@ -17,13 +17,13 @@ SKILLS_DIR = PROJECT_ROOT / ".claude" / "skills"
 
 # Map agents to their skills (hardcoded based on project structure)
 AGENT_SKILLS = {
-    "team-lead": [],
-    "backend": ["test-runner", "lint-check", "code-review"],
-    "frontend": ["website-dev", "lint-check"],
-    "devops": ["docker-build", "deploy"],
-    "platform-engineer": ["docker-build", "deploy"],
-    "ai-engineer": ["code-review", "test-runner"],
-    "scout": ["scout"],
+    "team-lead": ["web-research"],
+    "backend": ["test-runner", "lint-check", "code-review", "web-research"],
+    "frontend": ["website-dev", "lint-check", "web-research"],
+    "devops": ["docker-build", "deploy", "web-research"],
+    "platform-engineer": ["docker-build", "deploy", "web-research"],
+    "ai-engineer": ["code-review", "test-runner", "web-research"],
+    "scout": ["scout", "web-research"],
 }
 
 
