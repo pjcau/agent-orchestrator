@@ -163,11 +163,13 @@ class OpenAIProvider(Provider):
             result.append({"role": "system", "content": system})
         for msg in messages:
             if msg.tool_call_id:
-                result.append({
-                    "role": "tool",
-                    "content": msg.content,
-                    "tool_call_id": msg.tool_call_id,
-                })
+                result.append(
+                    {
+                        "role": "tool",
+                        "content": msg.content,
+                        "tool_call_id": msg.tool_call_id,
+                    }
+                )
             elif msg.tool_calls:
                 entry: dict = {
                     "role": "assistant",

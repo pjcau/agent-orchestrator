@@ -1,0 +1,24 @@
+#!/bin/sh
+
+echo "==> Pre-commit: running lint..."
+docker compose run --rm lint
+if [ $? -ne 0 ]; then
+  echo "LINT FAILED — fix errors before committing"
+  exit 1
+fi
+
+echo "==> Pre-commit: running format check..."
+docker compose run --rm format
+if [ $? -ne 0 ]; then
+  echo "FORMAT CHECK FAILED — run 'docker compose run --rm app ruff format src/ tests/' to fix"
+  exit 1
+fi
+
+echo "==> Pre-commit: running tests..."
+docker compose run --rm test
+if [ $? -ne 0 ]; then
+  echo "TESTS FAILED — fix failures before committing"
+  exit 1
+fi
+
+echo "==> Pre-commit: all checks passed"

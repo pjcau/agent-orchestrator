@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from typing import AsyncIterator
 
@@ -12,9 +11,7 @@ from ..core.provider import (
     ModelCapabilities,
     Provider,
     StreamChunk,
-    ToolCall,
     ToolDefinition,
-    Usage,
 )
 
 
@@ -63,8 +60,7 @@ class GoogleProvider(Provider):
     ) -> Completion:
         # Placeholder — full implementation requires google-generativeai async support
         raise NotImplementedError(
-            "Google provider requires google-generativeai SDK. "
-            "Full async implementation is TODO."
+            "Google provider requires google-generativeai SDK. Full async implementation is TODO."
         )
 
     async def stream(

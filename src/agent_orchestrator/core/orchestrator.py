@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from .agent import Agent, AgentConfig, Task, TaskResult, TaskStatus
-from .cooperation import CooperationProtocol, Priority, TaskAssignment, TaskReport
+from .cooperation import CooperationProtocol, TaskAssignment, TaskReport
 from .provider import Provider
 from .skill import SkillRegistry
 
@@ -62,7 +61,9 @@ class Orchestrator:
         self.protocol = CooperationProtocol()
         self._cost_tracker: float = 0.0
 
-    async def run(self, task_description: str, context: dict[str, Any] | None = None) -> OrchestratorResult:
+    async def run(
+        self, task_description: str, context: dict[str, Any] | None = None
+    ) -> OrchestratorResult:
         """Execute a high-level task by decomposing and delegating to agents."""
         # Use team-lead to decompose the task
         team_lead_config = self.agent_configs.get("team-lead")
@@ -91,7 +92,7 @@ class Orchestrator:
         ready_tasks = self.protocol.get_ready_tasks()
 
         while ready_tasks or not self.protocol.all_complete():
-            for assignment in ready_tasks[:self.config.max_concurrent_agents]:
+            for assignment in ready_tasks[: self.config.max_concurrent_agents]:
                 result = await self._execute_assignment(assignment)
                 agent_results[assignment.task_id] = result
 
@@ -135,7 +136,9 @@ class Orchestrator:
             total_tokens=total_tokens,
         )
 
-    def resolve_provider(self, provider_key: str, complexity: TaskComplexity | None = None) -> Provider:
+    def resolve_provider(
+        self, provider_key: str, complexity: TaskComplexity | None = None
+    ) -> Provider:
         """Resolve a provider key to an actual provider, applying routing strategy."""
         if self.config.routing_strategy == RoutingStrategy.FIXED:
             return self.providers[provider_key]

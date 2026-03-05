@@ -87,4 +87,6 @@ class GlobSkill(Skill):
     async def execute(self, params: dict) -> SkillResult:
         base = Path(params.get("directory", "."))
         matches = sorted(glob_module.glob(params["pattern"], root_dir=str(base), recursive=True))
-        return SkillResult(success=True, output="\n".join(matches) if matches else "No matches found")
+        return SkillResult(
+            success=True, output="\n".join(matches) if matches else "No matches found"
+        )

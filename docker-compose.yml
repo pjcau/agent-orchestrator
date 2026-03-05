@@ -19,10 +19,11 @@ services:
     volumes:
       - .:/workspace:ro
       - test-results:/results
+      - pytest-cache:/tmp/pytest-cache
     working_dir: /workspace
     environment:
       - PYTHONPATH=/workspace/src
-    command: pytest --tb=short --junitxml=/results/report.xml
+    command: pytest --tb=short --junitxml=/results/report.xml -o cache_dir=/tmp/pytest-cache
 
   # Linter
   lint:
@@ -31,7 +32,10 @@ services:
       dockerfile: docker/app/Dockerfile
     volumes:
       - .:/workspace:ro
+      - ruff-cache:/tmp/ruff-cache
     working_dir: /workspace
+    environment:
+      - RUFF_CACHE_DIR=/tmp/ruff-cache
     command: ruff check src/ tests/
 
   # Format checker
@@ -41,8 +45,13 @@ services:
       dockerfile: docker/app/Dockerfile
     volumes:
       - .:/workspace:ro
+      - ruff-cache:/tmp/ruff-cache
     working_dir: /workspace
+    environment:
+      - RUFF_CACHE_DIR=/tmp/ruff-cache
     command: ruff format --check src/ tests/
 
 volumes:
   test-results:
+  pytest-cache:
+  ruff-cache:

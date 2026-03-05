@@ -45,9 +45,7 @@ class ShellExecSkill(Skill):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self._timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
             output = stdout.decode(errors="replace")
             if stderr:
                 output += f"\nSTDERR:\n{stderr.decode(errors='replace')}"

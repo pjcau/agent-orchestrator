@@ -91,16 +91,12 @@ class AnthropicProvider(Provider):
             if block.type == "text":
                 content += block.text
             elif block.type == "tool_use":
-                tool_calls.append(
-                    ToolCall(id=block.id, name=block.name, arguments=block.input)
-                )
+                tool_calls.append(ToolCall(id=block.id, name=block.name, arguments=block.input))
 
         usage = Usage(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
-            cost_usd=self.estimate_cost(
-                response.usage.input_tokens, response.usage.output_tokens
-            ),
+            cost_usd=self.estimate_cost(response.usage.input_tokens, response.usage.output_tokens),
         )
 
         return Completion(
@@ -168,12 +164,14 @@ class AnthropicProvider(Provider):
             if msg.tool_calls:
                 entry["content"] = [{"type": "text", "text": msg.content}] if msg.content else []
                 for tc in msg.tool_calls:
-                    entry["content"].append({
-                        "type": "tool_use",
-                        "id": tc.id,
-                        "name": tc.name,
-                        "input": tc.arguments,
-                    })
+                    entry["content"].append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.name,
+                            "input": tc.arguments,
+                        }
+                    )
             if msg.tool_call_id:
                 entry = {
                     "role": "user",

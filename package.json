@@ -1,0 +1,32 @@
+{
+  "name": "agent-orchestrator",
+  "version": "1.0.0",
+  "description": "Provider-agnostic AI agent orchestration framework. Swap LLM providers per agent, route tasks by complexity, mix cloud and local models.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "docker compose run --rm test",
+    "lint": "docker compose run --rm lint",
+    "format:check": "docker compose run --rm format",
+    "precommit": "npm run lint && npm run format:check && npm run test",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pjcau/agent-orchestrator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/pjcau/agent-orchestrator/issues"
+  },
+  "homepage": "https://github.com/pjcau/agent-orchestrator#readme",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

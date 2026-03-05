@@ -69,20 +69,25 @@ class TestCooperationProtocol:
         assert len(proto.get_pending()) == 1
         assert not proto.all_complete()
 
-        proto.complete(TaskReport(
-            task_id="t1", agent_name="backend", success=True, output="Done"
-        ))
+        proto.complete(TaskReport(task_id="t1", agent_name="backend", success=True, output="Done"))
         assert proto.all_complete()
 
     def test_dependency_ordering(self):
         proto = CooperationProtocol()
-        proto.assign(TaskAssignment(
-            task_id="t1", from_agent="lead", to_agent="backend", description="Build API"
-        ))
-        proto.assign(TaskAssignment(
-            task_id="t2", from_agent="lead", to_agent="frontend",
-            description="Build UI", depends_on=["t1"]
-        ))
+        proto.assign(
+            TaskAssignment(
+                task_id="t1", from_agent="lead", to_agent="backend", description="Build API"
+            )
+        )
+        proto.assign(
+            TaskAssignment(
+                task_id="t2",
+                from_agent="lead",
+                to_agent="frontend",
+                description="Build UI",
+                depends_on=["t1"],
+            )
+        )
 
         ready = proto.get_ready_tasks()
         assert len(ready) == 1

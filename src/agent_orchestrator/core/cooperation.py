@@ -17,6 +17,7 @@ class Priority(str, Enum):
 @dataclass
 class TaskAssignment:
     """A task delegated from one agent to another."""
+
     task_id: str
     from_agent: str
     to_agent: str
@@ -29,6 +30,7 @@ class TaskAssignment:
 @dataclass
 class TaskReport:
     """Result reported back from a specialist to the coordinator."""
+
     task_id: str
     agent_name: str
     success: bool
@@ -40,6 +42,7 @@ class TaskReport:
 @dataclass
 class Artifact:
     """A shared artifact produced by an agent (code, spec, test result)."""
+
     name: str
     type: str  # "code", "spec", "test_result", "config"
     content: Any
