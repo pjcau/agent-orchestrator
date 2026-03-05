@@ -38,9 +38,17 @@
             </div>
         </section>
 
-        <!-- Center column: Interactions timeline -->
+        <!-- Center column: Response + Timeline -->
         <section class="panel timeline-panel">
-            <h2>Interactions</h2>
+            <div id="response-area" class="response-area hidden">
+                <div class="response-header">
+                    <h2>Response</h2>
+                    <button id="btn-dismiss-response" class="btn-small" title="Dismiss">x</button>
+                </div>
+                <div id="response-content" class="response-content"></div>
+            </div>
+
+            <h2>Timeline</h2>
             <div class="timeline-controls">
                 <select id="filter-type">
                     <option value="all">All events</option>
@@ -58,7 +66,7 @@
             <div id="timeline" class="timeline"></div>
         </section>
 
-        <!-- Right column: Task plan + Details -->
+        <!-- Right column: Task plan + Graph + Details -->
         <section class="panel plan-panel">
             <h2>Task Plan</h2>
             <div id="task-plan" class="task-plan">
@@ -76,6 +84,32 @@
             </div>
         </section>
     </main>
+
+    <!-- Prompt bar at bottom -->
+    <footer class="prompt-bar">
+        <div class="prompt-container">
+            <div class="prompt-settings">
+                <select id="prompt-model" title="Select Ollama model">
+                    <option value="">Loading models...</option>
+                </select>
+                <select id="prompt-graph" title="Select graph type">
+                    <option value="auto">Auto (classify + route)</option>
+                    <option value="review">Code Review</option>
+                    <option value="chat">Chat</option>
+                    <option value="chain">Analyze + Fix</option>
+                    <option value="parallel">Parallel Review</option>
+                </select>
+            </div>
+            <textarea id="prompt-input" class="prompt-input" rows="1"
+                      placeholder="Type a prompt to trigger the orchestrator..."></textarea>
+            <button id="btn-send" class="btn-send" title="Send (Enter)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </div>
+    </footer>
 
     <script src="/static/app.js"></script>
 </body>

@@ -12,7 +12,6 @@ import uvicorn
 
 from .app import create_dashboard_app
 from .events import EventBus
-from .instrument import instrument_all
 
 
 def main() -> None:
@@ -23,7 +22,15 @@ def main() -> None:
     args = parser.parse_args()
 
     bus = EventBus.get()
-    instrument_all(bus)
+
+    # Instrument core classes if available (optional, for agent/orchestrator monitoring)
+    try:
+        from .instrument import instrument_all
+
+        instrument_all(bus)
+    except Exception:
+        pass  # Instrumentation is optional
+
     app = create_dashboard_app(bus)
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

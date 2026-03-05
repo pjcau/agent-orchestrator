@@ -10,6 +10,8 @@ node_modules/
 __pycache__/
 *.pyc
 .env
+.env.local
+.env.*
 
 # Python
 *.egg-info/

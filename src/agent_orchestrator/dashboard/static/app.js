@@ -1,4 +1,4 @@
-/** Agent Orchestrator Dashboard — real-time monitoring UI */
+/** Agent Orchestrator Dashboard — real-time monitoring UI with interactive prompt */
 
 (function () {
   "use strict";
@@ -15,6 +15,7 @@
     event_count: 0,
   };
   let events = [];
+  let isRunning = false;
   const MAX_EVENTS = 500;
 
   // --- DOM refs ---
@@ -31,6 +32,15 @@
   const $filterType = document.getElementById("filter-type");
   const $autoScroll = document.getElementById("auto-scroll");
   const $btnClear = document.getElementById("btn-clear");
+
+  // Prompt elements
+  const $promptInput = document.getElementById("prompt-input");
+  const $btnSend = document.getElementById("btn-send");
+  const $promptModel = document.getElementById("prompt-model");
+  const $promptGraph = document.getElementById("prompt-graph");
+  const $responseArea = document.getElementById("response-area");
+  const $responseContent = document.getElementById("response-content");
+  const $btnDismiss = document.getElementById("btn-dismiss-response");
 
   // --- WebSocket ---
   function connect() {
@@ -59,6 +69,93 @@
         handleEvent(payload.data);
       }
     };
+  }
+
+  // --- Load Ollama models ---
+  async function loadModels() {
+    try {
+      const resp = await fetch("/api/models");
+      const data = await resp.json();
+      const models = data.models || [];
+      $promptModel.innerHTML = "";
+      if (!models.length) {
+        $promptModel.innerHTML = '<option value="">No models found</option>';
+        return;
+      }
+      models.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m.name;
+        opt.textContent = `${m.name} (${m.size})`;
+        $promptModel.appendChild(opt);
+      });
+      // Select coding model by default if available
+      const coderModel = models.find((m) => m.name.includes("coder") || m.name.includes("qwen2.5-coder"));
+      if (coderModel) $promptModel.value = coderModel.name;
+    } catch (e) {
+      $promptModel.innerHTML = '<option value="">Failed to load models</option>';
+    }
+  }
+
+  // --- Send prompt ---
+  async function sendPrompt() {
+    const text = $promptInput.value.trim();
+    if (!text || isRunning) return;
+
+    const model = $promptModel.value;
+    const graphType = $promptGraph.value;
+
+    if (!model) {
+      alert("No model selected. Is Ollama running?");
+      return;
+    }
+
+    isRunning = true;
+    $btnSend.disabled = true;
+    $promptInput.disabled = true;
+
+    // Show response area with loading spinner
+    $responseArea.classList.remove("hidden");
+    $responseContent.innerHTML = '<div class="response-loading"><div class="spinner"></div>Running graph...</div>';
+
+    try {
+      const resp = await fetch("/api/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: text, model: model, graph_type: graphType }),
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        renderResponse(data);
+      } else {
+        $responseContent.innerHTML = `<span style="color:var(--red)">Error: ${esc(data.error || "Unknown error")}</span>`;
+      }
+    } catch (e) {
+      $responseContent.innerHTML = `<span style="color:var(--red)">Request failed: ${esc(e.message)}</span>`;
+    } finally {
+      isRunning = false;
+      $btnSend.disabled = false;
+      $promptInput.disabled = false;
+      $promptInput.focus();
+    }
+  }
+
+  function renderResponse(data) {
+    let html = "";
+    const steps = data.steps || [];
+    if (steps.length > 0) {
+      steps.forEach((step) => {
+        html += `<span class="step-label">${esc(step.node)}</span>`;
+        html += `<span class="step-text">${esc(step.output || "")}</span>`;
+      });
+    } else if (data.output) {
+      html = `<span class="step-text">${esc(data.output)}</span>`;
+    }
+    if (data.usage) {
+      html += `<span class="step-label">Usage</span>`;
+      html += `<span class="step-text">${data.usage.input_tokens} in / ${data.usage.output_tokens} out tokens | model: ${esc(data.usage.model || "")}</span>`;
+    }
+    $responseContent.innerHTML = html;
   }
 
   // --- Event handling ---
@@ -353,8 +450,28 @@
     events = [];
   });
 
+  $btnDismiss.addEventListener("click", () => {
+    $responseArea.classList.add("hidden");
+  });
+
+  $btnSend.addEventListener("click", sendPrompt);
+
+  $promptInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendPrompt();
+    }
+  });
+
+  // Auto-resize textarea
+  $promptInput.addEventListener("input", () => {
+    $promptInput.style.height = "auto";
+    $promptInput.style.height = Math.min($promptInput.scrollHeight, 120) + "px";
+  });
+
   // --- Init ---
-  // Load initial events from REST API, then connect WebSocket
+  loadModels();
+
   fetch("/api/events?limit=200")
     .then((r) => r.json())
     .then((data) => {

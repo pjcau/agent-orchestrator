@@ -8,7 +8,11 @@ SOURCE_DIRS="src/|lib/|scripts/|software/"
 
 if echo "$FILE_PATH" | grep -qE "$SOURCE_DIRS"; then
   FILENAME=$(basename "$FILE_PATH")
-  echo "{\"systemMessage\": \"You edited ${FILENAME}. Remember to run tests to verify your changes.\"}"
+  if echo "$FILE_PATH" | grep -q "dashboard"; then
+    echo "{\"systemMessage\": \"You edited ${FILENAME} (dashboard). Run: docker compose run --rm test -- tests/test_dashboard.py to verify.\"}"
+  else
+    echo "{\"systemMessage\": \"You edited ${FILENAME}. Remember to run tests to verify your changes.\"}"
+  fi
 fi
 
 exit 0

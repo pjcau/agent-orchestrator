@@ -59,7 +59,7 @@ services:
       - RUFF_CACHE_DIR=/tmp/ruff-cache
     command: ruff check src/ tests/
 
-  # Dashboard — real-time monitoring UI
+  # Dashboard — real-time monitoring UI with interactive prompt
   dashboard:
     build:
       context: .
@@ -72,6 +72,7 @@ services:
     environment:
       - PYTHONPATH=/workspace/src
       - DATABASE_URL=postgresql://orchestrator:orchestrator@postgres:5432/orchestrator
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
     depends_on:
       postgres:
         condition: service_healthy
