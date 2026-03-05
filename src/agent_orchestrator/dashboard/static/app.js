@@ -359,7 +359,9 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agent, task, model, provider }),
       });
-      const data = await resp.json();
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); } catch (_) { data = { success: false, error: text.slice(0, 200) }; }
 
       if (data.success) {
         addChatBubble("assistant", {

@@ -116,16 +116,22 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         )
         role = agent_info.get("description", "") if agent_info else ""
 
-        result = await run_agent(
-            agent_name=agent_name,
-            task_description=task_desc,
-            provider=provider,
-            role=role,
-            tools=tools,
-            max_steps=max_steps,
-            event_bus=bus,
-        )
-        return JSONResponse(content=result)
+        try:
+            result = await run_agent(
+                agent_name=agent_name,
+                task_description=task_desc,
+                provider=provider,
+                role=role,
+                tools=tools,
+                max_steps=max_steps,
+                event_bus=bus,
+            )
+            return JSONResponse(content=result)
+        except Exception as exc:
+            return JSONResponse(
+                content={"success": False, "error": str(exc)},
+                status_code=500,
+            )
 
     @app.post("/api/skill/invoke")
     async def skill_invoke(body: dict):
