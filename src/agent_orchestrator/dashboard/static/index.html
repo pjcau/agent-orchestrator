@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=026">
+    <link rel="stylesheet" href="/static/style.css?v=031">
 </head>
 <body>
     <header>
@@ -34,6 +34,26 @@
         <section class="panel agents-panel">
             <h2>Agents & Skills</h2>
             <div id="agent-tree" class="agent-tree"></div>
+
+            <h2>Run Agent</h2>
+            <div class="agent-run-panel">
+                <select id="run-agent-select" title="Agent">
+                    <option value="">Select agent...</option>
+                </select>
+                <select id="run-agent-provider" title="Provider">
+                    <option value="ollama">Ollama</option>
+                    <option value="openrouter">OpenRouter</option>
+                </select>
+                <select id="run-agent-model" title="Model">
+                    <option value="">Select model...</option>
+                </select>
+                <textarea id="run-agent-task" class="run-agent-task" rows="2"
+                          placeholder="Describe the task..."></textarea>
+                <div class="run-agent-footer">
+                    <span id="run-agent-cost" class="run-agent-cost"></span>
+                    <button id="btn-run-agent" class="btn-run-agent">Run</button>
+                </div>
+            </div>
 
             <h2>Inter-Agent Messages</h2>
             <div id="agent-messages" class="agent-messages">
@@ -161,6 +181,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=026"></script>
+    <script src="/static/app.js?v=031"></script>
 </body>
 </html>

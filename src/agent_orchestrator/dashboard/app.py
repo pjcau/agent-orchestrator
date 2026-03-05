@@ -19,9 +19,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .agent_runner import create_skill_registry, run_agent
 from .agents_registry import get_agent_registry
 from .events import Event, EventBus, EventType
 from .graphs import (
+    _make_provider,
     get_last_run_info,
     list_ollama_models,
     list_openrouter_models,
@@ -61,6 +63,165 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/agents")
     async def agents():
         return JSONResponse(content=get_agent_registry())
+
+    # --- Agent Execution (v0.3.0) ---
+
+    @app.get("/api/agent/config")
+    async def agent_config():
+        """Return agent configs with available skills and tools for the UI."""
+        registry = get_agent_registry()
+        skill_reg = create_skill_registry()
+        skills_info = [
+            {"name": s, "description": skill_reg.get(s).description if skill_reg.get(s) else ""}
+            for s in skill_reg.list_skills()
+        ]
+        return JSONResponse(
+            content={
+                "agents": registry.get("agents", []),
+                "skills": skills_info,
+            }
+        )
+
+    @app.post("/api/agent/run")
+    async def agent_run(body: dict):
+        """Run an agent on a task with real-time events."""
+        agent_name = body.get("agent", "").strip()
+        task_desc = body.get("task", "").strip()
+        model = body.get("model", "")
+        provider_type = body.get("provider", "ollama")
+        tools = body.get("tools")  # list[str] or None = all
+        max_steps = body.get("max_steps", 10)
+
+        if not agent_name or not task_desc:
+            return JSONResponse(
+                content={"success": False, "error": "Agent name and task required"},
+                status_code=400,
+            )
+        if not model:
+            return JSONResponse(
+                content={"success": False, "error": "No model selected"},
+                status_code=400,
+            )
+
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+        provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
+
+        # Get role from agent registry
+        registry = get_agent_registry()
+        agent_info = next(
+            (a for a in registry.get("agents", []) if a["name"] == agent_name),
+            None,
+        )
+        role = agent_info.get("description", "") if agent_info else ""
+
+        result = await run_agent(
+            agent_name=agent_name,
+            task_description=task_desc,
+            provider=provider,
+            role=role,
+            tools=tools,
+            max_steps=max_steps,
+            event_bus=bus,
+        )
+        return JSONResponse(content=result)
+
+    @app.post("/api/skill/invoke")
+    async def skill_invoke(body: dict):
+        """Invoke a skill directly (without an agent)."""
+        skill_name = body.get("skill", "").strip()
+        params = body.get("params", {})
+
+        if not skill_name:
+            return JSONResponse(
+                content={"success": False, "error": "Skill name required"},
+                status_code=400,
+            )
+
+        skill_reg = create_skill_registry(
+            allowed_commands=[
+                "ls",
+                "cat",
+                "head",
+                "tail",
+                "wc",
+                "grep",
+                "find",
+                "python",
+                "python3",
+                "pytest",
+                "ruff",
+                "git",
+            ]
+        )
+        result = await skill_reg.execute(skill_name, params)
+
+        # Emit tool call event
+        await bus.emit(
+            Event(
+                event_type=EventType.AGENT_TOOL_CALL,
+                agent_name="manual",
+                data={
+                    "tool_name": skill_name,
+                    "arguments": {k: str(v)[:200] for k, v in params.items()},
+                },
+            )
+        )
+        await bus.emit(
+            Event(
+                event_type=EventType.AGENT_TOOL_RESULT,
+                agent_name="manual",
+                data={
+                    "tool_name": skill_name,
+                    "success": result.success,
+                    "output": str(result)[:500],
+                },
+            )
+        )
+
+        return JSONResponse(
+            content={
+                "success": result.success,
+                "output": str(result.output)[:5000] if result.output else "",
+                "error": result.error,
+            }
+        )
+
+    @app.post("/api/cost/preview")
+    async def cost_preview(body: dict):
+        """Estimate cost for running an agent task."""
+        model = body.get("model", "")
+        provider_type = body.get("provider", "ollama")
+        max_steps = body.get("max_steps", 10)
+
+        if provider_type == "ollama":
+            return JSONResponse(
+                content={
+                    "estimated_cost_usd": 0.0,
+                    "provider": "ollama",
+                    "note": "Local models are free",
+                }
+            )
+
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+        provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
+
+        # Rough estimate: ~2000 input + ~500 output tokens per step
+        est_input = 2000 * max_steps
+        est_output = 500 * max_steps
+        est_cost = provider.estimate_cost(est_input, est_output)
+
+        return JSONResponse(
+            content={
+                "estimated_cost_usd": round(est_cost, 6),
+                "estimated_input_tokens": est_input,
+                "estimated_output_tokens": est_output,
+                "model": model,
+                "max_steps": max_steps,
+            }
+        )
 
     # --- Models: Ollama + OpenRouter ---
 

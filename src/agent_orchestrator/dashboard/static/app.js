@@ -72,6 +72,12 @@
   const $fileBreadcrumb = $("file-breadcrumb");
   const $btnClosePicker = $("btn-close-picker");
   const $btnResetGraph = $("btn-reset-graph");
+  const $runAgentSelect = $("run-agent-select");
+  const $runAgentProvider = $("run-agent-provider");
+  const $runAgentModel = $("run-agent-model");
+  const $runAgentTask = $("run-agent-task");
+  const $runAgentCost = $("run-agent-cost");
+  const $btnRunAgent = $("btn-run-agent");
 
   // --- Event WebSocket ---
   function connect() {
@@ -114,6 +120,7 @@
       const data = await resp.json();
       allModels = data;
       updateModelSelector();
+      updateRunAgentModels();
       updateCompareSelectors();
       renderOllamaModelList();
     } catch (e) {
@@ -183,7 +190,7 @@
   function renderAgentNode(agent, isLead) {
     const status = getAgentStatus(agent.name);
     const skills = (agent.skills || [])
-      .map((sk) => `<span class="skill-tag${activeSkills.has(sk) ? " active" : ""}">${esc(sk)}</span>`)
+      .map((sk) => `<span class="skill-tag${activeSkills.has(sk) ? " active" : ""}" onclick="window._invokeSkill('${sk}')" title="Click to invoke">${esc(sk)}</span>`)
       .join("");
     return `
       <div class="agent-node ${isLead ? "lead" : ""} ${status}">
@@ -282,6 +289,134 @@
       $btnOllamaPull.textContent = "Pull";
     }
   }
+
+  // --- Agent Execution (v0.3.0) ---
+  async function loadAgentConfig() {
+    try {
+      const resp = await fetch("/api/agent/config");
+      const data = await resp.json();
+      $runAgentSelect.innerHTML = '<option value="">Select agent...</option>';
+      (data.agents || []).forEach((a) => {
+        const opt = document.createElement("option");
+        opt.value = a.name;
+        opt.textContent = a.name;
+        $runAgentSelect.appendChild(opt);
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  function updateRunAgentModels() {
+    const provider = $runAgentProvider.value;
+    const models = (provider === "openrouter" ? allModels.openrouter : allModels.ollama) || [];
+    $runAgentModel.innerHTML = "";
+    if (!models.length) {
+      $runAgentModel.innerHTML = '<option value="">No models</option>';
+      return;
+    }
+    models.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m.name;
+      opt.textContent = `${m.name} (${m.size})`;
+      $runAgentModel.appendChild(opt);
+    });
+    updateCostPreview();
+  }
+
+  async function updateCostPreview() {
+    const model = $runAgentModel.value;
+    const provider = $runAgentProvider.value;
+    if (!model) { $runAgentCost.textContent = ""; return; }
+    if (provider === "ollama") { $runAgentCost.textContent = "Free (local)"; return; }
+    try {
+      const resp = await fetch("/api/cost/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, provider, max_steps: 10 }),
+      });
+      const data = await resp.json();
+      $runAgentCost.textContent = `~$${data.estimated_cost_usd.toFixed(4)}`;
+    } catch (e) { $runAgentCost.textContent = ""; }
+  }
+
+  async function runAgent() {
+    const agent = $runAgentSelect.value;
+    const task = $runAgentTask.value.trim();
+    const model = $runAgentModel.value;
+    const provider = $runAgentProvider.value;
+
+    if (!agent || !task || !model) {
+      alert("Select an agent, model, and describe a task.");
+      return;
+    }
+
+    $btnRunAgent.disabled = true;
+    $btnRunAgent.textContent = "Running...";
+    addSystemBubble(`Agent ${agent} starting on: ${task.slice(0, 80)}...`);
+
+    try {
+      const resp = await fetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent, task, model, provider }),
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        addChatBubble("assistant", {
+          steps: [{ node: `${agent} (agent)`, output: data.output }],
+          usage: { output_tokens: data.total_tokens, model },
+          elapsed_s: data.elapsed_s,
+        });
+      } else {
+        addChatBubble("assistant", `Agent ${data.status}: ${data.error || data.output || "Failed"}`);
+      }
+    } catch (e) {
+      addChatBubble("assistant", `Agent run failed: ${e.message}`);
+    }
+
+    $btnRunAgent.disabled = false;
+    $btnRunAgent.textContent = "Run";
+    $runAgentTask.value = "";
+  }
+
+  // --- Skill invocation ---
+  window._invokeSkill = async function (skillName) {
+    const params = {};
+    if (skillName === "file_read") {
+      const path = prompt("File path to read:");
+      if (!path) return;
+      params.file_path = path;
+    } else if (skillName === "glob_search") {
+      const pattern = prompt("Glob pattern (e.g. **/*.py):");
+      if (!pattern) return;
+      params.pattern = pattern;
+    } else if (skillName === "shell_exec") {
+      const cmd = prompt("Shell command:");
+      if (!cmd) return;
+      params.command = cmd;
+    } else {
+      alert("Use the agent to invoke this skill.");
+      return;
+    }
+
+    addSystemBubble(`Invoking skill: ${skillName}`);
+
+    try {
+      const resp = await fetch("/api/skill/invoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skill: skillName, params }),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        addChatBubble("assistant", data.output.slice(0, 3000));
+      } else {
+        addChatBubble("assistant", `Skill error: ${data.error}`);
+      }
+    } catch (e) {
+      addChatBubble("assistant", `Skill invocation failed: ${e.message}`);
+    }
+  };
 
   // --- Presets ---
   async function loadPresets() {
@@ -850,6 +985,23 @@
       activeSkills.add(evt.data.tool_name);
       renderAgentTree();
       setTimeout(() => { activeSkills.delete(evt.data.tool_name); renderAgentTree(); }, 3000);
+      // Show tool call in chat
+      const tcEl = document.createElement("div");
+      tcEl.className = "chat-bubble tool-call";
+      tcEl.innerHTML = `<div class="tool-call-header">${esc(evt.agent_name)} &rarr; ${esc(evt.data.tool_name)}</div><pre class="tool-call-args">${esc(JSON.stringify(evt.data.arguments || {}, null, 2))}</pre>`;
+      tcEl.id = `tc-${evt.data.tool_call_id || ""}`;
+      $chatMessages.appendChild(tcEl);
+      $chatMessages.scrollTop = $chatMessages.scrollHeight;
+    }
+    if (evt.event_type === "agent.tool_result" && evt.data.tool_call_id) {
+      const tcEl = $(`tc-${evt.data.tool_call_id}`);
+      if (tcEl) {
+        const resEl = document.createElement("div");
+        resEl.className = `tool-call-result ${evt.data.success ? "success" : "error"}`;
+        resEl.textContent = truncate(evt.data.output || "", 300);
+        tcEl.appendChild(resEl);
+        $chatMessages.scrollTop = $chatMessages.scrollHeight;
+      }
     }
     $timeline.scrollTop = $timeline.scrollHeight;
   }
@@ -965,6 +1117,9 @@
   $ollamaPullInput.addEventListener("keydown", (e) => { if (e.key === "Enter") pullModel(); });
   $btnCompare.addEventListener("click", runComparison);
   $btnResetGraph.addEventListener("click", resetGraph);
+  $btnRunAgent.addEventListener("click", runAgent);
+  $runAgentProvider.addEventListener("change", updateRunAgentModels);
+  $runAgentModel.addEventListener("change", updateCostPreview);
 
   // --- Streaming WebSocket message handler ---
   function setupStreamHandler() {
@@ -1001,6 +1156,7 @@
   loadModels();
   loadAgents();
   loadPresets();
+  loadAgentConfig();
   startNewConversation();
 
   fetch("/api/events?limit=200")

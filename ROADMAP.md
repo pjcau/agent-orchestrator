@@ -71,25 +71,25 @@ Multi-agent orchestration visible in the dashboard.
 - [x] **Graph reset**: clear all agent/task/event state from the dashboard
 - [x] **Node replay**: re-run any completed node from the last graph execution
 - [x] **Last run context**: stored for replay — provider, graph, state per step
-- [x] **83 tests total**
+- [x] **83 tests passing**
 
 ---
 
-## v0.3.0 — Agent Execution
+## Completed (v0.3.0 — Agent Execution)
 
 Real agent execution through the dashboard, not just graph nodes.
 
 ### Local (Ollama)
-- [ ] **Live agent execution**: agents run tasks via local LLM (qwen2.5-coder, deepseek-r1)
-- [ ] **Agent spawning from dashboard**: select agent + Ollama model, assign a task, watch it work
-- [ ] **Tool call visualization**: see each tool call/result in real-time (file edits, shell commands)
-- [ ] **Skill invocation UI**: trigger skills manually from the dashboard
-- [ ] **Per-agent model assignment**: pick different Ollama models per agent role
+- [x] **Live agent execution**: agents run tasks via local LLM (qwen2.5-coder, deepseek-r1)
+- [x] **Agent spawning from dashboard**: select agent + Ollama model, assign a task, watch it work
+- [x] **Tool call visualization**: see each tool call/result in real-time (file edits, shell commands)
+- [x] **Skill invocation UI**: trigger skills manually from the dashboard (clickable skill tags)
+- [x] **Per-agent model assignment**: pick different Ollama models per agent role
 
 ### Cloud (OpenRouter)
-- [ ] **Cloud agent execution**: same agents run on cloud models (Qwen 3.5 Plus, DeepSeek V3, Llama 4)
-- [ ] **Provider toggle per agent**: switch agent between Ollama and OpenRouter in one click
-- [ ] **Cost preview**: show estimated cost before running a cloud agent task
+- [x] **Cloud agent execution**: same agents run on cloud models (Qwen 3.5 Plus, DeepSeek V3, Llama 4)
+- [x] **Provider toggle per agent**: switch agent between Ollama and OpenRouter in one click
+- [x] **Cost preview**: show estimated cost before running a cloud agent task
 - [ ] **Token budget per task**: set max tokens before execution starts (cloud-only safeguard)
 
 ## v0.4.0 — Multi-Agent Cooperation
