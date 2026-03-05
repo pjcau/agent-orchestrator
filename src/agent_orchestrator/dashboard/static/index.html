@@ -39,9 +39,18 @@
             <div id="agent-messages" class="agent-messages">
                 <div class="empty-state">No messages yet</div>
             </div>
+
+            <h2>Ollama Models</h2>
+            <div class="ollama-mgmt">
+                <div class="ollama-pull-bar">
+                    <input id="ollama-pull-input" type="text" placeholder="model name..." />
+                    <button id="btn-ollama-pull" title="Pull model">Pull</button>
+                </div>
+                <div id="ollama-model-list" class="ollama-model-list"></div>
+            </div>
         </section>
 
-        <!-- Center: Chat + Graph -->
+        <!-- Center: Graph + Chat -->
         <section class="panel center-panel">
             <!-- Graph visualization -->
             <div class="graph-section">
@@ -51,21 +60,42 @@
                 </div>
             </div>
 
+            <!-- Presets bar -->
+            <div class="presets-bar" id="presets-bar"></div>
+
+            <!-- File context bar -->
+            <div class="file-context-bar" id="file-context-bar">
+                <div class="file-context-header">
+                    <span class="file-context-label">File Context</span>
+                    <button id="btn-attach-file" class="btn-attach" title="Attach file">+ File</button>
+                    <button id="btn-clear-context" class="btn-clear-context" title="Clear context">Clear</button>
+                </div>
+                <div id="attached-files" class="attached-files"></div>
+            </div>
+
             <!-- Chat area -->
             <div class="chat-section">
                 <div id="chat-messages" class="chat-messages"></div>
                 <div class="chat-input-bar">
                     <div class="chat-settings">
-                        <select id="prompt-model" title="Ollama model">
+                        <select id="prompt-provider" title="Provider">
+                            <option value="ollama">Ollama (local)</option>
+                            <option value="openrouter">OpenRouter (cloud)</option>
+                        </select>
+                        <select id="prompt-model" title="Model">
                             <option value="">Loading...</option>
                         </select>
                         <select id="prompt-graph" title="Graph type">
                             <option value="auto">Auto</option>
-                            <option value="review">Code Review</option>
                             <option value="chat">Chat</option>
+                            <option value="review">Code Review</option>
                             <option value="chain">Analyze+Fix</option>
                             <option value="parallel">Parallel</option>
                         </select>
+                        <label class="stream-toggle">
+                            <input id="toggle-stream" type="checkbox" checked />
+                            <span>Stream</span>
+                        </label>
                     </div>
                     <textarea id="prompt-input" class="chat-input" rows="1"
                               placeholder="Type a prompt..."></textarea>
@@ -90,6 +120,7 @@
                     <option value="cooperation">Coop</option>
                 </select>
                 <button id="btn-clear">Clear</button>
+                <button id="btn-new-chat" title="New conversation">New Chat</button>
             </div>
             <div id="timeline" class="timeline"></div>
 
@@ -97,8 +128,34 @@
             <div id="detail-view" class="detail-view">
                 <div class="empty-state">Click a graph node or event</div>
             </div>
+
+            <!-- Model Comparison -->
+            <h2>Compare</h2>
+            <div class="compare-section">
+                <div class="compare-controls">
+                    <select id="compare-model-a" class="compare-select"></select>
+                    <span class="compare-vs">vs</span>
+                    <select id="compare-model-b" class="compare-select"></select>
+                    <button id="btn-compare" class="btn-compare">Go</button>
+                </div>
+                <div id="compare-results" class="compare-results">
+                    <div class="empty-state">Select 2 models and click Go</div>
+                </div>
+            </div>
         </section>
     </main>
+
+    <!-- File picker modal -->
+    <div id="file-picker-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select File</h3>
+                <button id="btn-close-picker" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-breadcrumb" id="file-breadcrumb"></div>
+            <div class="file-list" id="file-list"></div>
+        </div>
+    </div>
 
     <script src="/static/app.js"></script>
 </body>

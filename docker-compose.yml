@@ -73,6 +73,7 @@ services:
       - PYTHONPATH=/workspace/src
       - DATABASE_URL=postgresql://orchestrator:orchestrator@postgres:5432/orchestrator
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

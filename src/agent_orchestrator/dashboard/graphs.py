@@ -13,8 +13,29 @@ import httpx
 
 from ..core.graph import END, START, StateGraph
 from ..core.llm_nodes import llm_node
+from ..core.provider import Provider
 from ..providers.local import LocalProvider
+from ..providers.openrouter import OpenRouterProvider
 from .events import Event, EventBus, EventType
+
+
+async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
+    """Return available OpenRouter models (curated list with pricing)."""
+    if not api_key:
+        return []
+
+    # Return curated list of popular models with known pricing
+    return [
+        {"name": "anthropic/claude-sonnet-4", "size": "$3/$15", "provider": "openrouter"},
+        {"name": "anthropic/claude-haiku-4", "size": "$0.8/$4", "provider": "openrouter"},
+        {"name": "openai/gpt-4o", "size": "$2.5/$10", "provider": "openrouter"},
+        {"name": "openai/gpt-4o-mini", "size": "$0.15/$0.6", "provider": "openrouter"},
+        {"name": "google/gemini-2.5-flash-preview", "size": "$0.15/$0.6", "provider": "openrouter"},
+        {"name": "deepseek/deepseek-chat-v3", "size": "$0.27/$1.1", "provider": "openrouter"},
+        {"name": "meta-llama/llama-4-maverick", "size": "$0.2/$0.6", "provider": "openrouter"},
+        {"name": "qwen/qwen3-235b-a22b", "size": "$0.2/$0.6", "provider": "openrouter"},
+        {"name": "qwen/qwen3.5-plus-02-15", "size": "$0.3/$1.2", "provider": "openrouter"},
+    ]
 
 
 async def list_ollama_models(ollama_url: str) -> list[dict[str, str]]:
@@ -40,8 +61,15 @@ async def list_ollama_models(ollama_url: str) -> list[dict[str, str]]:
         return []
 
 
-def _make_provider(model: str, ollama_url: str) -> LocalProvider:
-    """Create a LocalProvider pointing at the given Ollama instance."""
+def _make_provider(
+    model: str,
+    provider_type: str = "ollama",
+    ollama_url: str = "",
+    openrouter_key: str = "",
+) -> Provider:
+    """Create a provider based on type."""
+    if provider_type == "openrouter":
+        return OpenRouterProvider(model=model, api_key=openrouter_key)
     return LocalProvider(
         model=model,
         base_url=f"{ollama_url}/v1",
@@ -52,12 +80,16 @@ def _make_provider(model: str, ollama_url: str) -> LocalProvider:
 async def run_graph(
     prompt: str,
     model: str,
-    graph_type: str,
-    ollama_url: str,
-    event_bus: EventBus,
+    provider_type: str = "ollama",
+    graph_type: str = "auto",
+    ollama_url: str = "",
+    openrouter_key: str = "",
+    event_bus: EventBus | None = None,
 ) -> dict[str, Any]:
     """Build and execute a graph, returning the result."""
-    provider = _make_provider(model, ollama_url)
+    provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
+    if event_bus is None:
+        event_bus = EventBus.get()
 
     builders = {
         "auto": _build_auto_graph,
@@ -148,7 +180,7 @@ async def run_graph(
 # --- Graph Builders ---
 
 
-def _build_chat_graph(provider: LocalProvider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
+def _build_chat_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
     """Simple single-node chat."""
     respond = llm_node(
         provider=provider,
@@ -165,7 +197,7 @@ def _build_chat_graph(provider: LocalProvider, prompt: str) -> tuple[StateGraph,
     return graph, {"input": prompt}
 
 
-def _build_review_graph(provider: LocalProvider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
+def _build_review_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
     """Code review: analyze code quality, security, and suggest fixes."""
     review = llm_node(
         provider=provider,
@@ -182,7 +214,7 @@ def _build_review_graph(provider: LocalProvider, prompt: str) -> tuple[StateGrap
     return graph, {"code": prompt}
 
 
-def _build_chain_graph(provider: LocalProvider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
+def _build_chain_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
     """Two-step chain: analyze then fix."""
     analyze = llm_node(
         provider=provider,
@@ -210,9 +242,7 @@ def _build_chain_graph(provider: LocalProvider, prompt: str) -> tuple[StateGraph
     return graph, {"code": prompt}
 
 
-def _build_parallel_graph(
-    provider: LocalProvider, prompt: str
-) -> tuple[StateGraph, dict[str, Any]]:
+def _build_parallel_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
     """Parallel review: security + performance run simultaneously, then summarize."""
     security = llm_node(
         provider=provider,
@@ -250,7 +280,7 @@ def _build_parallel_graph(
     return graph, {"code": prompt}
 
 
-def _build_auto_graph(provider: LocalProvider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
+def _build_auto_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
     """Auto-routing: classify the prompt then route to the right handler."""
     classify = llm_node(
         provider=provider,
