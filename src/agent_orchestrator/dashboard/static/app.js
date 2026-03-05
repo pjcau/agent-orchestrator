@@ -71,6 +71,7 @@
   const $fileList = $("file-list");
   const $fileBreadcrumb = $("file-breadcrumb");
   const $btnClosePicker = $("btn-close-picker");
+  const $btnResetGraph = $("btn-reset-graph");
 
   // --- Event WebSocket ---
   function connect() {
@@ -705,7 +706,13 @@
         const state = graphNodeStates[name] || "";
         const display = name === "__start__" ? "START" : name === "__end__" ? "END" : name;
         const special = name === "__start__" ? "start" : name === "__end__" ? "end" : "";
-        html += `<div class="gnode ${state} ${special}" onclick="window._showNodeDetail('${esc(name)}')"><div class="gnode-box">${esc(display)}</div></div>`;
+        const isReplayable = !special && state === "done";
+        html += `<div class="gnode ${state} ${special}" onclick="window._showNodeDetail('${esc(name)}')">`;
+        html += `<div class="gnode-box">${esc(display)}</div>`;
+        if (isReplayable) {
+          html += `<div class="gnode-actions"><button class="btn-replay" onclick="event.stopPropagation(); window._replayNode('${esc(name)}')">replay</button></div>`;
+        }
+        html += `</div>`;
       });
       html += "</div>";
       if (idx < layers.length - 1) html += '<div class="graph-connector"><span class="graph-arrow">&darr;</span></div>';
@@ -749,6 +756,70 @@
     });
     $detailView.innerHTML = html;
   };
+
+  // --- Replay Node ---
+  window._replayNode = async function (name) {
+    if (isRunning) return;
+    isRunning = true;
+
+    // Mark node as active during replay
+    graphNodeStates[name] = "active";
+    renderGraph();
+
+    addSystemBubble(`Replaying node: ${name}...`);
+
+    try {
+      const resp = await fetch("/api/graph/replay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node: name }),
+      });
+      const data = await resp.json();
+
+      graphNodeStates[name] = "done";
+      renderGraph();
+
+      if (data.success) {
+        addChatBubble("assistant", {
+          steps: [{ node: `${name} (replay)`, output: data.output }],
+          elapsed_s: data.elapsed_s,
+        });
+      } else {
+        addChatBubble("assistant", `Replay error: ${data.error || "Unknown"}`);
+      }
+    } catch (e) {
+      graphNodeStates[name] = "done";
+      renderGraph();
+      addChatBubble("assistant", `Replay failed: ${e.message}`);
+    }
+
+    isRunning = false;
+  };
+
+  // --- Reset Graph ---
+  async function resetGraph() {
+    try {
+      await fetch("/api/graph/reset", { method: "POST" });
+      // Clear local state
+      snapshot.agents = {};
+      snapshot.tasks = [];
+      snapshot.orchestrator_status = "idle";
+      snapshot.graph = { nodes: [], edges: [] };
+      snapshot.total_tokens = 0;
+      snapshot.total_cost_usd = 0;
+      graphNodeStates = {};
+      events = [];
+      $timeline.innerHTML = "";
+      renderHeader();
+      renderGraph();
+      renderAgentTree();
+      renderAgentMessages();
+      $detailView.innerHTML = '<div class="empty-state">Click a graph node or event</div>';
+      addSystemBubble("Graph state reset");
+    } catch (e) {
+      alert("Reset failed: " + e.message);
+    }
+  }
 
   // --- Event handling ---
   function handleEvent(evt) {
@@ -893,6 +964,7 @@
   $btnOllamaPull.addEventListener("click", pullModel);
   $ollamaPullInput.addEventListener("keydown", (e) => { if (e.key === "Enter") pullModel(); });
   $btnCompare.addEventListener("click", runComparison);
+  $btnResetGraph.addEventListener("click", resetGraph);
 
   // --- Streaming WebSocket message handler ---
   function setupStreamHandler() {

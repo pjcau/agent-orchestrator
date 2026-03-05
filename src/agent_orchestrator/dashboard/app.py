@@ -21,7 +21,13 @@ from fastapi.staticfiles import StaticFiles
 
 from .agents_registry import get_agent_registry
 from .events import Event, EventBus, EventType
-from .graphs import list_ollama_models, list_openrouter_models, run_graph
+from .graphs import (
+    get_last_run_info,
+    list_ollama_models,
+    list_openrouter_models,
+    replay_node,
+    run_graph,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -310,6 +316,43 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 )
 
         return JSONResponse(content=result)
+
+    # --- Graph control: Reset + Replay Node ---
+
+    @app.post("/api/graph/reset")
+    async def graph_reset():
+        """Clear all event history and agent/task state."""
+        bus._history.clear()
+        for q in bus._subscribers:
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except Exception:
+                    break
+        # Notify clients
+        await bus.emit(
+            Event(
+                event_type=EventType.ORCHESTRATOR_END,
+                data={"success": True, "reset": True},
+            )
+        )
+        return JSONResponse(content={"success": True})
+
+    @app.post("/api/graph/replay")
+    async def graph_replay(body: dict):
+        """Replay a single node from the last graph run."""
+        node_name = body.get("node", "").strip()
+        if not node_name:
+            return JSONResponse(
+                content={"success": False, "error": "No node specified"}, status_code=400
+            )
+        result = await replay_node(node_name=node_name, event_bus=bus)
+        return JSONResponse(content=result)
+
+    @app.get("/api/graph/last-run")
+    async def graph_last_run():
+        """Get info about the last graph execution."""
+        return JSONResponse(content=get_last_run_info())
 
     # --- Streaming via WebSocket ---
 

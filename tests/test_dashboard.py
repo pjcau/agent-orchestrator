@@ -10,7 +10,13 @@ from agent_orchestrator.dashboard.instrument import (
     _instrument_graph,
     _instrument_cooperation,
 )
-from agent_orchestrator.dashboard.graphs import _agent_node, _build_team_graph
+from agent_orchestrator.dashboard.graphs import (
+    _agent_node,
+    _build_team_graph,
+    _last_run,
+    get_last_run_info,
+    replay_node,
+)
 from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
 from agent_orchestrator.core.skill import SkillRegistry
 from agent_orchestrator.core.cooperation import (
@@ -616,5 +622,103 @@ class TestTeamGraph:
             assert "frontend-dev" in agents_assigned
             for a in assignments:
                 assert a.data["from_agent"] == "team-lead"
+        finally:
+            EventBus._instance = old_instance
+
+
+# ===== Replay Node =====
+
+
+class TestReplayNode:
+    @pytest.mark.asyncio
+    async def test_replay_no_previous_run(self):
+        """replay_node should fail if no previous run exists."""
+        bus = EventBus()
+        # Clear last run
+        _last_run["result"] = None
+        _last_run["compiled"] = None
+        result = await replay_node("some-node", event_bus=bus)
+        assert not result["success"]
+        assert "No previous run" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_replay_unknown_node(self):
+        """replay_node should fail for a node not in the last run."""
+        bus = EventBus()
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(provider, "test")
+            compiled = graph.compile()
+            result = await compiled.invoke(initial_state)
+
+            # Store in _last_run manually
+            _last_run["result"] = result
+            _last_run["compiled"] = compiled
+            _last_run["model"] = "mock-1"
+
+            replay_result = await replay_node("nonexistent-node", event_bus=bus)
+            assert not replay_result["success"]
+            assert "not found" in replay_result["error"]
+        finally:
+            EventBus._instance = old_instance
+
+    @pytest.mark.asyncio
+    async def test_replay_valid_node(self):
+        """replay_node should re-run a node and return its output."""
+        bus = EventBus()
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(provider, "Build API")
+            compiled = graph.compile()
+            result = await compiled.invoke(initial_state)
+
+            _last_run["result"] = result
+            _last_run["compiled"] = compiled
+            _last_run["model"] = "mock-1"
+
+            replay_result = await replay_node("backend-dev", event_bus=bus)
+            assert replay_result["success"]
+            assert replay_result["node"] == "backend-dev"
+            assert replay_result["replay"] is True
+            assert "output" in replay_result
+        finally:
+            EventBus._instance = old_instance
+
+
+# ===== Get Last Run Info =====
+
+
+class TestGetLastRunInfo:
+    def test_no_previous_run(self):
+        _last_run["result"] = None
+        info = get_last_run_info()
+        assert not info["has_run"]
+
+    @pytest.mark.asyncio
+    async def test_with_previous_run(self):
+        bus = EventBus()
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(provider, "test prompt")
+            compiled = graph.compile()
+            result = await compiled.invoke(initial_state)
+
+            _last_run["result"] = result
+            _last_run["compiled"] = compiled
+            _last_run["model"] = "mock-1"
+            _last_run["graph_type"] = "team"
+            _last_run["prompt"] = "test prompt"
+
+            info = get_last_run_info()
+            assert info["has_run"]
+            assert info["model"] == "mock-1"
+            assert info["graph_type"] == "team"
+            assert len(info["nodes"]) >= 3
         finally:
             EventBus._instance = old_instance

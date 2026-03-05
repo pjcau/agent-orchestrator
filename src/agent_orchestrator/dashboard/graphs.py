@@ -78,6 +78,21 @@ def _make_provider(
     )
 
 
+# Last run context for replay functionality
+_last_run: dict[str, Any] = {
+    "compiled": None,
+    "graph": None,
+    "provider": None,
+    "result": None,
+    "model": "",
+    "provider_type": "",
+    "graph_type": "",
+    "prompt": "",
+    "ollama_url": "",
+    "openrouter_key": "",
+}
+
+
 async def run_graph(
     prompt: str,
     model: str,
@@ -118,6 +133,18 @@ async def run_graph(
     result = await compiled.invoke(initial_state)
     elapsed = time.time() - start_time
 
+    # Store last run for replay
+    _last_run["compiled"] = compiled
+    _last_run["graph"] = graph
+    _last_run["provider"] = provider
+    _last_run["result"] = result
+    _last_run["model"] = model
+    _last_run["provider_type"] = provider_type
+    _last_run["graph_type"] = graph_type
+    _last_run["prompt"] = prompt
+    _last_run["ollama_url"] = ollama_url
+    _last_run["openrouter_key"] = openrouter_key
+
     # Emit graph end event
     await event_bus.emit(
         Event(
@@ -130,37 +157,10 @@ async def run_graph(
         return {"success": False, "error": result.error}
 
     # Build step outputs for the response
-    steps = []
-    for step in result.steps:
-        node_name = step.node
-        # Find the output key(s) that changed
-        diff = {}
-        for k, v in step.state_after.items():
-            if k.startswith("_"):
-                continue
-            before_val = step.state_before.get(k)
-            if v != before_val:
-                diff[k] = v
-        output_text = "\n".join(str(v) for v in diff.values()) if diff else ""
-        steps.append({"node": node_name, "output": output_text})
+    steps = _extract_steps(result)
 
     # Aggregate usage
-    usage_info = result.state.get("_usage", {})
-    usage = {
-        "model": model,
-        "input_tokens": usage_info.get("input_tokens", 0),
-        "output_tokens": usage_info.get("output_tokens", 0),
-    }
-
-    # Also collect usage from all steps
-    total_in = 0
-    total_out = 0
-    for step in result.steps:
-        step_usage = step.state_after.get("_usage", {})
-        total_in += step_usage.get("input_tokens", 0)
-        total_out += step_usage.get("output_tokens", 0)
-    usage["input_tokens"] = max(usage["input_tokens"], total_in)
-    usage["output_tokens"] = max(usage["output_tokens"], total_out)
+    usage = _aggregate_usage(result, model)
 
     # Emit token update
     await event_bus.emit(
@@ -177,6 +177,162 @@ async def run_graph(
         "usage": usage,
         "elapsed_s": round(elapsed, 2),
     }
+
+
+async def replay_node(
+    node_name: str,
+    event_bus: EventBus | None = None,
+) -> dict[str, Any]:
+    """Re-run a single node from the last graph execution."""
+    if event_bus is None:
+        event_bus = EventBus.get()
+
+    result = _last_run.get("result")
+    compiled = _last_run.get("compiled")
+
+    if not result or not compiled:
+        return {"success": False, "error": "No previous run to replay from"}
+
+    # Find the step for this node to get its state_before
+    # Parallel nodes are stored as "node_a,node_b" in step.node
+    target_step = None
+    for step in result.steps:
+        step_nodes = [n.strip() for n in step.node.split(",")]
+        if node_name in step_nodes:
+            target_step = step
+            break
+
+    if not target_step:
+        return {"success": False, "error": f"Node '{node_name}' not found in last run"}
+
+    # Get the node function (NodeConfig has .func attribute)
+    node_config = compiled._nodes.get(node_name)
+    if not node_config:
+        return {"success": False, "error": f"Node function '{node_name}' not found"}
+    node_fn = node_config.func
+
+    # Emit replay events
+    graph_info = compiled.get_graph_info()
+    await event_bus.emit(
+        Event(
+            event_type=EventType.GRAPH_START,
+            data={"nodes": graph_info["nodes"], "edges": graph_info["edges"]},
+        )
+    )
+    await event_bus.emit(
+        Event(
+            event_type=EventType.GRAPH_NODE_ENTER,
+            node_name=node_name,
+            data={"replay": True},
+        )
+    )
+
+    # Re-run the node with its original input state
+    start_time = time.time()
+    try:
+        state_before = dict(target_step.state_before)
+        new_output = await node_fn(state_before)
+        elapsed = time.time() - start_time
+
+        await event_bus.emit(
+            Event(
+                event_type=EventType.GRAPH_NODE_EXIT,
+                node_name=node_name,
+                data={"replay": True},
+            )
+        )
+        await event_bus.emit(
+            Event(
+                event_type=EventType.GRAPH_END,
+                data={"success": True, "elapsed_s": round(elapsed, 2), "replay": True},
+            )
+        )
+
+        # Build output diff
+        diff = {}
+        for k, v in new_output.items():
+            if not k.startswith("_"):
+                diff[k] = v
+        output_text = "\n".join(str(v) for v in diff.values()) if diff else ""
+
+        return {
+            "success": True,
+            "node": node_name,
+            "output": output_text,
+            "elapsed_s": round(elapsed, 2),
+            "replay": True,
+        }
+    except Exception as e:
+        elapsed = time.time() - start_time
+        await event_bus.emit(
+            Event(
+                event_type=EventType.GRAPH_END,
+                data={
+                    "success": False,
+                    "elapsed_s": round(elapsed, 2),
+                    "error": str(e),
+                },
+            )
+        )
+        return {"success": False, "error": str(e)}
+
+
+def get_last_run_info() -> dict[str, Any]:
+    """Return info about the last graph run (for the UI)."""
+    result = _last_run.get("result")
+    if not result:
+        return {"has_run": False}
+
+    nodes = []
+    for step in result.steps:
+        # Parallel nodes are stored as "node_a,node_b"
+        for n in step.node.split(","):
+            nodes.append({"node": n.strip(), "has_state": True})
+
+    return {
+        "has_run": True,
+        "model": _last_run.get("model", ""),
+        "graph_type": _last_run.get("graph_type", ""),
+        "prompt": _last_run.get("prompt", "")[:100],
+        "nodes": nodes,
+        "success": result.success,
+    }
+
+
+def _extract_steps(result: Any) -> list[dict[str, str]]:
+    """Extract step outputs from a graph result."""
+    steps = []
+    for step in result.steps:
+        diff = {}
+        for k, v in step.state_after.items():
+            if k.startswith("_"):
+                continue
+            before_val = step.state_before.get(k)
+            if v != before_val:
+                diff[k] = v
+        output_text = "\n".join(str(v) for v in diff.values()) if diff else ""
+        steps.append({"node": step.node, "output": output_text})
+    return steps
+
+
+def _aggregate_usage(result: Any, model: str) -> dict[str, Any]:
+    """Aggregate token usage from a graph result."""
+    usage_info = result.state.get("_usage", {})
+    usage = {
+        "model": model,
+        "input_tokens": usage_info.get("input_tokens", 0),
+        "output_tokens": usage_info.get("output_tokens", 0),
+    }
+
+    total_in = 0
+    total_out = 0
+    for step in result.steps:
+        step_usage = step.state_after.get("_usage", {})
+        total_in += step_usage.get("input_tokens", 0)
+        total_out += step_usage.get("output_tokens", 0)
+    usage["input_tokens"] = max(usage["input_tokens"], total_in)
+    usage["output_tokens"] = max(usage["output_tokens"], total_out)
+    return usage
 
 
 # --- Graph Builders ---

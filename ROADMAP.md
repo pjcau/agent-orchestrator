@@ -22,7 +22,7 @@
 - [x] Docker/OrbStack: dashboard, postgres, test, lint, format services
 - [x] Husky pre-commit hooks (lint, format, tests)
 - [x] 7 agent definitions + 8 skills (incl. web-research)
-- [x] 78 tests passing
+- [x] 83 tests passing
 - [x] Documentation: architecture, cost analysis, infrastructure, migration guide
 
 ---
@@ -68,6 +68,10 @@ Multi-agent orchestration visible in the dashboard.
 - [x] **Parallel sub-agents**: backend-dev + frontend-dev run in parallel, team-lead summarizes
 - [x] **Full event flow**: agent.spawn → task_assigned → agent.step → agent.complete → task_completed
 - [x] **6 graph types total**: Auto, Chat, Review, Chain, Parallel, Team
+- [x] **Graph reset**: clear all agent/task/event state from the dashboard
+- [x] **Node replay**: re-run any completed node from the last graph execution
+- [x] **Last run context**: stored for replay — provider, graph, state per step
+- [x] **83 tests total**
 
 ---
 
