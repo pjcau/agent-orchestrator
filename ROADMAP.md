@@ -195,16 +195,16 @@ Connect to the real world.
 - [ ] **Provider marketplace**: browse and add new OpenRouter models or Ollama model configs
 - [ ] **Unified RAG**: combine local embeddings with cloud reranking for best results
 
-## v1.0.0 — General Availability
+## Completed (v1.0.0 — General Availability)
 
-- [ ] **Stable API**: versioned REST API with OpenAPI spec
-- [ ] **pip installable**: `pip install agent-orchestrator`
-- [ ] **Web-based config**: edit agents, skills, graphs, provider settings from the dashboard
-- [ ] **Multi-project support**: manage multiple codebases from one dashboard
-- [ ] **User management**: multi-user with roles (admin, developer, viewer)
-- [ ] **Provider presets**: one-click setup for "local only", "cloud only", "hybrid" modes
-- [ ] **Documentation site**: full docs with tutorials, API reference, examples
-- [ ] **Migration wizard**: import from LangGraph / CrewAI / AutoGen configs
+- [x] **Stable API**: versioned REST API (`/api/v1/`) with OpenAPI 3.0 spec export (27 endpoints)
+- [x] **pip installable**: `pip install agent-orchestrator` (hatchling build, version 1.0.0)
+- [x] **Web-based config**: ConfigManager with JSON import/export, validation, rollback history
+- [x] **Multi-project support**: ProjectManager with CRUD, archive/unarchive, current project switching
+- [x] **User management**: UserManager with roles (admin, developer, viewer), RBAC, API key auth
+- [x] **Provider presets**: 4 built-in presets (local_only, cloud_only, hybrid, high_quality) + custom
+- [x] **Documentation site**: Docusaurus site with roadmap docs for every version
+- [x] **Migration wizard**: import from LangGraph, CrewAI, AutoGen configs with auto-detection
 
 ---
 

@@ -42,7 +42,13 @@ agent-orchestrator/
 │       │   ├── plugins.py       # Plugin manifest & loader
 │       │   ├── webhook.py       # Webhook registry & HMAC validation
 │       │   ├── mcp_server.py    # MCP tool/resource registry
-│       │   └── offline.py       # Offline mode (local-only filtering)
+│       │   ├── offline.py       # Offline mode (local-only filtering)
+│       │   ├── config_manager.py # Configuration manager (JSON, validation, rollback)
+│       │   ├── project.py       # Multi-project support
+│       │   ├── users.py         # User management with RBAC
+│       │   ├── provider_presets.py # One-click provider presets
+│       │   ├── migration.py     # Import from LangGraph/CrewAI/AutoGen
+│       │   └── api.py           # Versioned REST API registry (OpenAPI 3.0)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -85,6 +91,12 @@ agent-orchestrator/
 - **WebhookRegistry** — Inbound webhooks with HMAC-SHA256 signature validation.
 - **MCPServerRegistry** — Expose agents/skills as MCP tools and resources.
 - **OfflineManager** — Filter to local-only providers when offline.
+- **ConfigManager** — Load/save/validate orchestrator configuration with rollback history.
+- **ProjectManager** — Multi-project support with archive/unarchive and current project.
+- **UserManager** — Multi-user RBAC: admin, developer, viewer roles with API key auth.
+- **ProviderPresetManager** — One-click presets: local_only, cloud_only, hybrid, high_quality.
+- **MigrationManager** — Import configs from LangGraph, CrewAI, AutoGen with auto-detection.
+- **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
 
 ## Agents (7)
 

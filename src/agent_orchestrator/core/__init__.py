@@ -43,6 +43,12 @@ from .plugins import PluginLoader, PluginManifest
 from .webhook import WebhookRegistry, WebhookConfig
 from .mcp_server import MCPServerRegistry, MCPTool, MCPResource
 from .offline import OfflineManager, OfflineConfig
+from .config_manager import ConfigManager, OrchestratorConfiguration, AgentConfigEntry, ProviderConfigEntry
+from .project import ProjectManager, ProjectConfig
+from .users import UserManager, User, UserRole
+from .provider_presets import ProviderPresetManager, ProviderPreset
+from .migration import MigrationManager, MigrationResult
+from .api import APIRegistry, APIEndpoint, APIResponse
 
 __all__ = [
     "Provider",
@@ -120,4 +126,21 @@ __all__ = [
     "MCPResource",
     "OfflineManager",
     "OfflineConfig",
+    # v1.0.0 — General Availability
+    "ConfigManager",
+    "OrchestratorConfiguration",
+    "AgentConfigEntry",
+    "ProviderConfigEntry",
+    "ProjectManager",
+    "ProjectConfig",
+    "UserManager",
+    "User",
+    "UserRole",
+    "ProviderPresetManager",
+    "ProviderPreset",
+    "MigrationManager",
+    "MigrationResult",
+    "APIRegistry",
+    "APIEndpoint",
+    "APIResponse",
 ]
