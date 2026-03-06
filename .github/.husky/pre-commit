@@ -1,0 +1,51 @@
+#!/bin/sh
+
+echo "==> Pre-commit: running lint..."
+docker compose run --rm lint
+if [ $? -ne 0 ]; then
+  echo "LINT FAILED — fix errors before committing"
+  exit 1
+fi
+
+echo "==> Pre-commit: running format check..."
+docker compose run --rm format
+if [ $? -ne 0 ]; then
+  echo "FORMAT CHECK FAILED — run 'docker compose run --rm app ruff format src/ tests/' to fix"
+  exit 1
+fi
+
+echo "==> Pre-commit: running tests..."
+docker compose run --rm test
+if [ $? -ne 0 ]; then
+  echo "TESTS FAILED — fix failures before committing"
+  exit 1
+fi
+
+echo "==> Pre-commit: running doc-sync check..."
+PYTHONPATH=src python3 -c "
+import asyncio, sys
+from agent_orchestrator.skills.doc_sync import DocSyncSkill
+async def check():
+    skill = DocSyncSkill('.')
+    result = await skill.execute({'project_root': '.'})
+    if result.output and 'issues' in result.output.lower() or '##' in str(result.output):
+        lines = str(result.output).strip().split('\n')
+        if any(l.startswith('- ') for l in lines):
+            print(result.output)
+            return 1
+    return 0
+sys.exit(asyncio.run(check()))
+" 2>/dev/null
+if [ $? -ne 0 ]; then
+  echo "DOC-SYNC FAILED — documentation is out of sync with code"
+  exit 1
+fi
+
+echo "==> Pre-commit: checking documentation..."
+./.husky/check-docs.sh
+if [ $? -ne 0 ]; then
+  echo "DOCS CHECK FAILED — update documentation before committing"
+  exit 1
+fi
+
+echo "==> Pre-commit: all checks passed"
