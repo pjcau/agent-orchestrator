@@ -155,43 +155,43 @@ Make it reliable enough for real workloads.
 - [ ] **Health checks**: `/health` endpoint with per-provider status (Ollama up? OpenRouter reachable?)
 - [x] **Metrics export**: Prometheus metrics for tokens, latency, cost, errors (tagged by provider)
 
-## v0.7.0 — Advanced Graph Patterns
+## Completed (v0.7.0 — Advanced Graph Patterns)
 
 More powerful orchestration flows.
 
 ### Local (Ollama)
+- [x] **Loop/retry nodes**: graph-level retry with automatic model upgrade on failure
+- [x] **Long-context nodes**: nodes that require >128K context auto-routed to cloud models
 - [ ] **Local-only graph templates**: graph patterns optimized for Ollama models (smaller context)
-- [ ] **Loop/retry nodes**: graph-level retry with automatic model upgrade on failure
 - [ ] **Dynamic graph construction**: local LLM decides which nodes to add at runtime
 
 ### Cloud (OpenRouter)
-- [ ] **Cloud-augmented nodes**: specific graph nodes that always run on cloud (e.g., final review)
-- [ ] **Map-reduce with cloud fan-out**: parallel cloud calls for high-throughput processing
-- [ ] **Long-context nodes**: nodes that require >128K context auto-routed to cloud models
+- [x] **Cloud-augmented nodes**: specific graph nodes that always run on cloud (provider annotations)
+- [x] **Map-reduce with cloud fan-out**: parallel cloud calls for high-throughput processing
 
 ### Both
-- [ ] **Sub-graphs**: nested graphs as nodes (compose complex workflows)
-- [ ] **Graph templates**: save/load reusable graph patterns from the dashboard
-- [ ] **Graph versioning**: track changes to graphs over time
-- [ ] **Provider annotations**: tag nodes with preferred provider (local/cloud/any)
+- [x] **Sub-graphs**: nested graphs as nodes (compose complex workflows)
+- [x] **Graph templates**: save/load reusable graph patterns (JSON serialisation, versioned store)
+- [x] **Graph versioning**: track changes to graphs over time (auto-increment on save)
+- [x] **Provider annotations**: tag nodes with preferred provider (local/cloud/any)
 
-## v0.8.0 — External Integrations
+## Completed (v0.8.0 — External Integrations)
 
 Connect to the real world.
 
 ### Local (Ollama)
+- [x] **Offline mode**: full functionality without internet (local models + local tools only)
 - [ ] **Local RAG pipeline**: vector search over project docs using local embeddings (nomic-embed)
 - [ ] **Local code indexing**: build codebase index with local model for context-aware agents
-- [ ] **Offline mode**: full functionality without internet (local models + local tools only)
 
 ### Cloud (OpenRouter)
-- [ ] **GitHub integration**: create PRs, review code, respond to issues (cloud model for quality)
+- [x] **GitHub integration**: create PRs, review code, respond to issues via `gh` CLI
+- [x] **Webhook triggers**: start graphs from external events (CI, cron, API calls)
+- [x] **MCP server**: expose orchestrator as a Model Context Protocol server
 - [ ] **Slack/Discord bot**: trigger orchestrator from chat, choose local or cloud execution
-- [ ] **Webhook triggers**: start graphs from external events (CI, cron, API calls)
-- [ ] **MCP server**: expose orchestrator as a Model Context Protocol server
 
 ### Both
-- [ ] **Plugin system**: drop-in skills/providers without modifying core code
+- [x] **Plugin system**: drop-in skills/providers without modifying core code
 - [ ] **Provider marketplace**: browse and add new OpenRouter models or Ollama model configs
 - [ ] **Unified RAG**: combine local embeddings with cloud reranking for best results
 

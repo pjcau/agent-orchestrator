@@ -25,6 +25,24 @@ from .graph import (
 from .checkpoint import Checkpointer, InMemoryCheckpointer, SQLiteCheckpointer
 from .reducers import append_reducer, add_reducer, merge_dict_reducer
 from .llm_nodes import llm_node, multi_provider_node, chat_node
+from .graph_patterns import (
+    SubGraphNode,
+    retry_node,
+    loop_node,
+    map_reduce_node,
+    provider_annotated_node,
+    long_context_node,
+)
+from .graph_templates import (
+    GraphTemplate,
+    GraphTemplateStore,
+    NodeTemplate,
+    EdgeTemplate,
+)
+from .plugins import PluginLoader, PluginManifest
+from .webhook import WebhookRegistry, WebhookConfig
+from .mcp_server import MCPServerRegistry, MCPTool, MCPResource
+from .offline import OfflineManager, OfflineConfig
 
 __all__ = [
     "Provider",
@@ -81,4 +99,25 @@ __all__ = [
     "default_metrics",
     "AlertManager",
     "AlertRule",
+    # v0.7.0 — Advanced Graph Patterns
+    "SubGraphNode",
+    "retry_node",
+    "loop_node",
+    "map_reduce_node",
+    "provider_annotated_node",
+    "long_context_node",
+    "GraphTemplate",
+    "GraphTemplateStore",
+    "NodeTemplate",
+    "EdgeTemplate",
+    # v0.8.0 — External Integrations
+    "PluginLoader",
+    "PluginManifest",
+    "WebhookRegistry",
+    "WebhookConfig",
+    "MCPServerRegistry",
+    "MCPTool",
+    "MCPResource",
+    "OfflineManager",
+    "OfflineConfig",
 ]

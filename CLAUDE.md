@@ -36,7 +36,13 @@ agent-orchestrator/
 │       │   ├── audit.py         # Structured audit logging
 │       │   ├── task_queue.py    # Priority task queue with retries
 │       │   ├── metrics.py       # Prometheus-compatible metrics
-│       │   └── alerts.py        # Spend alert rules & manager
+│       │   ├── alerts.py        # Spend alert rules & manager
+│       │   ├── graph_patterns.py # Sub-graphs, retry, loop, map-reduce
+│       │   ├── graph_templates.py # Template store with versioning & JSON
+│       │   ├── plugins.py       # Plugin manifest & loader
+│       │   ├── webhook.py       # Webhook registry & HMAC validation
+│       │   ├── mcp_server.py    # MCP tool/resource registry
+│       │   └── offline.py       # Offline mode (local-only filtering)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -53,7 +59,9 @@ agent-orchestrator/
 │           ├── doc_sync.py      # Documentation sync checker
 │           ├── filesystem.py    # File read/write/search
 │           ├── shell.py         # Shell command execution
-│           └── testing.py       # Test runner skill
+│           ├── testing.py       # Test runner skill
+│           ├── github_skill.py  # GitHub integration via gh CLI
+│           └── webhook_skill.py # Outgoing webhook skill
 ├── tests/
 ├── pyproject.toml
 └── README.md
@@ -71,6 +79,12 @@ agent-orchestrator/
 - **HealthMonitor** — Provider health: latency, error rates, availability, auto-failover.
 - **AuditLog** — Structured audit trail: 11 event types, filtering, task traces.
 - **MetricsRegistry** — Prometheus-compatible metrics (counters, gauges, histograms).
+- **GraphTemplateStore** — Versioned graph templates with JSON serialisation and build_graph().
+- **SubGraphNode** — Wrap compiled graphs as callable nodes with I/O mapping.
+- **PluginLoader** — Register/load plugin manifests (skills, providers) at runtime.
+- **WebhookRegistry** — Inbound webhooks with HMAC-SHA256 signature validation.
+- **MCPServerRegistry** — Expose agents/skills as MCP tools and resources.
+- **OfflineManager** — Filter to local-only providers when offline.
 
 ## Agents (7)
 
