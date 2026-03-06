@@ -27,7 +27,16 @@ agent-orchestrator/
 │       │   ├── agent.py         # Agent base class
 │       │   ├── skill.py         # Skill registry & execution
 │       │   ├── orchestrator.py  # Main orchestrator (coordination)
-│       │   └── cooperation.py   # Inter-agent communication protocols
+│       │   ├── cooperation.py   # Inter-agent communication protocols
+│       │   ├── router.py        # Smart task routing (6 strategies)
+│       │   ├── usage.py         # Cost tracking & budget enforcement
+│       │   ├── health.py        # Provider health monitoring
+│       │   ├── benchmark.py     # Model benchmarking suite
+│       │   ├── rate_limiter.py  # Per-provider rate limiting
+│       │   ├── audit.py         # Structured audit logging
+│       │   ├── task_queue.py    # Priority task queue with retries
+│       │   ├── metrics.py       # Prometheus-compatible metrics
+│       │   └── alerts.py        # Spend alert rules & manager
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -35,6 +44,7 @@ agent-orchestrator/
 │       │   └── local.py         # Local models (Ollama, vLLM)
 │       ├── dashboard/
 │       │   ├── app.py           # FastAPI dashboard (REST + WebSocket)
+│       │   ├── auth.py          # API key authentication middleware
 │       │   ├── events.py        # EventBus, Event types
 │       │   ├── instrument.py    # Monkey-patches core classes to emit events
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
@@ -56,6 +66,11 @@ agent-orchestrator/
 - **Skill** — Reusable capability (test-runner, linter, deployer). Provider-independent.
 - **Orchestrator** — Coordinates agents, task decomposition, anti-stall enforcement.
 - **Cooperation** — Inter-agent messaging: delegation, results, conflict resolution.
+- **TaskRouter** — Smart routing: 6 strategies (local-first, cost-optimized, complexity-based, etc.).
+- **UsageTracker** — Cost tracking with budget enforcement (per task/session/day).
+- **HealthMonitor** — Provider health: latency, error rates, availability, auto-failover.
+- **AuditLog** — Structured audit trail: 11 event types, filtering, task traces.
+- **MetricsRegistry** — Prometheus-compatible metrics (counters, gauges, histograms).
 
 ## Agents (7)
 

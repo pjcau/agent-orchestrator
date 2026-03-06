@@ -3,11 +3,10 @@
 import asyncio
 
 import pytest
-from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskResult, TaskStatus
+from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
 from agent_orchestrator.core.cooperation import (
     AgentMessage,
     Artifact,
-    ConflictRecord,
     CooperationProtocol,
     SharedContextStore,
     TaskAssignment,
@@ -19,7 +18,6 @@ from agent_orchestrator.core.orchestrator import (
 )
 from agent_orchestrator.core.provider import (
     Completion,
-    Message,
     ModelCapabilities,
     Provider,
     StreamChunk,

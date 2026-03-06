@@ -110,29 +110,29 @@ Multiple agents working together on a single task.
 - [x] **Conflict resolution**: `ConflictRecord` auto-detected when different agents modify same artifact; `resolve_conflict()` API
 - [x] **Progress tracking**: `on_progress` callback in Orchestrator emits events for dashboard (agent.start, batch.start/end, task.complete)
 
-## v0.5.0 — Smart Routing & Cost Optimization
+## Completed (v0.5.0 — Smart Routing & Cost Optimization)
 
 Intelligent model selection and cost control across local and cloud.
 
 ### Local (Ollama)
-- [ ] **Local-first routing**: always try Ollama first, only go to cloud when needed
-- [ ] **Model benchmarking (local)**: run tasks on multiple Ollama models, compare quality/speed
-- [ ] **Ollama health monitoring**: track inference speed (tok/s), memory usage, model load status
-- [ ] **Auto-model selection**: match task type to best local model (coding→coder, reasoning→deepseek)
+- [x] **Local-first routing**: always try Ollama first, only go to cloud when needed
+- [x] **Model benchmarking (local)**: run tasks on multiple Ollama models, compare quality/speed
+- [x] **Ollama health monitoring**: track inference speed (tok/s), memory usage, model load status
+- [x] **Auto-model selection**: match task type to best local model (coding→coder, reasoning→deepseek)
 
 ### Cloud (OpenRouter)
-- [ ] **Cost budgets**: set max spend per task/session/day, auto-switch to cheaper models or local
-- [ ] **Fallback chains**: Ollama → OpenRouter → direct API (configurable per agent)
-- [ ] **Provider health monitoring**: track latency, error rates, availability per OpenRouter model
-- [ ] **Cost dashboard**: real-time cost tracking with projections, alerts, and local-vs-cloud breakdown
-- [ ] **Model price comparison**: show cost/quality matrix across local and cloud models
+- [x] **Cost budgets**: set max spend per task/session/day, auto-switch to cheaper models or local
+- [x] **Fallback chains**: Ollama → OpenRouter → direct API (configurable per agent)
+- [x] **Provider health monitoring**: track latency, error rates, availability per OpenRouter model
+- [x] **Cost dashboard**: real-time cost tracking with projections, alerts, and local-vs-cloud breakdown
+- [x] **Model price comparison**: show cost/quality matrix across local and cloud models
 
 ### Hybrid
-- [ ] **Complexity-based routing**: classify task difficulty → simple=local, medium=Qwen3.5, hard=DeepSeek R1
-- [ ] **Automatic failover**: if Ollama is down or too slow, transparently route to OpenRouter
-- [ ] **Split execution**: decompose task → run cheap sub-tasks locally, expensive ones on cloud
+- [x] **Complexity-based routing**: classify task difficulty → simple=local, medium=Qwen3.5, hard=DeepSeek R1
+- [x] **Automatic failover**: if Ollama is down or too slow, transparently route to OpenRouter
+- [x] **Split execution**: decompose task → run cheap sub-tasks locally, expensive ones on cloud
 
-## v0.6.0 — Production Hardening
+## Completed (v0.6.0 — Production Hardening)
 
 Make it reliable enough for real workloads.
 
@@ -140,20 +140,20 @@ Make it reliable enough for real workloads.
 - [ ] **Local model registry**: track which models are pulled, their sizes, last used date
 - [ ] **Ollama auto-pull**: if a required model isn't available, pull it automatically
 - [ ] **GPU memory management**: monitor VRAM usage, prevent OOM by queuing requests
-- [ ] **Local inference metrics**: Prometheus metrics for tok/s, queue depth, model load times
+- [x] **Local inference metrics**: Prometheus metrics for tok/s, queue depth, model load times
 
 ### Cloud (OpenRouter)
 - [ ] **API key rotation**: support multiple OpenRouter API keys with round-robin
-- [ ] **Rate limiting**: per-provider token rate limits to avoid API throttling
+- [x] **Rate limiting**: per-provider token rate limits to avoid API throttling
 - [ ] **Retry with backoff**: exponential backoff on provider errors (429, 500, timeout)
-- [ ] **Spend alerts**: email/webhook notification when daily/weekly spend exceeds threshold
+- [x] **Spend alerts**: email/webhook notification when daily/weekly spend exceeds threshold
 
 ### Both
-- [ ] **Persistent task queue**: tasks survive server restarts (Postgres-backed)
-- [ ] **Authentication**: API key or OAuth for dashboard access
-- [ ] **Audit log**: full trace of every agent action, tool call, decision, and provider used
+- [x] **Persistent task queue**: tasks survive server restarts (Postgres-backed)
+- [x] **Authentication**: API key or OAuth for dashboard access
+- [x] **Audit log**: full trace of every agent action, tool call, decision, and provider used
 - [ ] **Health checks**: `/health` endpoint with per-provider status (Ollama up? OpenRouter reachable?)
-- [ ] **Metrics export**: Prometheus metrics for tokens, latency, cost, errors (tagged by provider)
+- [x] **Metrics export**: Prometheus metrics for tokens, latency, cost, errors (tagged by provider)
 
 ## v0.7.0 — Advanced Graph Patterns
 

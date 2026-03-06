@@ -3,6 +3,15 @@ from .agent import Agent, AgentConfig, TaskResult
 from .skill import Skill, SkillRegistry
 from .orchestrator import Orchestrator
 from .cooperation import CooperationProtocol, TaskAssignment
+from .router import TaskRouter, TaskComplexityClassifier, RouterConfig
+from .usage import UsageTracker, BudgetConfig, UsageRecord
+from .health import HealthMonitor, ProviderHealth
+from .benchmark import BenchmarkSuite, BenchmarkResult
+from .rate_limiter import RateLimiter, RateLimitConfig
+from .audit import AuditLog, AuditEntry
+from .task_queue import TaskQueue, QueuedTask
+from .metrics import MetricsRegistry, Counter, Gauge, Histogram, default_metrics
+from .alerts import AlertManager, AlertRule
 from .graph import (
     StateGraph,
     CompiledGraph,
@@ -47,4 +56,29 @@ __all__ = [
     "llm_node",
     "multi_provider_node",
     "chat_node",
+    # v0.5.0 — Smart Routing & Cost Optimization
+    "TaskRouter",
+    "TaskComplexityClassifier",
+    "RouterConfig",
+    "UsageTracker",
+    "BudgetConfig",
+    "UsageRecord",
+    "HealthMonitor",
+    "ProviderHealth",
+    "BenchmarkSuite",
+    "BenchmarkResult",
+    # v0.6.0 — Production Hardening
+    "RateLimiter",
+    "RateLimitConfig",
+    "AuditLog",
+    "AuditEntry",
+    "TaskQueue",
+    "QueuedTask",
+    "MetricsRegistry",
+    "Counter",
+    "Gauge",
+    "Histogram",
+    "default_metrics",
+    "AlertManager",
+    "AlertRule",
 ]
