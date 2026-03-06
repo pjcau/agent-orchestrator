@@ -40,6 +40,11 @@ if echo "$PROMPT" | grep -qE '(docs|website|documentation|readme)'; then
   SUGGESTIONS="$SUGGESTIONS /website-dev"
 fi
 
+# Doc-sync related
+if echo "$PROMPT" | grep -qE '(doc-sync|sync.*doc|documentation.*sync|update.*doc|doc.*drift)'; then
+  SUGGESTIONS="$SUGGESTIONS /doc-sync"
+fi
+
 if [ -n "$SUGGESTIONS" ]; then
   echo "{\"systemMessage\": \"Relevant skills:$SUGGESTIONS\"}"
 fi

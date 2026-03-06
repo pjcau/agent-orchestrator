@@ -81,6 +81,21 @@ services:
         condition: service_healthy
     command: python -m agent_orchestrator.dashboard --host 0.0.0.0 --port 5005
 
+  # Documentation site (Docusaurus)
+  docs:
+    build:
+      context: .
+      dockerfile: docker/docs/Dockerfile
+    volumes:
+      - ./docs/website/docs:/app/docs
+      - ./docs/website/src:/app/src
+      - ./docs/website/static:/app/static
+      - ./docs/website/docusaurus.config.js:/app/docusaurus.config.js
+      - ./docs/website/sidebars.js:/app/sidebars.js
+    ports:
+      - "3000:3000"
+    command: npm start -- --host 0.0.0.0 --port 3000
+
   # Format checker
   format:
     build:

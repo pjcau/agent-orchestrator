@@ -40,6 +40,7 @@ agent-orchestrator/
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
 │       │   └── static/          # HTML/CSS/JS dashboard UI
 │       └── skills/
+│           ├── doc_sync.py      # Documentation sync checker
 │           ├── filesystem.py    # File read/write/search
 │           ├── shell.py         # Shell command execution
 │           └── testing.py       # Test runner skill
@@ -79,7 +80,7 @@ AI-Eng  ↔ Backend:   provider implementations, LLM integration
 Scout   →  All:       discovers patterns, creates PRs for integration
 ```
 
-### Skills Map (7 total)
+### Skills Map (8 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -90,6 +91,7 @@ Scout   →  All:       discovers patterns, creates PRs for integration
 | `/deploy` | devops | Container deployment via docker-compose |
 | `/scout` | scout | GitHub pattern discovery |
 | `/website-dev` | frontend | Documentation site development |
+| `/doc-sync` | all | Sync docs with code (CLAUDE.md, README, docs/, website) |
 
 ## Container Runtime: OrbStack
 
