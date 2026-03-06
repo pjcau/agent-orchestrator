@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -10,6 +11,8 @@ from typing import Any
 from .provider import Message, Provider, Role, ToolDefinition
 from .skill import SkillRegistry
 
+logger = logging.getLogger(__name__)
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -17,6 +20,7 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     STALLED = "stalled"
+    ESCALATED = "escalated"
 
 
 @dataclass
@@ -28,6 +32,7 @@ class AgentConfig:
     max_steps: int = 10
     max_retries_per_approach: int = 3
     timeout_seconds: float = 300.0
+    escalation_provider_key: str | None = None  # cloud provider for escalation
 
 
 @dataclass
@@ -46,6 +51,8 @@ class TaskResult:
     total_tokens: int = 0
     total_cost_usd: float = 0.0
     error: str | None = None
+    provider_used: str | None = None
+    escalated: bool = False
 
 
 class Agent:
@@ -56,17 +63,59 @@ class Agent:
         config: AgentConfig,
         provider: Provider,
         skill_registry: SkillRegistry,
+        escalation_provider: Provider | None = None,
     ):
         self.config = config
         self.provider = provider
         self.skills = skill_registry
+        self.escalation_provider = escalation_provider
         self._messages: list[Message] = []
 
     async def execute(self, task: Task) -> TaskResult:
-        """Run the agent on a task with anti-stall enforcement."""
+        """Run the agent on a task with anti-stall enforcement and escalation."""
+        result = await self._execute_with_provider(task, self.provider)
+
+        # Escalate to cloud if local stalled and escalation provider is available
+        if result.status == TaskStatus.STALLED and self.escalation_provider:
+            logger.info(
+                "Agent %s stalled on %s, escalating to %s",
+                self.config.name,
+                self.provider.model_id,
+                self.escalation_provider.model_id,
+            )
+            escalated_result = await self._execute_with_provider(
+                task, self.escalation_provider
+            )
+            escalated_result.escalated = True
+            escalated_result.steps_taken += result.steps_taken
+            escalated_result.total_tokens += result.total_tokens
+            escalated_result.total_cost_usd += result.total_cost_usd
+            if escalated_result.status == TaskStatus.STALLED:
+                escalated_result.status = TaskStatus.STALLED
+            return escalated_result
+
+        return result
+
+    async def _execute_with_provider(
+        self, task: Task, provider: Provider
+    ) -> TaskResult:
+        """Run the agent loop with a specific provider."""
         self._messages = [
             Message(role=Role.USER, content=task.description),
         ]
+
+        # Inject context from shared artifacts
+        if task.context:
+            context_str = "\n".join(
+                f"[{k}]: {v}" for k, v in task.context.items()
+            )
+            self._messages.insert(
+                0,
+                Message(
+                    role=Role.USER,
+                    content=f"Available context:\n{context_str}",
+                ),
+            )
 
         tool_defs = self._get_tool_definitions()
         steps = 0
@@ -86,9 +135,10 @@ class Agent:
                     total_tokens=total_tokens,
                     total_cost_usd=total_cost,
                     error=f"Timeout after {elapsed:.0f}s",
+                    provider_used=provider.model_id,
                 )
 
-            completion = await self.provider.complete(
+            completion = await provider.complete(
                 messages=self._messages,
                 tools=tool_defs if tool_defs else None,
                 system=self.config.role,
@@ -106,6 +156,7 @@ class Agent:
                     steps_taken=steps,
                     total_tokens=total_tokens,
                     total_cost_usd=total_cost,
+                    provider_used=provider.model_id,
                 )
 
             # Process tool calls
@@ -130,6 +181,7 @@ class Agent:
                         total_tokens=total_tokens,
                         total_cost_usd=total_cost,
                         error=f"Max retries exceeded for approach: {approach_key}",
+                        provider_used=provider.model_id,
                     )
 
                 result = await self.skills.execute(tool_call.name, tool_call.arguments)
@@ -148,6 +200,7 @@ class Agent:
             total_tokens=total_tokens,
             total_cost_usd=total_cost,
             error=f"Max steps ({self.config.max_steps}) reached",
+            provider_used=provider.model_id,
         )
 
     def _get_tool_definitions(self) -> list[ToolDefinition]:

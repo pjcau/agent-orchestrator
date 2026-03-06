@@ -92,23 +92,23 @@ Real agent execution through the dashboard, not just graph nodes.
 - [x] **Cost preview**: show estimated cost before running a cloud agent task
 - [ ] **Token budget per task**: set max tokens before execution starts (cloud-only safeguard)
 
-## v0.4.0 — Multi-Agent Cooperation
+## Completed (v0.4.0 — Multi-Agent Cooperation)
 
 Multiple agents working together on a single task.
 
 ### Local (Ollama)
-- [ ] **Team-lead delegation (local)**: team-lead on qwen2.5-coder decomposes tasks to sub-agents
-- [ ] **Parallel agent execution**: backend + frontend agents on separate Ollama models simultaneously
-- [ ] **Shared context store**: agents publish artifacts (code, specs) that others can read
-- [ ] **Agent-to-agent messages**: visible in the inter-agent communication panel
-- [ ] **Dependency graph**: orchestrator respects ordering (e.g., backend API before frontend)
+- [x] **Team-lead delegation (local)**: team-lead decomposes tasks to sub-agents via `Orchestrator.run()`
+- [x] **Parallel agent execution**: independent agents run simultaneously via `asyncio.gather`
+- [x] **Shared context store**: agents publish artifacts (code, specs) that others can read; subscription support
+- [x] **Agent-to-agent messages**: `AgentMessage` with from/to/broadcast, visible via `SharedContextStore`
+- [x] **Dependency graph**: orchestrator respects topological ordering, `get_parallel_batches()` for concurrent dispatch
 
 ### Cloud (OpenRouter)
-- [ ] **Hybrid cooperation**: team-lead on cloud (Qwen 3.5 Plus), sub-agents on local Ollama
-- [ ] **Cloud escalation**: if local agent stalls, auto-escalate to cloud model
-- [ ] **Cross-provider artifact sharing**: local and cloud agents share the same context store
-- [ ] **Conflict resolution**: when 2 agents (local + cloud) modify the same file, team-lead resolves
-- [ ] **Progress tracking**: real-time progress bar per agent with provider badge (local/cloud)
+- [x] **Hybrid cooperation**: team-lead on cloud, sub-agents on local — `escalation_provider_key` per agent
+- [x] **Cloud escalation**: if local agent stalls (max retries), auto-escalate to cloud model via `Agent.execute()`
+- [x] **Cross-provider artifact sharing**: local and cloud agents share the same `SharedContextStore`
+- [x] **Conflict resolution**: `ConflictRecord` auto-detected when different agents modify same artifact; `resolve_conflict()` API
+- [x] **Progress tracking**: `on_progress` callback in Orchestrator emits events for dashboard (agent.start, batch.start/end, task.complete)
 
 ## v0.5.0 — Smart Routing & Cost Optimization
 
