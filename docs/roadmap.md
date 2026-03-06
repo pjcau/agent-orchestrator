@@ -209,6 +209,47 @@
 
 ---
 
+## v1.1 — LangGraph-Inspired Improvements
+
+**Goal:** Adopt key patterns from LangGraph analysis to harden the orchestrator before scaling.
+**Reference:** [`analysis/langgraph/`](../analysis/langgraph/) — 30-file deep analysis of LangGraph internals.
+**Source files:** [28-comparison](../analysis/langgraph/28-comparison.md), [29-lessons-learned](../analysis/langgraph/29-lessons-learned.md)
+
+### Sprint 1: State & Caching
+
+| Task | Inspired By | Priority | Detail |
+|------|------------|----------|--------|
+| Channel-based state with reducers | [03-channels](../analysis/langgraph/03-channels.md) | High | Typed channels per state field. `LastValue` (single writer), `BinaryOperatorAggregate` (reducer fold), `Topic` (append). Solves concurrent agent writes to shared state. |
+| Task-level result caching | [15-cache](../analysis/langgraph/15-cache.md) | High | Cache skill/node results by input hash. `CachePolicy` per skill. InMemory first, Redis later. Skip re-execution on cache hit. |
+| Conformance test suite | [16-conformance-tests](../analysis/langgraph/16-conformance-tests.md) | High | Capability-based test harness for Provider and Checkpoint interfaces. Any new implementation runs against it automatically. |
+
+### Sprint 2: HITL & Memory
+
+| Task | Inspired By | Priority | Detail |
+|------|------------|----------|--------|
+| Interrupt/resume (HITL) | [19-human-in-the-loop](../analysis/langgraph/19-human-in-the-loop.md) | High | `interrupt()` pauses graph, persists state. `Command(resume=value)` continues. Interrupt is control flow, not an error. Required for production approval workflows. |
+| Store abstraction (cross-agent memory) | [14-store](../analysis/langgraph/14-store.md) | High | Separate from checkpoints. `BaseStore` with `get/put/search/delete`. Namespace-based hierarchy. Cross-thread persistent memory (user profiles, knowledge base). |
+| Skill middleware pattern | [18-tool-node](../analysis/langgraph/18-tool-node.md) | Medium | `SkillWrapper(request, next_fn) -> result`. Enables retry, caching, logging, authorization as composable middleware on skill execution. |
+
+### Sprint 3: Persistence & Streaming
+
+| Task | Inspired By | Priority | Detail |
+|------|------------|----------|--------|
+| Content-addressed checkpoint blobs | [13-checkpoint-postgres](../analysis/langgraph/13-checkpoint-postgres.md) | Medium | Split complex values into `checkpoint_blobs` table keyed by `(thread, ns, channel, version)`. `ON CONFLICT DO NOTHING` — same blob never re-written. Massive storage savings. |
+| Anti-stall via managed values | [09-managed-values](../analysis/langgraph/09-managed-values.md) | Medium | Inject `RemainingSteps` / `IsLastStep` into agents. Graceful degradation instead of hard recursion limit errors. |
+| Encrypted serialization | [11-checkpoint-serialization](../analysis/langgraph/11-checkpoint-serialization.md) | Low | Optional AES encryption for checkpoint blobs. Required for sensitive data at rest. |
+| SSE streaming improvements | [27-streaming](../analysis/langgraph/27-streaming.md) | Low | Add `stream_mode` support (values/updates/messages/debug). SSE reconnection with `Last-Event-ID`. |
+
+### v1.1 KPIs
+
+- Channel-based state operational with reducer tests
+- HITL interrupt/resume working end-to-end
+- Conformance suite passing for all providers and checkpointers
+- Task caching reducing redundant LLM calls by 30%+
+- Store abstraction with namespace-based cross-agent memory
+
+---
+
 ## Financial Summary
 
 ```
