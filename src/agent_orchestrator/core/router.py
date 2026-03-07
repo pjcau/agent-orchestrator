@@ -1,9 +1,15 @@
 """Smart task router — selects the best provider/model based on complexity, cost,
-and real-time health data."""
+and real-time health data.
+
+Complexity classification inspired by:
+- tzachbon/claude-model-router-hook (regex-based tier matching)
+- flatrick/everything-claude-code cost-aware-llm-pipeline (threshold routing)
+"""
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from .health import HealthMonitor
@@ -17,17 +23,20 @@ logger = logging.getLogger(__name__)
 # Complexity classifier
 # ---------------------------------------------------------------------------
 
-# Keyword sets used by TaskComplexityClassifier (no LLM call).
+# High complexity: architecture, deep analysis, multi-system reasoning
 _HIGH_KEYWORDS: frozenset[str] = frozenset(
     {
-        "architect", "design", "optimize", "refactor", "security audit",
-        "performance", "distributed", "scalability", "migration",
-        "machine learning", "neural", "inference", "complex", "extensive",
-        "multi-step", "multistep", "comprehensive", "analyse", "analyze",
-        "reasoning", "strategy", "evaluate", "compare",
+        "architect", "architecture", "design", "optimize", "refactor",
+        "security audit", "performance", "distributed", "scalability",
+        "migration", "machine learning", "neural", "inference", "complex",
+        "extensive", "multi-step", "multistep", "comprehensive", "analyse",
+        "analyze", "reasoning", "strategy", "evaluate", "compare",
+        "tradeoff", "trade-off", "deep dive", "redesign",
+        "across the codebase", "multi-system", "plan mode",
     }
 )
 
+# Low complexity: simple ops, git commands, formatting, lookups
 _LOW_KEYWORDS: frozenset[str] = frozenset(
     {
         "summarize", "summarise", "list", "simple", "basic", "quick",
@@ -36,9 +45,29 @@ _LOW_KEYWORDS: frozenset[str] = frozenset(
     }
 )
 
+# Regex patterns for low-complexity tasks (git ops, renames, formatting)
+_LOW_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(p) for p in [
+        r"\bgit\s+(commit|push|pull|status|log|diff|add|stash|branch|merge)\b",
+        r"\brename\b", r"\bmove\s+file\b", r"\bdelete\s+file\b",
+        r"\bformat\b", r"\blint\b", r"\bprettier\b", r"\beslint\b",
+        r"\bremove\s+(unused|dead)\b", r"\bupdate\s+(version|package)\b",
+    ]
+]
+
+# Thresholds (inspired by cost-aware-llm-pipeline)
+_HIGH_WORD_THRESHOLD = 200   # long prompts likely need strong model
+_LOW_WORD_CEILING = 30       # short prompts default to low if no signals
+
 
 class TaskComplexityClassifier:
-    """Classify task complexity using keyword heuristics — no LLM required."""
+    """Classify task complexity using keyword + regex heuristics — no LLM call.
+
+    Three-tier classification (low/medium/high) using:
+    - Keyword matching against curated word sets
+    - Regex patterns for common low-complexity operations
+    - Word count thresholds for length-based signals
+    """
 
     def classify(self, task: str) -> TaskComplexity:
         """Return a TaskComplexity for the given task description string."""
@@ -46,20 +75,23 @@ class TaskComplexityClassifier:
 
         high_hits = sum(1 for kw in _HIGH_KEYWORDS if kw in lower)
         low_hits = sum(1 for kw in _LOW_KEYWORDS if kw in lower)
+        low_regex = sum(1 for p in _LOW_PATTERNS if p.search(lower))
 
         # Rough token estimate: ~1.3 tokens per word
         word_count = len(task.split())
         estimated_tokens = max(500, int(word_count * 1.3) + 1500)
 
-        requires_reasoning = high_hits > 0 or word_count > 200
+        requires_reasoning = high_hits > 0 or word_count > _HIGH_WORD_THRESHOLD
         requires_tools = any(
             kw in lower
             for kw in ("code", "file", "run", "execute", "test", "deploy", "write")
         )
 
-        if high_hits > low_hits or word_count > 300:
+        # Classification with combined signals
+        low_score = low_hits + low_regex
+        if high_hits > low_score or word_count > _HIGH_WORD_THRESHOLD * 1.5:
             level = "high"
-        elif low_hits > high_hits or word_count < 30:
+        elif low_score > high_hits or (word_count < _LOW_WORD_CEILING and high_hits == 0):
             level = "low"
         else:
             level = "medium"
