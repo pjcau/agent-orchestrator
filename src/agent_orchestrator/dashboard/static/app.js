@@ -210,16 +210,63 @@
     if (allList.length > 1) $compareModelB.selectedIndex = 1;
   }
 
-  // --- Agent Badges (compact, in graph header) ---
+  // --- Agent Badges (hierarchical, grouped by category) ---
+  const CATEGORY_LABELS = {
+    "general": "General",
+    "software-engineering": "Software Eng",
+    "data-science": "Data Science",
+    "finance": "Finance",
+    "marketing": "Marketing",
+    "tooling": "Tooling",
+  };
+  const CATEGORY_COLORS = {
+    "general": "var(--accent)",
+    "software-engineering": "var(--cyan)",
+    "data-science": "var(--purple)",
+    "finance": "var(--green)",
+    "marketing": "var(--pink)",
+    "tooling": "var(--orange)",
+  };
+
   function renderAgentBadges() {
     if (!agentRegistry || !agentRegistry.agents) {
       $agentBadges.innerHTML = "";
       return;
     }
-    $agentBadges.innerHTML = agentRegistry.agents.map((a) => {
-      const status = getAgentStatus(a.name);
-      return `<span class="agent-badge ${status}"><span class="agent-dot"></span>${esc(a.name)}</span>`;
-    }).join("");
+    const categories = agentRegistry.categories || {};
+    // If no categories, fall back to flat list
+    if (!Object.keys(categories).length) {
+      $agentBadges.innerHTML = agentRegistry.agents.map((a) => {
+        const status = getAgentStatus(a.name);
+        return `<span class="agent-badge ${status}"><span class="agent-dot"></span>${esc(a.name)}</span>`;
+      }).join("");
+      return;
+    }
+    // Category order
+    const order = ["general", "software-engineering", "data-science", "finance", "marketing", "tooling"];
+    const sortedCats = Object.keys(categories).sort((a, b) => {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+    let html = "";
+    for (const cat of sortedCats) {
+      const agents = categories[cat];
+      if (!agents || !agents.length) continue;
+      const color = CATEGORY_COLORS[cat] || "var(--text-dim)";
+      const label = CATEGORY_LABELS[cat] || cat;
+      html += `<div class="agent-category" style="--cat-color: ${color}">`;
+      html += `<span class="agent-cat-label">${esc(label)}</span>`;
+      for (const a of agents) {
+        const status = getAgentStatus(a.name);
+        const desc = a.description ? a.description.split(" — ")[1] || a.description : "";
+        html += `<span class="agent-badge-mini ${status}" title="${esc(a.name)}: ${esc(desc)}">`;
+        html += `<span class="agent-dot-mini"></span>${esc(a.name)}`;
+        html += `</span>`;
+      }
+      html += `</div>`;
+    }
+    $agentBadges.innerHTML = html;
   }
 
   async function loadAgents() {
@@ -808,9 +855,10 @@
   function renderGraph() {
     const g = snapshot.graph;
     const hasGraph = g && (g.nodes.length || g.edges.length);
-    const hasAgents = agentRegistry && agentRegistry.agents && agentRegistry.agents.length;
 
-    if (!hasGraph && !hasAgents) {
+    // Only show SVG graph when a task is running (has graph nodes/edges)
+    // Agent listing is already shown in the top badges bar
+    if (!hasGraph) {
       $graphSvg.style.display = "none";
       $graphEmpty.style.display = "";
       return;
@@ -819,15 +867,8 @@
     $graphSvg.style.display = "";
     $graphEmpty.style.display = "none";
 
-    // Use graph nodes if available, otherwise use agent registry
-    let nodes = [];
-    let edges = [];
-    if (hasGraph) {
-      nodes = g.nodes;
-      edges = g.edges;
-    } else if (hasAgents) {
-      nodes = agentRegistry.agents.map(a => a.name);
-    }
+    let nodes = g.nodes;
+    let edges = g.edges;
 
     const layers = computeLayers(nodes, edges);
     const canvasRect = $graphCanvas.getBoundingClientRect();

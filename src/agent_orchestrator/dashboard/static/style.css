@@ -133,7 +133,9 @@ main {
 .graph-section > .section-header { margin-bottom: 4px; }
 .graph-header-right { display: flex; align-items: center; gap: 8px; }
 
-.agent-badges { display: flex; gap: 4px; flex-wrap: wrap; }
+.agent-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; }
+
+/* Legacy flat badges (fallback) */
 .agent-badge {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 2px 8px; border-radius: 10px; font-size: 10px;
@@ -147,6 +149,45 @@ main {
 .agent-badge.running .agent-dot { background: var(--accent); animation: pulse 1.5s infinite; }
 .agent-badge.completed .agent-dot { background: var(--green); }
 .agent-badge.error .agent-dot { background: var(--red); }
+
+/* Category-grouped badges */
+.agent-category {
+    display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
+}
+.agent-category + .agent-category {
+    margin-left: 2px; padding-left: 6px;
+    border-left: 1px solid var(--border);
+}
+.agent-cat-label {
+    font-size: 8px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--cat-color, var(--text-dim));
+    line-height: 1; margin-right: 2px;
+}
+.agent-badge-mini {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 1px 5px; border-radius: 6px; font-size: 8px;
+    font-family: var(--font-mono); font-weight: 500;
+    background: rgba(255,255,255,0.04);
+    color: var(--text-dim);
+    cursor: default; transition: all 0.15s;
+    white-space: nowrap;
+}
+.agent-badge-mini:hover {
+    background: rgba(255,255,255,0.08);
+    color: var(--text);
+}
+.agent-dot-mini {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--border); flex-shrink: 0;
+}
+.agent-badge-mini.running {
+    background: rgba(88,166,255,0.12); color: var(--accent);
+}
+.agent-badge-mini.running .agent-dot-mini {
+    background: var(--accent); animation: pulse 1.5s infinite;
+}
+.agent-badge-mini.completed .agent-dot-mini { background: var(--green); }
+.agent-badge-mini.error .agent-dot-mini { background: var(--red); }
 
 .btn-graph-ctrl {
     background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
