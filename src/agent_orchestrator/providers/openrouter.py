@@ -1,7 +1,7 @@
 """OpenRouter provider — access 200+ models via a single API.
 
 OpenRouter uses an OpenAI-compatible API at https://openrouter.ai/api/v1.
-Includes automatic retry with fallback to other free models on 429 rate limits.
+Includes automatic retry with fallback on 429 rate limits and 402 credit errors.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 
 from ..core.provider import Completion, Message, ModelCapabilities, ToolDefinition
 from .openai import OpenAIProvider
@@ -204,7 +205,7 @@ class OpenRouterProvider(OpenAIProvider):
         max_tokens: int = 4096,
         temperature: float = 0.0,
     ) -> Completion:
-        """Complete with automatic fallback on 429 rate limits."""
+        """Complete with automatic fallback on 429 rate limits and 402 credit errors."""
         # Build list: requested model first, then fallbacks
         models_to_try = [self._model]
         for m in self.FALLBACK_ORDER:
@@ -212,6 +213,8 @@ class OpenRouterProvider(OpenAIProvider):
                 models_to_try.append(m)
 
         last_error = None
+        effective_max_tokens = max_tokens
+
         for model in models_to_try:
             original_model = self._model
             self._model = model
@@ -220,18 +223,56 @@ class OpenRouterProvider(OpenAIProvider):
                     messages=messages,
                     tools=tools,
                     system=system,
-                    max_tokens=max_tokens,
+                    max_tokens=effective_max_tokens,
                     temperature=temperature,
                 )
                 if model != original_model:
-                    logger.info("Fallback: %s rate-limited, used %s", original_model, model)
+                    logger.info("Fallback: %s unavailable, used %s", original_model, model)
                 return result
             except Exception as exc:
                 self._model = original_model
-                if "429" in str(exc) or "rate" in str(exc).lower():
+                err_str = str(exc)
+
+                # 402: insufficient credits — try with reduced max_tokens first
+                if "402" in err_str or "credits" in err_str.lower():
+                    affordable = self._parse_affordable_tokens(err_str)
+                    if affordable and affordable >= 256 and effective_max_tokens > affordable:
+                        effective_max_tokens = affordable
+                        logger.warning(
+                            "Credit limit on %s: reducing max_tokens to %d",
+                            model, effective_max_tokens,
+                        )
+                        # Retry same model with lower max_tokens
+                        self._model = model
+                        try:
+                            result = await super().complete(
+                                messages=messages,
+                                tools=tools,
+                                system=system,
+                                max_tokens=effective_max_tokens,
+                                temperature=temperature,
+                            )
+                            return result
+                        except Exception:
+                            self._model = original_model
+                    # Fall through to try cheaper models
+                    logger.warning("Insufficient credits for %s, trying cheaper model...", model)
+                    last_error = exc
+                    await asyncio.sleep(0.3)
+                    continue
+
+                # 429: rate limited — try next model
+                if "429" in err_str or "rate" in err_str.lower():
                     logger.warning("Rate limited on %s, trying next...", model)
                     last_error = exc
                     await asyncio.sleep(0.5)
                     continue
+
                 raise
         raise last_error  # type: ignore[misc]
+
+    @staticmethod
+    def _parse_affordable_tokens(error_msg: str) -> int | None:
+        """Extract 'can only afford N' tokens from a 402 error message."""
+        match = re.search(r"can only afford (\d+)", error_msg)
+        return int(match.group(1)) if match else None
