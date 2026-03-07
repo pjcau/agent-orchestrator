@@ -15,8 +15,10 @@ from agent_orchestrator.dashboard.graphs import (
     _build_team_graph,
     _last_run,
     get_last_run_info,
+    list_openrouter_models,
     replay_node,
 )
+from agent_orchestrator.providers.openrouter import OpenRouterProvider
 from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
 from agent_orchestrator.core.skill import SkillRegistry
 from agent_orchestrator.core.cooperation import (
@@ -722,3 +724,71 @@ class TestGetLastRunInfo:
             assert len(info["nodes"]) >= 3
         finally:
             EventBus._instance = old_instance
+
+
+# ===== OpenRouter Model List =====
+
+
+class TestOpenRouterModels:
+    @pytest.mark.asyncio
+    async def test_list_returns_models_without_api_key(self):
+        """Model list must be returned even without an API key."""
+        models = await list_openrouter_models("")
+        assert len(models) > 0, "Model list should not be empty when API key is missing"
+
+    @pytest.mark.asyncio
+    async def test_list_returns_models_with_api_key(self):
+        """Model list should also work with an API key."""
+        models = await list_openrouter_models("sk-fake-key-for-test")
+        assert len(models) > 0
+
+    @pytest.mark.asyncio
+    async def test_all_models_have_required_fields(self):
+        """Every model entry must have name, size, and provider fields."""
+        models = await list_openrouter_models("")
+        for m in models:
+            assert "name" in m, f"Model missing 'name': {m}"
+            assert "size" in m, f"Model missing 'size': {m}"
+            assert "provider" in m, f"Model missing 'provider': {m}"
+            assert m["provider"] == "openrouter"
+
+    @pytest.mark.asyncio
+    async def test_all_models_have_slash_in_name(self):
+        """OpenRouter model names follow the org/model format."""
+        models = await list_openrouter_models("")
+        for m in models:
+            assert "/" in m["name"], f"Model name should contain '/': {m['name']}"
+
+    @pytest.mark.asyncio
+    async def test_models_match_provider_catalog(self):
+        """Every model in the dashboard list must exist in OpenRouterProvider.MODELS."""
+        models = await list_openrouter_models("")
+        provider_models = set(OpenRouterProvider.MODELS.keys())
+        for m in models:
+            assert m["name"] in provider_models, (
+                f"Dashboard model '{m['name']}' not found in OpenRouterProvider.MODELS. "
+                f"Available: {sorted(provider_models)}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_provider_catalog_matches_dashboard(self):
+        """Every model in OpenRouterProvider.MODELS should appear in the dashboard list."""
+        models = await list_openrouter_models("")
+        dashboard_names = {m["name"] for m in models}
+        for model_id in OpenRouterProvider.MODELS:
+            assert model_id in dashboard_names, (
+                f"Provider model '{model_id}' missing from dashboard model list"
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_duplicate_models(self):
+        """Model list should not contain duplicates."""
+        models = await list_openrouter_models("")
+        names = [m["name"] for m in models]
+        assert len(names) == len(set(names)), f"Duplicate models found: {names}"
+
+    @pytest.mark.asyncio
+    async def test_minimum_model_count(self):
+        """At least 10 models should be available."""
+        models = await list_openrouter_models("")
+        assert len(models) >= 10, f"Expected at least 10 models, got {len(models)}"

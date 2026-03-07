@@ -21,10 +21,12 @@ from .events import Event, EventBus, EventType
 
 
 async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
-    """Return available OpenRouter models (curated list with pricing)."""
-    if not api_key:
-        return []
+    """Return available OpenRouter models (curated list with pricing).
 
+    The curated list is always returned regardless of whether an API key
+    is configured — the key is only needed for actual LLM calls, not for
+    browsing the model catalog.
+    """
     # Curated free models from big brands (sorted by brand, best first)
     return [
         # Google
