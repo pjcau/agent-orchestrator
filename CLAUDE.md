@@ -120,7 +120,7 @@ agent-orchestrator/
 - **MigrationManager** — Import configs from LangGraph, CrewAI, AutoGen with auto-detection.
 - **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
 
-## Agents (22)
+## Agents (23)
 
 Agents are organised by **category** under `.claude/agents/<category>/`.
 The `team-lead` lives at root level (`.claude/agents/team-lead.md`).
@@ -209,6 +209,21 @@ Content-Strategist ↔ SEO-Specialist: keyword-driven content
 Growth-Hacker ↔ All:                 experiment design across channels
 Social-Media-Manager ↔ Content:      content distribution
 Email-Marketer ↔ Growth-Hacker:      funnel automation, nurture flows
+```
+
+### Tooling (1 agent)
+
+```
+.claude/agents/tooling/
+  └── skillkit-scout (opus) ── searches SkillKit marketplace, installs skills
+```
+
+#### Escalation Flow
+
+```
+Team-lead cannot route task → skillkit-scout searches 15,000+ skills
+  → Found: install & assign to appropriate agent
+  → Not found: report to user, suggest custom agent/skill
 ```
 
 ### Skills Map (10 total)
