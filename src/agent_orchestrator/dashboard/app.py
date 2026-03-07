@@ -341,6 +341,46 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             }
         )
 
+    # --- OpenRouter Pricing ---
+
+    @app.get("/api/openrouter/pricing")
+    async def openrouter_pricing(q: str = ""):
+        """Fetch live model pricing from OpenRouter public API."""
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get("https://openrouter.ai/api/v1/models")
+                resp.raise_for_status()
+                data = resp.json()
+
+            models = []
+            for m in data.get("data", []):
+                pricing = m.get("pricing", {})
+                prompt_cost = float(pricing.get("prompt", 0)) * 1_000_000
+                completion_cost = float(pricing.get("completion", 0)) * 1_000_000
+                name = m.get("id", "")
+                # Filter by query if provided
+                if q and q.lower() not in name.lower():
+                    continue
+                models.append({
+                    "id": name,
+                    "name": m.get("name", name),
+                    "input_per_m": round(prompt_cost, 4),
+                    "output_per_m": round(completion_cost, 4),
+                    "context": m.get("context_length", 0),
+                    "is_free": prompt_cost == 0 and completion_cost == 0,
+                })
+
+            # Sort: free first, then by input cost
+            models.sort(key=lambda x: (not x["is_free"], x["input_per_m"]))
+            return JSONResponse(content={"models": models, "count": len(models)})
+        except Exception as e:
+            return JSONResponse(
+                content={"error": str(e), "models": []},
+                status_code=502,
+            )
+
     # --- Ollama Model Management ---
 
     @app.post("/api/ollama/pull")

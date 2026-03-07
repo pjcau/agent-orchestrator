@@ -1021,6 +1021,59 @@
   $btnResetGraph.addEventListener("click", resetGraph);
   $btnToggleSidebar.addEventListener("click", toggleSidebar);
 
+  // --- OpenRouter Pricing ---
+  const $pricingList = $("pricing-list");
+  const $pricingSearch = $("pricing-search");
+  const $btnRefreshPricing = $("btn-refresh-pricing");
+  let pricingData = [];
+
+  async function loadPricing() {
+    if (!$pricingList) return;
+    $pricingList.innerHTML = '<div class="empty-state">Loading...</div>';
+    try {
+      const resp = await fetch("/api/openrouter/pricing");
+      const data = await resp.json();
+      pricingData = data.models || [];
+      renderPricing();
+    } catch (e) {
+      $pricingList.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderPricing() {
+    if (!$pricingList) return;
+    const q = ($pricingSearch ? $pricingSearch.value : "").toLowerCase();
+    const filtered = q ? pricingData.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)) : pricingData;
+    if (!filtered.length) {
+      $pricingList.innerHTML = '<div class="empty-state">No models found</div>';
+      return;
+    }
+    // Show max 50 to keep it fast
+    const show = filtered.slice(0, 50);
+    $pricingList.innerHTML = `<div class="pricing-table">
+      <div class="pricing-row pricing-header">
+        <span class="pricing-model">Model</span>
+        <span class="pricing-cost">In $/M</span>
+        <span class="pricing-cost">Out $/M</span>
+      </div>
+      ${show.map((m) => `<div class="pricing-row${m.is_free ? " pricing-free" : ""}">
+        <span class="pricing-model" title="${esc(m.id)}">${esc(m.name)}</span>
+        <span class="pricing-cost">${m.is_free ? "free" : "$" + m.input_per_m.toFixed(2)}</span>
+        <span class="pricing-cost">${m.is_free ? "free" : "$" + m.output_per_m.toFixed(2)}</span>
+      </div>`).join("")}
+    </div>
+    <div class="pricing-footer">${filtered.length} models${filtered.length > 50 ? " (showing 50)" : ""}</div>`;
+  }
+
+  if ($btnRefreshPricing) $btnRefreshPricing.addEventListener("click", loadPricing);
+  if ($pricingSearch) {
+    let debounceTimer;
+    $pricingSearch.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(renderPricing, 200);
+    });
+  }
+
   // --- Streaming WebSocket message handler ---
   function setupStreamHandler() {
     if (!streamWs) return;
