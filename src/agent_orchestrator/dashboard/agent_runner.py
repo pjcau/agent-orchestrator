@@ -18,13 +18,17 @@ from .events import Event, EventBus, EventType
 
 def create_skill_registry(
     allowed_commands: list[str] | None = None,
+    working_directory: str | None = None,
 ) -> SkillRegistry:
     """Create a skill registry with all built-in skills."""
     registry = SkillRegistry()
-    registry.register(FileReadSkill())
-    registry.register(FileWriteSkill())
-    registry.register(GlobSkill())
-    registry.register(ShellExecSkill(allowed_commands=allowed_commands))
+    registry.register(FileReadSkill(working_directory=working_directory))
+    registry.register(FileWriteSkill(working_directory=working_directory))
+    registry.register(GlobSkill(working_directory=working_directory))
+    registry.register(ShellExecSkill(
+        allowed_commands=allowed_commands,
+        working_directory=working_directory,
+    ))
     return registry
 
 
@@ -36,6 +40,7 @@ async def run_agent(
     tools: list[str] | None = None,
     max_steps: int = 10,
     event_bus: EventBus | None = None,
+    working_directory: str | None = None,
 ) -> dict[str, Any]:
     """Run an agent on a task with real-time event emissions.
 
@@ -58,7 +63,8 @@ async def run_agent(
             "pytest",
             "ruff",
             "git",
-        ]
+        ],
+        working_directory=working_directory,
     )
 
     # Default tools if none specified
@@ -296,6 +302,165 @@ async def _instrumented_execute(
         total_cost_usd=total_cost,
         error=f"Max steps ({config.max_steps}) reached",
     )
+
+
+async def run_team(
+    task_description: str,
+    provider: Provider,
+    event_bus: EventBus | None = None,
+    working_directory: str | None = None,
+    max_steps: int = 15,
+) -> dict[str, Any]:
+    """Run a multi-agent team: team-lead plans, sub-agents execute with tools, team-lead summarizes.
+
+    Flow:
+      1. team-lead decomposes the task into sub-tasks
+      2. backend-dev and frontend-dev execute sub-tasks (with file/shell tools)
+      3. team-lead writes a final summary
+    """
+    bus = event_bus or EventBus.get()
+    start_time = time.time()
+    total_tokens = 0
+    total_cost = 0.0
+    agent_outputs: dict[str, str] = {}
+
+    # --- Step 1: Team-lead plans ---
+    await bus.emit(Event(
+        event_type=EventType.AGENT_SPAWN,
+        agent_name="team-lead",
+        data={"provider": provider.model_id, "role": "Task decomposition", "tools": []},
+    ))
+    await bus.emit(Event(
+        event_type=EventType.AGENT_STEP,
+        agent_name="team-lead",
+        data={"step": 1, "model": provider.model_id},
+    ))
+
+    plan_completion = await provider.complete(
+        messages=[Message(role=Role.USER, content=task_description)],
+        system=(
+            "You are a team lead. Decompose this task into concrete sub-tasks.\n"
+            "Reply with a brief plan (max 5 lines):\n"
+            "- BACKEND: what the backend developer should build (files, logic)\n"
+            "- FRONTEND: what the frontend developer should build (files, UI)\n"
+            "Be specific about file names and structure. Be concise."
+        ),
+    )
+    total_tokens += plan_completion.usage.input_tokens + plan_completion.usage.output_tokens
+    total_cost += plan_completion.usage.cost_usd
+    plan = plan_completion.content
+
+    await bus.emit(Event(
+        event_type=EventType.AGENT_COMPLETE,
+        agent_name="team-lead",
+        data={"output": plan[:200], "steps": 1},
+    ))
+
+    # --- Step 2: Sub-agents execute with tools ---
+    sub_agents = [
+        {
+            "name": "backend-dev",
+            "role": (
+                "You are a backend developer. Write actual code files. "
+                "Use file_write to create files. Be practical, write working code. "
+                "Create proper project structure."
+            ),
+            "prompt": (
+                f"Team lead's plan:\n{plan}\n\n"
+                f"Original request:\n{task_description}\n\n"
+                "Implement the BACKEND parts. Write all necessary files using file_write."
+            ),
+        },
+        {
+            "name": "frontend-dev",
+            "role": (
+                "You are a frontend developer. Write actual code files. "
+                "Use file_write to create files. Be practical, write working code. "
+                "Create proper UI structure."
+            ),
+            "prompt": (
+                f"Team lead's plan:\n{plan}\n\n"
+                f"Original request:\n{task_description}\n\n"
+                "Implement the FRONTEND parts. Write all necessary files using file_write."
+            ),
+        },
+    ]
+
+    for agent_def in sub_agents:
+        # Emit task delegation
+        await bus.emit(Event(
+            event_type=EventType.TASK_ASSIGNED,
+            data={
+                "task_id": agent_def["name"],
+                "from_agent": "team-lead",
+                "to_agent": agent_def["name"],
+                "description": f"Execute: {agent_def['prompt'][:80]}",
+                "priority": "normal",
+            },
+        ))
+
+        result = await run_agent(
+            agent_name=agent_def["name"],
+            task_description=agent_def["prompt"],
+            provider=provider,
+            role=agent_def["role"],
+            max_steps=max_steps,
+            event_bus=bus,
+            working_directory=working_directory,
+        )
+
+        total_tokens += result.get("total_tokens", 0)
+        total_cost += result.get("total_cost_usd", 0.0)
+        agent_outputs[agent_def["name"]] = result.get("output", result.get("error", ""))
+
+        await bus.emit(Event(
+            event_type=EventType.TASK_COMPLETED,
+            data={
+                "task_id": agent_def["name"],
+                "from_agent": agent_def["name"],
+                "to_agent": "team-lead",
+                "success": result.get("success", False),
+                "summary": result.get("output", "")[:100],
+            },
+        ))
+
+    # --- Step 3: Team-lead summarizes ---
+    await bus.emit(Event(
+        event_type=EventType.AGENT_SPAWN,
+        agent_name="team-lead",
+        data={"provider": provider.model_id, "role": "Summary", "tools": []},
+    ))
+
+    summary_completion = await provider.complete(
+        messages=[Message(role=Role.USER, content=(
+            f"Original request:\n{task_description}\n\n"
+            f"Backend developer output:\n{agent_outputs.get('backend-dev', 'N/A')}\n\n"
+            f"Frontend developer output:\n{agent_outputs.get('frontend-dev', 'N/A')}\n\n"
+            "Write a final summary of what was built and how to run it. Be concise."
+        ))],
+        system="You are the team lead. Summarize the work done by your team. Be concise but complete.",
+    )
+    total_tokens += summary_completion.usage.input_tokens + summary_completion.usage.output_tokens
+    total_cost += summary_completion.usage.cost_usd
+    summary = summary_completion.content
+
+    await bus.emit(Event(
+        event_type=EventType.AGENT_COMPLETE,
+        agent_name="team-lead",
+        data={"output": summary[:200], "steps": 1},
+    ))
+
+    elapsed = time.time() - start_time
+
+    return {
+        "success": True,
+        "output": summary,
+        "plan": plan,
+        "agent_outputs": agent_outputs,
+        "total_tokens": total_tokens,
+        "total_cost_usd": total_cost,
+        "elapsed_s": round(elapsed, 2),
+    }
 
 
 def _safe_truncate(args: dict) -> dict:

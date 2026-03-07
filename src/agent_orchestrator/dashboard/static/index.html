@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=032">
+    <link rel="stylesheet" href="/static/style.css?v=042">
 </head>
 <body>
     <header>
@@ -25,104 +25,71 @@
                 <span class="metric-label">Speed</span>
                 <span id="token-speed" class="metric-value">- tok/s</span>
             </div>
+            <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="Toggle logs panel">Logs</button>
             <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
         </div>
     </header>
 
     <main>
-        <!-- Left: Agent tree -->
-        <section class="panel agents-panel">
-            <h2>Agents & Skills</h2>
-            <div id="agent-tree" class="agent-tree"></div>
-
-            <h2>Run Agent</h2>
-            <div class="agent-run-panel">
-                <select id="run-agent-select" title="Agent">
-                    <option value="">Select agent...</option>
-                </select>
-                <select id="run-agent-provider" title="Provider">
-                    <option value="ollama">Ollama</option>
-                    <option value="openrouter">OpenRouter</option>
-                </select>
-                <select id="run-agent-model" title="Model">
-                    <option value="">Select model...</option>
-                </select>
-                <textarea id="run-agent-task" class="run-agent-task" rows="2"
-                          placeholder="Describe the task..."></textarea>
-                <div class="run-agent-footer">
-                    <span id="run-agent-cost" class="run-agent-cost"></span>
-                    <button id="btn-run-agent" class="btn-run-agent">Run</button>
-                </div>
-            </div>
-
-            <h2>Inter-Agent Messages</h2>
-            <div id="agent-messages" class="agent-messages">
-                <div class="empty-state">No messages yet</div>
-            </div>
-
-            <h2>Ollama Models</h2>
-            <div class="ollama-mgmt">
-                <div class="ollama-pull-bar">
-                    <input id="ollama-pull-input" type="text" placeholder="model name..." />
-                    <button id="btn-ollama-pull" title="Pull model">Pull</button>
-                </div>
-                <div id="ollama-model-list" class="ollama-model-list"></div>
-            </div>
-        </section>
-
-        <!-- Center: Graph + Chat -->
-        <section class="panel center-panel">
-            <!-- Graph visualization -->
+        <!-- Main content area -->
+        <div class="main-content">
+            <!-- Top: Agent graph -->
             <div class="graph-section">
                 <div class="graph-header">
-                    <h2>Graph</h2>
-                    <button id="btn-reset-graph" class="btn-graph-ctrl" title="Reset all state">Reset</button>
+                    <h2>Agents</h2>
+                    <div class="graph-header-right">
+                        <div id="agent-badges" class="agent-badges"></div>
+                        <button id="btn-reset-graph" class="btn-graph-ctrl" title="Reset all state">Reset</button>
+                    </div>
                 </div>
                 <div id="graph-canvas" class="graph-canvas">
-                    <div class="empty-state">Submit a prompt to see the graph</div>
+                    <div class="empty-state">Send a message to see the agent graph</div>
                 </div>
+                <!-- Inter-Agent Messages (inline under graph) -->
+                <div id="agent-messages" class="agent-messages-inline"></div>
+            </div>
+
+            <!-- Center: Chat -->
+            <div class="chat-section">
+                <div id="chat-messages" class="chat-messages"></div>
+            </div>
+
+            <!-- File context bar (above input) -->
+            <div class="file-context-bar" id="file-context-bar">
+                <div class="file-context-header">
+                    <span class="file-context-label">Files</span>
+                    <button id="btn-attach-file" class="btn-attach" title="Attach file">+ File</button>
+                    <button id="btn-clear-context" class="btn-clear-context" title="Clear">Clear</button>
+                </div>
+                <div id="attached-files" class="attached-files"></div>
             </div>
 
             <!-- Presets bar -->
             <div class="presets-bar" id="presets-bar"></div>
 
-            <!-- File context bar -->
-            <div class="file-context-bar" id="file-context-bar">
-                <div class="file-context-header">
-                    <span class="file-context-label">File Context</span>
-                    <button id="btn-attach-file" class="btn-attach" title="Attach file">+ File</button>
-                    <button id="btn-clear-context" class="btn-clear-context" title="Clear context">Clear</button>
+            <!-- Bottom: Unified input bar -->
+            <div class="input-bar">
+                <div class="input-controls">
+                    <select id="exec-mode" title="Execution mode">
+                        <option value="multi-agent">Multi-Agent</option>
+                        <option value="agent">Single Agent</option>
+                        <option value="prompt">Simple Prompt</option>
+                    </select>
+                    <select id="prompt-provider" title="Provider">
+                        <option value="openrouter">Cloud (OpenRouter)</option>
+                        <option value="ollama">Local (Ollama)</option>
+                    </select>
+                    <select id="prompt-model" title="Model">
+                        <option value="">Loading...</option>
+                    </select>
+                    <label class="stream-toggle">
+                        <input id="toggle-stream" type="checkbox" checked />
+                        <span>Stream</span>
+                    </label>
                 </div>
-                <div id="attached-files" class="attached-files"></div>
-            </div>
-
-            <!-- Chat area -->
-            <div class="chat-section">
-                <div id="chat-messages" class="chat-messages"></div>
-                <div class="chat-input-bar">
-                    <div class="chat-settings">
-                        <select id="prompt-provider" title="Provider">
-                            <option value="ollama">Ollama (local)</option>
-                            <option value="openrouter">OpenRouter (cloud)</option>
-                        </select>
-                        <select id="prompt-model" title="Model">
-                            <option value="">Loading...</option>
-                        </select>
-                        <select id="prompt-graph" title="Graph type">
-                            <option value="auto">Auto</option>
-                            <option value="chat">Chat</option>
-                            <option value="review">Code Review</option>
-                            <option value="chain">Analyze+Fix</option>
-                            <option value="parallel">Parallel</option>
-                            <option value="team">Team</option>
-                        </select>
-                        <label class="stream-toggle">
-                            <input id="toggle-stream" type="checkbox" checked />
-                            <span>Stream</span>
-                        </label>
-                    </div>
+                <div class="input-row">
                     <textarea id="prompt-input" class="chat-input" rows="1"
-                              placeholder="Type a prompt..."></textarea>
+                              placeholder="Describe what you need..."></textarea>
                     <button id="btn-send" class="btn-send" title="Send (Enter)">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -131,42 +98,70 @@
                     </button>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <!-- Right: Logs / Details -->
-        <section class="panel logs-panel">
-            <h2>Logs</h2>
-            <div class="logs-controls">
-                <select id="filter-type">
-                    <option value="all">All</option>
-                    <option value="agent">Agent</option>
-                    <option value="graph">Graph</option>
-                    <option value="cooperation">Coop</option>
-                </select>
-                <button id="btn-clear">Clear</button>
-                <button id="btn-new-chat" title="New conversation">New Chat</button>
-            </div>
-            <div id="timeline" class="timeline"></div>
-
-            <h2>Details</h2>
-            <div id="detail-view" class="detail-view">
-                <div class="empty-state">Click a graph node or event</div>
-            </div>
-
-            <!-- Model Comparison -->
-            <h2>Compare</h2>
-            <div class="compare-section">
-                <div class="compare-controls">
-                    <select id="compare-model-a" class="compare-select"></select>
-                    <span class="compare-vs">vs</span>
-                    <select id="compare-model-b" class="compare-select"></select>
-                    <button id="btn-compare" class="btn-compare">Go</button>
-                </div>
-                <div id="compare-results" class="compare-results">
-                    <div class="empty-state">Select 2 models and click Go</div>
+        <!-- Right sidebar: Agent Activity + Logs (always visible) -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Agent Activity: real-time agent actions -->
+            <div class="sidebar-section agent-activity-section">
+                <h2>Agent Activity</h2>
+                <div id="agent-activity" class="agent-activity">
+                    <div class="empty-state">Waiting for agents...</div>
                 </div>
             </div>
-        </section>
+
+            <!-- Event Logs -->
+            <div class="sidebar-section">
+                <h2>Event Log</h2>
+                <div class="logs-controls">
+                    <select id="filter-type">
+                        <option value="all">All</option>
+                        <option value="agent">Agent</option>
+                        <option value="graph">Graph</option>
+                        <option value="cooperation">Coop</option>
+                    </select>
+                    <button id="btn-clear">Clear</button>
+                    <button id="btn-new-chat" title="New conversation">New Chat</button>
+                </div>
+                <div id="timeline" class="timeline"></div>
+            </div>
+
+            <!-- Details -->
+            <div class="sidebar-section">
+                <h2>Details</h2>
+                <div id="detail-view" class="detail-view">
+                    <div class="empty-state">Click a graph node or event</div>
+                </div>
+            </div>
+
+            <!-- Compare -->
+            <div class="sidebar-section">
+                <h2>Compare</h2>
+                <div class="compare-section">
+                    <div class="compare-controls">
+                        <select id="compare-model-a" class="compare-select"></select>
+                        <span class="compare-vs">vs</span>
+                        <select id="compare-model-b" class="compare-select"></select>
+                        <button id="btn-compare" class="btn-compare">Go</button>
+                    </div>
+                    <div id="compare-results" class="compare-results">
+                        <div class="empty-state">Select 2 models and click Go</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ollama Models -->
+            <div class="sidebar-section">
+                <h2>Ollama Models</h2>
+                <div class="ollama-mgmt">
+                    <div class="ollama-pull-bar">
+                        <input id="ollama-pull-input" type="text" placeholder="model name..." />
+                        <button id="btn-ollama-pull" title="Pull model">Pull</button>
+                    </div>
+                    <div id="ollama-model-list" class="ollama-model-list"></div>
+                </div>
+            </div>
+        </aside>
     </main>
 
     <!-- File picker modal -->
@@ -181,6 +176,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=032"></script>
+    <script src="/static/app.js?v=042"></script>
 </body>
 </html>

@@ -19,7 +19,7 @@ pip install -e ".[all]"
 
 ### Run the Dashboard (recommended)
 
-The dashboard provides an interactive prompt to trigger graph-based orchestration with any Ollama model:
+The dashboard provides an interactive multi-agent orchestration UI with real-time monitoring:
 
 ```bash
 # Start Ollama (if not already running)
@@ -47,12 +47,13 @@ python3.11 examples/test_claude_graph.py
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md) for the full design.
+See [docs/components.md](docs/components.md) for the component interaction graph.
 
 ### Core Abstractions
 
 | Concept | Description |
 |---------|-------------|
-| **Provider** | LLM backend (Claude, GPT, Gemini, local). Swappable. |
+| **Provider** | LLM backend (Claude, GPT, Gemini, OpenRouter, local). Swappable. |
 | **Agent** | Autonomous unit with role, tools, provider. Stateless. |
 | **Skill** | Reusable capability. Provider-independent. |
 | **Orchestrator** | Coordinates agents, routes tasks, enforces anti-stall. |
@@ -95,17 +96,28 @@ Features:
 - **Checkpointing** — save/restore graph state (InMemory, SQLite, Postgres)
 - **LLM node factories** — `llm_node()`, `multi_provider_node()`, `chat_node()`
 - **Reducers** — control how state merges (append, replace, merge_dict, etc.)
+- **Sub-graphs** — wrap compiled graphs as callable nodes with I/O mapping
+- **Graph patterns** — retry, loop, map-reduce as composable patterns
+- **Graph templates** — versioned templates with JSON serialization
 
 ### Dashboard
 
-Real-time monitoring UI with interactive prompt:
+Real-time monitoring UI with three execution modes:
 
-- **Interactive prompt bar** — type commands, select model and graph type
-- **Model selector** — dynamically lists all available Ollama models
-- **Graph types** — Auto (classify + route), Chat, Code Review, Analyze + Fix, Parallel Review
-- **Live timeline** — WebSocket-streamed events as the graph executes
-- **Agent cards** — status, tokens, cost per agent
-- **Graph visualization** — nodes, edges, conditional routes
+- **Multi-Agent** (default) — team-lead decomposes tasks, backend-dev and frontend-dev execute with tools (file_write, shell_exec), team-lead summarizes
+- **Single Agent** — one agent with full tool access
+- **Simple Prompt** — direct LLM call with optional streaming
+
+Features:
+- **Provider selector** — Cloud (OpenRouter free models) or Local (Ollama)
+- **Model selector** — dynamically lists available models per provider
+- **Live agent activity** — real-time tool calls, task delegation, completion
+- **Agent graph** — visual node status per agent
+- **Session-based jobs** — all agent outputs persisted to `jobs/job_<session>/`
+- **File context** — attach project files to prompts
+- **Markdown rendering** — chat renders code blocks, headers, lists, links
+- **WebSocket streaming** — real-time token streaming (Simple Prompt mode)
+- **Event log** — filterable timeline of all orchestrator events
 
 ### Routing Strategies
 
@@ -113,6 +125,8 @@ Real-time monitoring UI with interactive prompt:
 - **Cost-optimized** — cheap models for simple tasks, expensive for complex
 - **Capability-based** — match task needs to model strengths
 - **Fallback chain** — try provider A, fall back to B on failure
+- **Local-first** — prefer local models, fallback to cloud
+- **Complexity-based** — estimate task complexity, route accordingly
 
 ## Providers
 
@@ -121,6 +135,7 @@ Real-time monitoring UI with interactive prompt:
 | Anthropic | `AnthropicProvider` | claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 |
 | OpenAI | `OpenAIProvider` | gpt-4o, gpt-4o-mini, o3 |
 | Google | `GoogleProvider` | gemini-2.0-flash, gemini-2.5-pro |
+| OpenRouter | `OpenRouterProvider` | Free models from Google, Meta, Qwen, OpenAI, Mistral, NVIDIA |
 | Local/Ollama | `LocalProvider` | Any Ollama model (qwen2.5-coder, deepseek-r1, gemma3, etc.) |
 
 ## Docker / OrbStack
@@ -160,40 +175,72 @@ The dashboard container connects to Ollama on the host via `host.docker.internal
 agent-orchestrator/
 ├── src/agent_orchestrator/
 │   ├── core/
-│   │   ├── graph.py           # StateGraph engine (nodes, edges, parallel, HITL)
-│   │   ├── llm_nodes.py       # LLM node factories (llm_node, multi_provider, chat)
-│   │   ├── checkpoint.py      # InMemory + SQLite checkpointers
-│   │   ├── checkpoint_postgres.py  # Postgres checkpointer (asyncpg)
-│   │   ├── reducers.py        # State reducers (append, merge, replace, etc.)
-│   │   ├── provider.py        # Provider ABC interface
-│   │   ├── agent.py           # Agent base class
-│   │   ├── orchestrator.py    # Task decomposition + routing
-│   │   ├── cooperation.py     # Inter-agent protocols
-│   │   └── skill.py           # Skill registry
+│   │   ├── graph.py              # StateGraph engine (nodes, edges, parallel, HITL)
+│   │   ├── llm_nodes.py          # LLM node factories (llm_node, multi_provider, chat)
+│   │   ├── checkpoint.py         # InMemory + SQLite checkpointers
+│   │   ├── checkpoint_postgres.py # Postgres checkpointer (asyncpg)
+│   │   ├── reducers.py           # State reducers (append, merge, replace, etc.)
+│   │   ├── graph_patterns.py     # Sub-graphs, retry, loop, map-reduce
+│   │   ├── graph_templates.py    # Template store with versioning & JSON
+│   │   ├── provider.py           # Provider ABC interface
+│   │   ├── agent.py              # Agent base class
+│   │   ├── orchestrator.py       # Task decomposition + routing
+│   │   ├── cooperation.py        # Inter-agent protocols
+│   │   ├── skill.py              # Skill registry
+│   │   ├── router.py             # Smart task routing (6 strategies)
+│   │   ├── usage.py              # Cost tracking & budget enforcement
+│   │   ├── health.py             # Provider health monitoring
+│   │   ├── benchmark.py          # Model benchmarking suite
+│   │   ├── rate_limiter.py       # Per-provider rate limiting
+│   │   ├── audit.py              # Structured audit logging
+│   │   ├── task_queue.py         # Priority task queue with retries
+│   │   ├── metrics.py            # Prometheus-compatible metrics
+│   │   ├── alerts.py             # Spend alert rules & manager
+│   │   ├── plugins.py            # Plugin manifest & loader
+│   │   ├── webhook.py            # Webhook registry & HMAC validation
+│   │   ├── mcp_server.py         # MCP tool/resource registry
+│   │   ├── offline.py            # Offline mode (local-only filtering)
+│   │   ├── config_manager.py     # Configuration manager (JSON, validation, rollback)
+│   │   ├── project.py            # Multi-project support
+│   │   ├── users.py              # User management with RBAC
+│   │   ├── provider_presets.py   # One-click provider presets
+│   │   ├── migration.py          # Import from LangGraph/CrewAI/AutoGen
+│   │   └── api.py                # Versioned REST API registry (OpenAPI 3.0)
 │   ├── providers/
-│   │   ├── anthropic.py       # Claude
-│   │   ├── openai.py          # GPT
-│   │   ├── google.py          # Gemini
-│   │   └── local.py           # Ollama / vLLM (OpenAI-compatible)
+│   │   ├── anthropic.py          # Claude
+│   │   ├── openai.py             # GPT
+│   │   ├── google.py             # Gemini
+│   │   ├── openrouter.py         # OpenRouter (free cloud models)
+│   │   └── local.py              # Ollama / vLLM (OpenAI-compatible)
 │   ├── dashboard/
-│   │   ├── app.py             # FastAPI app with /api/prompt, /api/models
-│   │   ├── graphs.py          # Graph builders for dashboard prompt
-│   │   ├── events.py          # EventBus + WebSocket broadcast
-│   │   ├── instrument.py      # Auto-instrumentation of core classes
-│   │   ├── server.py          # Entrypoint (uvicorn)
-│   │   └── static/            # HTML, CSS, JS
-│   └── skills/                # Reusable capabilities
+│   │   ├── app.py                # FastAPI app (REST + WebSocket + streaming)
+│   │   ├── agent_runner.py       # Agent/team execution with event emissions
+│   │   ├── agents_registry.py    # Agent configuration registry
+│   │   ├── graphs.py             # Graph builders for dashboard prompt
+│   │   ├── job_logger.py         # Session-based job persistence
+│   │   ├── auth.py               # API key authentication middleware
+│   │   ├── events.py             # EventBus + WebSocket broadcast
+│   │   ├── instrument.py         # Auto-instrumentation of core classes
+│   │   ├── server.py             # Entrypoint (uvicorn)
+│   │   └── static/               # HTML, CSS, JS
+│   └── skills/
+│       ├── filesystem.py         # File read/write/search
+│       ├── shell.py              # Shell command execution
+│       ├── doc_sync.py           # Documentation sync checker
+│       ├── github_skill.py       # GitHub integration via gh CLI
+│       └── webhook_skill.py      # Outgoing webhook skill
 ├── examples/
-│   ├── test_ollama_graph.py   # 4 examples with Ollama/Qwen (free)
-│   └── test_claude_graph.py   # 4 examples with Anthropic API
-├── tests/                     # 46+ tests
-├── docker-compose.yml         # OrbStack services
+│   ├── test_ollama_graph.py      # 4 examples with Ollama/Qwen (free)
+│   └── test_claude_graph.py      # 4 examples with Anthropic API
+├── tests/                        # 382 tests (13 test files)
+├── docker-compose.yml            # OrbStack services
 └── pyproject.toml
 ```
 
 ## Documentation
 
 - [Architecture](docs/architecture.md) — core design and abstractions
+- [Components](docs/components.md) — component interaction graph
 - [Cost Analysis](docs/cost-analysis.md) — provider comparison, cost modeling, break-even analysis
 - [Infrastructure](docs/infrastructure.md) — cloud vs physical machines decision framework
 - [Migration from Claude](docs/migration-from-claude.md) — how to abstract away from Claude Code
@@ -219,4 +266,4 @@ docker compose run --rm test
 
 ## Status
 
-v0.1.0 — Foundation: core abstractions, 4 providers, StateGraph engine, interactive dashboard, OrbStack integration, 46+ tests.
+v1.0.0 — Full framework: core abstractions, 5 providers (Anthropic, OpenAI, Google, OpenRouter, Local), StateGraph engine, multi-agent dashboard with session persistence, 382 tests.

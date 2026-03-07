@@ -37,6 +37,11 @@ agent-orchestrator/
 │       │   ├── task_queue.py    # Priority task queue with retries
 │       │   ├── metrics.py       # Prometheus-compatible metrics
 │       │   ├── alerts.py        # Spend alert rules & manager
+│       │   ├── graph.py         # StateGraph engine (nodes, edges, parallel, HITL)
+│       │   ├── llm_nodes.py     # LLM node factories (llm_node, multi_provider, chat)
+│       │   ├── checkpoint.py    # InMemory + SQLite checkpointers
+│       │   ├── checkpoint_postgres.py # Postgres checkpointer (asyncpg)
+│       │   ├── reducers.py      # State reducers (append, merge, replace, etc.)
 │       │   ├── graph_patterns.py # Sub-graphs, retry, loop, map-reduce
 │       │   ├── graph_templates.py # Template store with versioning & JSON
 │       │   ├── plugins.py       # Plugin manifest & loader
@@ -53,19 +58,23 @@ agent-orchestrator/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
 │       │   ├── google.py        # Gemini provider
+│       │   ├── openrouter.py    # OpenRouter (free cloud models)
 │       │   └── local.py         # Local models (Ollama, vLLM)
 │       ├── dashboard/
-│       │   ├── app.py           # FastAPI dashboard (REST + WebSocket)
+│       │   ├── app.py           # FastAPI dashboard (REST + WebSocket + streaming)
+│       │   ├── agent_runner.py  # Agent/team execution with event emissions
+│       │   ├── agents_registry.py # Agent configuration registry
+│       │   ├── graphs.py        # Graph builders for dashboard prompt
+│       │   ├── job_logger.py    # Session-based job persistence
 │       │   ├── auth.py          # API key authentication middleware
 │       │   ├── events.py        # EventBus, Event types
 │       │   ├── instrument.py    # Monkey-patches core classes to emit events
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
 │       │   └── static/          # HTML/CSS/JS dashboard UI
 │       └── skills/
-│           ├── doc_sync.py      # Documentation sync checker
 │           ├── filesystem.py    # File read/write/search
 │           ├── shell.py         # Shell command execution
-│           ├── testing.py       # Test runner skill
+│           ├── doc_sync.py      # Documentation sync checker
 │           ├── github_skill.py  # GitHub integration via gh CLI
 │           └── webhook_skill.py # Outgoing webhook skill
 ├── tests/

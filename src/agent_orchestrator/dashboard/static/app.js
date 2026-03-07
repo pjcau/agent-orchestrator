@@ -1,11 +1,6 @@
-/** Agent Orchestrator Dashboard v0.2.0
- * - Streaming responses via WebSocket
- * - Multi-turn conversations
- * - File context attachment
- * - Task presets
- * - Model comparison
- * - Ollama model management
- * - Provider selector (Ollama + OpenRouter)
+/** Agent Orchestrator Dashboard v0.3.0
+ * Unified interface: Multi-Agent / Single Agent / Simple Prompt
+ * Default: Multi-Agent + Cloud (OpenRouter)
  */
 
 (function () {
@@ -30,7 +25,7 @@
   let graphNodeStates = {};
   let lastTokenSpeed = 0;
   let conversationId = null;
-  let attachedFiles = []; // [{path, content}]
+  let attachedFiles = [];
   let allModels = { ollama: [], openrouter: [] };
   const MAX_EVENTS = 500;
 
@@ -41,14 +36,14 @@
   const $cost = $("total-cost");
   const $tokenSpeed = $("token-speed");
   const $wsIndicator = $("ws-indicator");
-  const $agentTree = $("agent-tree");
+  const $agentBadges = $("agent-badges");
   const $agentMessages = $("agent-messages");
   const $graphCanvas = $("graph-canvas");
   const $chatMessages = $("chat-messages");
   const $promptInput = $("prompt-input");
   const $btnSend = $("btn-send");
+  const $execMode = $("exec-mode");
   const $promptModel = $("prompt-model");
-  const $promptGraph = $("prompt-graph");
   const $promptProvider = $("prompt-provider");
   const $toggleStream = $("toggle-stream");
   const $filterType = $("filter-type");
@@ -72,26 +67,16 @@
   const $fileBreadcrumb = $("file-breadcrumb");
   const $btnClosePicker = $("btn-close-picker");
   const $btnResetGraph = $("btn-reset-graph");
-  const $runAgentSelect = $("run-agent-select");
-  const $runAgentProvider = $("run-agent-provider");
-  const $runAgentModel = $("run-agent-model");
-  const $runAgentTask = $("run-agent-task");
-  const $runAgentCost = $("run-agent-cost");
-  const $btnRunAgent = $("btn-run-agent");
+  const $btnToggleSidebar = $("btn-toggle-sidebar");
+  const $sidebar = $("sidebar");
+  const $agentActivity = $("agent-activity");
 
   // --- Event WebSocket ---
   function connect() {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${proto}//${location.host}/ws`);
-
-    ws.onopen = () => {
-      $wsIndicator.className = "ws-dot connected";
-      $wsIndicator.title = "WebSocket connected";
-    };
-    ws.onclose = () => {
-      $wsIndicator.className = "ws-dot disconnected";
-      setTimeout(connect, 2000);
-    };
+    ws.onopen = () => { $wsIndicator.className = "ws-dot connected"; };
+    ws.onclose = () => { $wsIndicator.className = "ws-dot disconnected"; setTimeout(connect, 2000); };
     ws.onerror = () => ws.close();
     ws.onmessage = (msg) => {
       const payload = JSON.parse(msg.data);
@@ -120,7 +105,6 @@
       const data = await resp.json();
       allModels = data;
       updateModelSelector();
-      updateRunAgentModels();
       updateCompareSelectors();
       renderOllamaModelList();
     } catch (e) {
@@ -160,48 +144,26 @@
     if (allList.length > 1) $compareModelB.selectedIndex = 1;
   }
 
-  // --- Agent Tree ---
+  // --- Agent Badges (compact, in graph header) ---
+  function renderAgentBadges() {
+    if (!agentRegistry || !agentRegistry.agents) {
+      $agentBadges.innerHTML = "";
+      return;
+    }
+    $agentBadges.innerHTML = agentRegistry.agents.map((a) => {
+      const status = getAgentStatus(a.name);
+      return `<span class="agent-badge ${status}"><span class="agent-dot"></span>${esc(a.name)}</span>`;
+    }).join("");
+  }
+
   async function loadAgents() {
     try {
       const resp = await fetch("/api/agents");
       agentRegistry = await resp.json();
-      renderAgentTree();
+      renderAgentBadges();
     } catch (e) {
       agentRegistry = null;
-      renderAgentTree();
     }
-  }
-
-  function renderAgentTree() {
-    if (!agentRegistry || !agentRegistry.agents) {
-      $agentTree.innerHTML = '<div class="empty-state">No agent registry</div>';
-      return;
-    }
-    const leader = agentRegistry.agents.find((a) => a.name === "team-lead");
-    const subs = agentRegistry.agents.filter((a) => a.name !== "team-lead");
-    let html = "";
-    if (leader) html += renderAgentNode(leader, true);
-    html += '<div class="agent-sub-agents">';
-    subs.forEach((a) => (html += renderAgentNode(a, false)));
-    html += "</div>";
-    $agentTree.innerHTML = html;
-  }
-
-  function renderAgentNode(agent, isLead) {
-    const status = getAgentStatus(agent.name);
-    const skills = (agent.skills || [])
-      .map((sk) => `<span class="skill-tag${activeSkills.has(sk) ? " active" : ""}" onclick="window._invokeSkill('${sk}')" title="Click to invoke">${esc(sk)}</span>`)
-      .join("");
-    return `
-      <div class="agent-node ${isLead ? "lead" : ""} ${status}">
-        <div class="agent-node-header">
-          <span class="agent-node-name">${esc(agent.name)}</span>
-          <span class="agent-node-model">${esc(agent.model || "")}</span>
-          <span class="agent-status-dot ${status}"></span>
-        </div>
-        ${agent.description ? `<div class="agent-node-desc">${esc(truncate(agent.description, 80))}</div>` : ""}
-        ${skills ? `<div class="skill-list">${skills}</div>` : ""}
-      </div>`;
   }
 
   function getAgentStatus(name) {
@@ -213,22 +175,17 @@
   function renderAgentMessages() {
     const tasks = snapshot.tasks || [];
     if (!tasks.length) {
-      $agentMessages.innerHTML = '<div class="empty-state">No messages yet</div>';
+      $agentMessages.innerHTML = "";
       return;
     }
-    $agentMessages.innerHTML = tasks
-      .slice(-20)
-      .map(
-        (t) => `
-        <div class="agent-msg">
-          <span class="agent-msg-from">${esc(t.from_agent || "?")}</span>
-          <span class="agent-msg-arrow">&rarr;</span>
-          <span class="agent-msg-to">${esc(t.to_agent || "?")}</span>
-          <span class="agent-msg-text">${esc(truncate(t.description, 60))}</span>
-          <span class="agent-msg-status ${t.status || "pending"}"></span>
-        </div>`
-      )
-      .join("");
+    $agentMessages.innerHTML = tasks.slice(-10).map((t) => `
+      <div class="agent-msg">
+        <span class="agent-msg-from">${esc(t.from_agent || "?")}</span>
+        <span class="agent-msg-arrow">&rarr;</span>
+        <span class="agent-msg-to">${esc(t.to_agent || "?")}</span>
+        <span class="agent-msg-text">${esc(truncate(t.description, 40))}</span>
+        <span class="agent-msg-status ${t.status || "pending"}"></span>
+      </div>`).join("");
   }
 
   // --- Ollama Model Management ---
@@ -238,30 +195,20 @@
       $ollamaModelList.innerHTML = '<div class="empty-state">No local models</div>';
       return;
     }
-    $ollamaModelList.innerHTML = models
-      .map(
-        (m) => `
-        <div class="ollama-model-item">
-          <span class="ollama-model-name">${esc(m.name)}</span>
-          <span class="ollama-model-size">${esc(m.size)}</span>
-          <button class="btn-delete-model" onclick="window._deleteModel('${esc(m.name)}')" title="Delete">&times;</button>
-        </div>`
-      )
-      .join("");
+    $ollamaModelList.innerHTML = models.map((m) => `
+      <div class="ollama-model-item">
+        <span class="ollama-model-name">${esc(m.name)}</span>
+        <span class="ollama-model-size">${esc(m.size)}</span>
+        <button class="btn-delete-model" onclick="window._deleteModel('${esc(m.name)}')" title="Delete">&times;</button>
+      </div>`).join("");
   }
 
   window._deleteModel = async function (name) {
     if (!confirm(`Delete model ${name}?`)) return;
     try {
-      await fetch("/api/ollama/model", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
+      await fetch("/api/ollama/model", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
       await loadModels();
-    } catch (e) {
-      alert("Failed to delete: " + e.message);
-    }
+    } catch (e) { alert("Failed: " + e.message); }
   };
 
   async function pullModel() {
@@ -270,187 +217,34 @@
     $btnOllamaPull.disabled = true;
     $btnOllamaPull.textContent = "Pulling...";
     try {
-      const resp = await fetch("/api/ollama/pull", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
+      const resp = await fetch("/api/ollama/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
       const data = await resp.json();
-      if (data.success) {
-        $ollamaPullInput.value = "";
-        await loadModels();
-      } else {
-        alert("Pull failed: " + (data.error || "unknown"));
-      }
-    } catch (e) {
-      alert("Pull failed: " + e.message);
-    } finally {
-      $btnOllamaPull.disabled = false;
-      $btnOllamaPull.textContent = "Pull";
-    }
+      if (data.success) { $ollamaPullInput.value = ""; await loadModels(); }
+      else alert("Pull failed: " + (data.error || "unknown"));
+    } catch (e) { alert("Pull failed: " + e.message); }
+    finally { $btnOllamaPull.disabled = false; $btnOllamaPull.textContent = "Pull"; }
   }
-
-  // --- Agent Execution (v0.3.0) ---
-  async function loadAgentConfig() {
-    try {
-      const resp = await fetch("/api/agent/config");
-      const data = await resp.json();
-      $runAgentSelect.innerHTML = '<option value="">Select agent...</option>';
-      (data.agents || []).forEach((a) => {
-        const opt = document.createElement("option");
-        opt.value = a.name;
-        opt.textContent = a.name;
-        $runAgentSelect.appendChild(opt);
-      });
-    } catch (e) { /* ignore */ }
-  }
-
-  function updateRunAgentModels() {
-    const provider = $runAgentProvider.value;
-    const models = (provider === "openrouter" ? allModels.openrouter : allModels.ollama) || [];
-    $runAgentModel.innerHTML = "";
-    if (!models.length) {
-      $runAgentModel.innerHTML = '<option value="">No models</option>';
-      return;
-    }
-    models.forEach((m) => {
-      const opt = document.createElement("option");
-      opt.value = m.name;
-      opt.textContent = `${m.name} (${m.size})`;
-      $runAgentModel.appendChild(opt);
-    });
-    updateCostPreview();
-  }
-
-  async function updateCostPreview() {
-    const model = $runAgentModel.value;
-    const provider = $runAgentProvider.value;
-    if (!model) { $runAgentCost.textContent = ""; return; }
-    if (provider === "ollama") { $runAgentCost.textContent = "Free (local)"; return; }
-    try {
-      const resp = await fetch("/api/cost/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, provider, max_steps: 10 }),
-      });
-      const data = await resp.json();
-      $runAgentCost.textContent = `~$${data.estimated_cost_usd.toFixed(4)}`;
-    } catch (e) { $runAgentCost.textContent = ""; }
-  }
-
-  async function runAgent() {
-    const agent = $runAgentSelect.value;
-    const task = $runAgentTask.value.trim();
-    const model = $runAgentModel.value;
-    const provider = $runAgentProvider.value;
-
-    if (!agent || !task || !model) {
-      alert("Select an agent, model, and describe a task.");
-      return;
-    }
-
-    $btnRunAgent.disabled = true;
-    $btnRunAgent.textContent = "Running...";
-    addSystemBubble(`Agent ${agent} starting on: ${task.slice(0, 80)}...`);
-
-    try {
-      const resp = await fetch("/api/agent/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, task, model, provider }),
-      });
-      const text = await resp.text();
-      let data;
-      try { data = JSON.parse(text); } catch (_) { data = { success: false, error: text.slice(0, 200) }; }
-
-      if (data.success) {
-        addChatBubble("assistant", {
-          steps: [{ node: `${agent} (agent)`, output: data.output }],
-          usage: { output_tokens: data.total_tokens, model },
-          elapsed_s: data.elapsed_s,
-        });
-      } else {
-        addChatBubble("assistant", `Agent ${data.status}: ${data.error || data.output || "Failed"}`);
-      }
-    } catch (e) {
-      addChatBubble("assistant", `Agent run failed: ${e.message}`);
-    }
-
-    $btnRunAgent.disabled = false;
-    $btnRunAgent.textContent = "Run";
-    $runAgentTask.value = "";
-  }
-
-  // --- Skill invocation ---
-  window._invokeSkill = async function (skillName) {
-    const params = {};
-    if (skillName === "file_read") {
-      const path = prompt("File path to read:");
-      if (!path) return;
-      params.file_path = path;
-    } else if (skillName === "glob_search") {
-      const pattern = prompt("Glob pattern (e.g. **/*.py):");
-      if (!pattern) return;
-      params.pattern = pattern;
-    } else if (skillName === "shell_exec") {
-      const cmd = prompt("Shell command:");
-      if (!cmd) return;
-      params.command = cmd;
-    } else {
-      alert("Use the agent to invoke this skill.");
-      return;
-    }
-
-    addSystemBubble(`Invoking skill: ${skillName}`);
-
-    try {
-      const resp = await fetch("/api/skill/invoke", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skill: skillName, params }),
-      });
-      const data = await resp.json();
-      if (data.success) {
-        addChatBubble("assistant", data.output.slice(0, 3000));
-      } else {
-        addChatBubble("assistant", `Skill error: ${data.error}`);
-      }
-    } catch (e) {
-      addChatBubble("assistant", `Skill invocation failed: ${e.message}`);
-    }
-  };
 
   // --- Presets ---
   async function loadPresets() {
     try {
       const resp = await fetch("/api/presets");
       const data = await resp.json();
-      $presetsBar.innerHTML = (data.presets || [])
-        .map(
-          (p) => `<button class="preset-btn" data-preset-id="${esc(p.id)}" data-prompt="${esc(p.prompt)}" data-graph="${esc(p.graph)}" title="${esc(p.label)}">
-            <span class="preset-icon">${esc(p.icon)}</span>
-            <span class="preset-label">${esc(p.label)}</span>
-          </button>`
-        )
-        .join("");
+      $presetsBar.innerHTML = (data.presets || []).map((p) =>
+        `<button class="preset-btn" data-prompt="${esc(p.prompt)}" data-graph="${esc(p.graph)}" title="${esc(p.label)}">
+          <span class="preset-icon">${esc(p.icon)}</span><span>${esc(p.label)}</span>
+        </button>`
+      ).join("");
 
       $presetsBar.querySelectorAll(".preset-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           const ctx = getFileContextText();
-          if (!ctx) {
-            alert("Attach a file first, then click a preset.");
-            return;
-          }
-          const template = btn.dataset.prompt;
-          const prompt = template.replace("{context}", ctx);
-          $promptInput.value = prompt;
-          $promptGraph.value = btn.dataset.graph;
+          if (!ctx) { alert("Attach a file first, then click a preset."); return; }
+          $promptInput.value = btn.dataset.prompt.replace("{context}", ctx);
           $promptInput.dispatchEvent(new Event("input"));
         });
       });
-    } catch (e) {
-      /* ignore */
-    }
+    } catch (e) { /* ignore */ }
   }
 
   // --- File Context ---
@@ -467,82 +261,49 @@
       const resp = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
       const data = await resp.json();
 
-      // Breadcrumb
       const parts = path ? path.split("/") : [];
       let crumbs = `<span class="crumb" data-path="">root</span>`;
       let acc = "";
-      parts.forEach((p) => {
-        acc += (acc ? "/" : "") + p;
-        crumbs += ` / <span class="crumb" data-path="${esc(acc)}">${esc(p)}</span>`;
-      });
+      parts.forEach((p) => { acc += (acc ? "/" : "") + p; crumbs += ` / <span class="crumb" data-path="${esc(acc)}">${esc(p)}</span>`; });
       $fileBreadcrumb.innerHTML = crumbs;
-      $fileBreadcrumb.querySelectorAll(".crumb").forEach((c) => {
-        c.addEventListener("click", () => loadDirectory(c.dataset.path));
-      });
+      $fileBreadcrumb.querySelectorAll(".crumb").forEach((c) => c.addEventListener("click", () => loadDirectory(c.dataset.path)));
 
-      // File list
-      $fileList.innerHTML = (data.items || [])
-        .map((item) => {
-          const icon = item.is_dir ? "📁" : "📄";
-          const sizeStr = item.is_dir ? "" : `<span class="file-size">${formatSize(item.size)}</span>`;
-          return `<div class="file-item ${item.is_dir ? "dir" : "file"}" data-path="${esc(item.path)}" data-isdir="${item.is_dir}">
-            <span class="file-icon">${icon}</span>
-            <span class="file-name">${esc(item.name)}</span>
-            ${sizeStr}
-          </div>`;
-        })
-        .join("");
+      $fileList.innerHTML = (data.items || []).map((item) => {
+        const icon = item.is_dir ? "📁" : "📄";
+        const sizeStr = item.is_dir ? "" : `<span class="file-size">${formatSize(item.size)}</span>`;
+        return `<div class="file-item ${item.is_dir ? "dir" : "file"}" data-path="${esc(item.path)}" data-isdir="${item.is_dir}">
+          <span class="file-icon">${icon}</span><span class="file-name">${esc(item.name)}</span>${sizeStr}
+        </div>`;
+      }).join("");
 
       $fileList.querySelectorAll(".file-item").forEach((el) => {
         el.addEventListener("click", () => {
-          if (el.dataset.isdir === "true") {
-            loadDirectory(el.dataset.path);
-          } else {
-            attachFile(el.dataset.path);
-            $filePickerModal.classList.add("hidden");
-          }
+          if (el.dataset.isdir === "true") loadDirectory(el.dataset.path);
+          else { attachFile(el.dataset.path); $filePickerModal.classList.add("hidden"); }
         });
       });
-    } catch (e) {
-      $fileList.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
-    }
+    } catch (e) { $fileList.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`; }
   }
 
   async function attachFile(path) {
-    if (attachedFiles.find((f) => f.path === path)) return; // already attached
+    if (attachedFiles.find((f) => f.path === path)) return;
     try {
       const resp = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
       const data = await resp.json();
-      if (data.error) {
-        alert(data.error);
-        return;
-      }
+      if (data.error) { alert(data.error); return; }
       attachedFiles.push({ path: data.path, content: data.content });
       renderAttachedFiles();
-    } catch (e) {
-      alert("Failed to read file: " + e.message);
-    }
+    } catch (e) { alert("Failed to read file: " + e.message); }
   }
 
   function renderAttachedFiles() {
-    if (!attachedFiles.length) {
-      $attachedFiles.innerHTML = "";
-      return;
-    }
-    $attachedFiles.innerHTML = attachedFiles
-      .map(
-        (f, i) => `<span class="attached-file">
-          <span class="attached-file-name">${esc(f.path)}</span>
-          <button class="btn-remove-file" onclick="window._removeFile(${i})">&times;</button>
-        </span>`
-      )
-      .join("");
+    if (!attachedFiles.length) { $attachedFiles.innerHTML = ""; return; }
+    $attachedFiles.innerHTML = attachedFiles.map((f, i) =>
+      `<span class="attached-file"><span class="attached-file-name">${esc(f.path)}</span><button class="btn-remove-file" onclick="window._removeFile(${i})">&times;</button></span>`
+    ).join("");
   }
 
-  window._removeFile = function (idx) {
-    attachedFiles.splice(idx, 1);
-    renderAttachedFiles();
-  };
+  window._removeFile = function (idx) { attachedFiles.splice(idx, 1); renderAttachedFiles(); };
 
   function getFileContextText() {
     if (!attachedFiles.length) return "";
@@ -557,9 +318,7 @@
       conversationId = data.conversation_id;
       $chatMessages.innerHTML = "";
       addSystemBubble("New conversation started");
-    } catch (e) {
-      /* ignore */
-    }
+    } catch (e) { /* ignore */ }
   }
 
   function addSystemBubble(text) {
@@ -570,7 +329,7 @@
     $chatMessages.scrollTop = $chatMessages.scrollHeight;
   }
 
-  // --- Chat ---
+  // --- Chat Bubbles ---
   function addChatBubble(role, content) {
     const bubble = document.createElement("div");
     bubble.className = `chat-bubble ${role}`;
@@ -580,10 +339,10 @@
       const steps = content.steps || [];
       if (steps.length) {
         steps.forEach((step) => {
-          html += `<div class="chat-step"><span class="chat-step-label">${esc(step.node)}</span><span class="chat-step-text">${formatOutput(step.output || "")}</span></div>`;
+          html += `<div class="chat-step"><span class="chat-step-label">${esc(step.node)}</span><div class="chat-step-text md-content">${renderMarkdown(step.output || "")}</div></div>`;
         });
       } else if (content.output) {
-        html = `<span class="chat-step-text">${formatOutput(content.output)}</span>`;
+        html = `<div class="chat-step-text md-content">${renderMarkdown(content.output)}</div>`;
       }
       if (content.usage || content.elapsed_s) {
         const elapsed = content.elapsed_s || 0;
@@ -593,6 +352,9 @@
         html += `<div class="chat-usage">${outTok} tok &middot; ${speed} tok/s &middot; ${esc(model)} &middot; ${elapsed}s</div>`;
       }
       bubble.innerHTML = html;
+    } else if (role === "assistant") {
+      const text = typeof content === "string" ? content : JSON.stringify(content);
+      bubble.innerHTML = `<div class="md-content">${renderMarkdown(text)}</div>`;
     } else {
       bubble.textContent = typeof content === "string" ? content : JSON.stringify(content);
     }
@@ -615,7 +377,6 @@
   function appendToStream(text) {
     const bubble = $("streaming-bubble");
     if (!bubble) return;
-    // Remove cursor, add text, re-add cursor
     const cursor = bubble.querySelector(".stream-cursor");
     if (cursor) cursor.remove();
     bubble.insertAdjacentHTML("beforeend", esc(text));
@@ -630,7 +391,8 @@
     bubble.classList.remove("streaming");
     const cursor = bubble.querySelector(".stream-cursor");
     if (cursor) cursor.remove();
-    // Add usage info
+    const rawText = bubble.textContent || "";
+    bubble.innerHTML = `<div class="md-content">${renderMarkdown(rawText)}</div>`;
     if (data) {
       const elapsed = data.elapsed_s || 0;
       const speed = data.speed || 0;
@@ -644,24 +406,66 @@
     $chatMessages.scrollTop = $chatMessages.scrollHeight;
   }
 
-  function formatOutput(text) {
-    return esc(text).replace(/\n/g, "<br>");
+  // --- Markdown Renderer ---
+  function renderMarkdown(text) {
+    if (!text) return "";
+    let html = esc(text);
+
+    // Code blocks (```lang\n...\n```)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+      return '<pre class="md-code-block"><code>' + code.replace(/<br>/g, "\n") + '</code></pre>';
+    });
+
+    // Inline code
+    html = html.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>');
+
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<strong class="md-h3">$1</strong>');
+    html = html.replace(/^## (.+)$/gm, '<strong class="md-h2">$1</strong>');
+    html = html.replace(/^# (.+)$/gm, '<strong class="md-h1">$1</strong>');
+
+    // Bold
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+    // Italic
+    html = html.replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, '<em>$1</em>');
+    html = html.replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, '<em>$1</em>');
+
+    // Unordered lists
+    html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+    html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // Ordered lists
+    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+    // Links
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+    // Line breaks
+    html = html.replace(/\n/g, "<br>");
+    // Fix <br> inside pre blocks
+    html = html.replace(/<pre class="md-code-block"><code>([\s\S]*?)<\/code><\/pre>/g, function(_, code) {
+      return '<pre class="md-code-block"><code>' + code.replace(/<br>/g, "\n") + '</code></pre>';
+    });
+
+    return html;
   }
 
-  // --- Send Prompt ---
-  async function sendPrompt() {
+  function formatOutput(text) { return renderMarkdown(text); }
+
+  // --- Unified Send ---
+  async function sendMessage() {
     const text = $promptInput.value.trim();
     if (!text || isRunning) return;
 
+    const mode = $execMode.value;
     const model = $promptModel.value;
     const provider = $promptProvider.value;
-    const graphType = $promptGraph.value;
     const useStreaming = $toggleStream.checked;
 
-    if (!model) {
-      alert("No model selected.");
-      return;
-    }
+    if (!model) { alert("No model selected."); return; }
 
     isRunning = true;
     $btnSend.disabled = true;
@@ -674,101 +478,164 @@
 
     const fileCtx = getFileContextText();
 
-    if (useStreaming && streamWs && streamWs.readyState === WebSocket.OPEN) {
-      // Streaming mode
-      addStreamingBubble();
-      streamWs.send(
-        JSON.stringify({
-          prompt: text,
-          model: model,
-          provider: provider,
+    if (mode === "multi-agent") {
+      // Multi-Agent: real team with tool-wielding sub-agents
+      await runTeam(text, model, provider);
+    } else if (mode === "agent") {
+      // Single Agent: use agent runner
+      await runSingleAgent(text, model, provider);
+    } else {
+      // Simple Prompt: streaming or graph
+      if (useStreaming && streamWs && streamWs.readyState === WebSocket.OPEN) {
+        addStreamingBubble();
+        streamWs.send(JSON.stringify({
+          prompt: text, model, provider,
           conversation_id: conversationId,
           file_context: fileCtx,
-        })
-      );
-      // Streaming messages handled by streamWs.onmessage
-    } else {
-      // Non-streaming fallback
-      const loadingBubble = document.createElement("div");
-      loadingBubble.className = "chat-bubble assistant loading";
-      loadingBubble.id = "chat-loading";
-      loadingBubble.innerHTML = '<div class="chat-spinner"></div><span>Running graph...</span>';
-      $chatMessages.appendChild(loadingBubble);
-      $chatMessages.scrollTop = $chatMessages.scrollHeight;
-
-      try {
-        const resp = await fetch("/api/prompt", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: text,
-            model: model,
-            provider: provider,
-            graph_type: graphType,
-            conversation_id: conversationId,
-            file_context: fileCtx,
-          }),
-        });
-        const data = await resp.json();
-        loadingBubble.remove();
-
-        if (data.success) {
-          addChatBubble("assistant", data);
-          if (data.usage) {
-            const total = (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0);
-            snapshot.total_tokens = (snapshot.total_tokens || 0) + total;
-            if (data.elapsed_s > 0) lastTokenSpeed = (data.usage.output_tokens || 0) / data.elapsed_s;
-            renderHeader();
-          }
-        } else {
-          addChatBubble("assistant", `Error: ${data.error || "Unknown error"}`);
-        }
-      } catch (e) {
-        loadingBubble.remove();
-        addChatBubble("assistant", `Request failed: ${e.message}`);
+        }));
+        // Handler in setupStreamHandler deals with the rest
+        return; // Don't reset isRunning here — stream handler does it
       }
-
-      isRunning = false;
-      $btnSend.disabled = false;
-      $promptInput.disabled = false;
-      $promptInput.focus();
+      await runGraphPrompt(text, model, provider, "chat", fileCtx);
     }
+  }
+
+  async function runGraphPrompt(text, model, provider, graphType, fileCtx) {
+    const loadingBubble = document.createElement("div");
+    loadingBubble.className = "chat-bubble assistant loading";
+    loadingBubble.innerHTML = '<div class="chat-spinner"></div><span>Running...</span>';
+    $chatMessages.appendChild(loadingBubble);
+    $chatMessages.scrollTop = $chatMessages.scrollHeight;
+
+    // Build full prompt
+    let fullPrompt = text;
+    if (fileCtx) fullPrompt = `${text}\n\n\`\`\`\n${fileCtx}\n\`\`\``;
+
+    try {
+      const resp = await fetch("/api/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: fullPrompt, model, provider, graph_type: graphType,
+          conversation_id: conversationId, file_context: fileCtx,
+        }),
+      });
+      const data = await resp.json();
+      loadingBubble.remove();
+
+      if (data.success) {
+        addChatBubble("assistant", data);
+        if (data.usage) {
+          const total = (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0);
+          snapshot.total_tokens = (snapshot.total_tokens || 0) + total;
+          if (data.elapsed_s > 0) lastTokenSpeed = (data.usage.output_tokens || 0) / data.elapsed_s;
+          renderHeader();
+        }
+      } else {
+        addChatBubble("assistant", `Error: ${data.error || "Unknown error"}`);
+      }
+    } catch (e) {
+      loadingBubble.remove();
+      addChatBubble("assistant", `Request failed: ${e.message}`);
+    }
+
+    isRunning = false;
+    $btnSend.disabled = false;
+    $promptInput.disabled = false;
+    $promptInput.focus();
+  }
+
+  async function runTeam(text, model, provider) {
+    addSystemBubble("Running multi-agent team (team-lead → backend-dev + frontend-dev)...");
+
+    try {
+      const resp = await fetch("/api/team/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task: text, model, provider }),
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        // Build steps from team outputs
+        const steps = [];
+        if (data.plan) steps.push({ node: "team-lead (plan)", output: data.plan });
+        const outputs = data.agent_outputs || {};
+        for (const [agent, output] of Object.entries(outputs)) {
+          steps.push({ node: agent, output: output });
+        }
+        steps.push({ node: "team-lead (summary)", output: data.output });
+
+        addChatBubble("assistant", {
+          steps,
+          usage: { output_tokens: data.total_tokens, model },
+          elapsed_s: data.elapsed_s,
+        });
+      } else {
+        addChatBubble("assistant", `Team error: ${data.error || "Unknown error"}`);
+      }
+    } catch (e) {
+      addChatBubble("assistant", `Team run failed: ${e.message}`);
+    }
+
+    isRunning = false;
+    $btnSend.disabled = false;
+    $promptInput.disabled = false;
+    $promptInput.focus();
+  }
+
+  async function runSingleAgent(text, model, provider) {
+    addSystemBubble("Running single agent...");
+
+    try {
+      const resp = await fetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent: "team-lead", task: text, model, provider,
+        }),
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        addChatBubble("assistant", {
+          steps: [{ node: "agent", output: data.output }],
+          usage: { output_tokens: data.total_tokens, model },
+          elapsed_s: data.elapsed_s,
+        });
+      } else {
+        addChatBubble("assistant", `Agent ${data.status}: ${data.error || data.output || "Failed"}`);
+      }
+    } catch (e) {
+      addChatBubble("assistant", `Agent run failed: ${e.message}`);
+    }
+
+    isRunning = false;
+    $btnSend.disabled = false;
+    $promptInput.disabled = false;
+    $promptInput.focus();
   }
 
   // --- Model Comparison ---
   async function runComparison() {
     const modelA = $compareModelA.value;
     const modelB = $compareModelB.value;
-    const lastUserMsg = $promptInput.value.trim() || getLastUserMessage();
+    const lastUserMsg = getLastUserMessage();
 
-    if (!modelA || !modelB) {
-      alert("Select 2 models");
-      return;
-    }
-    if (!lastUserMsg) {
-      alert("Type a prompt first or have a previous message");
-      return;
-    }
+    if (!modelA || !modelB) { alert("Select 2 models"); return; }
+    if (!lastUserMsg) { alert("Send a message first"); return; }
 
     $compareResults.innerHTML = '<div class="empty-state">Running...</div>';
     $btnCompare.disabled = true;
 
-    const providerA = detectProvider(modelA);
-    const providerB = detectProvider(modelB);
     const fileCtx = getFileContextText();
 
     try {
       const [respA, respB] = await Promise.all([
-        fetch("/api/prompt", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: lastUserMsg, model: modelA, provider: providerA, graph_type: "chat", file_context: fileCtx }),
-        }).then((r) => r.json()),
-        fetch("/api/prompt", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: lastUserMsg, model: modelB, provider: providerB, graph_type: "chat", file_context: fileCtx }),
-        }).then((r) => r.json()),
+        fetch("/api/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: lastUserMsg, model: modelA, provider: detectProvider(modelA), graph_type: "chat", file_context: fileCtx }) }).then(r => r.json()),
+        fetch("/api/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: lastUserMsg, model: modelB, provider: detectProvider(modelB), graph_type: "chat", file_context: fileCtx }) }).then(r => r.json()),
       ]);
 
       const speedA = respA.elapsed_s > 0 ? ((respA.usage?.output_tokens || 0) / respA.elapsed_s).toFixed(1) : "-";
@@ -787,52 +654,20 @@
         </div>`;
     } catch (e) {
       $compareResults.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
-    } finally {
-      $btnCompare.disabled = false;
-    }
+    } finally { $btnCompare.disabled = false; }
   }
 
-  function detectProvider(modelName) {
-    if (modelName.includes("/")) return "openrouter";
-    return "ollama";
-  }
-
+  function detectProvider(modelName) { return modelName.includes("/") ? "openrouter" : "ollama"; }
   function getLastUserMessage() {
     const bubbles = $chatMessages.querySelectorAll(".chat-bubble.user");
-    if (bubbles.length) return bubbles[bubbles.length - 1].textContent;
-    return "";
-  }
-
-  // --- Auto-select model based on task type ---
-  function autoSelectModel(text) {
-    const lower = text.toLowerCase();
-    const models = allModels.ollama || [];
-    if (!models.length) return;
-
-    // Coding tasks -> prefer coder model
-    if (/\b(code|function|class|bug|test|refactor|fix|implement)\b/.test(lower)) {
-      const coder = models.find((m) => m.name.includes("coder"));
-      if (coder) {
-        $promptModel.value = coder.name;
-        return;
-      }
-    }
-
-    // Reasoning tasks -> prefer deepseek-r1 or similar
-    if (/\b(explain|why|analyze|reason|think|compare|evaluate)\b/.test(lower)) {
-      const reasoner = models.find((m) => m.name.includes("deepseek") || m.name.includes("r1"));
-      if (reasoner) {
-        $promptModel.value = reasoner.name;
-        return;
-      }
-    }
+    return bubbles.length ? bubbles[bubbles.length - 1].textContent : "";
   }
 
   // --- Interactive Graph ---
   function renderGraph() {
     const g = snapshot.graph;
     if (!g || (!g.nodes.length && !g.edges.length)) {
-      $graphCanvas.innerHTML = '<div class="empty-state">Submit a prompt to see the graph</div>';
+      $graphCanvas.innerHTML = '<div class="empty-state">Send a message to see the agent graph</div>';
       return;
     }
     const layers = computeLayers(g.nodes || [], g.edges || []);
@@ -882,6 +717,8 @@
   }
 
   window._showNodeDetail = function (name) {
+    // Open sidebar if hidden
+    if ($sidebar.classList.contains("hidden")) toggleSidebar();
     const nodeEvents = events.filter((e) => e.node_name === name || (e.data && (e.data.node === name || e.data.from === name || e.data.to === name)));
     if (!nodeEvents.length) {
       $detailView.innerHTML = `<div class="detail-node-title">${esc(name)}</div><div class="empty-state">No events yet</div>`;
@@ -898,38 +735,21 @@
   window._replayNode = async function (name) {
     if (isRunning) return;
     isRunning = true;
-
-    // Mark node as active during replay
     graphNodeStates[name] = "active";
     renderGraph();
-
     addSystemBubble(`Replaying node: ${name}...`);
 
     try {
-      const resp = await fetch("/api/graph/replay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ node: name }),
-      });
+      const resp = await fetch("/api/graph/replay", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ node: name }) });
       const data = await resp.json();
-
       graphNodeStates[name] = "done";
       renderGraph();
-
       if (data.success) {
-        addChatBubble("assistant", {
-          steps: [{ node: `${name} (replay)`, output: data.output }],
-          elapsed_s: data.elapsed_s,
-        });
+        addChatBubble("assistant", { steps: [{ node: `${name} (replay)`, output: data.output }], elapsed_s: data.elapsed_s });
       } else {
         addChatBubble("assistant", `Replay error: ${data.error || "Unknown"}`);
       }
-    } catch (e) {
-      graphNodeStates[name] = "done";
-      renderGraph();
-      addChatBubble("assistant", `Replay failed: ${e.message}`);
-    }
-
+    } catch (e) { graphNodeStates[name] = "done"; renderGraph(); addChatBubble("assistant", `Replay failed: ${e.message}`); }
     isRunning = false;
   };
 
@@ -937,24 +757,70 @@
   async function resetGraph() {
     try {
       await fetch("/api/graph/reset", { method: "POST" });
-      // Clear local state
-      snapshot.agents = {};
-      snapshot.tasks = [];
-      snapshot.orchestrator_status = "idle";
-      snapshot.graph = { nodes: [], edges: [] };
-      snapshot.total_tokens = 0;
-      snapshot.total_cost_usd = 0;
-      graphNodeStates = {};
-      events = [];
+      snapshot.agents = {}; snapshot.tasks = []; snapshot.orchestrator_status = "idle";
+      snapshot.graph = { nodes: [], edges: [] }; snapshot.total_tokens = 0; snapshot.total_cost_usd = 0;
+      graphNodeStates = {}; events = []; activityCount = 0;
       $timeline.innerHTML = "";
-      renderHeader();
-      renderGraph();
-      renderAgentTree();
-      renderAgentMessages();
+      $agentActivity.innerHTML = '<div class="empty-state">Waiting for agents...</div>';
+      renderHeader(); renderGraph(); renderAgentBadges(); renderAgentMessages();
       $detailView.innerHTML = '<div class="empty-state">Click a graph node or event</div>';
-      addSystemBubble("Graph state reset");
-    } catch (e) {
-      alert("Reset failed: " + e.message);
+      addSystemBubble("Reset");
+    } catch (e) { alert("Reset failed: " + e.message); }
+  }
+
+  // --- Toggle Sidebar ---
+  function toggleSidebar() {
+    $sidebar.classList.toggle("hidden");
+    $btnToggleSidebar.classList.toggle("active");
+  }
+
+  // --- Agent Activity Panel ---
+  let activityCount = 0;
+
+  function addActivityItem(category, agent, desc, detail) {
+    // Clear placeholder
+    if (activityCount === 0) $agentActivity.innerHTML = "";
+    activityCount++;
+
+    const icons = { spawn: "S", step: "#", tool: "T", task: "D", complete: "✓", error: "!" };
+    const el = document.createElement("div");
+    el.className = `activity-item ${category}`;
+    el.innerHTML = `
+      <span class="activity-time">${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+      <span class="activity-icon ${category}">${icons[category] || "·"}</span>
+      <div class="activity-body">
+        <span class="activity-agent">${esc(agent)}</span>
+        <div class="activity-desc">${esc(desc)}</div>
+        ${detail ? `<div class="activity-detail">${esc(detail)}</div>` : ""}
+      </div>`;
+    $agentActivity.appendChild(el);
+    $agentActivity.scrollTop = $agentActivity.scrollHeight;
+  }
+
+  function routeToActivity(evt) {
+    const t = evt.event_type;
+    const d = evt.data || {};
+    const agent = evt.agent_name || "";
+
+    if (t === "agent.spawn") {
+      addActivityItem("spawn", agent, "Agent spawned", d.provider || "");
+    } else if (t === "agent.step") {
+      addActivityItem("step", agent, `Step ${d.step || ""}`, d.model || "");
+    } else if (t === "agent.tool_call") {
+      const args = Object.entries(d.arguments || {}).map(([k, v]) => `${k}=${truncate(String(v), 40)}`).join(", ");
+      addActivityItem("tool", agent, `→ ${d.tool_name || "tool"}`, args);
+    } else if (t === "agent.tool_result") {
+      const status = d.success ? "✓" : "✗";
+      addActivityItem("tool", agent, `← ${d.tool_name || "tool"} ${status}`, truncate(d.output || "", 60));
+    } else if (t === "cooperation.task_assigned") {
+      addActivityItem("task", d.from_agent || "?", `Delegated to ${d.to_agent || "?"}`, truncate(d.description || "", 50));
+    } else if (t === "cooperation.task_completed") {
+      const status = d.success ? "completed" : "failed";
+      addActivityItem(d.success ? "complete" : "error", d.from_agent || "?", `Task ${status}`, truncate(d.summary || "", 50));
+    } else if (t === "agent.complete") {
+      addActivityItem("complete", agent, "Completed", truncate(d.output || "", 50));
+    } else if (t === "agent.error" || t === "agent.stalled") {
+      addActivityItem("error", agent, d.error || "Error", "");
     }
   }
 
@@ -965,8 +831,11 @@
     updateSnapshotFromEvent(evt);
     renderHeader();
     renderTimelineEvent(evt);
-    renderAgentTree();
+    renderAgentBadges();
     renderAgentMessages();
+
+    // Feed agent activity panel
+    routeToActivity(evt);
 
     if (evt.event_type === "graph.start") {
       snapshot.graph = { nodes: evt.data.nodes || [], edges: evt.data.edges || [] };
@@ -985,9 +854,8 @@
 
     if (evt.event_type === "agent.tool_call" && evt.data.tool_name) {
       activeSkills.add(evt.data.tool_name);
-      renderAgentTree();
-      setTimeout(() => { activeSkills.delete(evt.data.tool_name); renderAgentTree(); }, 3000);
-      // Show tool call in chat
+      renderAgentBadges();
+      setTimeout(() => { activeSkills.delete(evt.data.tool_name); renderAgentBadges(); }, 3000);
       const tcEl = document.createElement("div");
       tcEl.className = "chat-bubble tool-call";
       tcEl.innerHTML = `<div class="tool-call-header">${esc(evt.agent_name)} &rarr; ${esc(evt.data.tool_name)}</div><pre class="tool-call-args">${esc(JSON.stringify(evt.data.arguments || {}, null, 2))}</pre>`;
@@ -1018,6 +886,7 @@
     } else if (t === "agent.step" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].steps += 1;
     else if (t === "agent.complete" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].status = "completed";
     else if (t === "agent.error" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].status = "error";
+    else if (t === "agent.stalled" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].status = "error";
     else if (t === "cooperation.task_assigned") {
       snapshot.tasks.push({ task_id: evt.data.task_id, from_agent: evt.data.from_agent, to_agent: evt.data.to_agent, description: evt.data.description || "", status: "pending", priority: evt.data.priority || "normal" });
     } else if (t === "cooperation.task_completed") {
@@ -1102,15 +971,19 @@
   // --- Event Listeners ---
   $filterType.addEventListener("change", () => { $timeline.innerHTML = ""; events.forEach((e) => renderTimelineEvent(e)); });
   $btnClear.addEventListener("click", () => { $timeline.innerHTML = ""; events = []; });
-  $btnSend.addEventListener("click", sendPrompt);
-  $promptInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPrompt(); } });
+  $btnSend.addEventListener("click", sendMessage);
+  $promptInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
   $promptInput.addEventListener("input", () => {
     $promptInput.style.height = "auto";
     $promptInput.style.height = Math.min($promptInput.scrollHeight, 120) + "px";
-    // Auto-select model based on content
-    if ($promptProvider.value === "ollama") autoSelectModel($promptInput.value);
   });
   $promptProvider.addEventListener("change", updateModelSelector);
+  $execMode.addEventListener("change", updateStreamToggle);
+  function updateStreamToggle() {
+    const show = $execMode.value === "prompt";
+    document.querySelector(".stream-toggle").style.display = show ? "" : "none";
+  }
+  updateStreamToggle();
   $btnAttach.addEventListener("click", openFilePicker);
   $btnClearCtx.addEventListener("click", () => { attachedFiles = []; renderAttachedFiles(); });
   $btnClosePicker.addEventListener("click", () => $filePickerModal.classList.add("hidden"));
@@ -1119,9 +992,7 @@
   $ollamaPullInput.addEventListener("keydown", (e) => { if (e.key === "Enter") pullModel(); });
   $btnCompare.addEventListener("click", runComparison);
   $btnResetGraph.addEventListener("click", resetGraph);
-  $btnRunAgent.addEventListener("click", runAgent);
-  $runAgentProvider.addEventListener("change", updateRunAgentModels);
-  $runAgentModel.addEventListener("change", updateCostPreview);
+  $btnToggleSidebar.addEventListener("click", toggleSidebar);
 
   // --- Streaming WebSocket message handler ---
   function setupStreamHandler() {
@@ -1133,9 +1004,7 @@
       } else if (data.type === "done") {
         finalizeStream(data);
         if (data.speed) lastTokenSpeed = data.speed;
-        if (data.usage) {
-          snapshot.total_tokens = (snapshot.total_tokens || 0) + (data.usage.output_tokens || 0);
-        }
+        if (data.usage) snapshot.total_tokens = (snapshot.total_tokens || 0) + (data.usage.output_tokens || 0);
         renderHeader();
         isRunning = false;
         $btnSend.disabled = false;
@@ -1143,13 +1012,11 @@
         $promptInput.focus();
       } else if (data.type === "error") {
         const bubble = $("streaming-bubble");
-        if (bubble) { bubble.remove(); }
+        if (bubble) bubble.remove();
         addChatBubble("assistant", `Error: ${data.error}`);
         isRunning = false;
         $btnSend.disabled = false;
         $promptInput.disabled = false;
-      } else if (data.type === "start") {
-        // streaming started
       }
     };
   }
@@ -1158,7 +1025,6 @@
   loadModels();
   loadAgents();
   loadPresets();
-  loadAgentConfig();
   startNewConversation();
 
   fetch("/api/events?limit=200")
@@ -1172,29 +1038,20 @@
     .then((data) => { snapshot = data; renderHeader(); renderGraph(); renderAgentMessages(); })
     .catch(() => {});
 
-  // Connect streaming WebSocket with retry
   function initStream() {
     connectStream();
-    // Wait for connection then setup handler
     const check = setInterval(() => {
-      if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-        clearInterval(check);
-        setupStreamHandler();
-      }
+      if (streamWs && streamWs.readyState === WebSocket.OPEN) { clearInterval(check); setupStreamHandler(); }
     }, 200);
   }
   initStream();
 
-  // Re-setup stream handler on reconnect
   const origConnectStream = connectStream;
   connectStream = function () {
     origConnectStream();
     setTimeout(() => {
       const check = setInterval(() => {
-        if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-          clearInterval(check);
-          setupStreamHandler();
-        }
+        if (streamWs && streamWs.readyState === WebSocket.OPEN) { clearInterval(check); setupStreamHandler(); }
       }, 200);
     }, 100);
   };

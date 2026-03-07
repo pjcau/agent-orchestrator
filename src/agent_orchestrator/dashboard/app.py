@@ -19,9 +19,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .agent_runner import create_skill_registry, run_agent
+from .agent_runner import create_skill_registry, run_agent, run_team
 from .agents_registry import get_agent_registry
 from .events import Event, EventBus, EventType
+from .job_logger import JobLogger
 from .graphs import (
     _make_provider,
     get_last_run_info,
@@ -43,6 +44,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # In-memory conversation store (per session)
     conversations: dict[str, list[dict]] = {}
 
+    # Job logger — persists all task results to jobs/<session_id>/
+    job_logger = JobLogger()
+
     # Mount static files
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -50,6 +54,14 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     async def index():
         index_file = STATIC_DIR / "index.html"
         return HTMLResponse(content=index_file.read_text())
+
+    @app.get("/api/session")
+    async def session():
+        """Return current session info (ID and jobs directory)."""
+        return JSONResponse(content={
+            "session_id": job_logger.session_id,
+            "jobs_dir": str(job_logger.session_dir),
+        })
 
     @app.get("/api/snapshot")
     async def snapshot():
@@ -117,6 +129,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         role = agent_info.get("description", "") if agent_info else ""
 
         try:
+            job_logger.touch()
             result = await run_agent(
                 agent_name=agent_name,
                 task_description=task_desc,
@@ -125,9 +138,80 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 tools=tools,
                 max_steps=max_steps,
                 event_bus=bus,
+                working_directory=str(job_logger.session_dir),
             )
+            job_logger.log("agent_run", {
+                "agent": agent_name,
+                "task": task_desc,
+                "model": model,
+                "provider": provider_type,
+                "result": result,
+            })
             return JSONResponse(content=result)
         except Exception as exc:
+            job_logger.log("agent_run", {
+                "agent": agent_name,
+                "task": task_desc,
+                "model": model,
+                "provider": provider_type,
+                "result": {"success": False, "error": str(exc)},
+            })
+            return JSONResponse(
+                content={"success": False, "error": str(exc)},
+                status_code=500,
+            )
+
+    @app.post("/api/team/run")
+    async def team_run(body: dict):
+        """Run a multi-agent team on a task (team-lead + sub-agents with tools)."""
+        task_desc = body.get("task", "").strip()
+        model = body.get("model", "")
+        provider_type = body.get("provider", "openrouter")
+
+        if not task_desc:
+            return JSONResponse(
+                content={"success": False, "error": "Task description required"},
+                status_code=400,
+            )
+        if not model:
+            return JSONResponse(
+                content={"success": False, "error": "No model selected"},
+                status_code=400,
+            )
+
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+        provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
+
+        try:
+            job_logger.touch()
+            result = await run_team(
+                task_description=task_desc,
+                provider=provider,
+                event_bus=bus,
+                working_directory=str(job_logger.session_dir),
+            )
+            job_logger.log("team_run", {
+                "task": task_desc,
+                "model": model,
+                "provider": provider_type,
+                "result": {
+                    "success": result.get("success"),
+                    "output": result.get("output", "")[:2000],
+                    "plan": result.get("plan", "")[:1000],
+                    "total_tokens": result.get("total_tokens"),
+                    "total_cost_usd": result.get("total_cost_usd"),
+                    "elapsed_s": result.get("elapsed_s"),
+                },
+            })
+            return JSONResponse(content=result)
+        except Exception as exc:
+            job_logger.log("team_run", {
+                "task": task_desc,
+                "model": model,
+                "provider": provider_type,
+                "result": {"success": False, "error": str(exc)},
+            })
             return JSONResponse(
                 content={"success": False, "error": str(exc)},
                 status_code=500,
@@ -462,6 +546,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
+        job_logger.touch()
         result = await run_graph(
             prompt=full_prompt,
             model=model,
@@ -471,6 +556,14 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             openrouter_key=openrouter_key,
             event_bus=bus,
         )
+
+        job_logger.log("prompt", {
+            "prompt": user_prompt,
+            "model": model,
+            "provider": provider_type,
+            "graph_type": graph_type,
+            "result": result,
+        })
 
         # Save to conversation
         if conv_id:
@@ -542,6 +635,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 if not prompt_text or not model:
                     await ws.send_json({"type": "error", "error": "Missing prompt or model"})
                     continue
+
+                job_logger.touch()
 
                 # Build prompt with context
                 full_prompt = prompt_text
@@ -632,6 +727,19 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                             "speed": round(speed, 1),
                         }
                     )
+
+                    job_logger.log("stream", {
+                        "prompt": prompt_text,
+                        "model": model,
+                        "provider": provider_type,
+                        "result": {
+                            "success": True,
+                            "output": full_response,
+                            "tokens": total_tokens,
+                            "elapsed_s": round(elapsed, 2),
+                            "speed": round(speed, 1),
+                        },
+                    })
 
                     # Save to conversation
                     if conv_id:

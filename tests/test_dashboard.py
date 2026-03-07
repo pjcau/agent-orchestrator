@@ -792,3 +792,104 @@ class TestOpenRouterModels:
         """At least 10 models should be available."""
         models = await list_openrouter_models("")
         assert len(models) >= 10, f"Expected at least 10 models, got {len(models)}"
+
+
+# ===========================================================================
+# Job Logger Tests
+# ===========================================================================
+
+class TestJobLogger:
+    """Tests for the job persistence logger."""
+
+    def test_creates_session_directory(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=tmp_path / "jobs")
+        assert logger.session_dir.exists()
+        assert logger.session_dir.name.startswith("job_")
+
+    def test_session_id_format(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=tmp_path / "jobs")
+        # Format: YYYYMMDD_HHMMSS_hexhex
+        parts = logger.session_id.split("_")
+        assert len(parts) == 3
+        assert len(parts[0]) == 8  # YYYYMMDD
+        assert len(parts[1]) == 6  # HHMMSS
+        assert len(parts[2]) == 6  # hex
+
+    def test_session_dir_has_job_prefix(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=tmp_path / "jobs")
+        assert logger.session_dir.name == f"job_{logger.session_id}"
+
+    def test_log_creates_json_file(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        import json
+        logger = JobLogger(jobs_dir=tmp_path / "jobs")
+        path = logger.log("prompt", {"prompt": "hello", "result": {"success": True}})
+        assert path.exists()
+        assert path.name == "0001_prompt.json"
+        data = json.loads(path.read_text())
+        assert data["job_type"] == "prompt"
+        assert data["prompt"] == "hello"
+        assert data["session_id"] == logger.session_id
+
+    def test_sequential_job_numbers(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=tmp_path / "jobs")
+        p1 = logger.log("prompt", {"prompt": "a"})
+        p2 = logger.log("agent_run", {"agent": "test"})
+        p3 = logger.log("stream", {"prompt": "b"})
+        assert p1.name == "0001_prompt.json"
+        assert p2.name == "0002_agent_run.json"
+        assert p3.name == "0003_stream.json"
+
+    def test_log_contains_timestamp(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        import json
+        logger = JobLogger(jobs_dir=tmp_path / "jobs")
+        path = logger.log("prompt", {"prompt": "test"})
+        data = json.loads(path.read_text())
+        assert "timestamp" in data
+        assert "T" in data["timestamp"]  # ISO format
+
+    def test_log_preserves_nested_data(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        import json
+        logger = JobLogger(jobs_dir=tmp_path / "jobs")
+        result = {
+            "success": True,
+            "output": "Hello world",
+            "steps_taken": 3,
+            "total_tokens": 500,
+            "total_cost_usd": 0.001,
+        }
+        path = logger.log("agent_run", {
+            "agent": "backend",
+            "task": "Write tests",
+            "model": "qwen3-coder",
+            "result": result,
+        })
+        data = json.loads(path.read_text())
+        assert data["result"]["success"] is True
+        assert data["result"]["total_tokens"] == 500
+        assert data["agent"] == "backend"
+
+    def test_inactivity_creates_new_session(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=tmp_path / "jobs", inactivity_timeout_s=0.0)
+        first_id = logger.session_id
+        first_dir = logger.session_dir
+        # Immediately expired (timeout=0), next access creates new session
+        import time
+        time.sleep(0.01)
+        second_id = logger.session_id
+        assert first_id != second_id
+        assert first_dir != logger.session_dir
+
+    def test_touch_keeps_session_alive(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=tmp_path / "jobs", inactivity_timeout_s=10.0)
+        session_id = logger.session_id
+        logger.touch()
+        assert logger.session_id == session_id

@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+
 from ..core.skill import Skill, SkillResult
 
 
 class ShellExecSkill(Skill):
-    def __init__(self, timeout: float = 120.0, allowed_commands: list[str] | None = None):
+    def __init__(
+        self,
+        timeout: float = 120.0,
+        allowed_commands: list[str] | None = None,
+        working_directory: str | Path | None = None,
+    ):
         self._timeout = timeout
         self._allowed_commands = allowed_commands
+        self._cwd = str(working_directory) if working_directory else None
 
     @property
     def name(self) -> str:
@@ -44,6 +52,7 @@ class ShellExecSkill(Skill):
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=self._cwd,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
             output = stdout.decode(errors="replace")
