@@ -89,6 +89,29 @@ For each relevant finding, in order of relevance:
    git commit -m "Scout: integrate <pattern-name> from <source-repo>"
    ```
 
+## Phase 4.5: Update Documentation
+
+After integrating patterns, update all project documentation to reflect changes:
+
+1. **CLAUDE.md** — Update Skills Map table (count + new rows) if new skills were added
+2. **README.md** — Update:
+   - Test count (`X tests`) if tests changed
+   - Skills/features mentions if applicable
+   - Project structure tree if new files were added to `src/` or `.claude/skills/`
+3. **docs/components.md** — Update component diagrams if new core modules were added
+
+```bash
+# Check what needs updating
+grep -n "Skills Map" CLAUDE.md
+grep -n "tests" README.md
+```
+
+Commit docs updates separately:
+```bash
+git add CLAUDE.md README.md docs/components.md
+git commit -m "Scout: update documentation with integrated patterns"
+```
+
 ## Phase 5: PR or Report
 
 ### If >= 1 integration was committed:
