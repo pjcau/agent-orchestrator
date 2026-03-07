@@ -122,6 +122,20 @@ Features:
 - **Collapsible sections** — expand/collapse graph, chat, sidebar panels
 - **OpenRouter pricing** — live model pricing panel
 
+### Agent Categories (22 agents)
+
+Agents are organised by domain under `.claude/agents/<category>/`:
+
+| Category | Agents | Description |
+|----------|--------|-------------|
+| **general** | team-lead | Coordinates all categories, task decomposition |
+| **software-engineering** | backend, frontend, devops, platform-engineer, ai-engineer, scout | Software development lifecycle |
+| **data-science** | data-analyst, ml-engineer, data-engineer, nlp-specialist, bi-analyst | Data analysis, ML, NLP, BI |
+| **finance** | financial-analyst, risk-analyst, quant-developer, compliance-officer, accountant | Financial modeling, risk, compliance |
+| **marketing** | content-strategist, seo-specialist, growth-hacker, social-media-manager, email-marketer | Content, SEO, growth, social, email |
+
+The `team-lead` decides which agent handles each sub-task via LLM-based decomposition. The `TaskRouter` then selects the best provider/model per agent based on task complexity.
+
 ### Routing Strategies
 
 - **Fixed** — each agent always uses one provider
@@ -218,7 +232,7 @@ agent-orchestrator/
 │   ├── dashboard/
 │   │   ├── app.py                # FastAPI app (REST + WebSocket + streaming)
 │   │   ├── agent_runner.py       # Agent/team execution with event emissions
-│   │   ├── agents_registry.py    # Agent configuration registry
+│   │   ├── agents_registry.py    # Agent configuration registry (category-aware)
 │   │   ├── graphs.py             # Graph builders for dashboard prompt
 │   │   ├── job_logger.py         # Session-based job persistence
 │   │   ├── auth.py               # API key authentication middleware
@@ -235,7 +249,7 @@ agent-orchestrator/
 ├── examples/
 │   ├── test_ollama_graph.py      # 4 examples with Ollama/Qwen (free)
 │   └── test_claude_graph.py      # 4 examples with Anthropic API
-├── tests/                        # 436 tests (13 test files)
+├── tests/                        # 487 tests (14 test files)
 ├── docker-compose.yml            # OrbStack services
 └── pyproject.toml
 ```
