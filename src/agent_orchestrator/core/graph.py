@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any, Callable, Awaitable
 
 from .checkpoint import Checkpoint, Checkpointer
+from .channels import BaseChannel, ChannelManager, LastValue, BinaryOperatorChannel
 
 
 # Sentinel nodes
@@ -117,10 +118,15 @@ class StateGraph:
         result = await compiled.invoke({"input": "hello"})
     """
 
-    def __init__(self, reducers: dict[str, Reducer] | None = None):
+    def __init__(
+        self,
+        reducers: dict[str, Reducer] | None = None,
+        channel_config: dict[str, BaseChannel] | None = None,
+    ):
         self._nodes: dict[str, NodeConfig] = {}
         self._edges: list[Edge] = []
         self._reducers: dict[str, Reducer] = reducers or {}
+        self._channel_config: dict[str, BaseChannel] = channel_config or {}
         self._compiled = False
 
     def add_node(self, name: str, func: NodeFunc, **metadata: Any) -> StateGraph:
@@ -159,12 +165,21 @@ class StateGraph:
     ) -> CompiledGraph:
         self._validate()
         self._compiled = True
+        # Build ChannelManager from channel_config
+        channel_manager = ChannelManager()
+        for key, channel in self._channel_config.items():
+            channel_manager.register(key, channel)
+        # Auto-create BinaryOperatorChannel for reducers without explicit channels
+        for key, reducer in self._reducers.items():
+            if key not in self._channel_config:
+                channel_manager.register(key, BinaryOperatorChannel(reducer))
         return CompiledGraph(
             nodes=dict(self._nodes),
             edges=list(self._edges),
             reducers=dict(self._reducers),
             checkpointer=checkpointer,
             config=config or GraphConfig(),
+            channel_manager=channel_manager,
         )
 
     def _validate(self) -> None:
@@ -222,12 +237,14 @@ class CompiledGraph:
         reducers: dict[str, Reducer],
         checkpointer: Checkpointer | None,
         config: GraphConfig,
+        channel_manager: ChannelManager | None = None,
     ):
         self._nodes = nodes
         self._edges = edges
         self._reducers = reducers
         self._checkpointer = checkpointer
         self._config = config
+        self._channel_manager = channel_manager or ChannelManager()
 
     async def invoke(
         self,
@@ -264,6 +281,11 @@ class CompiledGraph:
                 raise ValueError(f"Checkpoint not found: {resume_from}")
         else:
             state = dict(initial_state)
+            # Seed channels with initial state values
+            for key, value in state.items():
+                channel = self._channel_manager.get_channel(key)
+                if channel is not None:
+                    channel.update([value])
             current_nodes = self._get_next_nodes(START, state)
 
         while current_nodes and step_index < self._config.recursion_limit:
@@ -512,10 +534,15 @@ class CompiledGraph:
         return next_nodes
 
     def _apply_update(self, state: State, update: State) -> State:
-        """Apply a partial state update, using reducers where defined."""
+        """Apply a partial state update, using channels or reducers where defined."""
         new_state = dict(state)
         for key, value in update.items():
-            if key in self._reducers:
+            channel = self._channel_manager.get_channel(key)
+            if channel is not None:
+                # Use channel-based update
+                channel.update([value])
+                new_state[key] = channel.get()
+            elif key in self._reducers:
                 new_state[key] = self._reducers[key](state.get(key), value)
             else:
                 new_state[key] = value

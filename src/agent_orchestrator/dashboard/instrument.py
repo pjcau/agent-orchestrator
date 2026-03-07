@@ -14,6 +14,7 @@ from ..core.agent import Agent, Task, TaskResult, TaskStatus
 from ..core.graph import CompiledGraph
 from ..core.orchestrator import Orchestrator, OrchestratorResult
 from ..core.cooperation import CooperationProtocol, TaskAssignment, TaskReport
+from ..core.cache import InMemoryCache
 from .events import Event, EventBus, EventType
 
 
@@ -24,6 +25,7 @@ def instrument_all(bus: EventBus | None = None) -> None:
     _instrument_orchestrator(bus)
     _instrument_graph(bus)
     _instrument_cooperation(bus)
+    _instrument_cache(bus)
 
 
 def _instrument_agent(bus: EventBus) -> None:
@@ -232,3 +234,42 @@ def _instrument_cooperation(bus: EventBus) -> None:
 
     CooperationProtocol.assign = patched_assign
     CooperationProtocol.complete = patched_complete
+
+
+def _instrument_cache(bus: EventBus) -> None:
+    original_get = InMemoryCache.get
+    original_put = InMemoryCache.put
+
+    @functools.wraps(original_get)
+    def patched_get(self, key):
+        import asyncio
+
+        result = original_get(self, key)
+        event_type = EventType.CACHE_HIT if result is not None else EventType.CACHE_MISS
+        try:
+            loop = asyncio.get_running_loop()
+            stats = self.get_stats()
+            loop.create_task(
+                bus.emit(
+                    Event(
+                        event_type=event_type,
+                        data={
+                            "key": key[:64],
+                            "node_name": result.node_name if result else "",
+                        },
+                    )
+                )
+            )
+            loop.create_task(
+                bus.emit(
+                    Event(
+                        event_type=EventType.CACHE_STATS,
+                        data={"cache_stats": stats.to_dict()},
+                    )
+                )
+            )
+        except RuntimeError:
+            pass
+        return result
+
+    InMemoryCache.get = patched_get

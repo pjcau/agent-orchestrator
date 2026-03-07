@@ -49,6 +49,33 @@ from .users import UserManager, User, UserRole
 from .provider_presets import ProviderPresetManager, ProviderPreset
 from .migration import MigrationManager, MigrationResult
 from .api import APIRegistry, APIEndpoint, APIResponse
+from .channels import (
+    BaseChannel,
+    LastValue,
+    BinaryOperatorChannel,
+    TopicChannel,
+    EphemeralChannel,
+    BarrierChannel,
+    ChannelManager,
+    EmptyChannelError,
+    InvalidUpdateError,
+)
+from .cache import (
+    BaseCache,
+    InMemoryCache,
+    CachePolicy,
+    CacheEntry,
+    CacheStats,
+    cached_node,
+    make_cache_key,
+)
+from .conformance import (
+    run_provider_conformance,
+    run_checkpointer_conformance,
+    ConformanceReport,
+    TestResult,
+    TestStatus,
+)
 
 __all__ = [
     "Provider",
@@ -143,4 +170,26 @@ __all__ = [
     "APIRegistry",
     "APIEndpoint",
     "APIResponse",
+    # v1.1 — LangGraph-Inspired Improvements (Sprint 1: State & Caching)
+    "BaseChannel",
+    "LastValue",
+    "BinaryOperatorChannel",
+    "TopicChannel",
+    "EphemeralChannel",
+    "BarrierChannel",
+    "ChannelManager",
+    "EmptyChannelError",
+    "InvalidUpdateError",
+    "BaseCache",
+    "InMemoryCache",
+    "CachePolicy",
+    "CacheEntry",
+    "CacheStats",
+    "cached_node",
+    "make_cache_key",
+    "run_provider_conformance",
+    "run_checkpointer_conformance",
+    "ConformanceReport",
+    "TestResult",
+    "TestStatus",
 ]

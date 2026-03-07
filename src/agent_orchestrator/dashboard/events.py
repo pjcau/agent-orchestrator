@@ -41,6 +41,11 @@ class EventType(str, Enum):
     TASK_COMPLETED = "cooperation.task_completed"
     ARTIFACT_PUBLISHED = "cooperation.artifact_published"
 
+    # Cache events
+    CACHE_HIT = "cache.hit"
+    CACHE_MISS = "cache.miss"
+    CACHE_STATS = "cache.stats"
+
     # Cost / metrics
     COST_UPDATE = "metrics.cost_update"
     TOKEN_UPDATE = "metrics.token_update"
@@ -110,6 +115,7 @@ class EventBus:
         orchestrator_status = "idle"
         graph_nodes: list[str] = []
         graph_edges: list[dict] = []
+        cache_stats: dict[str, Any] = {"hits": 0, "misses": 0, "hit_rate": 0.0}
 
         for event in self._history:
             et = event.event_type
@@ -164,6 +170,9 @@ class EventBus:
                     agents[event.agent_name]["tokens"] = event.data.get("agent_tokens", 0)
                     agents[event.agent_name]["cost_usd"] = event.data.get("agent_cost_usd", 0.0)
 
+            elif et == EventType.CACHE_STATS:
+                cache_stats = event.data.get("cache_stats", cache_stats)
+
             elif et == EventType.GRAPH_START:
                 graph_nodes = event.data.get("nodes", [])
                 graph_edges = event.data.get("edges", [])
@@ -175,5 +184,6 @@ class EventBus:
             "total_cost_usd": total_cost,
             "total_tokens": total_tokens,
             "graph": {"nodes": graph_nodes, "edges": graph_edges},
+            "cache": cache_stats,
             "event_count": len(self._history),
         }

@@ -18,7 +18,7 @@ The MVP (v1.0) must be a **complete, usable product** before investing in infras
 - Team graph: team-lead delegates to parallel sub-agents
 - Checkpointing: InMemory, SQLite, PostgreSQL
 - Docker/OrbStack: dashboard, postgres, test, lint, format
-- 83+ tests
+- 436+ tests
 
 **Incomplete from v0.2.0/v0.3.0:**
 - Conversation memory persistence

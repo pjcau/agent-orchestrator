@@ -26,13 +26,13 @@ Full comparison: [`analysis/langgraph/28-comparison.md`](https://github.com/pjca
 
 ---
 
-## Sprint 1: State & Caching
+## Sprint 1: State & Caching ✅
 
-| Task | Inspired By | Priority |
-|------|------------|----------|
-| **Channel-based state with reducers** | [03-channels](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/03-channels.md) | High |
-| **Task-level result caching** | [15-cache](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/15-cache.md) | High |
-| **Conformance test suite** | [16-conformance-tests](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/16-conformance-tests.md) | High |
+| Task | Inspired By | Status |
+|------|------------|--------|
+| **Channel-based state with reducers** | [03-channels](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/03-channels.md) | ✅ `core/channels.py` |
+| **Task-level result caching** | [15-cache](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/15-cache.md) | ✅ `core/cache.py` |
+| **Conformance test suite** | [16-conformance-tests](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/16-conformance-tests.md) | ✅ `core/conformance.py` |
 
 ### Channel-Based State
 

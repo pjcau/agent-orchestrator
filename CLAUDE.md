@@ -53,7 +53,10 @@ agent-orchestrator/
 │       │   ├── users.py         # User management with RBAC
 │       │   ├── provider_presets.py # One-click provider presets
 │       │   ├── migration.py     # Import from LangGraph/CrewAI/AutoGen
-│       │   └── api.py           # Versioned REST API registry (OpenAPI 3.0)
+│       │   ├── api.py           # Versioned REST API registry (OpenAPI 3.0)
+│       │   ├── channels.py     # Typed channels (LastValue, Topic, Barrier, Ephemeral)
+│       │   ├── cache.py        # Task-level result caching (InMemory, TTL, cached_node)
+│       │   └── conformance.py  # Conformance test suites (Provider, Checkpointer)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
