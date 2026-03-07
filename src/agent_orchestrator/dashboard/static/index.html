@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=042">
+    <link rel="stylesheet" href="/static/style.css?v=043">
 </head>
 <body>
     <header>
@@ -24,6 +24,10 @@
             <div class="metric">
                 <span class="metric-label">Speed</span>
                 <span id="token-speed" class="metric-value">- tok/s</span>
+            </div>
+            <div class="metric cache-metric">
+                <span class="metric-label">Cache</span>
+                <span id="cache-hit-rate" class="metric-value">-</span>
             </div>
             <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="Toggle logs panel">Logs</button>
             <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
@@ -119,6 +123,7 @@
                         <option value="agent">Agent</option>
                         <option value="graph">Graph</option>
                         <option value="cooperation">Coop</option>
+                        <option value="cache">Cache</option>
                     </select>
                     <button id="btn-clear">Clear</button>
                     <button id="btn-new-chat" title="New conversation">New Chat</button>
@@ -131,6 +136,35 @@
                 <h2>Details</h2>
                 <div id="detail-view" class="detail-view">
                     <div class="empty-state">Click a graph node or event</div>
+                </div>
+            </div>
+
+            <!-- Cache Stats -->
+            <div class="sidebar-section">
+                <h2>Cache</h2>
+                <div id="cache-panel" class="cache-panel">
+                    <div class="cache-stats-grid">
+                        <div class="cache-stat">
+                            <span class="cache-stat-value" id="cache-hits">0</span>
+                            <span class="cache-stat-label">Hits</span>
+                        </div>
+                        <div class="cache-stat">
+                            <span class="cache-stat-value" id="cache-misses">0</span>
+                            <span class="cache-stat-label">Misses</span>
+                        </div>
+                        <div class="cache-stat">
+                            <span class="cache-stat-value" id="cache-evictions">0</span>
+                            <span class="cache-stat-label">Evictions</span>
+                        </div>
+                        <div class="cache-stat">
+                            <span class="cache-stat-value" id="cache-rate">0%</span>
+                            <span class="cache-stat-label">Hit Rate</span>
+                        </div>
+                    </div>
+                    <div class="cache-bar-container">
+                        <div class="cache-bar-fill" id="cache-bar-fill" style="width:0%"></div>
+                    </div>
+                    <div id="cache-log" class="cache-log"></div>
                 </div>
             </div>
 
@@ -176,6 +210,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=042"></script>
+    <script src="/static/app.js?v=043"></script>
 </body>
 </html>

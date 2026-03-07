@@ -16,6 +16,7 @@
     total_cost_usd: 0,
     total_tokens: 0,
     graph: { nodes: [], edges: [] },
+    cache: { hits: 0, misses: 0, hit_rate: 0, evictions: 0 },
     event_count: 0,
   };
   let agentRegistry = null;
@@ -70,6 +71,13 @@
   const $btnToggleSidebar = $("btn-toggle-sidebar");
   const $sidebar = $("sidebar");
   const $agentActivity = $("agent-activity");
+  const $cacheHitRate = $("cache-hit-rate");
+  const $cacheHits = $("cache-hits");
+  const $cacheMisses = $("cache-misses");
+  const $cacheEvictions = $("cache-evictions");
+  const $cacheRate = $("cache-rate");
+  const $cacheBarFill = $("cache-bar-fill");
+  const $cacheLog = $("cache-log");
 
   // --- Event WebSocket ---
   function connect() {
@@ -873,6 +881,14 @@
         $chatMessages.scrollTop = $chatMessages.scrollHeight;
       }
     }
+    // Cache events
+    if (evt.event_type === "cache.hit" || evt.event_type === "cache.miss") {
+      renderCachePanel();
+      appendCacheLog(evt);
+    } else if (evt.event_type === "cache.stats") {
+      renderCachePanel();
+    }
+
     $timeline.scrollTop = $timeline.scrollHeight;
   }
 
@@ -892,6 +908,14 @@
     } else if (t === "cooperation.task_completed") {
       const task = snapshot.tasks.find((tk) => tk.task_id === evt.data.task_id);
       if (task) task.status = evt.data.success ? "completed" : "failed";
+    } else if (t === "cache.hit") {
+      snapshot.cache.hits = (snapshot.cache.hits || 0) + 1;
+      updateCacheRate();
+    } else if (t === "cache.miss") {
+      snapshot.cache.misses = (snapshot.cache.misses || 0) + 1;
+      updateCacheRate();
+    } else if (t === "cache.stats") {
+      snapshot.cache = evt.data.cache_stats || snapshot.cache;
     } else if (t === "metrics.cost_update") snapshot.total_cost_usd = evt.data.total_cost_usd || snapshot.total_cost_usd;
     else if (t === "metrics.token_update") {
       snapshot.total_tokens = evt.data.total_tokens || snapshot.total_tokens;
@@ -910,13 +934,46 @@
     $tokens.textContent = formatNumber(snapshot.total_tokens);
     $cost.textContent = `$${(snapshot.total_cost_usd || 0).toFixed(3)}`;
     $tokenSpeed.textContent = lastTokenSpeed > 0 ? `${lastTokenSpeed.toFixed(1)} tok/s` : "- tok/s";
+    renderCachePanel();
+  }
+
+  function updateCacheRate() {
+    const c = snapshot.cache;
+    const total = (c.hits || 0) + (c.misses || 0);
+    c.hit_rate = total > 0 ? c.hits / total : 0;
+  }
+
+  function renderCachePanel() {
+    const c = snapshot.cache || {};
+    const rate = ((c.hit_rate || 0) * 100).toFixed(1);
+    if ($cacheHits) $cacheHits.textContent = formatNumber(c.hits || 0);
+    if ($cacheMisses) $cacheMisses.textContent = formatNumber(c.misses || 0);
+    if ($cacheEvictions) $cacheEvictions.textContent = formatNumber(c.evictions || 0);
+    if ($cacheRate) $cacheRate.textContent = rate + "%";
+    if ($cacheBarFill) $cacheBarFill.style.width = rate + "%";
+    if ($cacheHitRate) {
+      const total = (c.hits || 0) + (c.misses || 0);
+      $cacheHitRate.textContent = total > 0 ? rate + "%" : "-";
+    }
+  }
+
+  function appendCacheLog(evt) {
+    if (!$cacheLog) return;
+    const isHit = evt.event_type === "cache.hit";
+    const el = document.createElement("div");
+    el.className = `cache-log-entry ${isHit ? "hit" : "miss"}`;
+    const node = evt.data.node_name || evt.data.key?.slice(0, 12) || "";
+    el.innerHTML = `<span class="cache-log-icon">${isHit ? "HIT" : "MISS"}</span> <span class="cache-log-node">${esc(node)}</span> <span class="cache-log-time">${formatTime(evt.timestamp)}</span>`;
+    $cacheLog.appendChild(el);
+    if ($cacheLog.children.length > 50) $cacheLog.removeChild($cacheLog.firstChild);
+    $cacheLog.scrollTop = $cacheLog.scrollHeight;
   }
 
   function renderTimelineEvent(evt) {
     const filter = $filterType.value;
     if (filter !== "all" && !evt.event_type.startsWith(filter)) return;
     const cat = eventCategory(evt.event_type);
-    const icons = { agent: "A", graph: "G", cooperation: "C", metrics: "M", orchestrator: "O" };
+    const icons = { agent: "A", graph: "G", cooperation: "C", cache: "$", metrics: "M", orchestrator: "O" };
     const el = document.createElement("div");
     el.className = "event-item";
     el.innerHTML = `<span class="event-time">${formatTime(evt.timestamp)}</span><span class="event-icon ${cat}">${icons[cat] || "?"}</span><div class="event-body"><div class="event-type">${esc(evt.event_type)}</div><div class="event-desc">${esc(eventDesc(evt))}</div></div>`;
@@ -928,6 +985,7 @@
     if (type.startsWith("agent")) return "agent";
     if (type.startsWith("graph")) return "graph";
     if (type.startsWith("cooperation")) return "cooperation";
+    if (type.startsWith("cache")) return "cache";
     if (type.startsWith("metrics")) return "metrics";
     return "orchestrator";
   }
@@ -943,6 +1001,9 @@
       case "graph.end": return `graph ended ${d.elapsed_s || 0}s`;
       case "graph.node.enter": return `entering ${evt.node_name || ""}`;
       case "graph.node.exit": return `exited ${evt.node_name || ""}`;
+      case "cache.hit": return `cache hit${d.node_name ? ` [${d.node_name}]` : ""}`;
+      case "cache.miss": return `cache miss${d.node_name ? ` [${d.node_name}]` : ""}`;
+      case "cache.stats": return `hit rate: ${((d.cache_stats?.hit_rate || 0) * 100).toFixed(1)}%`;
       default: return JSON.stringify(d).slice(0, 80);
     }
   }

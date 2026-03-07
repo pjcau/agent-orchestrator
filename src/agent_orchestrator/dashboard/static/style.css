@@ -453,6 +453,7 @@ main {
 .event-icon.agent { background: rgba(88,166,255,0.2); color: var(--accent); }
 .event-icon.graph { background: rgba(57,210,192,0.2); color: var(--cyan); }
 .event-icon.cooperation { background: rgba(247,120,186,0.2); color: var(--pink); }
+.event-icon.cache { background: rgba(57,210,192,0.15); color: var(--cyan); }
 .event-icon.metrics { background: rgba(210,153,34,0.2); color: var(--orange); }
 .event-icon.orchestrator { background: rgba(188,140,255,0.2); color: var(--purple); }
 .event-body { flex: 1; min-width: 0; }
@@ -470,6 +471,51 @@ main {
 .detail-event-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
 .detail-event-type { font-size: 10px; font-weight: 600; color: var(--text); margin-left: 6px; }
 .detail-event-data { font-size: 10px; margin-top: 2px; }
+
+/* === Cache Panel === */
+.cache-metric .metric-value { color: var(--cyan); }
+.cache-stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 6px; margin-bottom: 8px;
+}
+.cache-stat {
+    display: flex; flex-direction: column; align-items: center;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 4px;
+}
+.cache-stat-value {
+    font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--text);
+}
+.cache-stat-label {
+    font-size: 8px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-top: 2px;
+}
+.cache-bar-container {
+    height: 4px; background: var(--bg-card); border-radius: 2px;
+    overflow: hidden; margin-bottom: 8px; border: 1px solid var(--border);
+}
+.cache-bar-fill {
+    height: 100%; background: var(--cyan); border-radius: 2px;
+    transition: width 0.3s ease;
+}
+.cache-log {
+    max-height: 120px; overflow-y: auto; font-size: 10px;
+    font-family: var(--font-mono);
+}
+.cache-log-entry {
+    display: flex; align-items: center; gap: 6px;
+    padding: 2px 4px; border-radius: 3px;
+}
+.cache-log-entry.hit { color: var(--green); }
+.cache-log-entry.miss { color: var(--text-dim); }
+.cache-log-icon {
+    font-size: 8px; font-weight: 700; letter-spacing: 0.5px;
+    padding: 1px 4px; border-radius: 3px; min-width: 32px; text-align: center;
+}
+.cache-log-entry.hit .cache-log-icon { background: rgba(63,185,80,0.15); }
+.cache-log-entry.miss .cache-log-icon { background: rgba(139,148,158,0.15); }
+.cache-log-node { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cache-log-time { color: var(--text-dim); font-size: 9px; }
 
 /* === Compare Section === */
 .compare-controls { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
