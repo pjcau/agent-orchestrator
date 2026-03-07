@@ -206,10 +206,14 @@ class OpenRouterProvider(OpenAIProvider):
         temperature: float = 0.0,
     ) -> Completion:
         """Complete with automatic fallback on 429 rate limits and 402 credit errors."""
-        # Build list: requested model first, then fallbacks
+        # Build fallback list; if the requested model is paid, only fallback
+        # to other paid models (free models may be blocked by data policy).
+        is_paid = ":free" not in self._model
         models_to_try = [self._model]
         for m in self.FALLBACK_ORDER:
             if m != self._model:
+                if is_paid and ":free" in m:
+                    continue  # skip free models when user chose paid
                 models_to_try.append(m)
 
         last_error = None
@@ -259,6 +263,12 @@ class OpenRouterProvider(OpenAIProvider):
                     logger.warning("Insufficient credits for %s, trying cheaper model...", model)
                     last_error = exc
                     await asyncio.sleep(0.3)
+                    continue
+
+                # 404: data policy or model not found — skip this model
+                if "404" in err_str or "data policy" in err_str.lower() or "No endpoints" in err_str:
+                    logger.warning("Model %s blocked (data policy/404), trying next...", model)
+                    last_error = exc
                     continue
 
                 # 429: rate limited — try next model
