@@ -102,3 +102,63 @@ class JobLogger:
             except (json.JSONDecodeError, OSError):
                 continue
         return records
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        """List all job sessions with summary info."""
+        sessions: list[dict[str, Any]] = []
+        if not self._base_dir.exists():
+            return sessions
+        for d in sorted(self._base_dir.iterdir(), reverse=True):
+            if not d.is_dir() or not d.name.startswith("job_"):
+                continue
+            session_id = d.name[4:]  # strip "job_" prefix
+            json_files = sorted(d.glob("*.json"))
+            record_count = len(json_files)
+            # Extract summary from first and last records
+            first_prompt = ""
+            last_type = ""
+            if json_files:
+                try:
+                    first = json.loads(json_files[0].read_text(encoding="utf-8"))
+                    first_prompt = first.get("prompt", first.get("task", ""))[:80]
+                    last = json.loads(json_files[-1].read_text(encoding="utf-8"))
+                    last_type = last.get("job_type", "")
+                except (json.JSONDecodeError, OSError):
+                    pass
+            # Count non-json files (agent-created files)
+            all_files = [f for f in d.iterdir() if f.is_file() and f.suffix != ".json"]
+            sessions.append({
+                "session_id": session_id,
+                "dir_name": d.name,
+                "records": record_count,
+                "files": len(all_files),
+                "first_prompt": first_prompt,
+                "last_type": last_type,
+                "is_current": session_id == self._session_id,
+            })
+        return sessions
+
+    def load_session(self, session_id: str) -> list[dict[str, Any]]:
+        """Load all records from a specific session."""
+        session_dir = self._base_dir / f"job_{session_id}"
+        if not session_dir.exists() or not session_dir.is_dir():
+            return []
+        records: list[dict[str, Any]] = []
+        for f in sorted(session_dir.glob("*.json")):
+            try:
+                records.append(json.loads(f.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError):
+                continue
+        return records
+
+    def switch_session(self, session_id: str) -> bool:
+        """Switch to an existing session to continue work in it."""
+        session_dir = self._base_dir / f"job_{session_id}"
+        if not session_dir.exists() or not session_dir.is_dir():
+            return False
+        self._session_id = session_id
+        self._session_dir = session_dir
+        # Count existing records to continue numbering
+        self._job_counter = len(list(session_dir.glob("*.json")))
+        self._last_activity = time.monotonic()
+        return True

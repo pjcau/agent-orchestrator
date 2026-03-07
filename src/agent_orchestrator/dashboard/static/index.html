@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=044">
+    <link rel="stylesheet" href="/static/style.css?v=046">
 </head>
 <body>
     <header>
@@ -29,6 +29,7 @@
                 <span class="metric-label">Cache</span>
                 <span id="cache-hit-rate" class="metric-value">-</span>
             </div>
+            <button id="btn-history" class="btn-sidebar-toggle" title="Job history">History</button>
             <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="Toggle logs panel">Logs</button>
             <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
         </div>
@@ -239,6 +240,24 @@
         </aside>
     </main>
 
+    <!-- History modal -->
+    <div id="history-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <h3>Job History</h3>
+                <button id="btn-close-history" class="btn-close">&times;</button>
+            </div>
+            <div class="history-layout">
+                <div class="history-sessions" id="history-sessions">
+                    <div class="empty-state">Loading...</div>
+                </div>
+                <div class="history-detail" id="history-detail">
+                    <div class="empty-state">Select a session</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- File picker modal -->
     <div id="file-picker-modal" class="modal hidden">
         <div class="modal-content">
@@ -251,6 +270,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=044"></script>
+    <script src="/static/app.js?v=046"></script>
 </body>
 </html>

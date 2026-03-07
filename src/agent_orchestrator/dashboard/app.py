@@ -69,6 +69,37 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         records = job_logger.get_history()
         return JSONResponse(content={"session_id": job_logger.session_id, "records": records})
 
+    @app.get("/api/jobs/list")
+    async def jobs_list():
+        """List all job sessions."""
+        sessions = job_logger.list_sessions()
+        return JSONResponse(content={"sessions": sessions})
+
+    @app.get("/api/jobs/{session_id}")
+    async def jobs_detail(session_id: str):
+        """Load all records from a specific session."""
+        records = job_logger.load_session(session_id)
+        if not records:
+            return JSONResponse(
+                content={"error": "Session not found"}, status_code=404
+            )
+        return JSONResponse(content={"session_id": session_id, "records": records})
+
+    @app.post("/api/jobs/{session_id}/switch")
+    async def jobs_switch(session_id: str):
+        """Switch to an existing session to continue work in it."""
+        ok = job_logger.switch_session(session_id)
+        if not ok:
+            return JSONResponse(
+                content={"success": False, "error": "Session not found"},
+                status_code=404,
+            )
+        return JSONResponse(content={
+            "success": True,
+            "session_id": session_id,
+            "jobs_dir": str(job_logger.session_dir),
+        })
+
     @app.get("/api/snapshot")
     async def snapshot():
         return JSONResponse(content=bus.get_snapshot())

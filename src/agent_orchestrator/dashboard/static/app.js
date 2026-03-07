@@ -93,6 +93,11 @@
   const $cacheRate = $("cache-rate");
   const $cacheBarFill = $("cache-bar-fill");
   const $cacheLog = $("cache-log");
+  const $btnHistory = $("btn-history");
+  const $historyModal = $("history-modal");
+  const $historySessions = $("history-sessions");
+  const $historyDetail = $("history-detail");
+  const $btnCloseHistory = $("btn-close-history");
 
   // --- Event WebSocket ---
   function connect() {
@@ -1181,6 +1186,169 @@
         if (section && isCollapsed) section.classList.add("collapsed");
       }
     } catch(e) {}
+  }
+
+  // --- Job History Modal ---
+  if ($btnHistory) $btnHistory.addEventListener("click", openHistory);
+  if ($btnCloseHistory) $btnCloseHistory.addEventListener("click", () => $historyModal.classList.add("hidden"));
+  if ($historyModal) $historyModal.addEventListener("click", (e) => { if (e.target === $historyModal) $historyModal.classList.add("hidden"); });
+
+  async function openHistory() {
+    $historyModal.classList.remove("hidden");
+    $historySessions.innerHTML = '<div class="empty-state">Loading...</div>';
+    $historyDetail.innerHTML = '<div class="empty-state">Select a session</div>';
+    try {
+      const resp = await fetch("/api/jobs/list");
+      const data = await resp.json();
+      renderSessionList(data.sessions || []);
+    } catch (e) {
+      $historySessions.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderSessionList(sessions) {
+    if (!sessions.length) {
+      $historySessions.innerHTML = '<div class="empty-state">No sessions yet</div>';
+      return;
+    }
+    $historySessions.innerHTML = sessions.map((s) => {
+      const label = s.first_prompt || "(no prompt)";
+      const badge = s.is_current ? ' <span class="badge running">current</span>' : "";
+      const ts = s.session_id.replace(/_/g, " ").slice(0, 15);
+      return `<div class="history-session-item${s.is_current ? " active" : ""}" data-sid="${esc(s.session_id)}">
+        <div class="history-session-meta">${esc(ts)}${badge}</div>
+        <div class="history-session-prompt">${esc(label)}</div>
+        <div class="history-session-stats">${s.records} records &middot; ${s.files} files</div>
+      </div>`;
+    }).join("");
+    $historySessions.querySelectorAll(".history-session-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        $historySessions.querySelectorAll(".history-session-item").forEach((x) => x.classList.remove("selected"));
+        el.classList.add("selected");
+        loadSessionDetail(el.dataset.sid);
+      });
+    });
+  }
+
+  async function loadSessionDetail(sessionId) {
+    $historyDetail.innerHTML = '<div class="empty-state">Loading...</div>';
+    try {
+      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}`);
+      const data = await resp.json();
+      if (data.error) {
+        $historyDetail.innerHTML = `<div class="empty-state">${esc(data.error)}</div>`;
+        return;
+      }
+      renderSessionDetail(sessionId, data.records || []);
+    } catch (e) {
+      $historyDetail.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderSessionDetail(sessionId, records) {
+    if (!records.length) {
+      $historyDetail.innerHTML = '<div class="empty-state">Empty session</div>';
+      return;
+    }
+    const actions = `<div class="history-actions">
+      <button class="btn-history-load" data-sid="${esc(sessionId)}">Load into chat</button>
+      <button class="btn-history-switch" data-sid="${esc(sessionId)}">Switch &amp; continue</button>
+    </div>`;
+    const rows = records.map((r) => {
+      const prompt = r.prompt || r.task || "";
+      const result = r.result || {};
+      const output = result.output || result.error || "";
+      const icon = r.job_type === "team_run" ? "T" : r.job_type === "agent_run" ? "A" : "P";
+      const tokens = result.total_tokens || result.tokens || 0;
+      const cost = result.total_cost_usd ? "$" + result.total_cost_usd.toFixed(4) : "";
+      return `<div class="history-record">
+        <div class="history-record-header">
+          <span class="history-record-type">${icon}</span>
+          <span class="history-record-num">#${r.job_number}</span>
+          <span class="history-record-type-label">${esc(r.job_type)}</span>
+          ${tokens ? `<span class="history-record-tokens">${formatNumber(tokens)} tok</span>` : ""}
+          ${cost ? `<span class="history-record-cost">${cost}</span>` : ""}
+        </div>
+        ${prompt ? `<div class="history-record-prompt">${esc(truncate(prompt, 200))}</div>` : ""}
+        ${output ? `<div class="history-record-output">${esc(truncate(output, 300))}</div>` : ""}
+      </div>`;
+    }).join("");
+    $historyDetail.innerHTML = actions + rows;
+
+    // Wire up action buttons
+    $historyDetail.querySelector(".btn-history-load")?.addEventListener("click", () => loadSessionIntoChat(sessionId));
+    $historyDetail.querySelector(".btn-history-switch")?.addEventListener("click", () => switchToSession(sessionId));
+  }
+
+  async function loadSessionIntoChat(sessionId) {
+    $historyModal.classList.add("hidden");
+    $chatMessages.innerHTML = "";
+    snapshot.total_tokens = 0;
+    snapshot.total_cost_usd = 0;
+    try {
+      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}`);
+      const data = await resp.json();
+      const records = data.records || [];
+      for (const rec of records) {
+        const type = rec.job_type;
+        if (type === "prompt" || type === "stream") {
+          addChatBubble("user", rec.prompt || "");
+          const result = rec.result || {};
+          if (result.success !== false && result.output) {
+            addChatBubble("assistant", result.output);
+          } else if (result.error) {
+            addChatBubble("assistant", `Error: ${result.error}`);
+          }
+          if (result.tokens) snapshot.total_tokens += result.tokens;
+        } else if (type === "agent_run") {
+          addChatBubble("user", rec.task || "");
+          const result = rec.result || {};
+          if (result.success) {
+            addChatBubble("assistant", {
+              steps: [{ node: rec.agent || "agent", output: result.output }],
+              usage: { output_tokens: result.total_tokens, model: rec.model },
+              elapsed_s: result.elapsed_s,
+            });
+          } else {
+            addChatBubble("assistant", `Error: ${result.error || "Failed"}`);
+          }
+          if (result.total_tokens) snapshot.total_tokens += result.total_tokens;
+          if (result.total_cost_usd) snapshot.total_cost_usd += result.total_cost_usd;
+        } else if (type === "team_run") {
+          addChatBubble("user", rec.task || "");
+          const result = rec.result || {};
+          if (result.success) {
+            addChatBubble("assistant", {
+              steps: [{ node: "team (summary)", output: result.output }],
+              usage: { output_tokens: result.total_tokens, model: rec.model },
+              elapsed_s: result.elapsed_s,
+            });
+          } else {
+            addChatBubble("assistant", `Error: ${result.error || "Failed"}`);
+          }
+          if (result.total_tokens) snapshot.total_tokens += result.total_tokens;
+          if (result.total_cost_usd) snapshot.total_cost_usd += result.total_cost_usd;
+        }
+      }
+      renderHeader();
+    } catch (e) {
+      addChatBubble("assistant", `Error loading session: ${e.message}`);
+    }
+  }
+
+  async function switchToSession(sessionId) {
+    try {
+      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/switch`, { method: "POST" });
+      const data = await resp.json();
+      if (!data.success) {
+        alert("Failed to switch session: " + (data.error || "Unknown error"));
+        return;
+      }
+      // Load session into chat view
+      await loadSessionIntoChat(sessionId);
+    } catch (e) {
+      alert("Error switching session: " + e.message);
+    }
   }
 
   // --- Init ---

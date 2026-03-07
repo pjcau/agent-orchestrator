@@ -59,6 +59,20 @@ class OpenRouterProvider(OpenAIProvider):
             "coding": 0.88,
             "reasoning": 0.80,
         },
+        "qwen/qwen3-coder-next": {
+            "input_cost": 0.12,
+            "output_cost": 0.75,
+            "context": 262_144,
+            "coding": 0.90,
+            "reasoning": 0.82,
+        },
+        "qwen/qwen3.5-397b-a17b": {
+            "input_cost": 0.39,
+            "output_cost": 2.34,
+            "context": 262_144,
+            "coding": 0.87,
+            "reasoning": 0.86,
+        },
         "qwen/qwen3-235b-a22b-thinking-2507": {
             "input_cost": 0.0,
             "output_cost": 0.0,
@@ -170,6 +184,8 @@ class OpenRouterProvider(OpenAIProvider):
     # Fallback order: best free models sorted by coding quality
     FALLBACK_ORDER = [
         "qwen/qwen3-coder:free",
+        "qwen/qwen3-coder-next",
+        "qwen/qwen3.5-397b-a17b",
         "qwen/qwen3-235b-a22b-thinking-2507",
         "openai/gpt-oss-120b:free",
         "nousresearch/hermes-3-llama-3.1-405b:free",
