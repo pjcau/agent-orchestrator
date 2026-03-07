@@ -1,9 +1,6 @@
 """Tests for the agent registry — category scanning, frontmatter parsing, and grouping."""
 
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from agent_orchestrator.dashboard.agents_registry import (
     AGENT_SKILLS,

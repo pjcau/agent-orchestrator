@@ -217,7 +217,6 @@ class OpenRouterProvider(OpenAIProvider):
         Fallback order: paid models first, then free as last resort when
         credits are exhausted on all paid options.
         """
-        is_paid = ":free" not in self._model
         vendor = self._model.split("/")[0]  # e.g. "qwen" from "qwen/qwen3-coder-next"
         paid_models = [self._model]
         free_same_vendor: list[str] = []
