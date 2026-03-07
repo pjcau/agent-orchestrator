@@ -29,6 +29,7 @@
   let attachedFiles = [];
   let allModels = { ollama: [], openrouter: [] };
   const MAX_EVENTS = 500;
+  let cumulativeUsage = null;
 
   // --- Running state management ---
   function setRunning(running) {
@@ -40,6 +41,8 @@
     } else {
       snapshot.orchestrator_status = "completed";
       $promptInput.focus();
+      // Refresh cumulative stats after task completes
+      fetchUsageStats();
       // Auto-reset to idle after 3s
       setTimeout(() => {
         if (!isRunning) { snapshot.orchestrator_status = "idle"; renderHeader(); }
@@ -56,8 +59,10 @@
   const $tokenSpeed = $("token-speed");
   const $wsIndicator = $("ws-indicator");
   const $agentBadges = $("agent-badges");
-  const $agentMessages = $("agent-messages");
   const $graphCanvas = $("graph-canvas");
+  const $graphSvg = $("graph-svg");
+  const $graphEmpty = $("graph-empty");
+  const $interactionTimeline = $("interaction-timeline");
   const $chatMessages = $("chat-messages");
   const $promptInput = $("prompt-input");
   const $btnSend = $("btn-send");
@@ -86,6 +91,10 @@
   const $btnToggleSidebar = $("btn-toggle-sidebar");
   const $sidebar = $("sidebar");
   const $agentActivity = $("agent-activity");
+  const $cumulTokens = $("cumul-tokens");
+  const $cumulCost = $("cumul-cost");
+  const $cumulRequests = $("cumul-requests");
+  const $dbIndicator = $("db-indicator");
   const $cacheHitRate = $("cache-hit-rate");
   const $cacheHits = $("cache-hits");
   const $cacheMisses = $("cache-misses");
@@ -228,21 +237,86 @@
     return a ? a.status || "idle" : "idle";
   }
 
-  // --- Inter-Agent Messages ---
+  // --- Interaction tracking ---
+  let interactions = [];
+
+  function addInteraction(from, to, desc, status) {
+    const item = { from, to, desc: desc || "", status: status || "pending", time: Date.now() };
+    interactions.push(item);
+    if (interactions.length > 50) interactions = interactions.slice(-50);
+    renderInteractionTimeline();
+    animateEdge(from, to);
+    return item;
+  }
+
+  function updateInteraction(from, to, status) {
+    const item = interactions.find(i => i.from === from && i.to === to && i.status === "pending");
+    if (item) item.status = status;
+    renderInteractionTimeline();
+  }
+
+  let renderedInteractionCount = 0;
+
+  function renderInteractionTimeline() {
+    if (!$interactionTimeline) return;
+    if (!interactions.length) { $interactionTimeline.innerHTML = ""; renderedInteractionCount = 0; return; }
+
+    // Only append new items (avoid full re-render to keep scroll smooth)
+    const startIdx = Math.max(0, renderedInteractionCount);
+    const newItems = interactions.slice(startIdx);
+
+    // Trim old items if too many in DOM
+    while ($interactionTimeline.children.length > 50) {
+      $interactionTimeline.removeChild($interactionTimeline.firstChild);
+    }
+
+    const arrowSvg = `<svg viewBox="0 0 16 12" fill="none"><path d="M1 6h12M10 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+    newItems.forEach(i => {
+      const t = new Date(i.time);
+      const ts = t.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const el = document.createElement("div");
+      el.className = "interaction-item";
+      el.dataset.from = i.from;
+      el.dataset.to = i.to;
+      el.innerHTML = `
+        <span class="interaction-time">${ts}</span>
+        <span class="interaction-agents">
+          <span class="interaction-from">${esc(i.from)}</span>
+          <span class="interaction-arrow-icon">${arrowSvg}</span>
+          <span class="interaction-to">${esc(i.to)}</span>
+        </span>
+        <span class="interaction-desc">${esc(truncate(i.desc, 50))}</span>
+        <span class="interaction-status ${i.status}"></span>`;
+      $interactionTimeline.appendChild(el);
+    });
+
+    renderedInteractionCount = interactions.length;
+
+    // Update status dots on existing items for changed interactions
+    interactions.forEach(i => {
+      const els = $interactionTimeline.querySelectorAll(`.interaction-item[data-from="${i.from}"][data-to="${i.to}"]`);
+      const last = els[els.length - 1];
+      if (last) {
+        const dot = last.querySelector(".interaction-status");
+        if (dot) dot.className = `interaction-status ${i.status}`;
+      }
+    });
+
+    // Auto-scroll to bottom after DOM update
+    requestAnimationFrame(() => {
+      $interactionTimeline.scrollTop = $interactionTimeline.scrollHeight;
+    });
+  }
+
   function renderAgentMessages() {
     const tasks = snapshot.tasks || [];
-    if (!tasks.length) {
-      $agentMessages.innerHTML = "";
-      return;
-    }
-    $agentMessages.innerHTML = tasks.slice(-10).map((t) => `
-      <div class="agent-msg">
-        <span class="agent-msg-from">${esc(t.from_agent || "?")}</span>
-        <span class="agent-msg-arrow">&rarr;</span>
-        <span class="agent-msg-to">${esc(t.to_agent || "?")}</span>
-        <span class="agent-msg-text">${esc(truncate(t.description, 40))}</span>
-        <span class="agent-msg-status ${t.status || "pending"}"></span>
-      </div>`).join("");
+    tasks.forEach(t => {
+      const existing = interactions.find(i => i.from === (t.from_agent || "?") && i.to === (t.to_agent || "?") && i.desc === (t.description || ""));
+      if (!existing) {
+        addInteraction(t.from_agent || "?", t.to_agent || "?", t.description || "", t.status || "pending");
+      }
+    });
   }
 
   // --- Presets ---
@@ -595,10 +669,18 @@
       if (data.success) {
         // Build steps from team outputs
         const steps = [];
-        if (data.plan) steps.push({ node: "team-lead (plan)", output: data.plan });
+        if (data.plan) {
+          steps.push({ node: "team-lead (plan)", output: data.plan });
+          // Create interactions for the plan delegation
+          const outputs = data.agent_outputs || {};
+          for (const agent of Object.keys(outputs)) {
+            addInteraction("team-lead", agent, "delegated task", "completed");
+          }
+        }
         const outputs = data.agent_outputs || {};
         for (const [agent, output] of Object.entries(outputs)) {
           steps.push({ node: agent, output: output });
+          addInteraction(agent, "team-lead", "task result", "completed");
         }
         steps.push({ node: "team-lead (summary)", output: data.output });
 
@@ -694,33 +776,287 @@
     return bubbles.length ? bubbles[bubbles.length - 1].textContent : "";
   }
 
-  // --- Interactive Graph ---
+  // --- Interactive SVG Graph ---
+  const AGENT_COLORS = {
+    "team-lead": "#58a6ff",
+    "backend-dev": "#3fb950",
+    "frontend-dev": "#f778ba",
+    "devops": "#d29922",
+    "platform-engineer": "#bc8cff",
+    "ai-engineer": "#39d2c0",
+    "scout": "#f85149",
+    "__start__": "#bc8cff",
+    "__end__": "#3fb950",
+  };
+  let svgNodePositions = {};
+
+  function getNodeColor(name) {
+    if (AGENT_COLORS[name]) return AGENT_COLORS[name];
+    const colors = ["#58a6ff", "#3fb950", "#f778ba", "#d29922", "#bc8cff", "#39d2c0", "#f85149"];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return colors[Math.abs(hash) % colors.length];
+  }
+
+  function getStatusColor(state) {
+    if (state === "active") return "#58a6ff";
+    if (state === "done") return "#3fb950";
+    if (state === "error") return "#f85149";
+    return "#30363d";
+  }
+
   function renderGraph() {
     const g = snapshot.graph;
-    if (!g || (!g.nodes.length && !g.edges.length)) {
-      $graphCanvas.innerHTML = '<div class="empty-state">Send a message to see the agent graph</div>';
+    const hasGraph = g && (g.nodes.length || g.edges.length);
+    const hasAgents = agentRegistry && agentRegistry.agents && agentRegistry.agents.length;
+
+    if (!hasGraph && !hasAgents) {
+      $graphSvg.style.display = "none";
+      $graphEmpty.style.display = "";
       return;
     }
-    const layers = computeLayers(g.nodes || [], g.edges || []);
-    let html = "";
-    layers.forEach((layer, idx) => {
-      html += '<div class="graph-row">';
-      layer.forEach((name) => {
-        const state = graphNodeStates[name] || "";
-        const display = name === "__start__" ? "START" : name === "__end__" ? "END" : name;
-        const special = name === "__start__" ? "start" : name === "__end__" ? "end" : "";
-        const isReplayable = !special && state === "done";
-        html += `<div class="gnode ${state} ${special}" onclick="window._showNodeDetail('${esc(name)}')">`;
-        html += `<div class="gnode-box">${esc(display)}</div>`;
-        if (isReplayable) {
-          html += `<div class="gnode-actions"><button class="btn-replay" onclick="event.stopPropagation(); window._replayNode('${esc(name)}')">replay</button></div>`;
-        }
-        html += `</div>`;
+
+    $graphSvg.style.display = "";
+    $graphEmpty.style.display = "none";
+
+    // Use graph nodes if available, otherwise use agent registry
+    let nodes = [];
+    let edges = [];
+    if (hasGraph) {
+      nodes = g.nodes;
+      edges = g.edges;
+    } else if (hasAgents) {
+      nodes = agentRegistry.agents.map(a => a.name);
+    }
+
+    const layers = computeLayers(nodes, edges);
+    const canvasRect = $graphCanvas.getBoundingClientRect();
+    const W = canvasRect.width || 600;
+    const H = canvasRect.height || 200;
+
+    const nodeW = 110;
+    const nodeH = 36;
+    const layerGap = 60;
+    const nodeGap = 16;
+
+    // Compute positions
+    const positions = {};
+    const totalLayerH = layers.length * nodeH + (layers.length - 1) * layerGap;
+    let startY = Math.max(10, (H - totalLayerH) / 2);
+
+    layers.forEach((layer, li) => {
+      const totalLayerW = layer.length * nodeW + (layer.length - 1) * nodeGap;
+      let startX = Math.max(10, (W - totalLayerW) / 2);
+      layer.forEach((name, ni) => {
+        positions[name] = {
+          x: startX + ni * (nodeW + nodeGap),
+          y: startY + li * (nodeH + layerGap),
+          w: nodeW, h: nodeH,
+        };
       });
-      html += "</div>";
-      if (idx < layers.length - 1) html += '<div class="graph-connector"><span class="graph-arrow">&darr;</span></div>';
     });
-    $graphCanvas.innerHTML = html;
+    svgNodePositions = positions;
+
+    // Build SVG
+    const svgNS = "http://www.w3.org/2000/svg";
+    $graphSvg.innerHTML = "";
+    $graphSvg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    $graphSvg.setAttribute("width", W);
+    $graphSvg.setAttribute("height", H);
+
+    // Defs for arrowheads
+    const defs = document.createElementNS(svgNS, "defs");
+    edges.forEach((e) => {
+      const targets = e.target ? [e.target] : e.routes || [];
+      targets.forEach((t) => {
+        const color = getNodeColor(e.source);
+        const markerId = `arrow-${e.source}-${t}`.replace(/[^a-zA-Z0-9-_]/g, "_");
+        const marker = document.createElementNS(svgNS, "marker");
+        marker.setAttribute("id", markerId);
+        marker.setAttribute("viewBox", "0 0 10 10");
+        marker.setAttribute("refX", "8"); marker.setAttribute("refY", "5");
+        marker.setAttribute("markerWidth", "8"); marker.setAttribute("markerHeight", "8");
+        marker.setAttribute("orient", "auto-start-reverse");
+        const path = document.createElementNS(svgNS, "path");
+        path.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+        path.setAttribute("fill", color);
+        path.style.opacity = "0.7";
+        marker.appendChild(path);
+        defs.appendChild(marker);
+      });
+    });
+    $graphSvg.appendChild(defs);
+
+    // Draw edges
+    edges.forEach((e) => {
+      const targets = e.target ? [e.target] : e.routes || [];
+      targets.forEach((t) => {
+        const from = positions[e.source];
+        const to = positions[t];
+        if (!from || !to) return;
+
+        const color = getNodeColor(e.source);
+        const markerId = `arrow-${e.source}-${t}`.replace(/[^a-zA-Z0-9-_]/g, "_");
+        const g = document.createElementNS(svgNS, "g");
+        g.classList.add("svg-edge");
+        g.dataset.from = e.source;
+        g.dataset.to = t;
+
+        const x1 = from.x + from.w / 2;
+        const y1 = from.y + from.h;
+        const x2 = to.x + to.w / 2;
+        const y2 = to.y;
+
+        // Use a curved path if nodes are on same layer or far apart horizontally
+        const dx = Math.abs(x2 - x1);
+        if (dx > 10) {
+          const path = document.createElementNS(svgNS, "path");
+          const midY = (y1 + y2) / 2;
+          path.setAttribute("d", `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`);
+          path.setAttribute("stroke", color);
+          path.setAttribute("stroke-width", "1.5");
+          path.setAttribute("fill", "none");
+          path.setAttribute("opacity", "0.5");
+          path.setAttribute("marker-end", `url(#${markerId})`);
+          g.appendChild(path);
+        } else {
+          const line = document.createElementNS(svgNS, "line");
+          line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+          line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+          line.setAttribute("stroke", color);
+          line.setAttribute("stroke-width", "1.5");
+          line.setAttribute("opacity", "0.5");
+          line.setAttribute("marker-end", `url(#${markerId})`);
+          g.appendChild(line);
+        }
+
+        $graphSvg.appendChild(g);
+      });
+    });
+
+    // Draw nodes
+    nodes.forEach((name) => {
+      const pos = positions[name];
+      if (!pos) return;
+      const state = graphNodeStates[name] || "";
+      const color = getNodeColor(name);
+      const statusColor = getStatusColor(state);
+      const display = name === "__start__" ? "START" : name === "__end__" ? "END" : name;
+
+      const g = document.createElementNS(svgNS, "g");
+      g.classList.add("svg-agent-node");
+      g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+
+      // Background rect
+      const rect = document.createElementNS(svgNS, "rect");
+      rect.setAttribute("width", pos.w);
+      rect.setAttribute("height", pos.h);
+      rect.setAttribute("fill", `${color}15`);
+      rect.setAttribute("stroke", `${color}60`);
+      if (state === "active") {
+        rect.setAttribute("fill", `${color}30`);
+        rect.setAttribute("stroke", color);
+        rect.setAttribute("stroke-width", "2.5");
+      } else if (state === "done") {
+        rect.setAttribute("fill", "rgba(63,185,80,0.12)");
+        rect.setAttribute("stroke", "rgba(63,185,80,0.5)");
+      } else if (state === "error") {
+        rect.setAttribute("fill", "rgba(248,81,73,0.12)");
+        rect.setAttribute("stroke", "rgba(248,81,73,0.5)");
+      }
+      g.appendChild(rect);
+
+      // Status dot
+      const dot = document.createElementNS(svgNS, "circle");
+      dot.classList.add("agent-status-dot");
+      dot.setAttribute("cx", 12); dot.setAttribute("cy", pos.h / 2);
+      dot.setAttribute("r", 4);
+      dot.setAttribute("fill", statusColor);
+      if (state === "active") {
+        const anim = document.createElementNS(svgNS, "animate");
+        anim.setAttribute("attributeName", "opacity");
+        anim.setAttribute("values", "1;0.4;1");
+        anim.setAttribute("dur", "1.5s");
+        anim.setAttribute("repeatCount", "indefinite");
+        dot.appendChild(anim);
+      }
+      g.appendChild(dot);
+
+      // Label
+      const text = document.createElementNS(svgNS, "text");
+      text.setAttribute("x", pos.w / 2);
+      text.setAttribute("y", pos.h / 2 + 1);
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "middle");
+      text.setAttribute("fill", state === "done" ? "#3fb950" : state === "error" ? "#f85149" : color);
+      text.setAttribute("font-size", "11");
+      text.textContent = display;
+      g.appendChild(text);
+
+      // Agent role subtitle (from registry)
+      if (agentRegistry && agentRegistry.agents) {
+        const agentInfo = agentRegistry.agents.find(a => a.name === name);
+        if (agentInfo && agentInfo.role) {
+          const role = document.createElementNS(svgNS, "text");
+          role.classList.add("agent-role");
+          role.setAttribute("x", pos.w / 2);
+          role.setAttribute("y", pos.h + 12);
+          role.setAttribute("text-anchor", "middle");
+          role.textContent = truncate(agentInfo.role, 18);
+          g.appendChild(role);
+        }
+      }
+
+      g.addEventListener("click", () => window._showNodeDetail(name));
+      $graphSvg.appendChild(g);
+    });
+  }
+
+  function animateEdge(from, to) {
+    if (!$graphSvg) return;
+    const edge = $graphSvg.querySelector(`.svg-edge[data-from="${from}"][data-to="${to}"]`);
+    if (!edge) {
+      // Try to find by creating a temporary visual arrow between nodes
+      const fromPos = svgNodePositions[from];
+      const toPos = svgNodePositions[to];
+      if (!fromPos || !toPos) return;
+      const svgNS = "http://www.w3.org/2000/svg";
+      const color = getNodeColor(from);
+      const g = document.createElementNS(svgNS, "g");
+      g.classList.add("svg-edge", "animating", "active");
+      g.dataset.from = from;
+      g.dataset.to = to;
+      const x1 = fromPos.x + fromPos.w / 2;
+      const y1 = fromPos.y + fromPos.h;
+      const x2 = toPos.x + toPos.w / 2;
+      const y2 = toPos.y;
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+      line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+      line.setAttribute("stroke", color);
+      line.setAttribute("stroke-width", "2.5");
+      line.setAttribute("opacity", "0.8");
+      g.appendChild(line);
+      // Insert before nodes (so it's behind them)
+      const firstNode = $graphSvg.querySelector(".svg-agent-node");
+      if (firstNode) $graphSvg.insertBefore(g, firstNode);
+      else $graphSvg.appendChild(g);
+      setTimeout(() => { g.classList.remove("animating"); g.classList.remove("active"); }, 3000);
+      return;
+    }
+    edge.classList.add("animating", "active");
+    const el = edge.querySelector("line, path");
+    if (el) {
+      el.setAttribute("opacity", "0.9");
+      el.setAttribute("stroke-width", "2.5");
+    }
+    setTimeout(() => {
+      edge.classList.remove("animating", "active");
+      if (el) {
+        el.setAttribute("opacity", "0.5");
+        el.setAttribute("stroke-width", "1.5");
+      }
+    }, 3000);
   }
 
   function computeLayers(nodes, edges) {
@@ -790,9 +1126,10 @@
       await fetch("/api/graph/reset", { method: "POST" });
       snapshot.agents = {}; snapshot.tasks = []; snapshot.orchestrator_status = "idle";
       snapshot.graph = { nodes: [], edges: [] }; snapshot.total_tokens = 0; snapshot.total_cost_usd = 0;
-      graphNodeStates = {}; events = []; activityCount = 0;
+      graphNodeStates = {}; events = []; activityCount = 0; interactions = []; renderedInteractionCount = 0;
       $timeline.innerHTML = "";
       $agentActivity.innerHTML = '<div class="empty-state">Waiting for agents...</div>';
+      if ($interactionTimeline) $interactionTimeline.innerHTML = "";
       renderHeader(); renderGraph(); renderAgentBadges(); renderAgentMessages();
       $detailView.innerHTML = '<div class="empty-state">Click a graph node or event</div>';
       addSystemBubble("Reset");
@@ -839,6 +1176,76 @@
     });
   })();
 
+  // --- Section Resize (graph & input) ---
+  (function initSectionResize() {
+    const graphSection = $("section-graph");
+    const inputBar = $("input-bar");
+    const resizeGraph = $("resize-graph");
+    const resizeInput = $("resize-input");
+
+    function makeDraggable(handle, getTarget, prop, min, max, invert) {
+      if (!handle) return;
+      let dragging = false;
+      let startY = 0;
+      let startH = 0;
+
+      handle.addEventListener("mousedown", (e) => {
+        const target = getTarget();
+        if (!target) return;
+        dragging = true;
+        startY = e.clientY;
+        startH = target.offsetHeight;
+        handle.classList.add("dragging");
+        document.body.style.cursor = "ns-resize";
+        document.body.style.userSelect = "none";
+        e.preventDefault();
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (!dragging) return;
+        const target = getTarget();
+        if (!target) return;
+        const delta = invert ? (startY - e.clientY) : (e.clientY - startY);
+        const newH = Math.max(min, Math.min(max, startH + delta));
+        target.style.height = newH + "px";
+        target.style.minHeight = newH + "px";
+        target.style.maxHeight = newH + "px";
+        // Re-render graph SVG to fit new size
+        if (target === graphSection) renderGraph();
+      });
+
+      document.addEventListener("mouseup", () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove("dragging");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        // Save size
+        const target = getTarget();
+        if (target) {
+          try { localStorage.setItem("ao_resize_" + target.id, target.offsetHeight); } catch(e) {}
+        }
+      });
+    }
+
+    makeDraggable(resizeGraph, () => graphSection, "height", 60, 500, false);
+    makeDraggable(resizeInput, () => inputBar, "height", 60, 400, true);
+
+    // Restore saved sizes
+    try {
+      const savedGraph = localStorage.getItem("ao_resize_section-graph");
+      if (savedGraph && graphSection) {
+        const h = parseInt(savedGraph);
+        if (h >= 60) { graphSection.style.height = h + "px"; graphSection.style.minHeight = h + "px"; graphSection.style.maxHeight = h + "px"; }
+      }
+      const savedInput = localStorage.getItem("ao_resize_input-bar");
+      if (savedInput && inputBar) {
+        const h = parseInt(savedInput);
+        if (h >= 60) { inputBar.style.height = h + "px"; inputBar.style.minHeight = h + "px"; inputBar.style.maxHeight = h + "px"; }
+      }
+    } catch(e) {}
+  })();
+
   // --- Agent Activity Panel ---
   let activityCount = 0;
 
@@ -869,6 +1276,9 @@
 
     if (t === "agent.spawn") {
       addActivityItem("spawn", agent, "Agent spawned", d.provider || "");
+      if (agent && agent !== "team-lead") {
+        addInteraction("team-lead", agent, "spawned agent", "running");
+      }
     } else if (t === "agent.step") {
       addActivityItem("step", agent, `Step ${d.step || ""}`, d.model || "");
     } else if (t === "agent.tool_call") {
@@ -879,9 +1289,12 @@
       addActivityItem("tool", agent, `← ${d.tool_name || "tool"} ${status}`, truncate(d.output || "", 60));
     } else if (t === "cooperation.task_assigned") {
       addActivityItem("task", d.from_agent || "?", `Delegated to ${d.to_agent || "?"}`, truncate(d.description || "", 50));
+      addInteraction(d.from_agent || "?", d.to_agent || "?", d.description || "task delegation", "running");
     } else if (t === "cooperation.task_completed") {
       const status = d.success ? "completed" : "failed";
       addActivityItem(d.success ? "complete" : "error", d.from_agent || "?", `Task ${status}`, truncate(d.summary || "", 50));
+      updateInteraction(d.from_agent || "?", d.to_agent || "?", status);
+      addInteraction(d.to_agent || "?", d.from_agent || "?", d.summary || "task result", status);
     } else if (t === "agent.complete") {
       addActivityItem("complete", agent, "Completed", truncate(d.output || "", 50));
     } else if (t === "agent.error" || t === "agent.stalled") {
@@ -981,6 +1394,33 @@
         snapshot.agents[evt.agent_name].cost_usd = evt.data.agent_cost_usd || 0;
       }
     }
+  }
+
+  // --- Cumulative usage from DB ---
+  async function fetchUsageStats() {
+    try {
+      const resp = await fetch("/api/usage");
+      const data = await resp.json();
+      cumulativeUsage = data;
+      renderCumulativeMetrics();
+    } catch (e) {
+      cumulativeUsage = null;
+      renderCumulativeMetrics();
+    }
+  }
+
+  function renderCumulativeMetrics() {
+    if (!cumulativeUsage) {
+      if ($cumulTokens) $cumulTokens.textContent = "-";
+      if ($cumulCost) $cumulCost.textContent = "-";
+      if ($cumulRequests) $cumulRequests.textContent = "-";
+      if ($dbIndicator) $dbIndicator.className = "db-dot disconnected";
+      return;
+    }
+    if ($cumulTokens) $cumulTokens.textContent = formatNumber(cumulativeUsage.total_tokens || 0);
+    if ($cumulCost) $cumulCost.textContent = `$${(cumulativeUsage.total_cost_usd || 0).toFixed(3)}`;
+    if ($cumulRequests) $cumulRequests.textContent = String(cumulativeUsage.total_requests || 0);
+    if ($dbIndicator) $dbIndicator.className = cumulativeUsage.db_connected ? "db-dot connected" : "db-dot disconnected";
   }
 
   // --- Rendering ---
@@ -1109,6 +1549,7 @@
   $btnCompare.addEventListener("click", runComparison);
   $btnResetGraph.addEventListener("click", resetGraph);
   $btnToggleSidebar.addEventListener("click", toggleSidebar);
+  window.addEventListener("resize", () => renderGraph());
 
   // --- OpenRouter Pricing ---
   const $pricingList = $("pricing-list");
@@ -1442,6 +1883,7 @@
   loadModels();
   loadAgents();
   loadPresets();
+  fetchUsageStats();
   startNewConversation();
   restoreSessionHistory();
 

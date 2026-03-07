@@ -235,6 +235,25 @@ async def _instrumented_execute(
         total_cost += completion.usage.cost_usd
         steps += 1
 
+        # Emit incremental token/cost update after each step
+        await event_bus.emit(
+            Event(
+                event_type=EventType.TOKEN_UPDATE,
+                agent_name=config.name,
+                data={
+                    "total_tokens": total_tokens,
+                    "agent_tokens": total_tokens,
+                    "agent_cost_usd": total_cost,
+                },
+            )
+        )
+        await event_bus.emit(
+            Event(
+                event_type=EventType.COST_UPDATE,
+                data={"total_cost_usd": total_cost},
+            )
+        )
+
         # No tool calls — agent is done
         if not completion.tool_calls:
             return TaskResult(
@@ -388,6 +407,17 @@ async def run_team(
         "steps": 1,
     }
 
+    # Incremental metrics update after planning step
+    await bus.emit(Event(
+        event_type=EventType.TOKEN_UPDATE,
+        agent_name="team-lead",
+        data={"total_tokens": total_tokens, "agent_tokens": plan_tokens, "agent_cost_usd": plan_cost},
+    ))
+    await bus.emit(Event(
+        event_type=EventType.COST_UPDATE,
+        data={"total_cost_usd": total_cost},
+    ))
+
     await bus.emit(Event(
         event_type=EventType.AGENT_COMPLETE,
         agent_name="team-lead",
@@ -523,6 +553,17 @@ async def run_team(
         "cost_usd": summary_cost,
         "steps": 1,
     }
+
+    # Incremental metrics update after summary step
+    await bus.emit(Event(
+        event_type=EventType.TOKEN_UPDATE,
+        agent_name="team-lead",
+        data={"total_tokens": total_tokens, "agent_tokens": summary_tokens, "agent_cost_usd": summary_cost},
+    ))
+    await bus.emit(Event(
+        event_type=EventType.COST_UPDATE,
+        data={"total_cost_usd": total_cost},
+    ))
 
     await bus.emit(Event(
         event_type=EventType.AGENT_COMPLETE,

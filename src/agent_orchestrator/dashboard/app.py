@@ -31,6 +31,7 @@ from .graphs import (
     replay_node,
     run_graph,
 )
+from .usage_db import UsageDB
 
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -46,6 +47,13 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Job logger — persists all task results to jobs/<session_id>/
     job_logger = JobLogger()
+
+    # Usage DB — persistent cumulative stats (Postgres)
+    usage_db = UsageDB()
+
+    @app.on_event("startup")
+    async def _startup():
+        await usage_db.setup()
 
     # Mount static files
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -99,6 +107,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             "session_id": session_id,
             "jobs_dir": str(job_logger.session_dir),
         })
+
+    @app.get("/api/usage")
+    async def usage_stats():
+        """Return cumulative usage stats (tokens, cost, per-model, per-agent)."""
+        return JSONResponse(content=usage_db.get_summary())
 
     @app.get("/api/snapshot")
     async def snapshot():
@@ -184,6 +197,17 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 "provider": provider_type,
                 "result": result,
             })
+
+            await usage_db.record(
+                model=model,
+                agent=agent_name,
+                provider=provider_type,
+                input_tokens=result.get("total_input_tokens", 0),
+                output_tokens=result.get("total_output_tokens", 0),
+                cost_usd=result.get("total_cost_usd", 0.0),
+                elapsed_s=result.get("elapsed_s", 0.0),
+                session_id=job_logger.session_id,
+            )
             return JSONResponse(content=result)
         except Exception as exc:
             job_logger.log("agent_run", {
@@ -242,6 +266,19 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     "elapsed_s": result.get("elapsed_s"),
                 },
             })
+
+            # Record per-agent costs
+            for ag_name, ag_cost in (result.get("agent_costs") or {}).items():
+                await usage_db.record(
+                    model=model,
+                    agent=ag_name,
+                    provider=provider_type,
+                    input_tokens=ag_cost.get("input_tokens", 0),
+                    output_tokens=ag_cost.get("tokens", 0),
+                    cost_usd=ag_cost.get("cost_usd", 0.0),
+                    elapsed_s=result.get("elapsed_s", 0.0),
+                    session_id=job_logger.session_id,
+                )
             return JSONResponse(content=result)
         except Exception as exc:
             job_logger.log("team_run", {
@@ -643,6 +680,18 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             "result": result,
         })
 
+        # Record usage
+        usage = result.get("usage") or {}
+        await usage_db.record(
+            model=model,
+            provider=provider_type,
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
+            cost_usd=usage.get("cost_usd", 0.0),
+            elapsed_s=result.get("elapsed_s", 0.0),
+            session_id=job_logger.session_id,
+        )
+
         # Save to conversation
         if conv_id:
             if conv_id not in conversations:
@@ -818,6 +867,14 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                             "speed": round(speed, 1),
                         },
                     })
+
+                    await usage_db.record(
+                        model=model,
+                        provider=provider_type,
+                        output_tokens=total_tokens,
+                        elapsed_s=round(elapsed, 2),
+                        session_id=job_logger.session_id,
+                    )
 
                     # Save to conversation
                     if conv_id:

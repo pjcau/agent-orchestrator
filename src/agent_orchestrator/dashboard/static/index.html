@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=047">
+    <link rel="stylesheet" href="/static/style.css?v=048">
 </head>
 <body>
     <header>
@@ -13,18 +13,37 @@
             <span id="status-badge" class="badge idle">IDLE</span>
         </div>
         <div class="header-right">
-            <div class="metric">
-                <span class="metric-label">Tokens</span>
-                <span id="total-tokens" class="metric-value">0</span>
+            <div class="metric-group" id="metrics-session" title="Current session">
+                <div class="metric">
+                    <span class="metric-label">Session Tokens</span>
+                    <span id="total-tokens" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Session Cost</span>
+                    <span id="total-cost" class="metric-value">$0.000</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Speed</span>
+                    <span id="token-speed" class="metric-value">- tok/s</span>
+                </div>
             </div>
-            <div class="metric">
-                <span class="metric-label">Cost</span>
-                <span id="total-cost" class="metric-value">$0.000</span>
+            <div class="metric-separator"></div>
+            <div class="metric-group cumulative" id="metrics-cumulative" title="All-time totals (from DB)">
+                <div class="metric">
+                    <span class="metric-label">Total Tokens</span>
+                    <span id="cumul-tokens" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Cost</span>
+                    <span id="cumul-cost" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Requests</span>
+                    <span id="cumul-requests" class="metric-value">-</span>
+                </div>
+                <span id="db-indicator" class="db-dot disconnected" title="DB status"></span>
             </div>
-            <div class="metric">
-                <span class="metric-label">Speed</span>
-                <span id="token-speed" class="metric-value">- tok/s</span>
-            </div>
+            <div class="metric-separator"></div>
             <div class="metric cache-metric">
                 <span class="metric-label">Cache</span>
                 <span id="cache-hit-rate" class="metric-value">-</span>
@@ -38,12 +57,12 @@
     <main>
         <!-- Main content area -->
         <div class="main-content">
-            <!-- Top: Agent graph (collapsible) -->
+            <!-- Top: Agent interaction graph (resizable) -->
             <div class="graph-section collapsible-section" id="section-graph">
                 <div class="section-header">
                     <div class="section-header-left">
                         <button class="btn-collapse" data-target="section-graph" title="Toggle section">&#9660;</button>
-                        <h2>Agents</h2>
+                        <h2>Agent Interactions</h2>
                     </div>
                     <div class="graph-header-right">
                         <div id="agent-badges" class="agent-badges"></div>
@@ -52,11 +71,13 @@
                 </div>
                 <div class="section-body" id="body-graph">
                     <div id="graph-canvas" class="graph-canvas">
-                        <div class="empty-state">Send a message to see the agent graph</div>
+                        <svg id="graph-svg" class="graph-svg"></svg>
+                        <div id="graph-empty" class="empty-state">Send a message to see agent interactions</div>
                     </div>
-                    <div id="agent-messages" class="agent-messages-inline"></div>
+                    <div id="interaction-timeline" class="interaction-timeline"></div>
                 </div>
             </div>
+            <div class="resize-handle-h" id="resize-graph" title="Drag to resize"></div>
 
             <!-- Center: Chat (collapsible) -->
             <div class="chat-section collapsible-section" id="section-chat">
@@ -84,8 +105,11 @@
             <!-- Presets bar -->
             <div class="presets-bar" id="presets-bar"></div>
 
+            <!-- Resize handle for input area -->
+            <div class="resize-handle-h" id="resize-input" title="Drag to resize"></div>
+
             <!-- Bottom: Unified input bar -->
-            <div class="input-bar">
+            <div class="input-bar" id="input-bar">
                 <div class="input-controls">
                     <select id="exec-mode" title="Execution mode">
                         <option value="multi-agent">Multi-Agent</option>
@@ -272,6 +296,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=047"></script>
+    <script src="/static/app.js?v=048"></script>
 </body>
 </html>

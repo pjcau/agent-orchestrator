@@ -57,9 +57,18 @@ h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
+.metric-group { display: flex; gap: 14px; align-items: center; }
+.metric-group.cumulative .metric-value { color: var(--cyan); }
+.metric-separator {
+    width: 1px; height: 24px; background: var(--border); flex-shrink: 0;
+}
 .metric { display: flex; flex-direction: column; align-items: flex-end; }
 .metric-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
 .metric-value { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+
+.db-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.db-dot.connected { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.db-dot.disconnected { background: var(--border); }
 
 .btn-sidebar-toggle {
     background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
@@ -110,20 +119,16 @@ main {
 .section-body { transition: all 0.2s ease; overflow: hidden; }
 .section-body-flex { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
-/* Resize handles for main sections */
-.resize-handle {
-    height: 4px; cursor: ns-resize; background: transparent;
-    transition: background 0.15s; flex-shrink: 0;
-}
-.resize-handle:hover, .resize-handle.active { background: var(--accent); }
+/* (old .resize-handle removed; replaced by .resize-handle-h) */
 
 /* === Graph Section (top) === */
 .graph-section {
     flex-shrink: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: none;
     padding: 8px 16px;
     background: var(--bg-card);
     min-height: 30px;
+    overflow: hidden;
 }
 .graph-section > .section-header { margin-bottom: 4px; }
 .graph-header-right { display: flex; align-items: center; gap: 8px; }
@@ -149,59 +154,118 @@ main {
 }
 .btn-graph-ctrl:hover { border-color: var(--red); color: var(--red); }
 
+/* Horizontal resize handle (between sections) */
+.resize-handle-h {
+    height: 5px; cursor: ns-resize; background: transparent;
+    flex-shrink: 0; position: relative; z-index: 5;
+    transition: background 0.15s;
+}
+.resize-handle-h::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px; height: 3px; border-radius: 2px;
+    background: var(--border); transition: background 0.2s;
+}
+.resize-handle-h:hover, .resize-handle-h.dragging {
+    background: rgba(88,166,255,0.1);
+}
+.resize-handle-h:hover::after, .resize-handle-h.dragging::after {
+    background: var(--accent);
+}
+
+/* Graph canvas with SVG */
 .graph-canvas {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    align-items: flex-start; justify-content: center; padding: 4px 0;
+    position: relative; width: 100%; min-height: 100px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.graph-svg {
+    width: 100%; height: 100%; position: absolute; top: 0; left: 0;
+}
+.graph-canvas .empty-state { position: relative; z-index: 1; }
+
+/* SVG graph node styles */
+.svg-agent-node { cursor: pointer; }
+.svg-agent-node rect {
+    rx: 10; ry: 10; stroke-width: 2; transition: all 0.3s;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+.svg-agent-node:hover rect {
+    filter: drop-shadow(0 4px 12px rgba(88,166,255,0.4));
+    stroke-width: 2.5;
+}
+.svg-agent-node text { font-family: var(--font-mono); font-weight: 600; pointer-events: none; }
+.svg-agent-node .agent-role { font-size: 8px; fill: var(--text-dim); font-weight: 400; }
+.svg-agent-node .agent-status-dot { transition: fill 0.3s; }
+
+/* SVG edge arrow styles */
+.svg-edge { transition: opacity 0.3s; }
+.svg-edge line, .svg-edge path { transition: stroke 0.3s, stroke-width 0.3s; }
+.svg-edge.active line, .svg-edge.active path { stroke-width: 2.5; }
+.svg-edge .edge-label {
+    font-family: var(--font-mono); font-size: 9px; fill: var(--text-dim);
+    pointer-events: none;
 }
 
-.gnode { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; transition: all 0.2s; }
-.gnode-box {
-    padding: 5px 12px; border-radius: 8px; font-size: 11px;
-    font-family: var(--font-mono); font-weight: 600;
-    background: rgba(88,166,255,0.08); border: 1.5px solid rgba(88,166,255,0.25);
-    color: var(--accent); transition: all 0.3s;
+/* Animated arrow pulse */
+@keyframes arrowPulse {
+    0% { stroke-dashoffset: 12; }
+    100% { stroke-dashoffset: 0; }
 }
-.gnode:hover .gnode-box { border-color: var(--accent); transform: scale(1.05); }
-.gnode.active .gnode-box { background: rgba(88,166,255,0.2); border-color: var(--accent); box-shadow: 0 0 10px rgba(88,166,255,0.3); animation: pulse 1.5s infinite; }
-.gnode.done .gnode-box { background: rgba(63,185,80,0.1); border-color: rgba(63,185,80,0.4); color: var(--green); }
-.gnode.error .gnode-box { background: rgba(248,81,73,0.1); border-color: rgba(248,81,73,0.4); color: var(--red); }
-.gnode.start .gnode-box { background: rgba(188,140,255,0.1); border-color: rgba(188,140,255,0.3); color: var(--purple); }
-.gnode.end .gnode-box { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.25); color: var(--green); }
+.svg-edge.animating line {
+    stroke-dasharray: 6 6;
+    animation: arrowPulse 0.6s linear infinite;
+}
 
-.gnode-actions { display: flex; gap: 2px; margin-top: 1px; }
-.btn-replay {
-    background: rgba(188,140,255,0.1); color: var(--purple); border: 1px solid rgba(188,140,255,0.3);
-    border-radius: 4px; padding: 1px 6px; font-size: 9px; cursor: pointer;
-    font-family: var(--font-mono); opacity: 0; transition: opacity 0.2s;
+/* Interaction timeline (below SVG graph) */
+.interaction-timeline {
+    display: flex; flex-direction: column; gap: 3px;
+    max-height: 160px; overflow-y: auto; padding: 6px 8px;
+    border-top: 1px solid var(--border); margin-top: 4px;
+    background: var(--bg); border-radius: 0 0 8px 8px;
+    border: 1px solid var(--border); border-top: none;
+    scroll-behavior: smooth;
 }
-.gnode:hover .btn-replay { opacity: 1; }
-.btn-replay:hover { background: rgba(188,140,255,0.25); }
-.btn-replay:disabled { opacity: 0.3; cursor: not-allowed; }
+.interaction-timeline:empty { display: none; border: none; margin-top: 0; padding: 0; }
 
-.graph-row { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; }
-.graph-row + .graph-row { margin-top: 4px; }
-.graph-connector { text-align: center; color: var(--border); font-size: 12px; padding: 1px 0; }
-.graph-arrow { color: var(--text-dim); }
+.interaction-item {
+    display: flex; align-items: center; gap: 8px; padding: 3px 8px;
+    border-radius: 6px; font-size: 11px; transition: background 0.15s;
+    animation: fadeSlideIn 0.3s ease;
+}
+.interaction-item:hover { background: var(--bg-hover); }
+@keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
 
-/* Agent messages inline (under graph) */
-.agent-messages-inline {
-    display: flex; gap: 4px; flex-wrap: wrap; padding: 2px 0;
+.interaction-time {
+    font-family: var(--font-mono); font-size: 9px; color: var(--text-dim);
+    min-width: 55px; flex-shrink: 0;
 }
-.agent-messages-inline:empty { display: none; }
-.agent-msg {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 2px 8px; background: rgba(57,210,192,0.05);
-    border: 1px solid rgba(57,210,192,0.15); border-radius: 10px; font-size: 10px;
+.interaction-agents {
+    display: flex; align-items: center; gap: 4px; min-width: 140px;
 }
-.agent-msg-from, .agent-msg-to {
-    font-weight: 600; font-size: 9px; color: var(--cyan);
+.interaction-from, .interaction-to {
+    font-weight: 600; font-size: 10px; padding: 1px 6px;
+    border-radius: 4px; font-family: var(--font-mono);
 }
-.agent-msg-arrow { color: var(--text-dim); font-size: 9px; }
-.agent-msg-text { color: var(--text-dim); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-msg-status { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-.agent-msg-status.pending { background: var(--orange); }
-.agent-msg-status.completed { background: var(--green); }
-.agent-msg-status.failed { background: var(--red); }
+.interaction-from { background: rgba(88,166,255,0.12); color: var(--accent); }
+.interaction-to { background: rgba(57,210,192,0.12); color: var(--cyan); }
+.interaction-arrow-icon {
+    display: flex; align-items: center; color: var(--text-dim);
+}
+.interaction-arrow-icon svg { width: 16px; height: 12px; }
+.interaction-desc {
+    flex: 1; color: var(--text-dim); font-size: 11px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.interaction-status {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.interaction-status.pending { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+.interaction-status.running { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.5s infinite; }
+.interaction-status.completed { background: var(--green); }
+.interaction-status.failed { background: var(--red); }
 
 /* === Chat Section (center) === */
 .chat-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 80px; }
@@ -357,7 +421,8 @@ main {
     flex-shrink: 0;
     padding: 8px 16px 10px;
     background: var(--bg-card);
-    border-top: 1px solid var(--border);
+    border-top: none;
+    overflow: hidden;
 }
 .input-controls {
     display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; align-items: center;
@@ -388,7 +453,7 @@ main {
 .chat-input {
     flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
     border-radius: 8px; padding: 8px 12px; font-size: 13px; font-family: var(--font-sans);
-    resize: none; min-height: 36px; max-height: 120px; outline: none; line-height: 1.4;
+    resize: none; min-height: 36px; max-height: 300px; outline: none; line-height: 1.4;
     transition: border-color 0.2s;
 }
 .chat-input:focus { border-color: var(--accent); }

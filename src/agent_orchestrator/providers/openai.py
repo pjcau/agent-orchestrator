@@ -18,6 +18,37 @@ from ..core.provider import (
 )
 
 
+def _repair_json(raw: str) -> dict:
+    """Best-effort repair of truncated/malformed JSON from LLM tool calls.
+
+    Common issues: unterminated strings, missing closing braces, trailing commas.
+    """
+    if not raw or not raw.strip():
+        return {}
+    s = raw.strip()
+
+    # Fix unterminated strings: close any open quote
+    quote_count = s.count('"') - s.count('\\"')
+    if quote_count % 2 != 0:
+        s += '"'
+
+    # Fix missing closing braces/brackets
+    opens = s.count("{") - s.count("}")
+    brackets = s.count("[") - s.count("]")
+    # Remove trailing comma before we close
+    s = s.rstrip().rstrip(",")
+    s += "]" * max(0, brackets)
+    s += "}" * max(0, opens)
+
+    try:
+        return json.loads(s)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Last resort: wrap raw text as a single argument
+    return {"input": raw}
+
+
 class OpenAIProvider(Provider):
     """GPT models via the OpenAI API."""
 
@@ -85,11 +116,16 @@ class OpenAIProvider(Provider):
         tool_calls = []
         if choice.message.tool_calls:
             for tc in choice.message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    # LLM returned malformed JSON — try to salvage
+                    args = _repair_json(tc.function.arguments)
                 tool_calls.append(
                     ToolCall(
                         id=tc.id,
                         name=tc.function.name,
-                        arguments=json.loads(tc.function.arguments),
+                        arguments=args,
                     )
                 )
 

@@ -893,3 +893,199 @@ class TestJobLogger:
         session_id = logger.session_id
         logger.touch()
         assert logger.session_id == session_id
+
+
+class TestDashboardStaticUI:
+    """Verify dashboard HTML/JS/CSS contain required UI elements."""
+
+    @pytest.fixture(autouse=True)
+    def load_static(self):
+        from pathlib import Path
+        static = Path(__file__).parent.parent / "src" / "agent_orchestrator" / "dashboard" / "static"
+        self.html = (static / "index.html").read_text()
+        self.css = (static / "style.css").read_text()
+        self.js = (static / "app.js").read_text()
+
+    def test_graph_svg_element_exists(self):
+        assert 'id="graph-svg"' in self.html
+
+    def test_interaction_timeline_element_exists(self):
+        assert 'id="interaction-timeline"' in self.html
+
+    def test_resize_handle_graph(self):
+        assert 'id="resize-graph"' in self.html
+        assert "resize-handle-h" in self.html
+
+    def test_resize_handle_input(self):
+        assert 'id="resize-input"' in self.html
+
+    def test_css_has_interaction_styles(self):
+        assert ".interaction-timeline" in self.css
+        assert ".interaction-item" in self.css
+        assert ".interaction-from" in self.css
+        assert ".interaction-to" in self.css
+
+    def test_css_has_resize_handle_styles(self):
+        assert ".resize-handle-h" in self.css
+        assert "ns-resize" in self.css
+
+    def test_css_has_svg_node_styles(self):
+        assert ".svg-agent-node" in self.css
+        assert ".svg-edge" in self.css
+
+    def test_js_has_render_graph_svg(self):
+        assert "renderGraph" in self.js
+        assert "graph-svg" in self.js
+        assert "svgNodePositions" in self.js
+
+    def test_js_has_interaction_tracking(self):
+        assert "addInteraction" in self.js
+        assert "renderInteractionTimeline" in self.js
+        assert "animateEdge" in self.js
+
+    def test_js_has_section_resize(self):
+        assert "initSectionResize" in self.js
+        assert "resize-graph" in self.js
+        assert "resize-input" in self.js
+
+    def test_js_has_agent_colors(self):
+        assert "AGENT_COLORS" in self.js
+        assert "team-lead" in self.js
+
+    def test_arrow_animation_css(self):
+        assert "arrowPulse" in self.css
+        assert ".svg-edge.animating" in self.css
+
+    def test_cumulative_metrics_html(self):
+        assert 'id="cumul-tokens"' in self.html
+        assert 'id="cumul-cost"' in self.html
+        assert 'id="cumul-requests"' in self.html
+        assert 'id="db-indicator"' in self.html
+
+    def test_css_has_metric_group(self):
+        assert ".metric-group" in self.css
+        assert ".metric-separator" in self.css
+        assert ".db-dot" in self.css
+
+    def test_js_has_usage_fetch(self):
+        assert "fetchUsageStats" in self.js
+        assert "renderCumulativeMetrics" in self.js
+        assert "/api/usage" in self.js
+        assert "cumulativeUsage" in self.js
+
+
+class TestUsageDB:
+    """Tests for the UsageDB in-memory accumulator (no DB required)."""
+
+    @pytest.fixture
+    def usage_db(self):
+        from agent_orchestrator.dashboard.usage_db import UsageDB
+        return UsageDB(dsn="")
+
+    @pytest.mark.asyncio
+    async def test_initial_totals(self, usage_db):
+        totals = usage_db.get_totals()
+        assert totals["total_tokens"] == 0
+        assert totals["total_cost_usd"] == 0.0
+        assert totals["total_requests"] == 0
+
+    @pytest.mark.asyncio
+    async def test_record_updates_totals(self, usage_db):
+        await usage_db.record(
+            model="gpt-4", input_tokens=100, output_tokens=50,
+            cost_usd=0.005, elapsed_s=1.2,
+        )
+        totals = usage_db.get_totals()
+        assert totals["total_tokens"] == 150
+        assert totals["total_input_tokens"] == 100
+        assert totals["total_output_tokens"] == 50
+        assert totals["total_cost_usd"] == pytest.approx(0.005)
+        assert totals["total_requests"] == 1
+
+    @pytest.mark.asyncio
+    async def test_record_accumulates(self, usage_db):
+        await usage_db.record(model="m1", input_tokens=10, output_tokens=5, cost_usd=0.001)
+        await usage_db.record(model="m1", input_tokens=20, output_tokens=10, cost_usd=0.002)
+        await usage_db.record(model="m2", input_tokens=30, output_tokens=15, cost_usd=0.003)
+        totals = usage_db.get_totals()
+        assert totals["total_tokens"] == 90
+        assert totals["total_cost_usd"] == pytest.approx(0.006)
+        assert totals["total_requests"] == 3
+
+    @pytest.mark.asyncio
+    async def test_per_model_tracking(self, usage_db):
+        await usage_db.record(model="gpt-4", input_tokens=100, output_tokens=50, cost_usd=0.01, elapsed_s=2.0)
+        await usage_db.record(model="gpt-4", input_tokens=200, output_tokens=100, cost_usd=0.02, elapsed_s=3.0)
+        await usage_db.record(model="claude", input_tokens=50, output_tokens=25, cost_usd=0.005, elapsed_s=1.0)
+        per_model = usage_db.get_per_model()
+        assert "gpt-4" in per_model
+        assert "claude" in per_model
+        assert per_model["gpt-4"]["tokens"] == 450
+        assert per_model["gpt-4"]["requests"] == 2
+        assert per_model["claude"]["tokens"] == 75
+        assert per_model["claude"]["requests"] == 1
+
+    @pytest.mark.asyncio
+    async def test_per_agent_tracking(self, usage_db):
+        await usage_db.record(agent="backend-dev", input_tokens=50, output_tokens=25, cost_usd=0.003)
+        await usage_db.record(agent="frontend-dev", input_tokens=30, output_tokens=15, cost_usd=0.002)
+        per_agent = usage_db.get_per_agent()
+        assert "backend-dev" in per_agent
+        assert per_agent["backend-dev"]["tokens"] == 75
+        assert per_agent["frontend-dev"]["tokens"] == 45
+
+    @pytest.mark.asyncio
+    async def test_summary(self, usage_db):
+        await usage_db.record(model="m1", agent="a1", input_tokens=10, output_tokens=5, cost_usd=0.001)
+        summary = usage_db.get_summary()
+        assert summary["total_tokens"] == 15
+        assert summary["total_requests"] == 1
+        assert "per_model" in summary
+        assert "per_agent" in summary
+        assert summary["db_connected"] is False
+
+    @pytest.mark.asyncio
+    async def test_setup_without_dsn(self, usage_db):
+        await usage_db.setup()
+        assert usage_db._available is False
+
+
+class TestRepairJson:
+    """Tests for _repair_json which fixes malformed LLM tool call arguments."""
+
+    def test_valid_json_passes_through(self):
+        from agent_orchestrator.providers.openai import _repair_json
+        assert _repair_json('{"a": 1, "b": "hello"}') == {"a": 1, "b": "hello"}
+
+    def test_unterminated_string(self):
+        from agent_orchestrator.providers.openai import _repair_json
+        result = _repair_json('{"file_path": "/tmp/test.py", "content": "hello')
+        assert isinstance(result, dict)
+        assert "content" in result or "input" in result
+
+    def test_missing_closing_brace(self):
+        from agent_orchestrator.providers.openai import _repair_json
+        result = _repair_json('{"a": 1, "b": 2')
+        assert isinstance(result, dict)
+        assert result.get("a") == 1
+
+    def test_trailing_comma(self):
+        from agent_orchestrator.providers.openai import _repair_json
+        result = _repair_json('{"a": 1, "b": 2,}')
+        assert isinstance(result, dict)
+
+    def test_empty_string(self):
+        from agent_orchestrator.providers.openai import _repair_json
+        assert _repair_json("") == {}
+        assert _repair_json("  ") == {}
+
+    def test_totally_broken_returns_input_key(self):
+        from agent_orchestrator.providers.openai import _repair_json
+        result = _repair_json("not json at all")
+        assert isinstance(result, dict)
+        assert result.get("input") == "not json at all"
+
+    def test_missing_closing_bracket_and_brace(self):
+        from agent_orchestrator.providers.openai import _repair_json
+        result = _repair_json('{"items": [1, 2, 3')
+        assert isinstance(result, dict)
