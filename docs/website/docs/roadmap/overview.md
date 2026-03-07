@@ -37,17 +37,20 @@ The MVP (v1.0) must be a **complete, usable product** before investing in infras
 | **v0.8.0** | External Integrations | [Details](./v080-integrations) |
 | **v1.0.0** | General Availability | [Details](./v100-ga) |
 
-## Post-MVP (if revenue > 100 EUR/month)
+## Post-MVP: Improvements & Scaling
 
-| Phase | Trigger | Focus | Page |
-|-------|---------|-------|------|
+| Version | Trigger | Focus | Page |
+|---------|---------|-------|------|
+| **v1.1** | LangGraph analysis | Channels, HITL, Store, caching, conformance | [Details](./v110-langgraph-improvements) |
 | **Scaling** | Revenue > 600 EUR/mo × 2 months | GPU infra, fine-tuning, enterprise | [Details](./post-mvp-scaling) |
 
 ```
-v0.3.0 (now)                                v1.0.0 (MVP)          Post-MVP
-    |                                            |                    |
-    |  v0.4  v0.5  v0.6  v0.7  v0.8  v1.0      |                    |
-    |──┬─────┬─────┬─────┬─────┬─────┬──────────|                    |
-       |     |     |     |     |     |          GA               GPU scaling
-     Coop  Route  Prod  Graph  Integ  GA        ~100 EUR/mo      625+ EUR/mo
+v0.3.0                                   v1.0.0 (MVP)    v1.1         Post-MVP
+    |                                         |            |              |
+    |  v0.4  v0.5  v0.6  v0.7  v0.8  v1.0   |   v1.1     |              |
+    |──┬─────┬─────┬─────┬─────┬─────┬───────|────┬───────|              |
+       |     |     |     |     |     |       GA   |    LangGraph      GPU scaling
+     Coop  Route  Prod  Graph  Integ  GA         HITL   patterns      625+ EUR/mo
+                                              Channels
+                                              Caching
 ```

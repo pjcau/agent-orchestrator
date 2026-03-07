@@ -40,7 +40,15 @@ const sidebars = {
         'roadmap/v100-ga',
       ],
     },
-    'roadmap/post-mvp-scaling',
+    {
+      type: 'category',
+      label: 'Post-MVP',
+      collapsed: false,
+      items: [
+        'roadmap/v110-langgraph-improvements',
+        'roadmap/post-mvp-scaling',
+      ],
+    },
   ],
 
   businessSidebar: [
