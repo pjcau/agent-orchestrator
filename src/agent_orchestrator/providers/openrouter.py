@@ -205,16 +205,24 @@ class OpenRouterProvider(OpenAIProvider):
         max_tokens: int = 4096,
         temperature: float = 0.0,
     ) -> Completion:
-        """Complete with automatic fallback on 429 rate limits and 402 credit errors."""
-        # Build fallback list; if the requested model is paid, only fallback
-        # to other paid models (free models may be blocked by data policy).
+        """Complete with automatic fallback on 429/402/404 errors.
+
+        Fallback order: paid models first, then free as last resort when
+        credits are exhausted on all paid options.
+        """
         is_paid = ":free" not in self._model
-        models_to_try = [self._model]
+        paid_models = [self._model]
+        free_models: list[str] = []
         for m in self.FALLBACK_ORDER:
-            if m != self._model:
-                if is_paid and ":free" in m:
-                    continue  # skip free models when user chose paid
-                models_to_try.append(m)
+            if m == self._model:
+                continue
+            if ":free" in m:
+                free_models.append(m)
+            else:
+                paid_models.append(m)
+
+        # Try paid first; append free as last resort
+        models_to_try = paid_models + (free_models if is_paid else [])
 
         last_error = None
         effective_max_tokens = max_tokens
