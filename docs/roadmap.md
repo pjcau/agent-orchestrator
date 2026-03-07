@@ -1,64 +1,129 @@
 # Roadmap — Agent Orchestrator
 
 **Unified Technical & Business Plan**
-*v1.0 — March 2026*
+*Updated: March 2026*
 
 ---
 
-## Current State (v0.1.0)
+## Current State (near-MVP)
 
 **What's built:**
 - StateGraph engine (parallel execution, conditional routing, HITL, checkpointing)
-- 4 LLM providers: Anthropic, OpenAI, Google, Local/Ollama
+- 5 LLM providers: Anthropic, OpenAI, Google, OpenRouter (free models), Local/Ollama
 - LLM node factories (`llm_node`, `multi_provider_node`, `chat_node`)
-- Interactive dashboard (FastAPI + WebSocket, model selector, graph visualization)
+- Interactive dashboard (FastAPI + WebSocket, streaming, model selector, graph visualization)
 - Core abstractions: Provider, Agent, Skill, Orchestrator, Cooperation
+- 23 agents across 5 categories (software-engineering, data-science, finance, marketing, tooling)
+- SkillKit scout agent for marketplace skill discovery (15,000+ skills)
+- Per-agent cost tracking, fallback chains, budget enforcement
 - OrbStack/Docker infrastructure (dashboard, postgres, test, lint, format)
-- 46+ tests, pre-commit hooks, CI pipeline
+- 487+ tests, pre-commit hooks, CI pipeline
 
 **What's missing for production:**
 - No cloud deployment (runs only locally)
-- No authentication / multi-tenancy
-- No token cost tracking at runtime
-- No prompt caching or smart routing in production
-- No fine-tuning pipeline
+- No infrastructure monitoring (Prometheus, Grafana)
+- No sandbox for testing agent output (preview before merge)
+- No autonomous agent workflow validation
 - No revenue model or public API
 
 ---
 
-## Phase 1: Production MVP (Month 1-2)
+## URGENT: Phase 0 — AWS Infrastructure (ASAP)
 
-**Goal:** Deploy the orchestrator as a live service, validate with real users.
+**Goal:** Get the orchestrator running on AWS immediately. Everything else depends on this.
 **Budget:** ~42 EUR/month
 
-### 1A — Infrastructure Setup (Week 1-2)
+### 0A — AWS Setup (Week 1)
 
-| Task | Detail |
-|------|--------|
-| AWS EC2 t3.medium | Deploy orchestrator + FastAPI + dashboard |
-| Docker Compose on EC2 | Same stack as local, with production config |
-| OpenRouter integration | New provider: `OpenRouterProvider` (Qwen3 30B as default) |
-| S3 storage | Prompt templates, outputs, checkpoints |
-| Elastic IP + HTTPS | Let's Encrypt, nginx reverse proxy |
-| Environment config | `.env.production` with API keys, budget caps |
+| Task | Priority | Detail |
+|------|----------|--------|
+| AWS EC2 t3.medium | CRITICAL | Deploy orchestrator + FastAPI + dashboard |
+| Docker Compose on EC2 | CRITICAL | Same stack as local, with production config |
+| Elastic IP + HTTPS | CRITICAL | Let's Encrypt, nginx reverse proxy |
+| S3 storage | HIGH | Checkpoints, outputs, prompt templates |
+| Security groups | CRITICAL | Restrict ports, SSH key-only, no open DB |
+| `.env.production` | CRITICAL | API keys, budget caps, provider config |
 
-### 1B — Core Features (Week 2-4)
+### 0B — Monitoring Board (Week 2)
 
-| Task | Detail |
-|------|--------|
-| OpenRouter provider | Implement `OpenRouterProvider` in `src/agent_orchestrator/providers/` |
-| Token cost tracker | Track input/output tokens and cost per request, per model |
-| Budget alerts | Hard cap on monthly OpenRouter spend, alert via webhook |
-| API authentication | API key auth for external access to `/api/prompt` |
-| Health monitoring | CloudWatch basic metrics + `/health` endpoint |
-| First production graph | End-to-end workflow: classify -> route -> execute -> respond |
+| Task | Priority | Detail |
+|------|----------|--------|
+| Prometheus setup | CRITICAL | Scrape orchestrator metrics (`/metrics` endpoint) |
+| Grafana dashboards | CRITICAL | Agent activity, latency, token usage, cost per model |
+| Node Exporter | HIGH | EC2 system metrics (CPU, RAM, disk, network) |
+| Alert rules | HIGH | Cost threshold, error rate spike, agent stall detection |
+| CloudWatch basics | MEDIUM | EC2 auto-recovery, uptime monitoring |
+
+**Target stack:**
+
+```
+[EC2 t3.medium]
+  ├── docker-compose.production.yml
+  │   ├── dashboard (port 5005, nginx reverse proxy + HTTPS)
+  │   ├── postgres (checkpoints, usage data)
+  │   ├── prometheus (metrics collection)
+  │   ├── grafana (visualization, alerts)
+  │   └── node-exporter (system metrics)
+  └── S3 (outputs, templates, backups)
+```
 
 ### KPIs
 
-- System live and stable on AWS
-- Monthly cost < 60 EUR
-- Average agent response latency < 5s
-- At least 2 graph types working in production
+- System live and reachable on AWS within 1 week
+- Grafana dashboard showing real-time agent metrics within 2 weeks
+- Monthly infra cost < 60 EUR
+
+---
+
+## Phase 1: Agent Autonomy Lab (Month 1)
+
+**Goal:** Understand how agents actually perform, test their output safely, build confidence in autonomous execution.
+
+### 1A — Agent Output Sandbox (Preview & Test)
+
+| Task | Detail |
+|------|--------|
+| E2B or Docker sandbox | Isolated environment where agents run code before it touches real files |
+| Output preview | Agent generates code/changes → preview diff → human approves or rejects |
+| Auto-validation pipeline | Lint + test + security scan on every agent output before merge |
+| Artifact staging | Agent output goes to a staging branch/directory, not directly to main |
+| Dashboard integration | Show preview diffs in the dashboard UI, approve/reject with one click |
+
+**Flow:**
+
+```
+Agent produces output
+  → Sandbox executes (lint, test, security scan)
+  → Preview in dashboard (diff view, test results)
+  → Human approves → merge to main
+  → Human rejects → agent retries with feedback
+```
+
+### 1B — Agile Team Experiment
+
+| Task | Detail |
+|------|--------|
+| Sprint simulation | Give agents a backlog of tasks, see what they can deliver in a "sprint" |
+| Team-lead as Scrum Master | Team-lead decomposes epics into stories, assigns to agents |
+| Velocity tracking | Measure: tasks completed, quality score, rework rate |
+| Autonomy levels | L1: human approves everything, L2: auto-merge if tests pass, L3: full autonomy |
+| Retrospective data | What tasks agents handle well vs. where they fail |
+
+### 1C — Agent Behavior Observability
+
+| Task | Detail |
+|------|--------|
+| LangFuse integration | Trace every LLM call: prompt, response, latency, tokens, cost |
+| Agent decision log | Why did team-lead route to agent X? Why did agent choose approach Y? |
+| Failure analysis | Categorize failures: wrong approach, hallucination, tool misuse, timeout |
+| Quality scoring | Auto-score agent output: does it compile? pass tests? follow conventions? |
+
+### KPIs
+
+- Sandbox preview working end-to-end
+- First "sprint" completed with measurable velocity
+- Agent success rate measured per category
+- Clear data on which tasks agents handle autonomously vs. need human help
 
 ---
 
@@ -72,7 +137,7 @@
 | Task | Detail |
 |------|--------|
 | Prompt caching | Cache repeated contexts (50-80% token savings) |
-| Smart model routing | Route by task complexity: Qwen3 30B (complex) vs Qwen3.5-Flash (simple) |
+| Smart model routing | Route by task complexity: expensive models (complex) vs cheap (simple) |
 | Context pruning | Send only relevant code snippets, not full files |
 | Streaming + early cancel | Stop generation when first tokens indicate wrong approach |
 
@@ -113,17 +178,16 @@
 
 | Task | Detail |
 |------|--------|
-| Provider failover | Automatic fallback chain: primary -> secondary -> tertiary |
 | Agent persistence | Save/resume long-running agent sessions across restarts |
 | Skill marketplace | Users can publish and share custom skills |
 | Graph versioning | Version and rollback graph definitions |
-| Observability | Structured logging, distributed tracing (LangFuse or custom) |
+| Advanced observability | Distributed tracing, per-agent performance dashboards |
 
 ### 3B — Advanced Features
 
 | Task | Detail |
 |------|--------|
-| Multi-agent cooperation | Full delegation protocol: team-lead -> specialists |
+| Full agile team mode | Agents run sprints autonomously with human review at end |
 | Conflict resolution | When agents modify same resources, auto-resolve or escalate |
 | Human-in-the-loop flows | Production-grade approval steps in graphs |
 | Fine-tuning pipeline design | Document the approach, prepare data collection |
@@ -140,7 +204,7 @@
 
 - Monthly revenue > 300 EUR
 - Zero-downtime deploys
-- Provider failover tested and working
+- Autonomous sprint velocity > 60% of human baseline
 - 20+ active users
 
 ---
@@ -162,7 +226,7 @@
 **Architecture:**
 
 ```
-[AWS EC2 -- Orchestrator + Dashboard]
+[AWS EC2 -- Orchestrator + Dashboard + Prometheus + Grafana]
       |
       |--- Complex / fine-tuned -------> [Vast.ai H200 -- vLLM]
       |
@@ -250,30 +314,62 @@
 
 ---
 
+## Growth Opportunities (Suggestions)
+
+These are high-potential features that could accelerate product growth, based on market trends in the AI agent orchestration space ($8.5B market in 2026).
+
+### 1. Agent-as-a-Service API
+
+Expose agents via a public REST API. Users send a task, get back structured results. No need to self-host. This is the fastest path to recurring revenue.
+
+```
+POST /api/v1/tasks
+{ "task": "Review this PR for security issues", "context": { "repo": "...", "pr": 42 } }
+→ { "result": "...", "agent": "backend", "cost": 0.003 }
+```
+
+### 2. Vertical Agent Packs (Niche Monetization)
+
+Package domain-specific agent teams as paid add-ons:
+- **SaaS Startup Pack**: backend + frontend + devops agents pre-configured for common stacks
+- **Data Analytics Pack**: data-analyst + ml-engineer + bi-analyst for business intelligence
+- **Compliance Pack**: compliance-officer + accountant for regulated industries
+
+The market shows that **niche, domain-specific agent solutions** monetize far better than general-purpose frameworks.
+
+### 3. SkillKit Marketplace Integration (Two-Way)
+
+Not just consume skills from SkillKit — **publish** your agents' skills back. This creates a flywheel: more users → more skills → more users.
+
+### 4. GitHub App / CI Integration
+
+An agent that runs on every PR: reviews code, suggests improvements, checks for security issues. This is the most natural entry point for developer teams. Similar to what Codex and Claude Code do, but with your multi-agent approach.
+
+### 5. Local-First + Cloud Burst Model
+
+Sell the "privacy story": agents run locally by default (Ollama), burst to cloud only when needed. This is a strong differentiator vs. pure-cloud solutions like LangGraph Cloud.
+
+---
+
 ## Financial Summary
 
 ```
-Phase 1 (M1-2)      Phase 2 (M2-4)      Phase 3 (M4-6)      Phase 4 (M6+)
-MVP Go-Live          Optimization        Platform Maturity    Hybrid Scaling
- 42 EUR/mo            42-100 EUR/mo       100-300 EUR/mo       625+ EUR/mo
+Phase 0 (NOW)       Phase 1 (M1)        Phase 2 (M2-4)      Phase 3 (M4-6)      Phase 4 (M6+)
+AWS + Monitoring    Agent Autonomy      Optimization        Platform Maturity    Hybrid Scaling
+ 42 EUR/mo           42 EUR/mo           42-100 EUR/mo       100-300 EUR/mo       625+ EUR/mo
 
-AWS + OpenRouter     + Smart routing     + Multi-agent        + Vast.ai H200
-Qwen3 30B            + Prompt caching     + Skill marketplace  + Fine-tuning
-1 production graph   + Beta users         + Provider failover  + Enterprise
-Token tracking       + Pricing model      + Observability      + SLA / SSO
+EC2 + Prometheus    + Sandbox preview   + Smart routing     + Full agile mode    + Vast.ai H200
+Grafana dashboards  + Sprint simulation + Prompt caching    + Skill marketplace  + Fine-tuning
+HTTPS + nginx       + LangFuse traces   + Beta users        + Provider failover  + Enterprise
+                    + Quality scoring   + Pricing model     + Observability      + SLA / SSO
 ```
 
 ### Break-Even Analysis
 
-- **Phase 1-2:** Profitable at ~5 paying users (10 EUR/month each)
+- **Phase 0-1:** Infrastructure investment, no revenue yet
+- **Phase 2:** Profitable at ~5 paying users (10 EUR/month each)
 - **Phase 3:** Profitable at ~15 paying users or 2-3 Pro users (100 EUR/month)
 - **Phase 4:** Self-hosted GPU pays for itself when OpenRouter spend would exceed 545 EUR/month
-
-The real triggers for Phase 4 are **not** token cost savings but:
-1. Fine-tuning on proprietary data (impossible with OpenRouter)
-2. Total data privacy (sensitive data stays in-house)
-3. Guaranteed latency without third-party dependency
-4. Custom domain-specific model
 
 ---
 
@@ -285,38 +381,44 @@ The real triggers for Phase 4 are **not** token cost savings but:
 | OpenRouter rate limits | Low | High | Aggressive caching, tier upgrade |
 | Vast.ai interruption (Phase 4) | Medium | Medium | OpenRouter as automatic fallback |
 | Token costs out of control | Medium | High | Hard budget cap, alerts, prompt caching |
-| EC2 downtime | Low | High | CloudWatch auto-recovery + Lambda |
+| EC2 downtime | Low | High | CloudWatch auto-recovery + Prometheus alerts |
 | Low user adoption | Medium | High | Iterate on use cases, pivot pricing, open-source core |
 | Provider API breaking changes | Medium | Medium | Provider abstraction layer isolates impact |
+| Agent output quality too low | Medium | High | Sandbox + auto-validation catches bad output before merge |
+| 40% agentic projects cancelled industry-wide | High | Medium | Focus on measurable ROI, start with proven use cases |
 
 ---
 
 ## Monitoring Stack
 
-### Phase 1-2 (Minimal)
+### Phase 0 (Immediate)
 
-- AWS CloudWatch: EC2 metrics (CPU, RAM, uptime)
-- OpenRouter dashboard: token usage, cost per model
-- Custom webhook alerts: daily cost > threshold -> Telegram/email
-- Dashboard built-in: agent cards with tokens/cost
+- **Prometheus**: scrape `/metrics` endpoint, agent execution metrics
+- **Grafana**: real-time dashboards (agent activity, cost, latency, error rates)
+- **Node Exporter**: EC2 system metrics (CPU, RAM, disk)
+- **Alert Manager**: cost threshold, error spike, stall detection → Telegram/email
+
+### Phase 1 (Month 1)
+
+- **LangFuse**: LLM tracing, prompt versioning, evaluation scores
+- **Agent decision log**: structured JSON log of routing decisions
+- **Quality metrics**: compile rate, test pass rate, convention adherence per agent
 
 ### Phase 3-4 (Complete)
 
-- Grafana + Prometheus: full infrastructure metrics
-- LangFuse: LLM tracing, prompt versioning, evaluation
 - Vast.ai dashboard: GPU utilization, instance uptime
-- Custom analytics: per-user cost, graph execution stats
+- Custom analytics: per-user cost, graph execution stats, sprint velocity
 
 ---
 
 ## Immediate Next Steps (This Week)
 
-1. **Implement `OpenRouterProvider`** — new provider in `src/agent_orchestrator/providers/openrouter.py`
-2. **Add token cost tracking** — instrument providers to log input/output tokens + cost
-3. **Production Docker config** — `docker-compose.production.yml` with nginx, HTTPS
-4. **AWS setup** — EC2 t3.medium, security groups, Elastic IP
-5. **First deploy** — push current codebase to EC2, verify dashboard works remotely
+1. **AWS EC2 setup** — t3.medium, security groups, Elastic IP, SSH key
+2. **Production Docker config** — `docker-compose.production.yml` with nginx, HTTPS, Prometheus, Grafana
+3. **Deploy to EC2** — push current codebase, verify dashboard works remotely
+4. **Grafana dashboards** — agent metrics, cost tracking, system health
+5. **Alert rules** — cost > threshold, error rate, agent stall → Telegram notification
 
 ---
 
-*Document created: March 2026 -- update at each phase completion.*
+*Document created: March 2026 — last updated: March 2026*

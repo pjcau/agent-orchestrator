@@ -7,26 +7,37 @@ title: Overview
 
 ## Philosophy
 
-The MVP (v1.0) must be a **complete, usable product** before investing in infrastructure scaling. Everything from v0.4.0 through v1.0.0 is the MVP. Only after v1.0 ships — and generates enough revenue to justify it — do we consider spending beyond ~100 EUR/month.
+AWS infrastructure and monitoring come **first** — the product must be live and observable before iterating on features. Then validate agent autonomy with real sprints and sandboxed output preview. Only invest in scaling when revenue justifies it.
 
-## Current State (v0.3.0)
+## Current State (near-MVP)
 
 **Done:**
 - Core: Provider, Agent, Skill, Orchestrator, Cooperation, StateGraph engine
-- 5 providers: Anthropic, OpenAI, Google, Ollama, OpenRouter (free models + 429 fallback)
-- Dashboard: streaming, multi-turn chat, presets, file context, model comparison, agent execution
-- Team graph: team-lead delegates to parallel sub-agents
+- 5 providers: Anthropic, OpenAI, Google, Ollama, OpenRouter (free models + fallback chains)
+- 23 agents across 5 categories (software-engineering, data-science, finance, marketing, tooling)
+- SkillKit scout agent for marketplace skill discovery (15,000+ skills)
+- Dashboard: streaming, multi-turn chat, presets, file context, agent execution, cost tracking
 - Checkpointing: InMemory, SQLite, PostgreSQL
 - Docker/OrbStack: dashboard, postgres, test, lint, format
-- 436+ tests
+- 487+ tests
 
-**Incomplete from v0.2.0/v0.3.0:**
-- Conversation memory persistence
-- Code execution (sandboxed)
-- Prompt templates (save/reuse)
-- Token budget per task (cloud safeguard)
+**What's missing for production:**
+- Cloud deployment (AWS)
+- Infrastructure monitoring (Prometheus + Grafana)
+- Agent output sandbox (preview before merge)
+- Autonomous agent workflow validation
 
-## MVP = v0.4.0 → v1.0.0
+## Phases
+
+| Phase | Focus | Timeline | Page |
+|-------|-------|----------|------|
+| **Phase 0** | AWS Infrastructure + Prometheus/Grafana | **NOW** | [Details](../roadmap) |
+| **Phase 1** | Agent Autonomy Lab (sandbox, sprints, observability) | Month 1 | [Details](../roadmap) |
+| **Phase 2** | Optimization & First Revenue | Month 2-4 | [Details](./v050-routing) |
+| **Phase 3** | Platform Maturity | Month 4-6 | [Details](./v060-hardening) |
+| **Phase 4** | Hybrid GPU Scaling | Month 6+ | [Details](./post-mvp-scaling) |
+
+## MVP Versions (in progress)
 
 | Version | Focus | Page |
 |---------|-------|------|
@@ -42,15 +53,15 @@ The MVP (v1.0) must be a **complete, usable product** before investing in infras
 | Version | Trigger | Focus | Page |
 |---------|---------|-------|------|
 | **v1.1** | LangGraph analysis | Channels, HITL, Store, caching, conformance | [Details](./v110-langgraph-improvements) |
-| **Scaling** | Revenue > 600 EUR/mo × 2 months | GPU infra, fine-tuning, enterprise | [Details](./post-mvp-scaling) |
+| **Scaling** | Revenue > 600 EUR/mo x 2 months | GPU infra, fine-tuning, enterprise | [Details](./post-mvp-scaling) |
 
 ```
-v0.3.0                                   v1.0.0 (MVP)    v1.1         Post-MVP
-    |                                         |            |              |
-    |  v0.4  v0.5  v0.6  v0.7  v0.8  v1.0   |   v1.1     |              |
-    |──┬─────┬─────┬─────┬─────┬─────┬───────|────┬───────|              |
-       |     |     |     |     |     |       GA   |    LangGraph      GPU scaling
-     Coop  Route  Prod  Graph  Integ  GA         HITL   patterns      625+ EUR/mo
-                                              Channels
-                                              Caching
+NOW            Month 1          Month 2-4        Month 4-6        Month 6+
+ |               |                 |                |                |
+ |  Phase 0      |    Phase 1      |   Phase 2      |   Phase 3      |  Phase 4
+ |──┬─────────────┬────────────────┬────────────────┬────────────────┬──────
+    |             |                |                |                |
+  AWS+Grafana  Sandbox+Sprint   Revenue+Optimize  Platform        GPU Scaling
+  Prometheus   Agent Autonomy   Beta Users        Full Agile      Fine-tuning
+  Monitoring   LangFuse         Pricing           Marketplace     Enterprise
 ```
