@@ -30,6 +30,24 @@
   let allModels = { ollama: [], openrouter: [] };
   const MAX_EVENTS = 500;
 
+  // --- Running state management ---
+  function setRunning(running) {
+    isRunning = running;
+    $btnSend.disabled = running;
+    $promptInput.disabled = running;
+    if (running) {
+      snapshot.orchestrator_status = "running";
+    } else {
+      snapshot.orchestrator_status = "completed";
+      $promptInput.focus();
+      // Auto-reset to idle after 3s
+      setTimeout(() => {
+        if (!isRunning) { snapshot.orchestrator_status = "idle"; renderHeader(); }
+      }, 3000);
+    }
+    renderHeader();
+  }
+
   // --- DOM refs ---
   const $ = (id) => document.getElementById(id);
   const $status = $("status-badge");
@@ -56,9 +74,6 @@
   const $btnAttach = $("btn-attach-file");
   const $btnClearCtx = $("btn-clear-context");
   const $btnNewChat = $("btn-new-chat");
-  const $ollamaPullInput = $("ollama-pull-input");
-  const $btnOllamaPull = $("btn-ollama-pull");
-  const $ollamaModelList = $("ollama-model-list");
   const $compareModelA = $("compare-model-a");
   const $compareModelB = $("compare-model-b");
   const $btnCompare = $("btn-compare");
@@ -114,7 +129,7 @@
       allModels = data;
       updateModelSelector();
       updateCompareSelectors();
-      renderOllamaModelList();
+
     } catch (e) {
       $promptModel.innerHTML = '<option value="">Failed to load</option>';
     }
@@ -194,43 +209,6 @@
         <span class="agent-msg-text">${esc(truncate(t.description, 40))}</span>
         <span class="agent-msg-status ${t.status || "pending"}"></span>
       </div>`).join("");
-  }
-
-  // --- Ollama Model Management ---
-  function renderOllamaModelList() {
-    const models = allModels.ollama || [];
-    if (!models.length) {
-      $ollamaModelList.innerHTML = '<div class="empty-state">No local models</div>';
-      return;
-    }
-    $ollamaModelList.innerHTML = models.map((m) => `
-      <div class="ollama-model-item">
-        <span class="ollama-model-name">${esc(m.name)}</span>
-        <span class="ollama-model-size">${esc(m.size)}</span>
-        <button class="btn-delete-model" onclick="window._deleteModel('${esc(m.name)}')" title="Delete">&times;</button>
-      </div>`).join("");
-  }
-
-  window._deleteModel = async function (name) {
-    if (!confirm(`Delete model ${name}?`)) return;
-    try {
-      await fetch("/api/ollama/model", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-      await loadModels();
-    } catch (e) { alert("Failed: " + e.message); }
-  };
-
-  async function pullModel() {
-    const name = $ollamaPullInput.value.trim();
-    if (!name) return;
-    $btnOllamaPull.disabled = true;
-    $btnOllamaPull.textContent = "Pulling...";
-    try {
-      const resp = await fetch("/api/ollama/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-      const data = await resp.json();
-      if (data.success) { $ollamaPullInput.value = ""; await loadModels(); }
-      else alert("Pull failed: " + (data.error || "unknown"));
-    } catch (e) { alert("Pull failed: " + e.message); }
-    finally { $btnOllamaPull.disabled = false; $btnOllamaPull.textContent = "Pull"; }
   }
 
   // --- Presets ---
@@ -476,8 +454,7 @@
     if (!model) { alert("No model selected."); return; }
 
     isRunning = true;
-    $btnSend.disabled = true;
-    $promptInput.disabled = true;
+    setRunning(true);
     $promptInput.value = "";
     $promptInput.style.height = "auto";
 
@@ -547,10 +524,7 @@
       addChatBubble("assistant", `Request failed: ${e.message}`);
     }
 
-    isRunning = false;
-    $btnSend.disabled = false;
-    $promptInput.disabled = false;
-    $promptInput.focus();
+    setRunning(false);
   }
 
   async function runTeam(text, model, provider) {
@@ -586,10 +560,7 @@
       addChatBubble("assistant", `Team run failed: ${e.message}`);
     }
 
-    isRunning = false;
-    $btnSend.disabled = false;
-    $promptInput.disabled = false;
-    $promptInput.focus();
+    setRunning(false);
   }
 
   async function runSingleAgent(text, model, provider) {
@@ -618,10 +589,7 @@
       addChatBubble("assistant", `Agent run failed: ${e.message}`);
     }
 
-    isRunning = false;
-    $btnSend.disabled = false;
-    $promptInput.disabled = false;
-    $promptInput.focus();
+    setRunning(false);
   }
 
   // --- Model Comparison ---
@@ -1049,8 +1017,6 @@
   $btnClearCtx.addEventListener("click", () => { attachedFiles = []; renderAttachedFiles(); });
   $btnClosePicker.addEventListener("click", () => $filePickerModal.classList.add("hidden"));
   $btnNewChat.addEventListener("click", startNewConversation);
-  $btnOllamaPull.addEventListener("click", pullModel);
-  $ollamaPullInput.addEventListener("keydown", (e) => { if (e.key === "Enter") pullModel(); });
   $btnCompare.addEventListener("click", runComparison);
   $btnResetGraph.addEventListener("click", resetGraph);
   $btnToggleSidebar.addEventListener("click", toggleSidebar);

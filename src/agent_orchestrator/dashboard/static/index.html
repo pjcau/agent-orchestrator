@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=043">
+    <link rel="stylesheet" href="/static/style.css?v=044">
 </head>
 <body>
     <header>
@@ -37,28 +37,40 @@
     <main>
         <!-- Main content area -->
         <div class="main-content">
-            <!-- Top: Agent graph -->
-            <div class="graph-section">
-                <div class="graph-header">
-                    <h2>Agents</h2>
+            <!-- Top: Agent graph (collapsible) -->
+            <div class="graph-section collapsible-section" id="section-graph">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <button class="btn-collapse" data-target="section-graph" title="Toggle section">&#9660;</button>
+                        <h2>Agents</h2>
+                    </div>
                     <div class="graph-header-right">
                         <div id="agent-badges" class="agent-badges"></div>
                         <button id="btn-reset-graph" class="btn-graph-ctrl" title="Reset all state">Reset</button>
                     </div>
                 </div>
-                <div id="graph-canvas" class="graph-canvas">
-                    <div class="empty-state">Send a message to see the agent graph</div>
+                <div class="section-body" id="body-graph">
+                    <div id="graph-canvas" class="graph-canvas">
+                        <div class="empty-state">Send a message to see the agent graph</div>
+                    </div>
+                    <div id="agent-messages" class="agent-messages-inline"></div>
                 </div>
-                <!-- Inter-Agent Messages (inline under graph) -->
-                <div id="agent-messages" class="agent-messages-inline"></div>
             </div>
 
-            <!-- Center: Chat -->
-            <div class="chat-section">
-                <div id="chat-messages" class="chat-messages"></div>
+            <!-- Center: Chat (collapsible) -->
+            <div class="chat-section collapsible-section" id="section-chat">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <button class="btn-collapse" data-target="section-chat" title="Toggle section">&#9660;</button>
+                        <h2>Chat</h2>
+                    </div>
+                </div>
+                <div class="section-body section-body-flex" id="body-chat">
+                    <div id="chat-messages" class="chat-messages"></div>
+                </div>
             </div>
 
-            <!-- File context bar (above input) -->
+            <!-- File context bar -->
             <div class="file-context-bar" id="file-context-bar">
                 <div class="file-context-header">
                     <span class="file-context-label">Files</span>
@@ -104,31 +116,45 @@
             </div>
         </div>
 
-        <!-- Right sidebar: Agent Activity + Logs (always visible) -->
+        <!-- Right sidebar -->
         <aside class="sidebar" id="sidebar">
-            <!-- Agent Activity: real-time agent actions -->
-            <div class="sidebar-section agent-activity-section">
-                <h2>Agent Activity</h2>
-                <div id="agent-activity" class="agent-activity">
-                    <div class="empty-state">Waiting for agents...</div>
+            <!-- Agent Activity (collapsible) -->
+            <div class="sidebar-section agent-activity-section collapsible-section" id="section-activity">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <button class="btn-collapse" data-target="section-activity" title="Toggle section">&#9660;</button>
+                        <h2>Agent Activity</h2>
+                    </div>
+                </div>
+                <div class="section-body" id="body-activity">
+                    <div id="agent-activity" class="agent-activity">
+                        <div class="empty-state">Waiting for agents...</div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Event Logs -->
-            <div class="sidebar-section">
-                <h2>Event Log</h2>
-                <div class="logs-controls">
-                    <select id="filter-type">
-                        <option value="all">All</option>
-                        <option value="agent">Agent</option>
-                        <option value="graph">Graph</option>
-                        <option value="cooperation">Coop</option>
-                        <option value="cache">Cache</option>
-                    </select>
-                    <button id="btn-clear">Clear</button>
-                    <button id="btn-new-chat" title="New conversation">New Chat</button>
+            <!-- Event Logs (collapsible) -->
+            <div class="sidebar-section collapsible-section" id="section-events">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <button class="btn-collapse" data-target="section-events" title="Toggle section">&#9660;</button>
+                        <h2>Event Log</h2>
+                    </div>
+                    <div class="logs-controls">
+                        <select id="filter-type">
+                            <option value="all">All</option>
+                            <option value="agent">Agent</option>
+                            <option value="graph">Graph</option>
+                            <option value="cooperation">Coop</option>
+                            <option value="cache">Cache</option>
+                        </select>
+                        <button id="btn-clear">Clear</button>
+                        <button id="btn-new-chat" title="New conversation">New Chat</button>
+                    </div>
                 </div>
-                <div id="timeline" class="timeline"></div>
+                <div class="section-body" id="body-events">
+                    <div id="timeline" class="timeline"></div>
+                </div>
             </div>
 
             <!-- Details -->
@@ -139,32 +165,39 @@
                 </div>
             </div>
 
-            <!-- Cache Stats -->
-            <div class="sidebar-section">
-                <h2>Cache</h2>
-                <div id="cache-panel" class="cache-panel">
-                    <div class="cache-stats-grid">
-                        <div class="cache-stat">
-                            <span class="cache-stat-value" id="cache-hits">0</span>
-                            <span class="cache-stat-label">Hits</span>
-                        </div>
-                        <div class="cache-stat">
-                            <span class="cache-stat-value" id="cache-misses">0</span>
-                            <span class="cache-stat-label">Misses</span>
-                        </div>
-                        <div class="cache-stat">
-                            <span class="cache-stat-value" id="cache-evictions">0</span>
-                            <span class="cache-stat-label">Evictions</span>
-                        </div>
-                        <div class="cache-stat">
-                            <span class="cache-stat-value" id="cache-rate">0%</span>
-                            <span class="cache-stat-label">Hit Rate</span>
-                        </div>
+            <!-- Cache Stats (collapsible) -->
+            <div class="sidebar-section collapsible-section" id="section-cache">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <button class="btn-collapse" data-target="section-cache" title="Toggle section">&#9660;</button>
+                        <h2>Cache</h2>
                     </div>
-                    <div class="cache-bar-container">
-                        <div class="cache-bar-fill" id="cache-bar-fill" style="width:0%"></div>
+                </div>
+                <div class="section-body" id="body-cache">
+                    <div id="cache-panel" class="cache-panel">
+                        <div class="cache-stats-grid">
+                            <div class="cache-stat">
+                                <span class="cache-stat-value" id="cache-hits">0</span>
+                                <span class="cache-stat-label">Hits</span>
+                            </div>
+                            <div class="cache-stat">
+                                <span class="cache-stat-value" id="cache-misses">0</span>
+                                <span class="cache-stat-label">Misses</span>
+                            </div>
+                            <div class="cache-stat">
+                                <span class="cache-stat-value" id="cache-evictions">0</span>
+                                <span class="cache-stat-label">Evictions</span>
+                            </div>
+                            <div class="cache-stat">
+                                <span class="cache-stat-value" id="cache-rate">0%</span>
+                                <span class="cache-stat-label">Hit Rate</span>
+                            </div>
+                        </div>
+                        <div class="cache-bar-container">
+                            <div class="cache-bar-fill" id="cache-bar-fill" style="width:0%"></div>
+                        </div>
+                        <div id="cache-log" class="cache-log"></div>
                     </div>
-                    <div id="cache-log" class="cache-log"></div>
                 </div>
             </div>
 
@@ -184,17 +217,6 @@
                 </div>
             </div>
 
-            <!-- Ollama Models -->
-            <div class="sidebar-section">
-                <h2>Ollama Models</h2>
-                <div class="ollama-mgmt">
-                    <div class="ollama-pull-bar">
-                        <input id="ollama-pull-input" type="text" placeholder="model name..." />
-                        <button id="btn-ollama-pull" title="Pull model">Pull</button>
-                    </div>
-                    <div id="ollama-model-list" class="ollama-model-list"></div>
-                </div>
-            </div>
         </aside>
     </main>
 
@@ -210,6 +232,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=043"></script>
+    <script src="/static/app.js?v=044"></script>
 </body>
 </html>
