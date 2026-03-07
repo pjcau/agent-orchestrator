@@ -211,18 +211,23 @@ class OpenRouterProvider(OpenAIProvider):
         credits are exhausted on all paid options.
         """
         is_paid = ":free" not in self._model
+        vendor = self._model.split("/")[0]  # e.g. "qwen" from "qwen/qwen3-coder-next"
         paid_models = [self._model]
-        free_models: list[str] = []
+        free_same_vendor: list[str] = []
+        free_other: list[str] = []
         for m in self.FALLBACK_ORDER:
             if m == self._model:
                 continue
             if ":free" in m:
-                free_models.append(m)
+                if m.split("/")[0] == vendor:
+                    free_same_vendor.append(m)
+                else:
+                    free_other.append(m)
             else:
                 paid_models.append(m)
 
-        # Try paid first; append free as last resort
-        models_to_try = paid_models + (free_models if is_paid else [])
+        # Try paid first; then free same vendor; then free others
+        models_to_try = paid_models + free_same_vendor + free_other
 
         last_error = None
         effective_max_tokens = max_tokens
