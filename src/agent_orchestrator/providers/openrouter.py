@@ -192,7 +192,6 @@ class OpenRouterProvider(OpenAIProvider):
         "nousresearch/hermes-3-llama-3.1-405b:free",
         "qwen/qwen3-next-80b-a3b-instruct:free",
         "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemma-3-27b-it:free",
         "mistralai/mistral-small-3.1-24b-instruct:free",
         "nvidia/nemotron-3-nano-30b-a3b:free",
     ]
@@ -281,6 +280,12 @@ class OpenRouterProvider(OpenAIProvider):
                 # 404: data policy or model not found — skip this model
                 if "404" in err_str or "data policy" in err_str.lower() or "No endpoints" in err_str:
                     logger.warning("Model %s blocked (data policy/404), trying next...", model)
+                    last_error = exc
+                    continue
+
+                # 400: provider error (e.g. model doesn't support system prompt)
+                if "400" in err_str and "Provider returned error" in err_str:
+                    logger.warning("Model %s returned provider error, trying next...", model)
                     last_error = exc
                     continue
 
