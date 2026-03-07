@@ -151,6 +151,7 @@ async def run_agent(
         )
     )
 
+    artifacts = result.artifacts or {}
     return {
         "success": result.status == TaskStatus.COMPLETED,
         "status": result.status.value,
@@ -160,6 +161,8 @@ async def run_agent(
         "total_cost_usd": result.total_cost_usd,
         "elapsed_s": round(elapsed, 2),
         "error": result.error,
+        "files_created": artifacts.get("files_created", []),
+        "step_log": artifacts.get("step_log", []),
     }
 
 
@@ -190,6 +193,8 @@ async def _instrumented_execute(
     total_cost = 0.0
     total_tokens = 0
     start_time = time.monotonic()
+    files_created: list[str] = []
+    step_log: list[str] = []
 
     while steps < config.max_steps:
         # Timeout check
@@ -202,6 +207,7 @@ async def _instrumented_execute(
                 total_tokens=total_tokens,
                 total_cost_usd=total_cost,
                 error=f"Timeout after {elapsed:.0f}s",
+                artifacts={"files_created": files_created, "step_log": step_log},
             )
 
         # Emit step event
@@ -231,6 +237,7 @@ async def _instrumented_execute(
                 steps_taken=steps,
                 total_tokens=total_tokens,
                 total_cost_usd=total_cost,
+                artifacts={"files_created": files_created, "step_log": step_log},
             )
 
         # Process tool calls
@@ -255,6 +262,7 @@ async def _instrumented_execute(
                     total_tokens=total_tokens,
                     total_cost_usd=total_cost,
                     error=f"Max retries exceeded for: {approach_key}",
+                    artifacts={"files_created": files_created, "step_log": step_log},
                 )
 
             # Emit tool call event
@@ -271,6 +279,17 @@ async def _instrumented_execute(
             )
 
             result = await skill_registry.execute(tool_call.name, tool_call.arguments)
+
+            # Track files and steps
+            if tool_call.name == "file_write" and result.success:
+                fpath = tool_call.arguments.get("file_path", "?")
+                files_created.append(fpath)
+                step_log.append(f"wrote {fpath}")
+            elif tool_call.name == "shell_exec":
+                cmd = tool_call.arguments.get("command", "")[:60]
+                step_log.append(f"ran: {cmd}")
+            elif result.success:
+                step_log.append(f"{tool_call.name}: ok")
 
             # Emit tool result event
             await event_bus.emit(
@@ -301,6 +320,7 @@ async def _instrumented_execute(
         total_tokens=total_tokens,
         total_cost_usd=total_cost,
         error=f"Max steps ({config.max_steps}) reached",
+        artifacts={"files_created": files_created, "step_log": step_log},
     )
 
 
@@ -386,6 +406,9 @@ async def run_team(
         },
     ]
 
+    agent_files: dict[str, list[str]] = {}
+    agent_steps: dict[str, list[str]] = {}
+
     for agent_def in sub_agents:
         # Emit task delegation
         await bus.emit(Event(
@@ -412,6 +435,8 @@ async def run_team(
         total_tokens += result.get("total_tokens", 0)
         total_cost += result.get("total_cost_usd", 0.0)
         agent_outputs[agent_def["name"]] = result.get("output", result.get("error", ""))
+        agent_files[agent_def["name"]] = result.get("files_created", [])
+        agent_steps[agent_def["name"]] = result.get("step_log", [])
 
         await bus.emit(Event(
             event_type=EventType.TASK_COMPLETED,
@@ -431,14 +456,32 @@ async def run_team(
         data={"provider": provider.model_id, "role": "Summary", "tools": []},
     ))
 
+    # Build evidence of what each agent actually did
+    evidence_parts = []
+    for aname in ["backend-dev", "frontend-dev"]:
+        part = f"**{aname}**:\n"
+        files = agent_files.get(aname, [])
+        steps = agent_steps.get(aname, [])
+        output = agent_outputs.get(aname, "N/A")
+        if files:
+            part += f"Files created: {', '.join(files)}\n"
+        if steps:
+            part += f"Actions: {'; '.join(steps[:20])}\n"
+        part += f"Agent message: {output[:500]}\n"
+        evidence_parts.append(part)
+
     summary_completion = await provider.complete(
         messages=[Message(role=Role.USER, content=(
             f"Original request:\n{task_description}\n\n"
-            f"Backend developer output:\n{agent_outputs.get('backend-dev', 'N/A')}\n\n"
-            f"Frontend developer output:\n{agent_outputs.get('frontend-dev', 'N/A')}\n\n"
-            "Write a final summary of what was built and how to run it. Be concise."
+            + "\n".join(evidence_parts) + "\n"
+            "Based on the files actually created and actions taken above, "
+            "write a final summary of what was built and how to run it. Be concise."
         ))],
-        system="You are the team lead. Summarize the work done by your team. Be concise but complete.",
+        system=(
+            "You are the team lead. Summarize the work done by your team. "
+            "Focus on CONCRETE results: files created, project structure, how to build/run. "
+            "If files were created, the work IS done — describe what was built."
+        ),
     )
     total_tokens += summary_completion.usage.input_tokens + summary_completion.usage.output_tokens
     total_cost += summary_completion.usage.cost_usd
@@ -452,11 +495,17 @@ async def run_team(
 
     elapsed = time.time() - start_time
 
+    # Merge all created files
+    all_files = []
+    for files in agent_files.values():
+        all_files.extend(files)
+
     return {
         "success": True,
         "output": summary,
         "plan": plan,
         "agent_outputs": agent_outputs,
+        "files_created": all_files,
         "total_tokens": total_tokens,
         "total_cost_usd": total_cost,
         "elapsed_s": round(elapsed, 2),
