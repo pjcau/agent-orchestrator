@@ -4,6 +4,15 @@
 
 All code, comments, commit messages, documentation, and any written content in this project MUST be in **English**.
 
+## Mandatory: Tests & Documentation
+
+Every code change (new feature, bug fix, refactor) **MUST** include:
+
+1. **Tests** — Add or update tests covering the change. Run `docker compose run --rm test` to verify.
+2. **Documentation** — Update relevant docs (CLAUDE.md, README.md, `docs/`, inline comments) to reflect the change.
+
+Do NOT skip these steps. They are required for every modification.
+
 ## Overview
 
 Provider-agnostic AI agent orchestration framework. Abstracts the concepts of skill, agent, subagent, and inter-agent cooperation away from any single LLM vendor (Claude, GPT, Gemini, Llama, Mistral, etc.).
@@ -66,12 +75,13 @@ agent-orchestrator/
 │       ├── dashboard/
 │       │   ├── app.py           # FastAPI dashboard (REST + WebSocket + streaming)
 │       │   ├── agent_runner.py  # Agent/team execution with event emissions
-│       │   ├── agents_registry.py # Agent configuration registry
+│       │   ├── agents_registry.py # Agent configuration registry (category-aware)
 │       │   ├── graphs.py        # Graph builders for dashboard prompt
 │       │   ├── job_logger.py    # Session-based job persistence
 │       │   ├── auth.py          # API key authentication middleware
 │       │   ├── events.py        # EventBus, Event types
 │       │   ├── instrument.py    # Monkey-patches core classes to emit events
+│       │   ├── usage_db.py      # Persistent usage stats (PostgreSQL + in-memory)
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
 │       │   └── static/          # HTML/CSS/JS dashboard UI
 │       └── skills/
@@ -110,20 +120,28 @@ agent-orchestrator/
 - **MigrationManager** — Import configs from LangGraph, CrewAI, AutoGen with auto-detection.
 - **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
 
-## Agents (7)
+## Agents (22)
+
+Agents are organised by **category** under `.claude/agents/<category>/`.
+The `team-lead` lives at root level (`.claude/agents/team-lead.md`).
 
 ```
-team-lead (sonnet) ──── orchestrator, 0 skills
+team-lead (sonnet) ──── orchestrator, coordinates all categories
+```
+
+### Software Engineering (6 agents)
+
+```
+.claude/agents/software-engineering/
   ├── backend (sonnet) ──────── API, database, server logic
   ├── frontend (sonnet) ─────── UI, state management, styling
   ├── devops (sonnet) ───────── Docker/OrbStack, CI/CD, infra
   ├── platform-engineer (sonnet) system design, scalability, observability
-  └── ai-engineer (opus) ────── LLM integration, prompt engineering
-
-scout (opus) ── /scout (GitHub pattern discovery, periodic runs)
+  ├── ai-engineer (opus) ────── LLM integration, prompt engineering
+  └── scout (opus) ──────────── GitHub pattern discovery
 ```
 
-### Cross-Agent Dependencies
+#### Cross-Agent Dependencies
 
 ```
 Backend ↔ Frontend:  API contracts, data models
@@ -131,6 +149,66 @@ Backend ↔ Platform:  database, caching, queues
 DevOps  ↔ All:       Docker, CI/CD, deployment
 AI-Eng  ↔ Backend:   provider implementations, LLM integration
 Scout   →  All:       discovers patterns, creates PRs for integration
+```
+
+### Data Science (5 agents)
+
+```
+.claude/agents/data-science/
+  ├── data-analyst (sonnet) ──── EDA, statistical testing, visualization
+  ├── ml-engineer (opus) ─────── model training, evaluation, MLOps
+  ├── data-engineer (sonnet) ─── ETL pipelines, data warehousing, quality
+  ├── nlp-specialist (opus) ──── text processing, embeddings, NER, RAG
+  └── bi-analyst (sonnet) ────── dashboards, KPI metrics, data storytelling
+```
+
+#### Cross-Agent Dependencies
+
+```
+Data-Analyst ↔ ML-Engineer:  feature discovery, model validation
+Data-Engineer ↔ All:         pipeline outputs feed all analysis
+NLP-Specialist ↔ ML-Engineer: text features, embedding models
+BI-Analyst ↔ Data-Analyst:   metrics definitions, data sources
+```
+
+### Finance (5 agents)
+
+```
+.claude/agents/finance/
+  ├── financial-analyst (sonnet) ── financial modeling, valuation, forecasting
+  ├── risk-analyst (opus) ─────── VaR, stress testing, regulatory compliance
+  ├── quant-developer (opus) ──── algorithmic trading, backtesting, signals
+  ├── compliance-officer (sonnet)  audit trails, KYC/AML, policy enforcement
+  └── accountant (sonnet) ──────── bookkeeping, reconciliation, tax prep
+```
+
+#### Cross-Agent Dependencies
+
+```
+Financial-Analyst ↔ Risk-Analyst:  valuation inputs, risk metrics
+Quant-Developer ↔ Risk-Analyst:   portfolio risk, position limits
+Compliance-Officer ↔ All:         regulatory checks on all outputs
+Accountant ↔ Financial-Analyst:   financial statements, budgets
+```
+
+### Marketing (5 agents)
+
+```
+.claude/agents/marketing/
+  ├── content-strategist (sonnet) ── content planning, brand voice, SEO copy
+  ├── seo-specialist (sonnet) ────── keyword research, technical SEO, links
+  ├── growth-hacker (opus) ─────── acquisition funnels, A/B tests, CRO
+  ├── social-media-manager (sonnet)  social strategy, community, paid social
+  └── email-marketer (sonnet) ────── campaigns, automation, segmentation
+```
+
+#### Cross-Agent Dependencies
+
+```
+Content-Strategist ↔ SEO-Specialist: keyword-driven content
+Growth-Hacker ↔ All:                 experiment design across channels
+Social-Media-Manager ↔ Content:      content distribution
+Email-Marketer ↔ Growth-Hacker:      funnel automation, nurture flows
 ```
 
 ### Skills Map (10 total)
