@@ -133,7 +133,7 @@ AI-Eng  ↔ Backend:   provider implementations, LLM integration
 Scout   →  All:       discovers patterns, creates PRs for integration
 ```
 
-### Skills Map (8 total)
+### Skills Map (10 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -145,6 +145,8 @@ Scout   →  All:       discovers patterns, creates PRs for integration
 | `/scout` | scout | GitHub pattern discovery |
 | `/website-dev` | frontend | Documentation site development |
 | `/doc-sync` | all | Sync docs with code (CLAUDE.md, README, docs/, website) |
+| `/verify` | all | Pre-PR quality gate (tests, lint, format, security, diff review) |
+| `/cost-optimization` | ai-engineer | Review LLM API costs, routing, budget, retry efficiency |
 
 ## Container Runtime: OrbStack
 

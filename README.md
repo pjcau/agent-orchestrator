@@ -118,6 +118,9 @@ Features:
 - **Markdown rendering** — chat renders code blocks, headers, lists, links
 - **WebSocket streaming** — real-time token streaming (Simple Prompt mode)
 - **Event log** — filterable timeline of all orchestrator events
+- **Job history** — browse past sessions, load into chat, switch & continue
+- **Collapsible sections** — expand/collapse graph, chat, sidebar panels
+- **OpenRouter pricing** — live model pricing panel
 
 ### Routing Strategies
 
@@ -126,7 +129,7 @@ Features:
 - **Capability-based** — match task needs to model strengths
 - **Fallback chain** — try provider A, fall back to B on failure
 - **Local-first** — prefer local models, fallback to cloud
-- **Complexity-based** — estimate task complexity, route accordingly
+- **Complexity-based** — keyword + regex classification, route by tier
 
 ## Providers
 
@@ -232,7 +235,7 @@ agent-orchestrator/
 ├── examples/
 │   ├── test_ollama_graph.py      # 4 examples with Ollama/Qwen (free)
 │   └── test_claude_graph.py      # 4 examples with Anthropic API
-├── tests/                        # 382 tests (13 test files)
+├── tests/                        # 436 tests (13 test files)
 ├── docker-compose.yml            # OrbStack services
 └── pyproject.toml
 ```
@@ -266,4 +269,4 @@ docker compose run --rm test
 
 ## Status
 
-v1.0.0 — Full framework: core abstractions, 5 providers (Anthropic, OpenAI, Google, OpenRouter, Local), StateGraph engine, multi-agent dashboard with session persistence, 382 tests.
+v1.0.0 — Full framework: core abstractions, 5 providers (Anthropic, OpenAI, Google, OpenRouter, Local), StateGraph engine, multi-agent dashboard with session persistence and job history, 436 tests.
