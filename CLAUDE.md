@@ -226,7 +226,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
   → Not found: report to user, suggest custom agent/skill
 ```
 
-### Skills Map (10 total)
+### Skills Map (11 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -240,6 +240,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 | `/doc-sync` | all | Sync docs with code (CLAUDE.md, README, docs/, website) |
 | `/verify` | all | Pre-PR quality gate (tests, lint, format, security, diff review) |
 | `/cost-optimization` | ai-engineer | Review LLM API costs, routing, budget, retry efficiency |
+| `/ship` | all | Full pipeline: test, lint, docs sync, commit, push |
 
 ## Container Runtime: OrbStack
 

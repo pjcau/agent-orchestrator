@@ -21,8 +21,13 @@ if echo "$PROMPT" | grep -qE '(lint|format|style|ruff|quality)'; then
 fi
 
 # Deploy related
-if echo "$PROMPT" | grep -qE '(deploy|release|ship|production)'; then
+if echo "$PROMPT" | grep -qE '(deploy|release|production)'; then
   SUGGESTIONS="$SUGGESTIONS /deploy"
+fi
+
+# Ship (test + doc + commit + push)
+if echo "$PROMPT" | grep -qE '(ship|commit.*push|push.*commit|test.*commit|manda|pubblica|pusha)'; then
+  SUGGESTIONS="$SUGGESTIONS /ship"
 fi
 
 # Review related
