@@ -27,34 +27,12 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
     is configured — the key is only needed for actual LLM calls, not for
     browsing the model catalog.
     """
-    # Curated free models from big brands (sorted by brand, best first)
+    # Curated models: paid first, then free
     return [
-        # Google
+        # --- Paid models ---
         {
-            "name": "google/gemma-3-27b-it:free",
-            "size": "Free · 27B · 131K",
-            "provider": "openrouter",
-        },
-        {
-            "name": "google/gemma-3-12b-it:free",
-            "size": "Free · 12B · 32K",
-            "provider": "openrouter",
-        },
-        # Meta
-        {
-            "name": "meta-llama/llama-3.3-70b-instruct:free",
-            "size": "Free · 70B · 128K",
-            "provider": "openrouter",
-        },
-        {
-            "name": "meta-llama/llama-3.2-3b-instruct:free",
-            "size": "Free · 3B · 131K",
-            "provider": "openrouter",
-        },
-        # Qwen (Alibaba)
-        {
-            "name": "qwen/qwen3-coder:free",
-            "size": "Free · 480B MoE · 262K",
+            "name": "qwen/qwen3.5-flash-02-23",
+            "size": "$0.06/$0.30 · Flash · 262K",
             "provider": "openrouter",
         },
         {
@@ -65,6 +43,12 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
         {
             "name": "qwen/qwen3.5-397b-a17b",
             "size": "$0.39/$2.34 · 397B MoE · 262K",
+            "provider": "openrouter",
+        },
+        # --- Free models ---
+        {
+            "name": "qwen/qwen3-coder:free",
+            "size": "Free · 480B MoE · 262K",
             "provider": "openrouter",
         },
         {
@@ -78,20 +62,42 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
             "provider": "openrouter",
         },
         {"name": "qwen/qwen3-4b:free", "size": "Free · 4B · 41K", "provider": "openrouter"},
-        # OpenAI
         {
             "name": "openai/gpt-oss-120b:free",
             "size": "Free · 120B · 131K",
             "provider": "openrouter",
         },
         {"name": "openai/gpt-oss-20b:free", "size": "Free · 20B · 131K", "provider": "openrouter"},
-        # Mistral
+        {
+            "name": "nousresearch/hermes-3-llama-3.1-405b:free",
+            "size": "Free · 405B · 131K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "meta-llama/llama-3.3-70b-instruct:free",
+            "size": "Free · 70B · 128K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "google/gemma-3-27b-it:free",
+            "size": "Free · 27B · 131K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "google/gemma-3-12b-it:free",
+            "size": "Free · 12B · 32K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "meta-llama/llama-3.2-3b-instruct:free",
+            "size": "Free · 3B · 131K",
+            "provider": "openrouter",
+        },
         {
             "name": "mistralai/mistral-small-3.1-24b-instruct:free",
             "size": "Free · 24B · 128K",
             "provider": "openrouter",
         },
-        # NVIDIA
         {
             "name": "nvidia/nemotron-3-nano-30b-a3b:free",
             "size": "Free · 30B MoE · 256K",
@@ -100,12 +106,6 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
         {
             "name": "nvidia/nemotron-nano-9b-v2:free",
             "size": "Free · 9B · 128K",
-            "provider": "openrouter",
-        },
-        # Nous Research (Meta 405B)
-        {
-            "name": "nousresearch/hermes-3-llama-3.1-405b:free",
-            "size": "Free · 405B · 131K",
             "provider": "openrouter",
         },
     ]

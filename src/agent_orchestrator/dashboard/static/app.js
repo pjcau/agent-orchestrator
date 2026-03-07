@@ -150,15 +150,44 @@
       return;
     }
 
-    models.forEach((m) => {
-      const opt = document.createElement("option");
-      opt.value = m.name;
-      opt.textContent = `${m.name} (${m.size})`;
-      $promptModel.appendChild(opt);
-    });
+    if (provider === "openrouter") {
+      // Sort: paid first, then free
+      const paid = models.filter(m => !m.name.includes(":free"));
+      const free = models.filter(m => m.name.includes(":free"));
 
-    // Auto-select best model
-    if (provider === "ollama") {
+      if (paid.length) {
+        const grpPaid = document.createElement("optgroup");
+        grpPaid.label = "Paid models";
+        paid.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m.name;
+          opt.textContent = `${m.name} (${m.size})`;
+          opt.style.color = "#f0b060";
+          grpPaid.appendChild(opt);
+        });
+        $promptModel.appendChild(grpPaid);
+      }
+      if (free.length) {
+        const grpFree = document.createElement("optgroup");
+        grpFree.label = "Free models";
+        free.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m.name;
+          opt.textContent = `${m.name} (${m.size})`;
+          opt.style.color = "#7ee07e";
+          grpFree.appendChild(opt);
+        });
+        $promptModel.appendChild(grpFree);
+      }
+    } else {
+      models.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m.name;
+        opt.textContent = `${m.name} (${m.size})`;
+        $promptModel.appendChild(opt);
+      });
+
+      // Auto-select best model
       const coder = models.find((m) => m.name.includes("coder"));
       if (coder) $promptModel.value = coder.name;
     }
@@ -328,9 +357,12 @@
     if (role === "assistant" && typeof content === "object") {
       let html = "";
       const steps = content.steps || [];
+      const costs = content.agent_costs || {};
       if (steps.length) {
         steps.forEach((step) => {
-          html += `<div class="chat-step"><span class="chat-step-label">${esc(step.node)}</span><div class="chat-step-text md-content">${renderMarkdown(step.output || "")}</div></div>`;
+          const ac = costs[step.node];
+          const costTag = ac ? `<span class="chat-step-cost">${formatNumber(ac.tokens || 0)} tok &middot; $${(ac.cost_usd || 0).toFixed(4)}</span>` : "";
+          html += `<div class="chat-step"><span class="chat-step-label">${esc(step.node)}${costTag}</span><div class="chat-step-text md-content">${renderMarkdown(step.output || "")}</div></div>`;
         });
       } else if (content.output) {
         html = `<div class="chat-step-text md-content">${renderMarkdown(content.output)}</div>`;
@@ -340,7 +372,9 @@
         const outTok = (content.usage && content.usage.output_tokens) || 0;
         const speed = elapsed > 0 ? (outTok / elapsed).toFixed(1) : 0;
         const model = (content.usage && content.usage.model) || "";
-        html += `<div class="chat-usage">${outTok} tok &middot; ${speed} tok/s &middot; ${esc(model)} &middot; ${elapsed}s</div>`;
+        const totalCost = Object.values(costs).reduce((s, c) => s + (c.cost_usd || 0), 0);
+        const costStr = totalCost > 0 ? ` &middot; $${totalCost.toFixed(4)}` : "";
+        html += `<div class="chat-usage">${outTok} tok &middot; ${speed} tok/s &middot; ${esc(model)} &middot; ${elapsed}s${costStr}</div>`;
       }
       bubble.innerHTML = html;
     } else if (role === "assistant") {
@@ -543,6 +577,21 @@
       });
       const data = await resp.json();
 
+      // Show fallback log if any
+      const fbLog = data.fallback_log || [];
+      if (fbLog.length > 0) {
+        const fbHtml = fbLog.map(f => {
+          const icon = f.status === "ok" ? "&#10003;" : "&#10007;";
+          const cls = f.status === "ok" ? "fb-ok" : "fb-fail";
+          return `<span class="fb-entry ${cls}">${icon} ${esc(f.agent || "")} → ${esc(f.model)} [${f.status}] ${esc(f.detail || "")}</span>`;
+        }).join("");
+        addSystemBubble("Fallback log:");
+        const fbBubble = document.createElement("div");
+        fbBubble.className = "chat-bubble system fallback-log";
+        fbBubble.innerHTML = fbHtml;
+        $chatMessages.appendChild(fbBubble);
+      }
+
       if (data.success) {
         // Build steps from team outputs
         const steps = [];
@@ -555,6 +604,7 @@
 
         addChatBubble("assistant", {
           steps,
+          agent_costs: data.agent_costs || {},
           usage: { output_tokens: data.total_tokens, model },
           elapsed_s: data.elapsed_s,
         });
@@ -754,6 +804,40 @@
     $sidebar.classList.toggle("hidden");
     $btnToggleSidebar.classList.toggle("active");
   }
+
+  // --- Sidebar Resize (drag handle) ---
+  (function initSidebarResize() {
+    const handle = $("sidebar-resize-handle");
+    if (!handle) return;
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+
+    handle.addEventListener("mousedown", (e) => {
+      dragging = true;
+      startX = e.clientX;
+      startW = $sidebar.offsetWidth;
+      handle.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const delta = startX - e.clientX;
+      const newW = Math.max(200, Math.min(800, startW + delta));
+      $sidebar.style.width = newW + "px";
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    });
+  })();
 
   // --- Agent Activity Panel ---
   let activityCount = 0;
@@ -1139,6 +1223,7 @@
           if (result.success) {
             addChatBubble("assistant", {
               steps: [{ node: "team (summary)", output: result.output }],
+              agent_costs: result.agent_costs || {},
               usage: { output_tokens: result.total_tokens, model: rec.model },
               elapsed_s: result.elapsed_s,
             });
@@ -1320,6 +1405,7 @@
           if (result.success) {
             addChatBubble("assistant", {
               steps: [{ node: "team (summary)", output: result.output }],
+              agent_costs: result.agent_costs || {},
               usage: { output_tokens: result.total_tokens, model: rec.model },
               elapsed_s: result.elapsed_s,
             });

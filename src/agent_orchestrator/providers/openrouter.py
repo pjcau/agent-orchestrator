@@ -67,6 +67,13 @@ class OpenRouterProvider(OpenAIProvider):
             "coding": 0.90,
             "reasoning": 0.82,
         },
+        "qwen/qwen3.5-flash-02-23": {
+            "input_cost": 0.06,
+            "output_cost": 0.30,
+            "context": 262_144,
+            "coding": 0.85,
+            "reasoning": 0.80,
+        },
         "qwen/qwen3.5-397b-a17b": {
             "input_cost": 0.39,
             "output_cost": 2.34,
@@ -147,6 +154,7 @@ class OpenRouterProvider(OpenAIProvider):
         self._model = model
         self._api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
         self._client = None
+        self.last_fallback_log: list[dict] = []
 
     async def _get_client(self):
         if self._client is None:
@@ -225,15 +233,20 @@ class OpenRouterProvider(OpenAIProvider):
             else:
                 paid_models.append(m)
 
-        # Try paid first; then free same vendor; then free others
-        models_to_try = paid_models + free_same_vendor + free_other
+        # Try: chosen model, then first free from same vendor — max 2 attempts
+        models_to_try = [self._model]
+        if free_same_vendor:
+            models_to_try.append(free_same_vendor[0])
 
         last_error = None
         effective_max_tokens = max_tokens
+        self.last_fallback_log = []
 
-        for model in models_to_try:
+        logger.warning("Fallback chain: trying %d models starting with %s", len(models_to_try), models_to_try[0])
+        for i, model in enumerate(models_to_try):
             original_model = self._model
             self._model = model
+            logger.warning("Trying model %d/%d: %s (max_tokens=%d)", i + 1, len(models_to_try), model, effective_max_tokens)
             try:
                 result = await super().complete(
                     messages=messages,
@@ -244,6 +257,7 @@ class OpenRouterProvider(OpenAIProvider):
                 )
                 if model != original_model:
                     logger.info("Fallback: %s unavailable, used %s", original_model, model)
+                self.last_fallback_log.append({"model": model, "status": "ok"})
                 return result
             except Exception as exc:
                 self._model = original_model
@@ -258,6 +272,7 @@ class OpenRouterProvider(OpenAIProvider):
                             "Credit limit on %s: reducing max_tokens to %d",
                             model, effective_max_tokens,
                         )
+                        self.last_fallback_log.append({"model": model, "status": "402", "detail": f"reduced to {affordable} tok"})
                         # Retry same model with lower max_tokens
                         self._model = model
                         try:
@@ -268,9 +283,13 @@ class OpenRouterProvider(OpenAIProvider):
                                 max_tokens=effective_max_tokens,
                                 temperature=temperature,
                             )
+                            self.last_fallback_log.append({"model": model, "status": "ok", "detail": f"max_tokens={effective_max_tokens}"})
                             return result
-                        except Exception:
+                        except Exception as retry_exc:
                             self._model = original_model
+                            self.last_fallback_log.append({"model": model, "status": "402", "detail": f"retry failed: {str(retry_exc)[:80]}"})
+                    else:
+                        self.last_fallback_log.append({"model": model, "status": "402", "detail": f"affordable={affordable}"})
                     # Fall through to try cheaper models
                     logger.warning("Insufficient credits for %s, trying cheaper model...", model)
                     last_error = exc
@@ -280,22 +299,26 @@ class OpenRouterProvider(OpenAIProvider):
                 # 404: data policy or model not found — skip this model
                 if "404" in err_str or "data policy" in err_str.lower() or "No endpoints" in err_str:
                     logger.warning("Model %s blocked (data policy/404), trying next...", model)
+                    self.last_fallback_log.append({"model": model, "status": "404", "detail": "data policy/not found"})
                     last_error = exc
                     continue
 
                 # 400: provider error (e.g. model doesn't support system prompt)
                 if "400" in err_str and "Provider returned error" in err_str:
                     logger.warning("Model %s returned provider error, trying next...", model)
+                    self.last_fallback_log.append({"model": model, "status": "400", "detail": "provider error"})
                     last_error = exc
                     continue
 
                 # 429: rate limited — try next model
                 if "429" in err_str or "rate" in err_str.lower():
                     logger.warning("Rate limited on %s, trying next...", model)
+                    self.last_fallback_log.append({"model": model, "status": "429", "detail": "rate limited"})
                     last_error = exc
                     await asyncio.sleep(0.5)
                     continue
 
+                self.last_fallback_log.append({"model": model, "status": "error", "detail": err_str[:80]})
                 raise
         raise last_error  # type: ignore[misc]
 

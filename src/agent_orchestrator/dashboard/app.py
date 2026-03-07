@@ -236,6 +236,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     "success": result.get("success"),
                     "output": result.get("output", "")[:2000],
                     "plan": result.get("plan", "")[:1000],
+                    "agent_costs": result.get("agent_costs", {}),
                     "total_tokens": result.get("total_tokens"),
                     "total_cost_usd": result.get("total_cost_usd"),
                     "elapsed_s": result.get("elapsed_s"),

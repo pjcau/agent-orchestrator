@@ -163,6 +163,7 @@ async def run_agent(
         "error": result.error,
         "files_created": artifacts.get("files_created", []),
         "step_log": artifacts.get("step_log", []),
+        "fallback_log": artifacts.get("fallback_log", []),
     }
 
 
@@ -195,6 +196,7 @@ async def _instrumented_execute(
     start_time = time.monotonic()
     files_created: list[str] = []
     step_log: list[str] = []
+    fallback_log: list[dict] = []
 
     while steps < config.max_steps:
         # Timeout check
@@ -207,7 +209,7 @@ async def _instrumented_execute(
                 total_tokens=total_tokens,
                 total_cost_usd=total_cost,
                 error=f"Timeout after {elapsed:.0f}s",
-                artifacts={"files_created": files_created, "step_log": step_log},
+                artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
             )
 
         # Emit step event
@@ -225,6 +227,10 @@ async def _instrumented_execute(
             system=config.role,
         )
 
+        # Collect fallback info from OpenRouter provider
+        if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
+            fallback_log.extend(provider.last_fallback_log)
+
         total_tokens += completion.usage.input_tokens + completion.usage.output_tokens
         total_cost += completion.usage.cost_usd
         steps += 1
@@ -237,7 +243,7 @@ async def _instrumented_execute(
                 steps_taken=steps,
                 total_tokens=total_tokens,
                 total_cost_usd=total_cost,
-                artifacts={"files_created": files_created, "step_log": step_log},
+                artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
             )
 
         # Process tool calls
@@ -262,7 +268,7 @@ async def _instrumented_execute(
                     total_tokens=total_tokens,
                     total_cost_usd=total_cost,
                     error=f"Max retries exceeded for: {approach_key}",
-                    artifacts={"files_created": files_created, "step_log": step_log},
+                    artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
                 )
 
             # Emit tool call event
@@ -320,7 +326,7 @@ async def _instrumented_execute(
         total_tokens=total_tokens,
         total_cost_usd=total_cost,
         error=f"Max steps ({config.max_steps}) reached",
-        artifacts={"files_created": files_created, "step_log": step_log},
+        artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
     )
 
 
@@ -343,6 +349,8 @@ async def run_team(
     total_tokens = 0
     total_cost = 0.0
     agent_outputs: dict[str, str] = {}
+    agent_costs: dict[str, dict[str, Any]] = {}
+    all_fallback_logs: list[dict] = []
 
     # --- Step 1: Team-lead plans ---
     await bus.emit(Event(
@@ -366,9 +374,19 @@ async def run_team(
             "Be specific about file names and structure. Be concise."
         ),
     )
-    total_tokens += plan_completion.usage.input_tokens + plan_completion.usage.output_tokens
-    total_cost += plan_completion.usage.cost_usd
+    if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
+        all_fallback_logs.extend({"agent": "team-lead (plan)", **e} for e in provider.last_fallback_log)
+
+    plan_tokens = plan_completion.usage.input_tokens + plan_completion.usage.output_tokens
+    plan_cost = plan_completion.usage.cost_usd
+    total_tokens += plan_tokens
+    total_cost += plan_cost
     plan = plan_completion.content
+    agent_costs["team-lead (plan)"] = {
+        "tokens": plan_tokens,
+        "cost_usd": plan_cost,
+        "steps": 1,
+    }
 
     await bus.emit(Event(
         event_type=EventType.AGENT_COMPLETE,
@@ -432,11 +450,20 @@ async def run_team(
             working_directory=working_directory,
         )
 
-        total_tokens += result.get("total_tokens", 0)
-        total_cost += result.get("total_cost_usd", 0.0)
+        agent_tok = result.get("total_tokens", 0)
+        agent_cost = result.get("total_cost_usd", 0.0)
+        total_tokens += agent_tok
+        total_cost += agent_cost
         agent_outputs[agent_def["name"]] = result.get("output", result.get("error", ""))
         agent_files[agent_def["name"]] = result.get("files_created", [])
         agent_steps[agent_def["name"]] = result.get("step_log", [])
+        agent_costs[agent_def["name"]] = {
+            "tokens": agent_tok,
+            "cost_usd": agent_cost,
+            "steps": result.get("steps_taken", 0),
+        }
+        for fb in result.get("fallback_log", []):
+            all_fallback_logs.append({"agent": agent_def["name"], **fb})
 
         await bus.emit(Event(
             event_type=EventType.TASK_COMPLETED,
@@ -483,9 +510,19 @@ async def run_team(
             "If files were created, the work IS done — describe what was built."
         ),
     )
-    total_tokens += summary_completion.usage.input_tokens + summary_completion.usage.output_tokens
-    total_cost += summary_completion.usage.cost_usd
+    if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
+        all_fallback_logs.extend({"agent": "team-lead (summary)", **e} for e in provider.last_fallback_log)
+
+    summary_tokens = summary_completion.usage.input_tokens + summary_completion.usage.output_tokens
+    summary_cost = summary_completion.usage.cost_usd
+    total_tokens += summary_tokens
+    total_cost += summary_cost
     summary = summary_completion.content
+    agent_costs["team-lead (summary)"] = {
+        "tokens": summary_tokens,
+        "cost_usd": summary_cost,
+        "steps": 1,
+    }
 
     await bus.emit(Event(
         event_type=EventType.AGENT_COMPLETE,
@@ -505,6 +542,8 @@ async def run_team(
         "output": summary,
         "plan": plan,
         "agent_outputs": agent_outputs,
+        "agent_costs": agent_costs,
+        "fallback_log": all_fallback_logs,
         "files_created": all_files,
         "total_tokens": total_tokens,
         "total_cost_usd": total_cost,

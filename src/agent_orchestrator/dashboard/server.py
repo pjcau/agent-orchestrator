@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import uvicorn
 
 from .app import create_dashboard_app
@@ -20,6 +21,8 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=5005, help="Bind port")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
     args = parser.parse_args()
+
+    logging.basicConfig(level=logging.WARNING)
 
     bus = EventBus.get()
 
