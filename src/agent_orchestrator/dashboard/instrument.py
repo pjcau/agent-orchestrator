@@ -238,7 +238,6 @@ def _instrument_cooperation(bus: EventBus) -> None:
 
 def _instrument_cache(bus: EventBus) -> None:
     original_get = InMemoryCache.get
-    original_put = InMemoryCache.put
 
     @functools.wraps(original_get)
     def patched_get(self, key):

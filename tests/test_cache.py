@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-import pytest
 
 from agent_orchestrator.core.cache import (
     InMemoryCache,

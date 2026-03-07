@@ -1,7 +1,6 @@
 """Tests for conformance test suites (v1.1 Sprint 1)."""
 
 import asyncio
-import pytest
 
 from agent_orchestrator.core.conformance import (
     run_checkpointer_conformance,

@@ -4,7 +4,6 @@ import operator
 import pytest
 
 from agent_orchestrator.core.channels import (
-    BaseChannel,
     LastValue,
     BinaryOperatorChannel,
     TopicChannel,

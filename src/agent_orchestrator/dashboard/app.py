@@ -63,6 +63,12 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             "jobs_dir": str(job_logger.session_dir),
         })
 
+    @app.get("/api/session/history")
+    async def session_history():
+        """Return all job records from the current session for chat restoration."""
+        records = job_logger.get_history()
+        return JSONResponse(content={"session_id": job_logger.session_id, "records": records})
+
     @app.get("/api/snapshot")
     async def snapshot():
         return JSONResponse(content=bus.get_snapshot())

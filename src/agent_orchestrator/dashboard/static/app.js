@@ -726,7 +726,7 @@
         addChatBubble("assistant", `Replay error: ${data.error || "Unknown"}`);
       }
     } catch (e) { graphNodeStates[name] = "done"; renderGraph(); addChatBubble("assistant", `Replay failed: ${e.message}`); }
-    isRunning = false;
+    setRunning(false);
   };
 
   // --- Reset Graph ---
@@ -1033,26 +1033,110 @@
         if (data.speed) lastTokenSpeed = data.speed;
         if (data.usage) snapshot.total_tokens = (snapshot.total_tokens || 0) + (data.usage.output_tokens || 0);
         renderHeader();
-        isRunning = false;
-        $btnSend.disabled = false;
-        $promptInput.disabled = false;
-        $promptInput.focus();
+        setRunning(false);
       } else if (data.type === "error") {
         const bubble = $("streaming-bubble");
         if (bubble) bubble.remove();
         addChatBubble("assistant", `Error: ${data.error}`);
-        isRunning = false;
-        $btnSend.disabled = false;
-        $promptInput.disabled = false;
+        setRunning(false);
       }
     };
   }
 
+  // --- Session Restore ---
+  async function restoreSessionHistory() {
+    try {
+      const resp = await fetch("/api/session/history");
+      const data = await resp.json();
+      if (!data.records || !data.records.length) return;
+
+      for (const rec of data.records) {
+        const type = rec.job_type;
+        if (type === "prompt" || type === "stream") {
+          addChatBubble("user", rec.prompt || "");
+          const result = rec.result || {};
+          if (result.success !== false && result.output) {
+            addChatBubble("assistant", result.output);
+          } else if (result.error) {
+            addChatBubble("assistant", `Error: ${result.error}`);
+          }
+          if (result.tokens) snapshot.total_tokens += result.tokens;
+        } else if (type === "agent_run") {
+          addChatBubble("user", rec.task || "");
+          const result = rec.result || {};
+          if (result.success) {
+            addChatBubble("assistant", {
+              steps: [{ node: rec.agent || "agent", output: result.output }],
+              usage: { output_tokens: result.total_tokens, model: rec.model },
+              elapsed_s: result.elapsed_s,
+            });
+          } else {
+            addChatBubble("assistant", `Error: ${result.error || "Failed"}`);
+          }
+          if (result.total_tokens) snapshot.total_tokens += result.total_tokens;
+          if (result.total_cost_usd) snapshot.total_cost_usd += result.total_cost_usd;
+        } else if (type === "team_run") {
+          addChatBubble("user", rec.task || "");
+          const result = rec.result || {};
+          if (result.success) {
+            addChatBubble("assistant", {
+              steps: [{ node: "team (summary)", output: result.output }],
+              usage: { output_tokens: result.total_tokens, model: rec.model },
+              elapsed_s: result.elapsed_s,
+            });
+          } else {
+            addChatBubble("assistant", `Error: ${result.error || "Failed"}`);
+          }
+          if (result.total_tokens) snapshot.total_tokens += result.total_tokens;
+          if (result.total_cost_usd) snapshot.total_cost_usd += result.total_cost_usd;
+        }
+      }
+      renderHeader();
+    } catch (e) { /* ignore restore errors */ }
+  }
+
+  // --- Collapsible Sections ---
+  function initCollapsible() {
+    document.querySelectorAll(".btn-collapse").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const section = document.getElementById(btn.dataset.target);
+        if (!section) return;
+        section.classList.toggle("collapsed");
+        // Save state
+        const collapsed = {};
+        document.querySelectorAll(".collapsible-section").forEach((s) => {
+          collapsed[s.id] = s.classList.contains("collapsed");
+        });
+        try { localStorage.setItem("ao_collapsed", JSON.stringify(collapsed)); } catch(e) {}
+      });
+    });
+    // Also allow clicking the section header row to toggle
+    document.querySelectorAll(".section-header").forEach((hdr) => {
+      hdr.addEventListener("click", (e) => {
+        // Don't toggle if clicking on controls (select, button other than collapse)
+        if (e.target.closest("select, .logs-controls button, .btn-graph-ctrl, .agent-badges")) return;
+        const btn = hdr.querySelector(".btn-collapse");
+        if (btn) btn.click();
+      });
+    });
+    // Restore state
+    try {
+      const saved = JSON.parse(localStorage.getItem("ao_collapsed") || "{}");
+      for (const [id, isCollapsed] of Object.entries(saved)) {
+        const section = document.getElementById(id);
+        if (section && isCollapsed) section.classList.add("collapsed");
+      }
+    } catch(e) {}
+  }
+
   // --- Init ---
+  initCollapsible();
   loadModels();
   loadAgents();
   loadPresets();
   startNewConversation();
+  restoreSessionHistory();
 
   fetch("/api/events?limit=200")
     .then((r) => r.json())

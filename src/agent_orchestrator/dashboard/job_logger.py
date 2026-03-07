@@ -89,3 +89,16 @@ class JobLogger:
         filepath = self._session_dir / filename
         filepath.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
         return filepath
+
+    def get_history(self) -> list[dict[str, Any]]:
+        """Load all job records from the current session directory (sorted)."""
+        self._check_session()
+        records: list[dict[str, Any]] = []
+        if not self._session_dir.exists():
+            return records
+        for f in sorted(self._session_dir.glob("*.json")):
+            try:
+                records.append(json.loads(f.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError):
+                continue
+        return records

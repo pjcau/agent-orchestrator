@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Any, Callable, Awaitable
 
 from .checkpoint import Checkpoint, Checkpointer
-from .channels import BaseChannel, ChannelManager, LastValue, BinaryOperatorChannel
+from .channels import BaseChannel, ChannelManager, BinaryOperatorChannel
 
 
 # Sentinel nodes
