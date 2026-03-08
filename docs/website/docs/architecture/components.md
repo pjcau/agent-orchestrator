@@ -7,240 +7,185 @@ title: Component Interactions
 
 ## High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Dashboard (FastAPI)                              │
-│  ┌──────────┐  ┌───────────┐  ┌────────────┐  ┌──────────────────────┐ │
-│  │ REST API │  │ WebSocket │  │ Streaming  │  │ Static UI (JS/CSS)   │ │
-│  │ /api/*   │  │ /ws       │  │ /ws/stream │  │ index.html + app.js  │ │
-│  └────┬─────┘  └─────┬─────┘  └─────┬──────┘  └──────────────────────┘ │
-│       │               │              │                                   │
-│  ┌────▼───────────────▼──────────────▼──────┐  ┌──────────────────────┐ │
-│  │            EventBus (events.py)          │  │  JobLogger           │ │
-│  │  emit() → WebSocket broadcast to UI      │  │  jobs/job_<session>/ │ │
-│  └────┬─────────────────────────────────────┘  └──────────────────────┘ │
-└───────┼─────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      Execution Layer                                     │
-│                                                                          │
-│  ┌─────────────────┐    ┌──────────────────┐    ┌────────────────────┐  │
-│  │   run_team()    │    │   run_agent()    │    │   graphs.py        │  │
-│  │  (multi-agent)  │    │  (single agent)  │    │  (graph prompts)   │  │
-│  │                 │    │                  │    │                    │  │
-│  │ 1. team-lead    │    │ LLM loop with   │    │ StateGraph-based   │  │
-│  │    plans        │──▶ │ tool execution   │    │ orchestration      │  │
-│  │ 2. sub-agents   │    │                  │    │                    │  │
-│  │    execute      │    │                  │    │                    │  │
-│  │ 3. team-lead    │    │                  │    │                    │  │
-│  │    summarizes   │    │                  │    │                    │  │
-│  └────────┬────────┘    └────────┬─────────┘    └────────┬───────────┘  │
-│           │                      │                       │               │
-│           ▼                      ▼                       ▼               │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                    SkillRegistry                                  │   │
-│  │  ┌───────────┐ ┌────────────┐ ┌───────────┐ ┌────────────────┐  │   │
-│  │  │ FileRead  │ │ FileWrite  │ │ GlobSearch│ │ ShellExec      │  │   │
-│  │  │           │ │            │ │           │ │ (sandboxed)    │  │   │
-│  │  └───────────┘ └────────────┘ └───────────┘ └────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      Provider Layer                                      │
-│                                                                          │
-│  ┌─────────────┐ ┌──────────┐ ┌────────────┐ ┌────────────┐ ┌───────┐ │
-│  │ Anthropic   │ │ OpenAI   │ │  Google    │ │ OpenRouter │ │ Local │ │
-│  │ (Claude)    │ │ (GPT)    │ │ (Gemini)   │ │ (free)     │ │(Ollama│ │
-│  └──────┬──────┘ └────┬─────┘ └─────┬──────┘ └─────┬──────┘ └───┬───┘ │
-│         │              │             │               │            │      │
-│         └──────────────┴─────────────┴───────────────┘            │      │
-│                        │ (cloud APIs)                             │      │
-│                        ▼                                          ▼      │
-│                   Internet                              host.docker      │
-│                                                        .internal:11434   │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Dashboard["Dashboard (FastAPI)"]
+        REST["REST API /api/*"]
+        WS["WebSocket /ws"]
+        STREAM["Streaming /ws/stream"]
+        UI["Static UI (JS/CSS)"]
+        REST --> EB
+        WS --> EB
+        STREAM --> EB
+        EB["EventBus (events.py)"]
+        JL["JobLogger"]
+    end
+
+    subgraph Execution["Execution Layer"]
+        RT["run_team() (multi-agent)"]
+        RA["run_agent() (single agent)"]
+        GR["graphs.py (StateGraph)"]
+        RT --> RA
+        RT --> SR
+        RA --> SR
+        GR --> SR
+        subgraph SR["SkillRegistry"]
+            FR["FileRead"]
+            FW["FileWrite"]
+            GS["GlobSearch"]
+            SE["ShellExec (sandboxed)"]
+        end
+    end
+
+    subgraph Providers["Provider Layer"]
+        AN["Anthropic (Claude)"]
+        OA["OpenAI (GPT)"]
+        GO["Google (Gemini)"]
+        OR["OpenRouter (free)"]
+        LO["Local (Ollama)"]
+        AN & OA & GO & OR --> INT["Internet (cloud APIs)"]
+        LO --> LOC["host.docker.internal:11434"]
+    end
+
+    EB --> RT
+    EB --> RA
+    Execution --> Providers
 ```
 
 ## Core Module Interactions
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                         core/                                     │
-│                                                                   │
-│  provider.py ◄──────────── All providers implement this ABC      │
-│       │                                                           │
-│       ▼                                                           │
-│  agent.py ◄───── AgentConfig + Task + TaskResult                 │
-│       │                                                           │
-│       ├──▶ skill.py ◄──── SkillRegistry (tools for agents)      │
-│       │                                                           │
-│       ├──▶ cooperation.py ◄── Inter-agent messaging protocol     │
-│       │         │                                                 │
-│       │         ▼                                                 │
-│       ├──▶ orchestrator.py ◄── Coordinates agents + routing      │
-│       │         │                                                 │
-│       │         ▼                                                 │
-│       │    router.py ◄── 6 routing strategies                    │
-│       │         │                                                 │
-│       │         ├──▶ usage.py ◄── Cost tracking + budgets        │
-│       │         └──▶ health.py ◄── Provider health monitoring    │
-│       │                                                           │
-│       ▼                                                           │
-│  graph.py ◄──── StateGraph engine                                │
-│       │                                                           │
-│       ├──▶ llm_nodes.py ◄── Node factories for LLM calls        │
-│       ├──▶ reducers.py ◄── State merge strategies                │
-│       ├──▶ graph_patterns.py ◄── Retry, loop, map-reduce        │
-│       ├──▶ graph_templates.py ◄── Versioned template store       │
-│       └──▶ checkpoint.py ◄── State persistence                   │
-│                 │                                                 │
-│                 └──▶ checkpoint_postgres.py ◄── Postgres backend │
-│                                                                   │
-│  ┌─── Infrastructure modules (standalone) ───────────────────┐   │
-│  │ rate_limiter.py  — Per-provider rate limiting             │   │
-│  │ audit.py         — Structured audit logging (11 events)   │   │
-│  │ task_queue.py    — Priority queue with retries            │   │
-│  │ metrics.py       — Prometheus-compatible metrics          │   │
-│  │ alerts.py        — Spend alert rules                      │   │
-│  │ benchmark.py     — Model benchmarking suite               │   │
-│  └───────────────────────────────────────────────────────────┘   │
-│                                                                   │
-│  ┌─── Extension modules ─────────────────────────────────────┐   │
-│  │ plugins.py        — Plugin manifest & loader              │   │
-│  │ webhook.py        — Webhook registry + HMAC validation    │   │
-│  │ mcp_server.py     — MCP tool/resource registry            │   │
-│  │ offline.py        — Local-only provider filtering         │   │
-│  │ config_manager.py — Config load/save/validate/rollback    │   │
-│  │ project.py        — Multi-project support                 │   │
-│  │ users.py          — RBAC: admin, developer, viewer        │   │
-│  │ provider_presets.py — One-click provider presets           │   │
-│  │ migration.py      — Import from LangGraph/CrewAI/AutoGen  │   │
-│  │ api.py            — Versioned REST API (OpenAPI 3.0)      │   │
-│  └───────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    P["provider.py — ABC"] --> A["agent.py"]
+    A --> SK["skill.py — SkillRegistry"]
+    A --> CO["cooperation.py — Messaging"]
+    CO --> OR["orchestrator.py — Coordination"]
+    OR --> RO["router.py — 6 strategies"]
+    RO --> US["usage.py — Cost & budgets"]
+    RO --> HE["health.py — Health monitoring"]
+    A --> G["graph.py — StateGraph engine"]
+    G --> LN["llm_nodes.py — LLM node factories"]
+    G --> RE["reducers.py — State merge"]
+    G --> GP["graph_patterns.py — Retry, loop, map-reduce"]
+    G --> GT["graph_templates.py — Versioned templates"]
+    G --> CP["checkpoint.py — State persistence"]
+    CP --> PG["checkpoint_postgres.py"]
+
+    subgraph Infra["Infrastructure (standalone)"]
+        RL["rate_limiter.py"]
+        AU["audit.py — 11 event types"]
+        TQ["task_queue.py — Priority queue"]
+        ME["metrics.py — Prometheus"]
+        AL["alerts.py — Spend alerts"]
+        BM["benchmark.py"]
+    end
+
+    subgraph Ext["Extensions"]
+        PL["plugins.py — Plugin loader"]
+        WH["webhook.py — HMAC validation"]
+        MC["mcp_server.py — MCP registry"]
+        OF["offline.py — Local-only filter"]
+        CM["config_manager.py — Config rollback"]
+        PR["project.py — Multi-project"]
+        UR["users.py — RBAC"]
+        PP["provider_presets.py"]
+        MI["migration.py — Import LangGraph/CrewAI"]
+        AP["api.py — REST API (OpenAPI 3.0)"]
+    end
 ```
 
 ## Dashboard Request Flow
 
-```
-User Browser                    FastAPI (app.py)              Agent Layer
-─────────────                   ────────────────              ───────────
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant F as FastAPI
+    participant T as run_team()
+    participant A as run_agent()
 
-  ┌─────────────┐
-  │ Select mode │
-  │ + provider  │
-  │ + model     │
-  └──────┬──────┘
-         │
-         │  Multi-Agent mode
-         ├──────────────────────▶ POST /api/team/run
-         │                              │
-         │                              ├──▶ run_team()
-         │                              │      │
-         │                              │      ├──▶ team-lead: LLM plan
-         │                              │      │         │
-         │                              │      │    ┌────▼────────┐
-         │                              │      │    │ Sub-tasks:  │
-         │                              │      │    │ - BACKEND   │
-         │                              │      │    │ - FRONTEND  │
-         │                              │      │    └────┬────────┘
-         │                              │      │         │
-         │                              │      ├──▶ run_agent("backend-dev")
-         │                              │      │    ├── LLM → tool_call → file_write
-         │                              │      │    ├── LLM → tool_call → shell_exec
-         │  ◀── WebSocket events ───────│──────│    └── ... (max_steps iterations)
-         │  (agent_spawn, tool_call,    │      │
-         │   tool_result, complete)     │      ├──▶ run_agent("frontend-dev")
-         │                              │      │    ├── LLM → tool_call → file_write
-         │                              │      │    └── ...
-         │                              │      │
-         │                              │      └──▶ team-lead: LLM summary
-         │                              │
-         │  ◀────────────────────────── │ JSON response
-         │                              │
-         │  Single Agent mode           │
-         ├──────────────────────▶ POST /api/agent/run
-         │                              │
-         │                              └──▶ run_agent()
-         │  ◀── WebSocket events ──────────── (tool calls, results)
-         │  ◀── JSON response ─────────────
-         │
-         │  Simple Prompt mode
-         ├──────────────────────▶ WS /ws/stream  (if streaming)
-         │  ◀── token, token, done ────────
-         │
-         └──────────────────────▶ POST /api/graph/run  (if not streaming)
-            ◀── JSON response ─────────────
+    rect rgb(230, 240, 255)
+        Note over B,A: Multi-Agent Mode
+        B->>F: POST /api/team/run
+        F->>T: run_team()
+        T->>T: team-lead plans (LLM)
+        T->>A: run_agent("backend-dev")
+        A-->>B: WebSocket: agent_spawn, tool_call, tool_result
+        T->>A: run_agent("frontend-dev")
+        A-->>B: WebSocket: agent_spawn, tool_call, tool_result
+        T->>T: team-lead summarizes
+        F-->>B: JSON response
+    end
+
+    rect rgb(240, 255, 240)
+        Note over B,A: Single Agent Mode
+        B->>F: POST /api/agent/run
+        F->>A: run_agent()
+        A-->>B: WebSocket events
+        F-->>B: JSON response
+    end
+
+    rect rgb(255, 245, 230)
+        Note over B,F: Simple Prompt Mode
+        B->>F: WS /ws/stream
+        F-->>B: token, token, ..., done
+    end
 ```
 
 ## Multi-Agent Team Flow
 
-```
-                    ┌─────────────┐
-                    │  team-lead  │
-                    │  (planner)  │
-                    └──────┬──────┘
-                           │
-                    Plan decomposition
-                    (LLM call, no tools)
-                           │
-              ┌────────────┼────────────┐
-              │                         │
-              ▼                         ▼
-    ┌──────────────────┐     ┌──────────────────┐
-    │   backend-dev    │     │   frontend-dev   │
-    │                  │     │                  │
-    │ Tools:           │     │ Tools:           │
-    │ - file_read      │     │ - file_read      │
-    │ - file_write     │     │ - file_write     │
-    │ - glob_search    │     │ - glob_search    │
-    │ - shell_exec     │     │ - shell_exec     │
-    │                  │     │                  │
-    │ working_dir:     │     │ working_dir:     │
-    │ jobs/job_<sess>/ │     │ jobs/job_<sess>/ │
-    └────────┬─────────┘     └────────┬─────────┘
-             │                        │
-             │   Agent outputs        │
-             └────────┬───────────────┘
-                      │
-               ┌──────▼──────┐
-               │  team-lead  │
-               │ (summarizer)│
-               │             │
-               │ Reads all   │
-               │ agent output│
-               │ → summary   │
-               └─────────────┘
+```mermaid
+graph TD
+    TL1["team-lead (planner)"] -->|"Plan decomposition (LLM)"| SPLIT{" "}
+    SPLIT --> BE["backend-dev<br/>Tools: file_read, file_write,<br/>glob_search, shell_exec"]
+    SPLIT --> FE["frontend-dev<br/>Tools: file_read, file_write,<br/>glob_search, shell_exec"]
+    BE -->|"Agent output"| TL2["team-lead (summarizer)<br/>Reads all agent output → summary"]
+    FE -->|"Agent output"| TL2
+
+    style TL1 fill:#4a90d9,color:#fff
+    style TL2 fill:#4a90d9,color:#fff
+    style BE fill:#7bc67e,color:#fff
+    style FE fill:#7bc67e,color:#fff
 ```
 
 ## Event Flow (EventBus)
 
-```
-Agent Execution                    EventBus                  Dashboard UI
-───────────────                    ────────                  ────────────
+```mermaid
+sequenceDiagram
+    participant AG as Agent Execution
+    participant EB as EventBus
+    participant WS as WebSocket
+    participant UI as Dashboard UI
 
-run_agent() starts
-  │
-  ├──▶ AGENT_SPAWN ──────────▶ emit() ──▶ WebSocket ──▶ Agent badge appears
-  │                                                       Graph node: "spawned"
-  │
-  ├──▶ AGENT_STEP ───────────▶ emit() ──▶ WebSocket ──▶ Activity: "Step N"
-  │
-  ├──▶ AGENT_TOOL_CALL ──────▶ emit() ──▶ WebSocket ──▶ Activity: "file_write(...)"
-  │                                                       Graph node: "working"
-  │
-  ├──▶ AGENT_TOOL_RESULT ────▶ emit() ──▶ WebSocket ──▶ Activity: "Success/Error"
-  │
-  ├──▶ TOKEN_UPDATE ─────────▶ emit() ──▶ WebSocket ──▶ Header: token count + cost
-  │
-  └──▶ AGENT_COMPLETE ───────▶ emit() ──▶ WebSocket ──▶ Activity: "Done"
-       or AGENT_ERROR                                     Graph node: "done"/"error"
-       or AGENT_STALLED                                   Badge: status color
+    AG->>EB: AGENT_SPAWN
+    EB->>WS: emit()
+    WS->>UI: Agent badge appears
 
-Cooperation events:
-  TASK_ASSIGNED ──────────────▶ emit() ──▶ WebSocket ──▶ Activity: delegation log
-  TASK_COMPLETED ─────────────▶ emit() ──▶ WebSocket ──▶ Activity: completion log
+    AG->>EB: AGENT_STEP
+    EB->>WS: emit()
+    WS->>UI: Activity: "Step N"
+
+    AG->>EB: AGENT_TOOL_CALL
+    EB->>WS: emit()
+    WS->>UI: Activity: "file_write(...)"
+
+    AG->>EB: AGENT_TOOL_RESULT
+    EB->>WS: emit()
+    WS->>UI: Activity: "Success/Error"
+
+    AG->>EB: TOKEN_UPDATE
+    EB->>WS: emit()
+    WS->>UI: Header: token count + cost
+
+    AG->>EB: AGENT_COMPLETE
+    EB->>WS: emit()
+    WS->>UI: Activity: "Done"
+
+    Note over AG,UI: Cooperation events
+    AG->>EB: TASK_ASSIGNED
+    EB->>WS: emit()
+    WS->>UI: Delegation log
+
+    AG->>EB: TASK_COMPLETED
+    EB->>WS: emit()
+    WS->>UI: Completion log
 ```

@@ -15,14 +15,17 @@ Until then, the system runs on AWS t3.medium + OpenRouter at ~42-100 EUR/month.
 
 ## GPU Infrastructure
 
-```
-[AWS EC2 -- Orchestrator + Dashboard]
-      |
-      |--- Complex / fine-tuned -------> [Vast.ai H200 -- vLLM]
-      |
-      |--- Standard / burst traffic ---> [OpenRouter -- Qwen3 30B]
-      |
-      |--- Simple / economical --------> [OpenRouter -- Qwen3.5-Flash]
+```mermaid
+graph LR
+    EC2["AWS EC2<br/>Orchestrator + Dashboard"]
+    EC2 -->|"Complex / fine-tuned"| VAST["Vast.ai H200<br/>vLLM"]
+    EC2 -->|"Standard / burst traffic"| OR1["OpenRouter<br/>Qwen3 30B"]
+    EC2 -->|"Simple / economical"| OR2["OpenRouter<br/>Qwen3.5-Flash"]
+
+    style EC2 fill:#4a90d9,color:#fff
+    style VAST fill:#e6a23c,color:#fff
+    style OR1 fill:#7bc67e,color:#fff
+    style OR2 fill:#7bc67e,color:#fff
 ```
 
 | Task | Detail |

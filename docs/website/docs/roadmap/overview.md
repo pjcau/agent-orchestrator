@@ -55,13 +55,24 @@ AWS infrastructure and monitoring come **first** — the product must be live an
 |---------|---------|-------|------|
 | **Scaling** | Revenue > 600 EUR/mo x 2 months | GPU infra, fine-tuning, enterprise | [Details](./post-mvp-scaling) |
 
-```
-NOW            Month 1          Month 2-4        Month 4-6        Month 6+
- |               |                 |                |                |
- |  Phase 0      |    Phase 1      |   Phase 2      |   Phase 3      |  Phase 4
- |──┬─────────────┬────────────────┬────────────────┬────────────────┬──────
-    |             |                |                |                |
-  AWS+Grafana  Sandbox+Sprint   Revenue+Optimize  Platform        GPU Scaling
-  Prometheus   Agent Autonomy   Beta Users        Full Agile      Fine-tuning
-  Monitoring   LangFuse         Pricing           Marketplace     Enterprise
+```mermaid
+gantt
+    title Roadmap Timeline
+    dateFormat YYYY-MM
+    axisFormat %b
+
+    section Phase 0
+    AWS + Grafana + Prometheus           :active, p0, 2026-03, 30d
+
+    section Phase 1
+    Sandbox + Agent Autonomy + LangFuse  :p1, after p0, 30d
+
+    section Phase 2
+    Revenue + Optimize + Beta Users      :p2, after p1, 60d
+
+    section Phase 3
+    Platform + Full Agile + Marketplace  :p3, after p2, 60d
+
+    section Phase 4
+    GPU Scaling + Fine-tuning + Enterprise :p4, after p3, 60d
 ```

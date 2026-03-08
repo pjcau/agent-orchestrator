@@ -7,15 +7,21 @@ title: Financial Summary
 
 ## Cost Progression
 
-```
-Phase 0 (NOW)       Phase 1 (M1)        Phase 2 (M2-4)      Phase 3 (M4-6)      Phase 4 (M6+)
-AWS + Monitoring    Agent Autonomy      Optimization        Platform Maturity    Hybrid Scaling
- 42 EUR/mo           42 EUR/mo           42-100 EUR/mo       100-300 EUR/mo       625+ EUR/mo
+```mermaid
+graph LR
+    P0["Phase 0 (NOW)<br/>AWS + Monitoring<br/><b>42 EUR/mo</b>"]
+    P1["Phase 1 (M1)<br/>Agent Autonomy<br/><b>42 EUR/mo</b>"]
+    P2["Phase 2 (M2-4)<br/>Optimization<br/><b>42-100 EUR/mo</b>"]
+    P3["Phase 3 (M4-6)<br/>Platform Maturity<br/><b>100-300 EUR/mo</b>"]
+    P4["Phase 4 (M6+)<br/>Hybrid Scaling<br/><b>625+ EUR/mo</b>"]
 
-EC2 + Prometheus    + Sandbox preview   + Smart routing     + Full agile mode    + Vast.ai H200
-Grafana dashboards  + Sprint simulation + Prompt caching    + Skill marketplace  + Fine-tuning
-HTTPS + nginx       + LangFuse traces   + Beta users        + Provider failover  + Enterprise
-                    + Quality scoring   + Pricing model     + Observability      + SLA / SSO
+    P0 --> P1 --> P2 --> P3 --> P4
+
+    style P0 fill:#7bc67e,color:#fff
+    style P1 fill:#4a90d9,color:#fff
+    style P2 fill:#e6a23c,color:#fff
+    style P3 fill:#d94a4a,color:#fff
+    style P4 fill:#9b59b6,color:#fff
 ```
 
 ## Phase 4 Cost Breakdown

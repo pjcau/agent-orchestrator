@@ -25,86 +25,116 @@ Agents are **provider-parameterized** — the same agent definition can run on C
 Agents are organised by **category** under `.claude/agents/<category>/`.
 The `team-lead` lives at root level and coordinates all categories.
 
-```
-team-lead (sonnet) ──── orchestrator, coordinates all categories
+```mermaid
+graph TD
+    TL["team-lead (sonnet)<br/>orchestrator, coordinates all categories"]
+
+    style TL fill:#4a90d9,color:#fff
 ```
 
 ### Software Engineering (6 agents)
 
-```
-.claude/agents/software-engineering/
-  ├── backend (sonnet) ──────── API, database, server logic
-  ├── frontend (sonnet) ─────── UI, state management, styling
-  ├── devops (sonnet) ───────── Docker/OrbStack, CI/CD, infra
-  ├── platform-engineer (sonnet) system design, scalability
-  ├── ai-engineer (opus) ────── LLM integration, prompts
-  └── scout (opus) ──────────── GitHub pattern discovery
+```mermaid
+graph TD
+    SE["Software Engineering"]
+    SE --> BE["backend (sonnet)<br/>API, database, server logic"]
+    SE --> FE["frontend (sonnet)<br/>UI, state management, styling"]
+    SE --> DO["devops (sonnet)<br/>Docker/OrbStack, CI/CD, infra"]
+    SE --> PE["platform-engineer (sonnet)<br/>system design, scalability"]
+    SE --> AI["ai-engineer (opus)<br/>LLM integration, prompts"]
+    SE --> SC["scout (opus)<br/>GitHub pattern discovery"]
+
+    style SE fill:#4a90d9,color:#fff
+    style AI fill:#e6a23c,color:#fff
+    style SC fill:#e6a23c,color:#fff
 ```
 
 ### Data Science (5 agents)
 
-```
-.claude/agents/data-science/
-  ├── data-analyst (sonnet) ──── EDA, statistical testing, visualization
-  ├── ml-engineer (opus) ─────── model training, evaluation, MLOps
-  ├── data-engineer (sonnet) ─── ETL pipelines, data warehousing, quality
-  ├── nlp-specialist (opus) ──── text processing, embeddings, NER, RAG
-  └── bi-analyst (sonnet) ────── dashboards, KPI metrics, data storytelling
+```mermaid
+graph TD
+    DS["Data Science"]
+    DS --> DA["data-analyst (sonnet)<br/>EDA, statistical testing, visualization"]
+    DS --> ML["ml-engineer (opus)<br/>model training, evaluation, MLOps"]
+    DS --> DE["data-engineer (sonnet)<br/>ETL pipelines, data warehousing, quality"]
+    DS --> NLP["nlp-specialist (opus)<br/>text processing, embeddings, NER, RAG"]
+    DS --> BI["bi-analyst (sonnet)<br/>dashboards, KPI metrics, data storytelling"]
+
+    style DS fill:#7bc67e,color:#fff
+    style ML fill:#e6a23c,color:#fff
+    style NLP fill:#e6a23c,color:#fff
 ```
 
 ### Finance (5 agents)
 
-```
-.claude/agents/finance/
-  ├── financial-analyst (sonnet) ── financial modeling, valuation, forecasting
-  ├── risk-analyst (opus) ─────── VaR, stress testing, regulatory compliance
-  ├── quant-developer (opus) ──── algorithmic trading, backtesting, signals
-  ├── compliance-officer (sonnet)  audit trails, KYC/AML, policy enforcement
-  └── accountant (sonnet) ──────── bookkeeping, reconciliation, tax prep
+```mermaid
+graph TD
+    FIN["Finance"]
+    FIN --> FA["financial-analyst (sonnet)<br/>financial modeling, valuation, forecasting"]
+    FIN --> RA["risk-analyst (opus)<br/>VaR, stress testing, regulatory compliance"]
+    FIN --> QD["quant-developer (opus)<br/>algorithmic trading, backtesting, signals"]
+    FIN --> CO["compliance-officer (sonnet)<br/>audit trails, KYC/AML, policy enforcement"]
+    FIN --> AC["accountant (sonnet)<br/>bookkeeping, reconciliation, tax prep"]
+
+    style FIN fill:#d94a4a,color:#fff
+    style RA fill:#e6a23c,color:#fff
+    style QD fill:#e6a23c,color:#fff
 ```
 
 ### Marketing (5 agents)
 
-```
-.claude/agents/marketing/
-  ├── content-strategist (sonnet) ── content planning, brand voice, SEO copy
-  ├── seo-specialist (sonnet) ────── keyword research, technical SEO, links
-  ├── growth-hacker (opus) ─────── acquisition funnels, A/B tests, CRO
-  ├── social-media-manager (sonnet)  social strategy, community, paid social
-  └── email-marketer (sonnet) ────── campaigns, automation, segmentation
+```mermaid
+graph TD
+    MKT["Marketing"]
+    MKT --> CS["content-strategist (sonnet)<br/>content planning, brand voice, SEO copy"]
+    MKT --> SEO["seo-specialist (sonnet)<br/>keyword research, technical SEO, links"]
+    MKT --> GH["growth-hacker (opus)<br/>acquisition funnels, A/B tests, CRO"]
+    MKT --> SM["social-media-manager (sonnet)<br/>social strategy, community, paid social"]
+    MKT --> EM["email-marketer (sonnet)<br/>campaigns, automation, segmentation"]
+
+    style MKT fill:#9b59b6,color:#fff
+    style GH fill:#e6a23c,color:#fff
 ```
 
 ## Cross-Agent Dependencies
 
 ### Software Engineering
-```
-Backend  ↔ Frontend:  API contracts, data models
-Backend  ↔ Platform:  database, caching, queues
-DevOps   ↔ All:       Docker, CI/CD, deployment
-AI-Eng   ↔ Backend:   provider implementations
-Scout    →  All:       discovers patterns, creates PRs
+
+```mermaid
+graph LR
+    BE["Backend"] <-->|"API contracts, data models"| FE["Frontend"]
+    BE <-->|"database, caching, queues"| PE["Platform"]
+    DO["DevOps"] <-->|"Docker, CI/CD, deployment"| BE & FE & PE & AI
+    AI["AI-Eng"] <-->|"provider implementations"| BE
+    SC["Scout"] -->|"discovers patterns, creates PRs"| BE & FE & DO & PE & AI
 ```
 
 ### Data Science
-```
-Data-Analyst ↔ ML-Engineer:  feature discovery, model validation
-Data-Engineer ↔ All:         pipeline outputs feed all analysis
-NLP-Specialist ↔ ML-Engineer: text features, embedding models
-BI-Analyst ↔ Data-Analyst:   metrics definitions, data sources
+
+```mermaid
+graph LR
+    DA["Data-Analyst"] <-->|"feature discovery, model validation"| ML["ML-Engineer"]
+    DE["Data-Engineer"] <-->|"pipeline outputs feed all"| DA & ML & NLP & BI
+    NLP["NLP-Specialist"] <-->|"text features, embeddings"| ML
+    BI["BI-Analyst"] <-->|"metrics definitions, data sources"| DA
 ```
 
 ### Finance
-```
-Financial-Analyst ↔ Risk-Analyst:  valuation inputs, risk metrics
-Quant-Developer ↔ Risk-Analyst:   portfolio risk, position limits
-Compliance-Officer ↔ All:         regulatory checks on all outputs
-Accountant ↔ Financial-Analyst:   financial statements, budgets
+
+```mermaid
+graph LR
+    FA["Financial-Analyst"] <-->|"valuation inputs, risk metrics"| RA["Risk-Analyst"]
+    QD["Quant-Developer"] <-->|"portfolio risk, position limits"| RA
+    CO["Compliance-Officer"] <-->|"regulatory checks"| FA & RA & QD & AC
+    AC["Accountant"] <-->|"financial statements, budgets"| FA
 ```
 
 ### Marketing
-```
-Content-Strategist ↔ SEO-Specialist: keyword-driven content
-Growth-Hacker ↔ All:                 experiment design across channels
-Social-Media-Manager ↔ Content:      content distribution
-Email-Marketer ↔ Growth-Hacker:      funnel automation, nurture flows
+
+```mermaid
+graph LR
+    CS["Content-Strategist"] <-->|"keyword-driven content"| SEO["SEO-Specialist"]
+    GH["Growth-Hacker"] <-->|"experiment design"| CS & SEO & SM & EM
+    SM["Social-Media-Manager"] <-->|"content distribution"| CS
+    EM["Email-Marketer"] <-->|"funnel automation, nurture flows"| GH
 ```

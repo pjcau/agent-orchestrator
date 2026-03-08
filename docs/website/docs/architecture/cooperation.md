@@ -7,24 +7,22 @@ title: Cooperation
 
 How agents communicate when tasks span multiple domains.
 
-```
-┌─────────────┐       TaskAssignment        ┌─────────────┐
-│  Team Lead  │ ──────────────────────────→  │  Backend    │
-│             │ ←──────────────────────────  │  Agent      │
-│             │       TaskResult             └─────────────┘
-│             │
-│             │       TaskAssignment        ┌─────────────┐
-│             │ ──────────────────────────→  │  Frontend   │
-│             │ ←──────────────────────────  │  Agent      │
-│             │       TaskResult             └─────────────┘
-└─────────────┘
-       │
-       │  ArtifactShare (shared context)
-       ▼
-┌─────────────────────────────────────────────────┐
-│              Shared Context Store                │
-│  (file changes, API contracts, test results)    │
-└─────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant TL as Team Lead
+    participant BE as Backend Agent
+    participant FE as Frontend Agent
+    participant SC as Shared Context Store
+
+    TL->>BE: TaskAssignment
+    BE-->>TL: TaskResult
+    BE->>SC: ArtifactShare (code, API contracts)
+
+    TL->>FE: TaskAssignment
+    FE-->>TL: TaskResult
+    FE->>SC: ArtifactShare (UI changes, test results)
+
+    Note over SC: file changes, API contracts, test results
 ```
 
 ## Cooperation Patterns

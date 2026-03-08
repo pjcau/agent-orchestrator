@@ -19,12 +19,13 @@ title: "Phase 1: Agent Autonomy Lab"
 
 **Flow:**
 
-```
-Agent produces output
-  → Sandbox executes (lint, test, security scan)
-  → Preview in dashboard (diff view, test results)
-  → Human approves → merge to main
-  → Human rejects → agent retries with feedback
+```mermaid
+flowchart LR
+    A["Agent produces output"] --> B["Sandbox executes<br/>(lint, test, security scan)"]
+    B --> C["Preview in dashboard<br/>(diff view, test results)"]
+    C -->|"Human approves"| D["Merge to main"]
+    C -->|"Human rejects"| E["Agent retries<br/>with feedback"]
+    E --> A
 ```
 
 ## 1B — Agile Team Experiment

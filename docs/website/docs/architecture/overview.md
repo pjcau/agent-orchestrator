@@ -27,15 +27,19 @@ Current agent systems (Claude Code, Cursor, Copilot Workspace) are tightly coupl
 
 ## Agent Team
 
-```
-team-lead (sonnet) ──── orchestrator, 0 skills
-  ├── backend (sonnet) ──────── API, database, server logic
-  ├── frontend (sonnet) ─────── UI, state management, styling
-  ├── devops (sonnet) ───────── Docker/OrbStack, CI/CD, infra
-  ├── platform-engineer (sonnet) system design, scalability, observability
-  └── ai-engineer (opus) ────── LLM integration, prompt engineering
+```mermaid
+graph TD
+    TL["team-lead (sonnet)<br/>orchestrator, 0 skills"]
+    TL --> BE["backend (sonnet)<br/>API, database, server logic"]
+    TL --> FE["frontend (sonnet)<br/>UI, state management, styling"]
+    TL --> DO["devops (sonnet)<br/>Docker/OrbStack, CI/CD, infra"]
+    TL --> PE["platform-engineer (sonnet)<br/>system design, scalability, observability"]
+    TL --> AI["ai-engineer (opus)<br/>LLM integration, prompt engineering"]
 
-scout (opus) ── GitHub pattern discovery, periodic runs
+    SC["scout (opus)<br/>GitHub pattern discovery, periodic runs"]
+
+    style TL fill:#4a90d9,color:#fff
+    style SC fill:#e6a23c,color:#fff
 ```
 
 ## Mapping from Claude Code
