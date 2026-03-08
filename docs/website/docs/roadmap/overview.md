@@ -48,6 +48,7 @@ AWS infrastructure and monitoring come **first** — the product must be live an
 | **v0.8.0** | External Integrations | [Details](./v080-integrations) |
 | **v1.0.0** | General Availability | [Details](./v100-ga) |
 | **v1.1** | LangGraph-Inspired Improvements (channels, HITL, caching, conformance) | [Details](./v110-langgraph-improvements) |
+| **v1.2** | Dynamic Team Routing (team-lead selects agents per task) | [Details](./v120-dynamic-team-routing) |
 
 ## Post-MVP: Scaling
 
