@@ -125,7 +125,7 @@ class TestGetAgentRegistry:
         registry = get_agent_registry()
         se_agents = registry["categories"].get("software-engineering", [])
         se_names = {a["name"] for a in se_agents}
-        assert {"backend", "frontend", "devops", "platform-engineer", "ai-engineer", "scout"}.issubset(se_names)
+        assert {"backend", "frontend", "devops", "platform-engineer", "ai-engineer", "scout", "research-scout"}.issubset(se_names)
 
     def test_data_science_agents(self):
         registry = get_agent_registry()
@@ -150,10 +150,10 @@ class TestGetAgentRegistry:
         total_in_categories = sum(len(v) for v in registry["categories"].values())
         assert len(registry["agents"]) == total_in_categories
 
-    def test_agent_count_at_least_22(self):
-        """1 team-lead + 6 software-engineering + 5 data-science + 5 finance + 5 marketing = 22."""
+    def test_agent_count_at_least_23(self):
+        """1 team-lead + 7 software-engineering + 5 data-science + 5 finance + 5 marketing = 23."""
         registry = get_agent_registry()
-        assert len(registry["agents"]) >= 22
+        assert len(registry["agents"]) >= 23
 
 
 class TestAgentSkills:

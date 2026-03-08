@@ -30,6 +30,7 @@ AGENT_SKILLS: dict[str, list[str]] = {
     "platform-engineer": ["docker-build", "deploy", "web-research"],
     "ai-engineer": ["code-review", "test-runner", "web-research"],
     "scout": ["scout", "web-research"],
+    "research-scout": ["scout", "web-research"],
     # data-science
     "data-analyst": ["web-research"],
     "ml-engineer": ["web-research"],

@@ -40,6 +40,16 @@ if echo "$PROMPT" | grep -qE '(scout|search|discover|pattern|github)'; then
   SUGGESTIONS="$SUGGESTIONS /scout"
 fi
 
+# Research scout (bookmark analysis)
+if echo "$PROMPT" | grep -qE '(research|bookmark|analiz|url|migliora)'; then
+  SUGGESTIONS="$SUGGESTIONS /research-scout"
+fi
+
+# Fetch bookmarks from Twitter/X
+if echo "$PROMPT" | grep -qE '(fetch.*bookmark|import.*bookmark|twitter.*bookmark|scarica.*bookmark)'; then
+  SUGGESTIONS="$SUGGESTIONS /fetch-bookmarks"
+fi
+
 # Website/docs related
 if echo "$PROMPT" | grep -qE '(docs|website|documentation|readme)'; then
   SUGGESTIONS="$SUGGESTIONS /website-dev"

@@ -65,7 +65,8 @@ agent-orchestrator/
 │       │   ├── api.py           # Versioned REST API registry (OpenAPI 3.0)
 │       │   ├── channels.py     # Typed channels (LastValue, Topic, Barrier, Ephemeral)
 │       │   ├── cache.py        # Task-level result caching (InMemory, TTL, cached_node)
-│       │   └── conformance.py  # Conformance test suites (Provider, Checkpointer)
+│       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer)
+│       │   └── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -89,7 +90,8 @@ agent-orchestrator/
 │           ├── shell.py         # Shell command execution
 │           ├── doc_sync.py      # Documentation sync checker
 │           ├── github_skill.py  # GitHub integration via gh CLI
-│           └── webhook_skill.py # Outgoing webhook skill
+│           ├── webhook_skill.py # Outgoing webhook skill
+│           └── web_reader.py   # Web content fetcher & HTML text extractor
 ├── tests/
 ├── pyproject.toml
 └── README.md
@@ -129,7 +131,7 @@ The `team-lead` lives at root level (`.claude/agents/team-lead.md`).
 team-lead (sonnet) ──── orchestrator, coordinates all categories
 ```
 
-### Software Engineering (6 agents)
+### Software Engineering (7 agents)
 
 ```
 .claude/agents/software-engineering/
@@ -138,7 +140,8 @@ team-lead (sonnet) ──── orchestrator, coordinates all categories
   ├── devops (sonnet) ───────── Docker/OrbStack, CI/CD, infra
   ├── platform-engineer (sonnet) system design, scalability, observability
   ├── ai-engineer (opus) ────── LLM integration, prompt engineering
-  └── scout (opus) ──────────── GitHub pattern discovery
+  ├── scout (opus) ──────────── GitHub pattern discovery
+  └── research-scout (opus) ─── Web content analysis for orchestrator improvements
 ```
 
 #### Cross-Agent Dependencies
@@ -241,6 +244,20 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 | `/verify` | all | Pre-PR quality gate (tests, lint, format, security, diff review) |
 | `/cost-optimization` | ai-engineer | Review LLM API costs, routing, budget, retry efficiency |
 | `/ship` | all | Full pipeline: test, lint, docs sync, commit, push |
+
+### Research Scout & Nightly Workflow
+
+The `research-scout` agent reads URLs from bookmarks (GitHub stars, web pages) and
+analyzes content for orchestrator improvements (memory, router, agents, skills, tools).
+
+- **Bookmarks file**: `.claude/bookmarks.json` (auto-populated from GitHub stars or manual)
+- **State tracking**: `.claude/research-scout-state.json` (tracks processed URLs)
+- **Findings file**: `.claude/research-scout-findings.md` (generated when improvements found)
+- **GitHub Action**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC)
+- **Scripts**: `scripts/fetch_github_stars.py`, `scripts/run_research_scout.py`
+- **PR creation**: When findings exist, a PR is created on branch `research-scout/YYYY-MM-DD` instead of pushing to main. Both `/fetch-star-repos` and the nightly workflow follow this pattern.
+
+GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_KEY` (secret, for LLM analysis), `GITHUB_TOKEN` (auto-provided).
 
 ## Container Runtime: OrbStack
 
