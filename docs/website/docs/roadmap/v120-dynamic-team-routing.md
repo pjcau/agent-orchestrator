@@ -13,8 +13,11 @@ title: "v1.2: Dynamic Team Routing"
 
 ## Current Flow (hardcoded)
 
-```
-task → team-lead (plan: BACKEND + FRONTEND) → [backend-dev, frontend-dev] → summary
+```mermaid
+graph LR
+    T["Task"] --> TL["team-lead<br/>(plan: BACKEND + FRONTEND)"]
+    TL --> A["backend-dev, frontend-dev"]
+    A --> S["Summary"]
 ```
 
 The team-lead's system prompt forces decomposition into exactly two roles. The sub-agent list is a Python literal in `agent_runner.py:462-489`.
@@ -23,8 +26,13 @@ The team-lead's system prompt forces decomposition into exactly two roles. The s
 
 ## Target Flow (dynamic)
 
-```
-task → team-lead (analyze + select agents from registry) → [agent1, ..., agentN] → summary
+```mermaid
+graph LR
+    T["Task"] --> TL["team-lead<br/>(analyze + select from registry)"]
+    TL --> A["agent1, ..., agentN"]
+    A --> S["Summary"]
+
+    style TL fill:#7bc67e,color:#fff
 ```
 
 ### Phase 1: Agent-Aware Planning

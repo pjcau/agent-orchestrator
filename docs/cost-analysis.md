@@ -88,15 +88,19 @@
 
 ### Recommendation: Hybrid Architecture
 
-```
-┌────────────────────────────────────────────────┐
-│              Task Router                        │
-│                                                 │
-│  complexity=low  → Local 70B / Gemini Flash    │
-│  complexity=med  → Sonnet / GPT-4o             │
-│  complexity=high → Opus / o3                    │
-│  fallback        → next provider in chain       │
-└────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    TR["Task Router"]
+    TR -->|"complexity=low"| LOW["Local 70B / Gemini Flash"]
+    TR -->|"complexity=med"| MED["Sonnet / GPT-4o"]
+    TR -->|"complexity=high"| HIGH["Opus / o3"]
+    TR -->|"fallback"| FB["next provider in chain"]
+
+    style TR fill:#4a90d9,color:#fff
+    style LOW fill:#7bc67e,color:#fff
+    style MED fill:#e6a23c,color:#fff
+    style HIGH fill:#d94a4a,color:#fff
+    style FB fill:#95a5a6,color:#fff
 ```
 
 This gives you:

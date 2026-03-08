@@ -124,37 +124,26 @@ class Orchestrator:
 
 How agents communicate when tasks span multiple domains.
 
-```
-┌─────────────┐       TaskAssignment        ┌──────────────────────┐
-│  Team Lead  │ ──────────────────────────→  │  Software Eng (6)    │
-│             │ ←──────────────────────────  │  backend, frontend,  │
-│             │       TaskResult             │  devops, platform,   │
-│             │                              │  ai-engineer, scout  │
-│             │                              └──────────────────────┘
-│             │       TaskAssignment        ┌──────────────────────┐
-│             │ ──────────────────────────→  │  Data Science (5)    │
-│             │ ←──────────────────────────  │  data-analyst, ml,   │
-│             │       TaskResult             │  data-eng, nlp, bi   │
-│             │                              └──────────────────────┘
-│             │       TaskAssignment        ┌──────────────────────┐
-│             │ ──────────────────────────→  │  Finance (5)         │
-│             │ ←──────────────────────────  │  fin-analyst, risk,  │
-│             │       TaskResult             │  quant, compliance,  │
-│             │                              │  accountant          │
-│             │                              └──────────────────────┘
-│             │       TaskAssignment        ┌──────────────────────┐
-│             │ ──────────────────────────→  │  Marketing (5)       │
-│             │ ←──────────────────────────  │  content, seo,       │
-│             │       TaskResult             │  growth, social,     │
-│             │                              │  email               │
-└─────────────┘                              └──────────────────────┘
-       │
-       │  ArtifactShare (shared context)
-       ▼
-┌─────────────────────────────────────────────────┐
-│              Shared Context Store                │
-│  (file changes, API contracts, test results)    │
-└─────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant TL as Team Lead
+    participant SE as Software Eng (6)
+    participant DS as Data Science (5)
+    participant FIN as Finance (5)
+    participant MKT as Marketing (5)
+    participant SC as Shared Context Store
+
+    TL->>SE: TaskAssignment
+    SE-->>TL: TaskResult
+    TL->>DS: TaskAssignment
+    DS-->>TL: TaskResult
+    TL->>FIN: TaskAssignment
+    FIN-->>TL: TaskResult
+    TL->>MKT: TaskAssignment
+    MKT-->>TL: TaskResult
+
+    TL->>SC: ArtifactShare (shared context)
+    Note over SC: file changes, API contracts, test results
 ```
 
 **Cooperation patterns**:

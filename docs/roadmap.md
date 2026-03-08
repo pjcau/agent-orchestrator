@@ -91,12 +91,13 @@
 
 **Flow:**
 
-```
-Agent produces output
-  → Sandbox executes (lint, test, security scan)
-  → Preview in dashboard (diff view, test results)
-  → Human approves → merge to main
-  → Human rejects → agent retries with feedback
+```mermaid
+flowchart LR
+    A["Agent produces output"] --> B["Sandbox executes<br/>(lint, test, security scan)"]
+    B --> C["Preview in dashboard<br/>(diff view, test results)"]
+    C -->|"Human approves"| D["Merge to main"]
+    C -->|"Human rejects"| E["Agent retries<br/>with feedback"]
+    E --> A
 ```
 
 ### 1B — Agile Team Experiment
@@ -225,14 +226,17 @@ Agent produces output
 
 **Architecture:**
 
-```
-[AWS EC2 -- Orchestrator + Dashboard + Prometheus + Grafana]
-      |
-      |--- Complex / fine-tuned -------> [Vast.ai H200 -- vLLM]
-      |
-      |--- Standard / burst traffic ---> [OpenRouter -- Qwen3 30B]
-      |
-      |--- Simple / economical --------> [OpenRouter -- Qwen3.5-Flash]
+```mermaid
+graph LR
+    EC2["AWS EC2<br/>Orchestrator + Dashboard<br/>Prometheus + Grafana"]
+    EC2 -->|"Complex / fine-tuned"| VAST["Vast.ai H200<br/>vLLM"]
+    EC2 -->|"Standard / burst"| OR1["OpenRouter<br/>Qwen3 30B"]
+    EC2 -->|"Simple / economical"| OR2["OpenRouter<br/>Qwen3.5-Flash"]
+
+    style EC2 fill:#4a90d9,color:#fff
+    style VAST fill:#e6a23c,color:#fff
+    style OR1 fill:#7bc67e,color:#fff
+    style OR2 fill:#7bc67e,color:#fff
 ```
 
 ### 4B — Fine-Tuning
@@ -353,15 +357,21 @@ Sell the "privacy story": agents run locally by default (Ollama), burst to cloud
 
 ## Financial Summary
 
-```
-Phase 0 (NOW)       Phase 1 (M1)        Phase 2 (M2-4)      Phase 3 (M4-6)      Phase 4 (M6+)
-AWS + Monitoring    Agent Autonomy      Optimization        Platform Maturity    Hybrid Scaling
- 42 EUR/mo           42 EUR/mo           42-100 EUR/mo       100-300 EUR/mo       625+ EUR/mo
+```mermaid
+graph LR
+    P0["Phase 0 (NOW)<br/>AWS + Monitoring<br/><b>42 EUR/mo</b>"]
+    P1["Phase 1 (M1)<br/>Agent Autonomy<br/><b>42 EUR/mo</b>"]
+    P2["Phase 2 (M2-4)<br/>Optimization<br/><b>42-100 EUR/mo</b>"]
+    P3["Phase 3 (M4-6)<br/>Platform Maturity<br/><b>100-300 EUR/mo</b>"]
+    P4["Phase 4 (M6+)<br/>Hybrid Scaling<br/><b>625+ EUR/mo</b>"]
 
-EC2 + Prometheus    + Sandbox preview   + Smart routing     + Full agile mode    + Vast.ai H200
-Grafana dashboards  + Sprint simulation + Prompt caching    + Skill marketplace  + Fine-tuning
-HTTPS + nginx       + LangFuse traces   + Beta users        + Provider failover  + Enterprise
-                    + Quality scoring   + Pricing model     + Observability      + SLA / SSO
+    P0 --> P1 --> P2 --> P3 --> P4
+
+    style P0 fill:#7bc67e,color:#fff
+    style P1 fill:#4a90d9,color:#fff
+    style P2 fill:#e6a23c,color:#fff
+    style P3 fill:#d94a4a,color:#fff
+    style P4 fill:#9b59b6,color:#fff
 ```
 
 ### Break-Even Analysis

@@ -28,12 +28,12 @@
 
 ### Tier 1: Pure Cloud (simplest, fastest to start)
 
-```
-Developer Machine
-  └─→ Orchestrator (local Python process)
-        ├─→ Anthropic API (Claude)
-        ├─→ OpenAI API (GPT)
-        └─→ Google AI API (Gemini)
+```mermaid
+graph LR
+    DM["Developer Machine"] --> O["Orchestrator (local)"]
+    O --> AN["Anthropic API (Claude)"]
+    O --> OA["OpenAI API (GPT)"]
+    O --> GO["Google AI API (Gemini)"]
 ```
 
 **Cost**: API usage only
@@ -43,13 +43,12 @@ Developer Machine
 
 ### Tier 2: Hybrid (local + cloud)
 
-```
-Developer Machine
-  └─→ Orchestrator (local)
-        ├─→ Local GPU Server (Ollama/vLLM)
-        │     └── Llama 70B, Codestral
-        ├─→ Anthropic API (complex tasks)
-        └─→ OpenAI API (fallback)
+```mermaid
+graph LR
+    DM["Developer Machine"] --> O["Orchestrator (local)"]
+    O -->|"simple tasks"| GPU["Local GPU Server<br/>Ollama/vLLM<br/>Llama 70B, Codestral"]
+    O -->|"complex tasks"| AN["Anthropic API"]
+    O -->|"fallback"| OA["OpenAI API"]
 ```
 
 **Hardware**:
@@ -64,15 +63,15 @@ Developer Machine
 
 ### Tier 3: Full On-Prem (maximum control)
 
-```
-Developer Machines
-  └─→ Orchestrator Service (Kubernetes)
-        ├─→ vLLM Cluster (local GPUs)
-        │     ├── Node 1: 4x A100 80GB
-        │     ├── Node 2: 4x A100 80GB
-        │     └── Load Balancer
-        ├─→ Cloud API (frontier-only fallback)
-        └─→ Model Registry (MLflow)
+```mermaid
+graph LR
+    DM["Developer Machines"] --> O["Orchestrator Service<br/>(Kubernetes)"]
+    O --> VLLM["vLLM Cluster"]
+    VLLM --> N1["Node 1: 4x A100 80GB"]
+    VLLM --> N2["Node 2: 4x A100 80GB"]
+    VLLM --> LB["Load Balancer"]
+    O -->|"frontier fallback"| CLOUD["Cloud API"]
+    O --> MLF["Model Registry (MLflow)"]
 ```
 
 **Hardware**:
@@ -145,19 +144,10 @@ Developer Machines
 
 ## Network Architecture for Hybrid Setup
 
-```
-┌──────────────┐      HTTPS/WSS      ┌──────────────────┐
-│  Dev Machine │ ◄──────────────────► │  Cloud APIs       │
-│              │                      │  (Anthropic,      │
-│  Orchestrator│                      │   OpenAI, Google) │
-│              │                      └──────────────────┘
-│              │
-│              │      LAN (fast)      ┌──────────────────┐
-│              │ ◄──────────────────► │  GPU Server       │
-│              │                      │  - Ollama/vLLM    │
-└──────────────┘                      │  - Llama 70B      │
-                                      │  - Codestral      │
-                                      └──────────────────┘
+```mermaid
+graph LR
+    DM["Dev Machine<br/>Orchestrator"] <-->|"HTTPS/WSS"| CLOUD["Cloud APIs<br/>(Anthropic, OpenAI, Google)"]
+    DM <-->|"LAN (fast)"| GPU["GPU Server<br/>Ollama/vLLM<br/>Llama 70B, Codestral"]
 ```
 
 **Key requirements**:
