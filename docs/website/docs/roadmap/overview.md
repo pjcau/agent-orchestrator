@@ -31,13 +31,13 @@ AWS infrastructure and monitoring come **first** — the product must be live an
 
 | Phase | Focus | Timeline | Page |
 |-------|-------|----------|------|
-| **Phase 0** | AWS Infrastructure + Prometheus/Grafana | **NOW** | [Details](./overview) |
-| **Phase 1** | Agent Autonomy Lab (sandbox, sprints, observability) | Month 1 | [Details](./overview) |
-| **Phase 2** | Optimization & First Revenue | Month 2-4 | [Details](./v050-routing) |
-| **Phase 3** | Platform Maturity | Month 4-6 | [Details](./v060-hardening) |
+| **Phase 0** | AWS Infrastructure + Prometheus/Grafana | **NOW** | [Details](./phase0-aws) |
+| **Phase 1** | Agent Autonomy Lab (sandbox, sprints, observability) | Month 1 | [Details](./phase1-autonomy) |
+| **Phase 2** | Optimization & First Revenue | Month 2-4 | [Details](./phase2-revenue) |
+| **Phase 3** | Platform Maturity | Month 4-6 | [Details](./phase3-maturity) |
 | **Phase 4** | Hybrid GPU Scaling | Month 6+ | [Details](./post-mvp-scaling) |
 
-## MVP Versions (in progress)
+## Pre-MVP Versions (in progress)
 
 | Version | Focus | Page |
 |---------|-------|------|
@@ -47,12 +47,12 @@ AWS infrastructure and monitoring come **first** — the product must be live an
 | **v0.7.0** | Advanced Graph Patterns | [Details](./v070-graphs) |
 | **v0.8.0** | External Integrations | [Details](./v080-integrations) |
 | **v1.0.0** | General Availability | [Details](./v100-ga) |
+| **v1.1** | LangGraph-Inspired Improvements (channels, HITL, caching, conformance) | [Details](./v110-langgraph-improvements) |
 
-## Post-MVP: Improvements & Scaling
+## Post-MVP: Scaling
 
 | Version | Trigger | Focus | Page |
 |---------|---------|-------|------|
-| **v1.1** | LangGraph analysis | Channels, HITL, Store, caching, conformance | [Details](./v110-langgraph-improvements) |
 | **Scaling** | Revenue > 600 EUR/mo x 2 months | GPU infra, fine-tuning, enterprise | [Details](./post-mvp-scaling) |
 
 ```

@@ -14,6 +14,7 @@ const sidebars = {
         'architecture/skills',
         'architecture/graph-engine',
         'architecture/cooperation',
+        'architecture/components',
       ],
     },
     {
@@ -29,7 +30,19 @@ const sidebars = {
     'roadmap/overview',
     {
       type: 'category',
-      label: 'MVP (v0.4 → v1.0)',
+      label: 'Phases',
+      collapsed: false,
+      items: [
+        'roadmap/phase0-aws',
+        'roadmap/phase1-autonomy',
+        'roadmap/phase2-revenue',
+        'roadmap/phase3-maturity',
+        'roadmap/post-mvp-scaling',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Pre-MVP (v0.4 → v1.1)',
       collapsed: false,
       items: [
         'roadmap/v040-cooperation',
@@ -38,15 +51,7 @@ const sidebars = {
         'roadmap/v070-graphs',
         'roadmap/v080-integrations',
         'roadmap/v100-ga',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Post-MVP',
-      collapsed: false,
-      items: [
         'roadmap/v110-langgraph-improvements',
-        'roadmap/post-mvp-scaling',
       ],
     },
   ],
@@ -61,6 +66,9 @@ const sidebars = {
         'business/cost-analysis',
         'business/infrastructure',
         'business/risk-management',
+        'business/growth',
+        'business/financial-summary',
+        'business/monitoring',
       ],
     },
   ],
