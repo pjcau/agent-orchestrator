@@ -61,6 +61,50 @@ Use focused prompts with WebFetch — ask for exactly what you need, not "summar
 3. **Adapt** the solution to the project's conventions (English, existing patterns, file structure)
 4. **Implement** if the user asked for a fix, or **propose** if it's a design decision
 
+## Fetching Twitter/X Content
+
+X/Twitter blocks direct scraping. Use the **vxtwitter API** to fetch tweet content:
+
+### Step 1: Convert the URL
+
+Replace `x.com` or `twitter.com` with `api.vxtwitter.com`:
+
+```
+Original:  https://x.com/username/status/1234567890
+API URL:   https://api.vxtwitter.com/username/status/1234567890
+```
+
+### Step 2: Fetch via WebFetch
+
+```
+WebFetch(
+  url="https://api.vxtwitter.com/username/status/1234567890",
+  prompt="Return the complete raw content: tweet text, username, date, any URLs or media links."
+)
+```
+
+The API returns JSON with: `text`, `user_name`, `date`, `media` (image/video URLs), `likes`, `retweets`, `replies`.
+
+### Step 3: Read images (if present)
+
+If the tweet contains images with text (infographics, lists, code screenshots), use the `Read` tool on the image URLs from the media array to extract their content.
+
+### Examples
+
+| Want | Do |
+|------|----|
+| Read a tweet | `WebFetch` on `api.vxtwitter.com/user/status/ID` |
+| Read a thread | Fetch each tweet in the thread by ID |
+| Search tweets | `WebSearch` with `site:x.com "keyword"` or `from:username keyword` |
+| Read tweet images | Get media URLs from API response, then `Read` them |
+
+### Fallback chain
+
+If `api.vxtwitter.com` fails:
+1. Try `WebFetch` on `https://vxtwitter.com/user/status/ID` (HTML version)
+2. Try `WebSearch` with the tweet URL or `from:username` + keywords
+3. Try `WebFetch` on `https://threadreaderapp.com/user/username` for threads
+
 ## Common Research Patterns
 
 ### Debugging an Error
