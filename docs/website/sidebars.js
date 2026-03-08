@@ -42,7 +42,7 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Pre-MVP (v0.4 → v1.1)',
+      label: 'Pre-MVP (v0.4 → v1.2)',
       collapsed: false,
       items: [
         'roadmap/v040-cooperation',
@@ -52,6 +52,7 @@ const sidebars = {
         'roadmap/v080-integrations',
         'roadmap/v100-ga',
         'roadmap/v110-langgraph-improvements',
+        'roadmap/v120-dynamic-team-routing',
       ],
     },
   ],
