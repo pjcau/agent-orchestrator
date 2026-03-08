@@ -54,29 +54,31 @@ Capability-based test harness for Provider and Checkpoint interfaces. Any new im
 
 ---
 
-## Sprint 2: HITL & Memory
+## Sprint 2: HITL & Memory ✅
 
-| Task | Inspired By | Priority |
-|------|------------|----------|
-| **Interrupt/resume (HITL)** | [19-human-in-the-loop](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/19-human-in-the-loop.md) | High |
-| **Store abstraction** | [14-store](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/14-store.md) | High |
-| **Skill middleware pattern** | [18-tool-node](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/18-tool-node.md) | Medium |
+| Task | Inspired By | Status |
+|------|------------|--------|
+| **Interrupt/resume (HITL)** | [19-human-in-the-loop](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/19-human-in-the-loop.md) | ✅ `core/graph.py` |
+| **Store abstraction** | [14-store](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/14-store.md) | ✅ `core/store.py` |
+| **Skill middleware pattern** | [18-tool-node](https://github.com/pjcau/agent-orchestrator/blob/main/analysis/langgraph/18-tool-node.md) | ✅ `core/skill.py` |
 
 ### Interrupt/Resume
 
-`interrupt()` pauses graph execution, persists state to checkpoint. `Command(resume=value)` continues from exactly where it paused. Interrupt is control flow, not an error — bypasses retry logic, aggregates across concurrent tasks.
+`GraphInterrupt` pauses graph execution, persists state to checkpoint. Resume with `resume_from` checkpoint ID + `human_input` dict merged into state. Interrupt is control flow, not an error.
 
-Required for production approval workflows and human-in-the-loop agent supervision.
+Supports: `HUMAN_INPUT`, `APPROVAL`, `CUSTOM` interrupt types. Works in both single-node and parallel execution.
 
 ### Store (Cross-Agent Memory)
 
-Separate from checkpoints. Checkpoints = per-thread conversation state (automatic). Store = cross-thread persistent memory (explicit API).
+`BaseStore` with namespace-based hierarchy (`("users", "alice")`), `aget/aput/adelete/asearch/alist_namespaces`. Filter operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`. TTL support with lazy expiration.
 
-`BaseStore` with namespace-based hierarchy, `get/put/search/delete`, TTL support, optional vector search. Use cases: user profiles, shared knowledge base, agent learning.
+`InMemoryStore` implementation with 13 conformance tests. Use cases: user profiles, shared knowledge base, agent learning.
 
 ### Skill Middleware
 
-`SkillWrapper(request, next_fn) -> result` pattern. Composable middleware on skill execution: retry, caching, logging, authorization, rate limiting.
+`SkillMiddleware(request, next_fn) -> result` pattern with immutable `SkillRequest` and `override()` for non-destructive modification. Middlewares compose in registration order (first = outermost).
+
+Built-in middlewares: `logging_middleware`, `retry_middleware`, `timeout_middleware`.
 
 ---
 

@@ -23,7 +23,8 @@ class TestCacheEntry:
 
     def test_expired(self):
         entry = CacheEntry(
-            key="k", value="v",
+            key="k",
+            value="v",
             created_at=time.time() - 100,
             ttl_seconds=10,
         )
@@ -199,9 +200,7 @@ class TestCachedNode:
             return {"out": state["id"]}
 
         asyncio.get_event_loop().run_until_complete(my_node({"id": "abc", "extra": 1}))
-        result = asyncio.get_event_loop().run_until_complete(
-            my_node({"id": "abc", "extra": 999})
-        )
+        result = asyncio.get_event_loop().run_until_complete(my_node({"id": "abc", "extra": 999}))
         assert result == {"out": "abc"}  # cached despite different "extra"
 
     def test_none_result_not_cached(self):

@@ -21,16 +21,16 @@ class UsageRecord:
 
 @dataclass
 class BudgetConfig:
-    max_per_task: Optional[float] = None    # USD cap for a single task_id
+    max_per_task: Optional[float] = None  # USD cap for a single task_id
     max_per_session: Optional[float] = None  # USD cap for the current session
-    max_per_day: Optional[float] = None     # USD cap for the current calendar day
+    max_per_day: Optional[float] = None  # USD cap for the current calendar day
 
 
 @dataclass
 class BudgetStatus:
     within_budget: bool
     remaining_usd: float | None  # None if no applicable limit
-    limit_type: str | None       # "task", "session", "day", or None
+    limit_type: str | None  # "task", "session", "day", or None
 
 
 @dataclass
@@ -74,9 +74,7 @@ class UsageTracker:
     # Budget checking
     # ------------------------------------------------------------------
 
-    def check_budget(
-        self, budget: BudgetConfig, task_id: str | None = None
-    ) -> BudgetStatus:
+    def check_budget(self, budget: BudgetConfig, task_id: str | None = None) -> BudgetStatus:
         """Check whether the current usage is within the given budget.
 
         Checks are applied in order: task → session → day.
@@ -84,9 +82,7 @@ class UsageTracker:
         """
         # Per-task check
         if budget.max_per_task is not None and task_id is not None:
-            task_cost = sum(
-                r.cost_usd for r in self._records if r.task_id == task_id
-            )
+            task_cost = sum(r.cost_usd for r in self._records if r.task_id == task_id)
             remaining = budget.max_per_task - task_cost
             if remaining < 0:
                 return BudgetStatus(
@@ -120,9 +116,7 @@ class UsageTracker:
         # Within all limits — report the tightest remaining budget
         remaining_values: list[float] = []
         if budget.max_per_task is not None and task_id is not None:
-            task_cost = sum(
-                r.cost_usd for r in self._records if r.task_id == task_id
-            )
+            task_cost = sum(r.cost_usd for r in self._records if r.task_id == task_id)
             remaining_values.append(budget.max_per_task - task_cost)
         if budget.max_per_session is not None:
             remaining_values.append(budget.max_per_session - self.get_session_cost())

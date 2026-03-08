@@ -43,25 +43,31 @@ from agent_orchestrator.core.alerts import (
 class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_acquire_within_limits(self):
-        limiter = RateLimiter([
-            RateLimitConfig(requests_per_minute=10, tokens_per_minute=10000, provider_key="p1"),
-        ])
+        limiter = RateLimiter(
+            [
+                RateLimitConfig(requests_per_minute=10, tokens_per_minute=10000, provider_key="p1"),
+            ]
+        )
         assert await limiter.acquire("p1") is True
 
     @pytest.mark.asyncio
     async def test_acquire_exceeds_request_limit(self):
-        limiter = RateLimiter([
-            RateLimitConfig(requests_per_minute=2, tokens_per_minute=100000, provider_key="p1"),
-        ])
+        limiter = RateLimiter(
+            [
+                RateLimitConfig(requests_per_minute=2, tokens_per_minute=100000, provider_key="p1"),
+            ]
+        )
         limiter.record_usage("p1", 100)
         limiter.record_usage("p1", 100)
         assert await limiter.acquire("p1") is False
 
     @pytest.mark.asyncio
     async def test_acquire_exceeds_token_limit(self):
-        limiter = RateLimiter([
-            RateLimitConfig(requests_per_minute=100, tokens_per_minute=500, provider_key="p1"),
-        ])
+        limiter = RateLimiter(
+            [
+                RateLimitConfig(requests_per_minute=100, tokens_per_minute=500, provider_key="p1"),
+            ]
+        )
         limiter.record_usage("p1", 400)
         assert await limiter.acquire("p1", estimated_tokens=200) is False
 
@@ -71,9 +77,11 @@ class TestRateLimiter:
         assert await limiter.acquire("unknown") is True
 
     def test_get_status(self):
-        limiter = RateLimiter([
-            RateLimitConfig(requests_per_minute=10, tokens_per_minute=5000, provider_key="p1"),
-        ])
+        limiter = RateLimiter(
+            [
+                RateLimitConfig(requests_per_minute=10, tokens_per_minute=5000, provider_key="p1"),
+            ]
+        )
         limiter.record_usage("p1", 1000)
         status = limiter.get_status("p1")
         assert status.provider_key == "p1"
@@ -82,18 +90,22 @@ class TestRateLimiter:
         assert status.is_limited is False
 
     def test_get_status_when_limited(self):
-        limiter = RateLimiter([
-            RateLimitConfig(requests_per_minute=1, tokens_per_minute=5000, provider_key="p1"),
-        ])
+        limiter = RateLimiter(
+            [
+                RateLimitConfig(requests_per_minute=1, tokens_per_minute=5000, provider_key="p1"),
+            ]
+        )
         limiter.record_usage("p1", 100)
         status = limiter.get_status("p1")
         assert status.is_limited is True
         assert status.requests_remaining == 0
 
     def test_reset(self):
-        limiter = RateLimiter([
-            RateLimitConfig(requests_per_minute=1, tokens_per_minute=5000, provider_key="p1"),
-        ])
+        limiter = RateLimiter(
+            [
+                RateLimitConfig(requests_per_minute=1, tokens_per_minute=5000, provider_key="p1"),
+            ]
+        )
         limiter.record_usage("p1", 100)
         limiter.reset("p1")
         status = limiter.get_status("p1")
@@ -103,9 +115,11 @@ class TestRateLimiter:
 
     @pytest.mark.asyncio
     async def test_reset_allows_new_requests(self):
-        limiter = RateLimiter([
-            RateLimitConfig(requests_per_minute=1, tokens_per_minute=5000, provider_key="p1"),
-        ])
+        limiter = RateLimiter(
+            [
+                RateLimitConfig(requests_per_minute=1, tokens_per_minute=5000, provider_key="p1"),
+            ]
+        )
         limiter.record_usage("p1", 100)
         assert await limiter.acquire("p1") is False
         limiter.reset("p1")
@@ -194,7 +208,9 @@ class TestAuditLog:
 
     def test_log_action_returns_entry(self):
         log = AuditLog()
-        entry = log.log_action(EVENT_PROVIDER_CALL, "backend", "call LLM", provider_key="openrouter")
+        entry = log.log_action(
+            EVENT_PROVIDER_CALL, "backend", "call LLM", provider_key="openrouter"
+        )
         assert isinstance(entry, AuditEntry)
         assert entry.provider_key == "openrouter"
 
@@ -221,14 +237,22 @@ class TestTaskQueue:
 
     def test_fifo_within_same_priority(self):
         queue = TaskQueue()
-        queue.enqueue(QueuedTask(
-            task_id="first", description="first", priority=5,
-            created_at=time.time() - 10,
-        ))
-        queue.enqueue(QueuedTask(
-            task_id="second", description="second", priority=5,
-            created_at=time.time(),
-        ))
+        queue.enqueue(
+            QueuedTask(
+                task_id="first",
+                description="first",
+                priority=5,
+                created_at=time.time() - 10,
+            )
+        )
+        queue.enqueue(
+            QueuedTask(
+                task_id="second",
+                description="second",
+                priority=5,
+                created_at=time.time(),
+            )
+        )
         task = queue.dequeue()
         assert task.task_id == "first"
 
@@ -302,8 +326,12 @@ class TestTaskQueue:
 
     def test_dequeue_by_agent_name(self):
         queue = TaskQueue()
-        queue.enqueue(QueuedTask(task_id="t1", description="task", priority=1, agent_name="backend"))
-        queue.enqueue(QueuedTask(task_id="t2", description="task", priority=1, agent_name="frontend"))
+        queue.enqueue(
+            QueuedTask(task_id="t1", description="task", priority=1, agent_name="backend")
+        )
+        queue.enqueue(
+            QueuedTask(task_id="t2", description="task", priority=1, agent_name="frontend")
+        )
         task = queue.dequeue(agent_name="frontend")
         assert task is not None
         assert task.task_id == "t2"
@@ -410,16 +438,24 @@ class TestMetrics:
 
 class TestAlertManager:
     def test_no_alert_below_threshold(self):
-        manager = AlertManager([
-            AlertRule(name="high_spend", threshold_usd=1.0, period=PERIOD_SESSION, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="high_spend", threshold_usd=1.0, period=PERIOD_SESSION, action=ACTION_LOG
+                ),
+            ]
+        )
         alerts = manager.check(0.5, PERIOD_SESSION)
         assert len(alerts) == 0
 
     def test_alert_fires_above_threshold(self):
-        manager = AlertManager([
-            AlertRule(name="high_spend", threshold_usd=1.0, period=PERIOD_SESSION, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="high_spend", threshold_usd=1.0, period=PERIOD_SESSION, action=ACTION_LOG
+                ),
+            ]
+        )
         alerts = manager.check(1.5, PERIOD_SESSION)
         assert len(alerts) == 1
         assert alerts[0].rule_name == "high_spend"
@@ -427,19 +463,32 @@ class TestAlertManager:
         assert alerts[0].threshold == 1.0
 
     def test_dedup_prevents_double_fire(self):
-        manager = AlertManager([
-            AlertRule(name="high_spend", threshold_usd=1.0, period=PERIOD_SESSION, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="high_spend", threshold_usd=1.0, period=PERIOD_SESSION, action=ACTION_LOG
+                ),
+            ]
+        )
         alerts1 = manager.check(1.5, PERIOD_SESSION)
         alerts2 = manager.check(2.0, PERIOD_SESSION)
         assert len(alerts1) == 1
         assert len(alerts2) == 0  # already fired
 
     def test_different_periods_fire_independently(self):
-        manager = AlertManager([
-            AlertRule(name="session_alert", threshold_usd=1.0, period=PERIOD_SESSION, action=ACTION_LOG),
-            AlertRule(name="task_alert", threshold_usd=0.5, period=PERIOD_TASK, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="session_alert",
+                    threshold_usd=1.0,
+                    period=PERIOD_SESSION,
+                    action=ACTION_LOG,
+                ),
+                AlertRule(
+                    name="task_alert", threshold_usd=0.5, period=PERIOD_TASK, action=ACTION_LOG
+                ),
+            ]
+        )
         alerts = manager.check(1.5, PERIOD_SESSION)
         assert len(alerts) == 1
         assert alerts[0].rule_name == "session_alert"
@@ -449,17 +498,25 @@ class TestAlertManager:
         assert alerts[0].rule_name == "task_alert"
 
     def test_get_triggered_alerts(self):
-        manager = AlertManager([
-            AlertRule(name="alert1", threshold_usd=0.1, period=PERIOD_SESSION, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="alert1", threshold_usd=0.1, period=PERIOD_SESSION, action=ACTION_LOG
+                ),
+            ]
+        )
         manager.check(0.5, PERIOD_SESSION)
         triggered = manager.get_triggered_alerts()
         assert len(triggered) == 1
 
     def test_clear_alerts(self):
-        manager = AlertManager([
-            AlertRule(name="alert1", threshold_usd=0.1, period=PERIOD_SESSION, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="alert1", threshold_usd=0.1, period=PERIOD_SESSION, action=ACTION_LOG
+                ),
+            ]
+        )
         manager.check(0.5, PERIOD_SESSION)
         manager.clear_alerts()
         assert len(manager.get_triggered_alerts()) == 0
@@ -476,28 +533,41 @@ class TestAlertManager:
         assert len(alerts) == 1
 
     def test_remove_rule(self):
-        manager = AlertManager([
-            AlertRule(name="removable", threshold_usd=0.1, period=PERIOD_SESSION, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="removable", threshold_usd=0.1, period=PERIOD_SESSION, action=ACTION_LOG
+                ),
+            ]
+        )
         manager.remove_rule("removable")
         alerts = manager.check(1.0, PERIOD_SESSION)
         assert len(alerts) == 0
 
     def test_webhook_action_stores_alert(self):
-        manager = AlertManager([
-            AlertRule(
-                name="webhook_alert", threshold_usd=0.1, period=PERIOD_SESSION,
-                action=ACTION_WEBHOOK, webhook_url="https://hooks.example.com/alert",
-            ),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="webhook_alert",
+                    threshold_usd=0.1,
+                    period=PERIOD_SESSION,
+                    action=ACTION_WEBHOOK,
+                    webhook_url="https://hooks.example.com/alert",
+                ),
+            ]
+        )
         alerts = manager.check(0.5, PERIOD_SESSION)
         assert len(alerts) == 1
         assert alerts[0].rule_name == "webhook_alert"
 
     def test_task_specific_dedup(self):
-        manager = AlertManager([
-            AlertRule(name="task_alert", threshold_usd=0.1, period=PERIOD_TASK, action=ACTION_LOG),
-        ])
+        manager = AlertManager(
+            [
+                AlertRule(
+                    name="task_alert", threshold_usd=0.1, period=PERIOD_TASK, action=ACTION_LOG
+                ),
+            ]
+        )
         alerts1 = manager.check(0.5, PERIOD_TASK, task_id="t1")
         alerts2 = manager.check(0.5, PERIOD_TASK, task_id="t2")
         assert len(alerts1) == 1

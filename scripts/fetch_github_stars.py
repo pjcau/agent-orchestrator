@@ -90,12 +90,14 @@ def get_recent_stars(username: str, token: str = "", lookback_days: int = 7) -> 
             if topics:
                 notes_parts.append(f"Topics: {', '.join(topics[:5])}")
 
-            bookmarks.append({
-                "url": repo_url,
-                "added": starred_at_str,
-                "source": "github-star",
-                "notes": " | ".join(notes_parts),
-            })
+            bookmarks.append(
+                {
+                    "url": repo_url,
+                    "added": starred_at_str,
+                    "source": "github-star",
+                    "notes": " | ".join(notes_parts),
+                }
+            )
 
         page += 1
         # Safety limit

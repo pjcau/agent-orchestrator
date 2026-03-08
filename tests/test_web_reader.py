@@ -85,7 +85,9 @@ class TestWebReaderSkill:
     @pytest.mark.asyncio
     async def test_missing_aiohttp_error(self, monkeypatch):
         """If aiohttp is not installed, should return clear error."""
-        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        original_import = (
+            __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+        )
 
         def mock_import(name, *args, **kwargs):
             if name == "aiohttp":

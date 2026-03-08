@@ -26,6 +26,7 @@ class HTTPMethod(str, Enum):
 @dataclass
 class APIEndpoint:
     """Describes a single API endpoint."""
+
     path: str
     method: HTTPMethod
     summary: str
@@ -40,6 +41,7 @@ class APIEndpoint:
 @dataclass
 class APIResponse:
     """Standard API response envelope."""
+
     success: bool
     data: Any = None
     error: str | None = None
@@ -124,205 +126,270 @@ class APIRegistry:
     def _register_defaults(self) -> None:
         """Register all default v1 API endpoints."""
         # --- Agents ---
-        self.register(APIEndpoint(
-            path="/agents",
-            method=HTTPMethod.GET,
-            summary="List agents",
-            tags=["agents"],
-            permissions=["agents.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/agents",
-            method=HTTPMethod.POST,
-            summary="Create agent",
-            tags=["agents"],
-            permissions=["agents.write"],
-            request_schema={"type": "object", "properties": {"name": {"type": "string"}, "role": {"type": "string"}, "provider_key": {"type": "string"}}},
-        ))
-        self.register(APIEndpoint(
-            path="/agents/{agent_id}",
-            method=HTTPMethod.GET,
-            summary="Get agent details",
-            tags=["agents"],
-            permissions=["agents.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/agents/{agent_id}",
-            method=HTTPMethod.DELETE,
-            summary="Delete agent",
-            tags=["agents"],
-            permissions=["agents.write"],
-        ))
-        self.register(APIEndpoint(
-            path="/agents/{agent_id}/execute",
-            method=HTTPMethod.POST,
-            summary="Execute a task with an agent",
-            tags=["agents"],
-            permissions=["agents.execute"],
-            request_schema={"type": "object", "properties": {"task": {"type": "string"}}},
-        ))
+        self.register(
+            APIEndpoint(
+                path="/agents",
+                method=HTTPMethod.GET,
+                summary="List agents",
+                tags=["agents"],
+                permissions=["agents.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/agents",
+                method=HTTPMethod.POST,
+                summary="Create agent",
+                tags=["agents"],
+                permissions=["agents.write"],
+                request_schema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "role": {"type": "string"},
+                        "provider_key": {"type": "string"},
+                    },
+                },
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/agents/{agent_id}",
+                method=HTTPMethod.GET,
+                summary="Get agent details",
+                tags=["agents"],
+                permissions=["agents.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/agents/{agent_id}",
+                method=HTTPMethod.DELETE,
+                summary="Delete agent",
+                tags=["agents"],
+                permissions=["agents.write"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/agents/{agent_id}/execute",
+                method=HTTPMethod.POST,
+                summary="Execute a task with an agent",
+                tags=["agents"],
+                permissions=["agents.execute"],
+                request_schema={"type": "object", "properties": {"task": {"type": "string"}}},
+            )
+        )
 
         # --- Providers ---
-        self.register(APIEndpoint(
-            path="/providers",
-            method=HTTPMethod.GET,
-            summary="List providers",
-            tags=["providers"],
-            permissions=["config.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/providers/presets",
-            method=HTTPMethod.GET,
-            summary="List provider presets",
-            tags=["providers"],
-            permissions=["config.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/providers/presets/{preset_name}/activate",
-            method=HTTPMethod.POST,
-            summary="Activate a provider preset",
-            tags=["providers"],
-            permissions=["config.write"],
-        ))
+        self.register(
+            APIEndpoint(
+                path="/providers",
+                method=HTTPMethod.GET,
+                summary="List providers",
+                tags=["providers"],
+                permissions=["config.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/providers/presets",
+                method=HTTPMethod.GET,
+                summary="List provider presets",
+                tags=["providers"],
+                permissions=["config.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/providers/presets/{preset_name}/activate",
+                method=HTTPMethod.POST,
+                summary="Activate a provider preset",
+                tags=["providers"],
+                permissions=["config.write"],
+            )
+        )
 
         # --- Projects ---
-        self.register(APIEndpoint(
-            path="/projects",
-            method=HTTPMethod.GET,
-            summary="List projects",
-            tags=["projects"],
-            permissions=["projects.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/projects",
-            method=HTTPMethod.POST,
-            summary="Create project",
-            tags=["projects"],
-            permissions=["projects.write"],
-            request_schema={"type": "object", "properties": {"name": {"type": "string"}, "root_path": {"type": "string"}}},
-        ))
-        self.register(APIEndpoint(
-            path="/projects/{project_id}",
-            method=HTTPMethod.GET,
-            summary="Get project details",
-            tags=["projects"],
-            permissions=["projects.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/projects/{project_id}",
-            method=HTTPMethod.DELETE,
-            summary="Delete project",
-            tags=["projects"],
-            permissions=["projects.write"],
-        ))
+        self.register(
+            APIEndpoint(
+                path="/projects",
+                method=HTTPMethod.GET,
+                summary="List projects",
+                tags=["projects"],
+                permissions=["projects.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/projects",
+                method=HTTPMethod.POST,
+                summary="Create project",
+                tags=["projects"],
+                permissions=["projects.write"],
+                request_schema={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}, "root_path": {"type": "string"}},
+                },
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/projects/{project_id}",
+                method=HTTPMethod.GET,
+                summary="Get project details",
+                tags=["projects"],
+                permissions=["projects.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/projects/{project_id}",
+                method=HTTPMethod.DELETE,
+                summary="Delete project",
+                tags=["projects"],
+                permissions=["projects.write"],
+            )
+        )
 
         # --- Graphs ---
-        self.register(APIEndpoint(
-            path="/graphs/templates",
-            method=HTTPMethod.GET,
-            summary="List graph templates",
-            tags=["graphs"],
-            permissions=["config.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/graphs/templates/{name}",
-            method=HTTPMethod.GET,
-            summary="Get graph template",
-            tags=["graphs"],
-            permissions=["config.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/graphs/run",
-            method=HTTPMethod.POST,
-            summary="Run a graph",
-            tags=["graphs"],
-            permissions=["agents.execute"],
-            request_schema={"type": "object", "properties": {"template": {"type": "string"}, "input": {"type": "object"}}},
-        ))
+        self.register(
+            APIEndpoint(
+                path="/graphs/templates",
+                method=HTTPMethod.GET,
+                summary="List graph templates",
+                tags=["graphs"],
+                permissions=["config.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/graphs/templates/{name}",
+                method=HTTPMethod.GET,
+                summary="Get graph template",
+                tags=["graphs"],
+                permissions=["config.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/graphs/run",
+                method=HTTPMethod.POST,
+                summary="Run a graph",
+                tags=["graphs"],
+                permissions=["agents.execute"],
+                request_schema={
+                    "type": "object",
+                    "properties": {"template": {"type": "string"}, "input": {"type": "object"}},
+                },
+            )
+        )
 
         # --- Config ---
-        self.register(APIEndpoint(
-            path="/config",
-            method=HTTPMethod.GET,
-            summary="Get current configuration",
-            tags=["config"],
-            permissions=["config.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/config",
-            method=HTTPMethod.PUT,
-            summary="Update configuration",
-            tags=["config"],
-            permissions=["config.write"],
-        ))
-        self.register(APIEndpoint(
-            path="/config/validate",
-            method=HTTPMethod.POST,
-            summary="Validate configuration",
-            tags=["config"],
-            permissions=["config.read"],
-        ))
+        self.register(
+            APIEndpoint(
+                path="/config",
+                method=HTTPMethod.GET,
+                summary="Get current configuration",
+                tags=["config"],
+                permissions=["config.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/config",
+                method=HTTPMethod.PUT,
+                summary="Update configuration",
+                tags=["config"],
+                permissions=["config.write"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/config/validate",
+                method=HTTPMethod.POST,
+                summary="Validate configuration",
+                tags=["config"],
+                permissions=["config.read"],
+            )
+        )
 
         # --- Users ---
-        self.register(APIEndpoint(
-            path="/users",
-            method=HTTPMethod.GET,
-            summary="List users",
-            tags=["users"],
-            permissions=["users.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/users",
-            method=HTTPMethod.POST,
-            summary="Create user",
-            tags=["users"],
-            permissions=["users.write"],
-        ))
+        self.register(
+            APIEndpoint(
+                path="/users",
+                method=HTTPMethod.GET,
+                summary="List users",
+                tags=["users"],
+                permissions=["users.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/users",
+                method=HTTPMethod.POST,
+                summary="Create user",
+                tags=["users"],
+                permissions=["users.write"],
+            )
+        )
 
         # --- Health ---
-        self.register(APIEndpoint(
-            path="/health",
-            method=HTTPMethod.GET,
-            summary="Health check",
-            tags=["system"],
-            auth_required=False,
-        ))
-        self.register(APIEndpoint(
-            path="/metrics",
-            method=HTTPMethod.GET,
-            summary="Prometheus metrics",
-            tags=["system"],
-            auth_required=False,
-        ))
+        self.register(
+            APIEndpoint(
+                path="/health",
+                method=HTTPMethod.GET,
+                summary="Health check",
+                tags=["system"],
+                auth_required=False,
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/metrics",
+                method=HTTPMethod.GET,
+                summary="Prometheus metrics",
+                tags=["system"],
+                auth_required=False,
+            )
+        )
 
         # --- Audit ---
-        self.register(APIEndpoint(
-            path="/audit",
-            method=HTTPMethod.GET,
-            summary="Get audit log entries",
-            tags=["audit"],
-            permissions=["audit.read"],
-        ))
+        self.register(
+            APIEndpoint(
+                path="/audit",
+                method=HTTPMethod.GET,
+                summary="Get audit log entries",
+                tags=["audit"],
+                permissions=["audit.read"],
+            )
+        )
 
         # --- Webhooks ---
-        self.register(APIEndpoint(
-            path="/webhooks",
-            method=HTTPMethod.GET,
-            summary="List webhooks",
-            tags=["webhooks"],
-            permissions=["config.read"],
-        ))
-        self.register(APIEndpoint(
-            path="/webhooks",
-            method=HTTPMethod.POST,
-            summary="Register webhook",
-            tags=["webhooks"],
-            permissions=["config.write"],
-        ))
-        self.register(APIEndpoint(
-            path="/webhooks/{webhook_id}/receive",
-            method=HTTPMethod.POST,
-            summary="Receive webhook event",
-            tags=["webhooks"],
-            auth_required=False,  # uses signature validation instead
-        ))
+        self.register(
+            APIEndpoint(
+                path="/webhooks",
+                method=HTTPMethod.GET,
+                summary="List webhooks",
+                tags=["webhooks"],
+                permissions=["config.read"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/webhooks",
+                method=HTTPMethod.POST,
+                summary="Register webhook",
+                tags=["webhooks"],
+                permissions=["config.write"],
+            )
+        )
+        self.register(
+            APIEndpoint(
+                path="/webhooks/{webhook_id}/receive",
+                method=HTTPMethod.POST,
+                summary="Receive webhook event",
+                tags=["webhooks"],
+                auth_required=False,  # uses signature validation instead
+            )
+        )

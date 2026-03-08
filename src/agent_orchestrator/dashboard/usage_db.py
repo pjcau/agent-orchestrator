@@ -35,6 +35,7 @@ class UsageDB:
             return
         try:
             import asyncpg
+
             self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=3)
             async with self._pool.acquire() as conn:
                 await conn.execute("""
@@ -148,14 +149,21 @@ class UsageDB:
         # Update per-model
         if model:
             if model not in self._per_model:
-                self._per_model[model] = {"tokens": 0, "cost_usd": 0.0, "requests": 0, "avg_speed": 0.0}
+                self._per_model[model] = {
+                    "tokens": 0,
+                    "cost_usd": 0.0,
+                    "requests": 0,
+                    "avg_speed": 0.0,
+                }
             m = self._per_model[model]
             m["tokens"] += total
             m["cost_usd"] += cost_usd
             m["requests"] += 1
             if elapsed_s > 0:
                 speed = output_tokens / elapsed_s
-                m["avg_speed"] = round((m["avg_speed"] * (m["requests"] - 1) + speed) / m["requests"], 1)
+                m["avg_speed"] = round(
+                    (m["avg_speed"] * (m["requests"] - 1) + speed) / m["requests"], 1
+                )
 
         # Update per-agent
         if agent:
@@ -174,8 +182,15 @@ class UsageDB:
                         """INSERT INTO usage_stats
                            (ts, model, agent, provider, input_tokens, output_tokens, cost_usd, elapsed_s, session_id)
                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
-                        time.time(), model, agent, provider,
-                        input_tokens, output_tokens, cost_usd, elapsed_s, session_id,
+                        time.time(),
+                        model,
+                        agent,
+                        provider,
+                        input_tokens,
+                        output_tokens,
+                        cost_usd,
+                        elapsed_s,
+                        session_id,
                     )
             except Exception:
                 pass

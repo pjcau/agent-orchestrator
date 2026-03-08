@@ -15,11 +15,13 @@ U = TypeVar("U")  # Update type
 
 class EmptyChannelError(Exception):
     """Raised when reading from an empty channel."""
+
     pass
 
 
 class InvalidUpdateError(Exception):
     """Raised when a channel receives conflicting updates."""
+
     pass
 
 
@@ -231,6 +233,7 @@ class BarrierChannel(BaseChannel[bool, str]):
 @dataclass
 class ChannelConfig:
     """Configuration for a state key's channel."""
+
     channel: BaseChannel
     key: str
 
@@ -278,10 +281,7 @@ class ChannelManager:
 
     def checkpoint(self) -> dict[str, Any]:
         """Serialize all channel state."""
-        return {
-            key: channel.checkpoint()
-            for key, channel in self._channels.items()
-        }
+        return {key: channel.checkpoint() for key, channel in self._channels.items()}
 
     def restore(self, data: dict[str, Any]) -> None:
         """Restore channel state from checkpoint."""

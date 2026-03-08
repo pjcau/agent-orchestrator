@@ -43,7 +43,12 @@ from .plugins import PluginLoader, PluginManifest
 from .webhook import WebhookRegistry, WebhookConfig
 from .mcp_server import MCPServerRegistry, MCPTool, MCPResource
 from .offline import OfflineManager, OfflineConfig
-from .config_manager import ConfigManager, OrchestratorConfiguration, AgentConfigEntry, ProviderConfigEntry
+from .config_manager import (
+    ConfigManager,
+    OrchestratorConfiguration,
+    AgentConfigEntry,
+    ProviderConfigEntry,
+)
 from .project import ProjectManager, ProjectConfig
 from .users import UserManager, User, UserRole
 from .provider_presets import ProviderPresetManager, ProviderPreset
@@ -75,6 +80,20 @@ from .conformance import (
     ConformanceReport,
     TestResult,
     TestStatus,
+)
+from .store import (
+    BaseStore,
+    InMemoryStore,
+    Item,
+    SearchItem,
+    run_store_conformance,
+)
+from .skill import (
+    SkillRequest,
+    SkillMiddleware,
+    logging_middleware,
+    retry_middleware,
+    timeout_middleware,
 )
 
 __all__ = [
@@ -192,4 +211,15 @@ __all__ = [
     "ConformanceReport",
     "TestResult",
     "TestStatus",
+    # v1.1 — Sprint 2: HITL & Memory
+    "BaseStore",
+    "InMemoryStore",
+    "Item",
+    "SearchItem",
+    "run_store_conformance",
+    "SkillRequest",
+    "SkillMiddleware",
+    "logging_middleware",
+    "retry_middleware",
+    "timeout_middleware",
 ]

@@ -108,12 +108,10 @@ class TestSharedContextStore:
 
     def test_agent_messages(self):
         store = SharedContextStore()
-        store.send_message(AgentMessage(
-            from_agent="backend", to_agent="frontend", content="API ready"
-        ))
-        store.send_message(AgentMessage(
-            from_agent="frontend", to_agent=None, content="UI update"
-        ))
+        store.send_message(
+            AgentMessage(from_agent="backend", to_agent="frontend", content="API ready")
+        )
+        store.send_message(AgentMessage(from_agent="frontend", to_agent=None, content="UI update"))
         # frontend should see both (direct + broadcast)
         msgs = store.get_messages(agent_name="frontend")
         assert len(msgs) == 2
@@ -157,13 +155,20 @@ class TestCooperationProtocol:
 
     def test_dependency_ordering(self):
         proto = CooperationProtocol()
-        proto.assign(TaskAssignment(
-            task_id="t1", from_agent="lead", to_agent="backend", description="Build API"
-        ))
-        proto.assign(TaskAssignment(
-            task_id="t2", from_agent="lead", to_agent="frontend",
-            description="Build UI", depends_on=["t1"],
-        ))
+        proto.assign(
+            TaskAssignment(
+                task_id="t1", from_agent="lead", to_agent="backend", description="Build API"
+            )
+        )
+        proto.assign(
+            TaskAssignment(
+                task_id="t2",
+                from_agent="lead",
+                to_agent="frontend",
+                description="Build UI",
+                depends_on=["t1"],
+            )
+        )
 
         ready = proto.get_ready_tasks()
         assert len(ready) == 1
@@ -176,16 +181,21 @@ class TestCooperationProtocol:
 
     def test_parallel_batches(self):
         proto = CooperationProtocol()
-        proto.assign(TaskAssignment(
-            task_id="t1", from_agent="lead", to_agent="backend", description="API"
-        ))
-        proto.assign(TaskAssignment(
-            task_id="t2", from_agent="lead", to_agent="frontend", description="UI"
-        ))
-        proto.assign(TaskAssignment(
-            task_id="t3", from_agent="lead", to_agent="devops", description="Deploy",
-            depends_on=["t1", "t2"],
-        ))
+        proto.assign(
+            TaskAssignment(task_id="t1", from_agent="lead", to_agent="backend", description="API")
+        )
+        proto.assign(
+            TaskAssignment(task_id="t2", from_agent="lead", to_agent="frontend", description="UI")
+        )
+        proto.assign(
+            TaskAssignment(
+                task_id="t3",
+                from_agent="lead",
+                to_agent="devops",
+                description="Deploy",
+                depends_on=["t1", "t2"],
+            )
+        )
 
         batches = proto.get_parallel_batches()
         assert len(batches) == 1
@@ -195,18 +205,18 @@ class TestCooperationProtocol:
 
     def test_mark_running_prevents_duplicate_dispatch(self):
         proto = CooperationProtocol()
-        proto.assign(TaskAssignment(
-            task_id="t1", from_agent="lead", to_agent="backend", description="API"
-        ))
+        proto.assign(
+            TaskAssignment(task_id="t1", from_agent="lead", to_agent="backend", description="API")
+        )
         assert len(proto.get_ready_tasks()) == 1
         proto.mark_running("t1")
         assert len(proto.get_ready_tasks()) == 0
 
     def test_get_completed(self):
         proto = CooperationProtocol()
-        proto.assign(TaskAssignment(
-            task_id="t1", from_agent="lead", to_agent="backend", description="API"
-        ))
+        proto.assign(
+            TaskAssignment(task_id="t1", from_agent="lead", to_agent="backend", description="API")
+        )
         proto.complete(TaskReport(task_id="t1", agent_name="backend", success=True, output="Done"))
         completed = proto.get_completed()
         assert "t1" in completed
@@ -279,21 +289,23 @@ class TestOrchestratorParallel:
         )
 
         # Manually assign parallel tasks (bypassing team-lead decomposition)
-        orchestrator.protocol.assign(TaskAssignment(
-            task_id="t1", from_agent="team-lead", to_agent="backend", description="Build API"
-        ))
-        orchestrator.protocol.assign(TaskAssignment(
-            task_id="t2", from_agent="team-lead", to_agent="frontend", description="Build UI"
-        ))
+        orchestrator.protocol.assign(
+            TaskAssignment(
+                task_id="t1", from_agent="team-lead", to_agent="backend", description="Build API"
+            )
+        )
+        orchestrator.protocol.assign(
+            TaskAssignment(
+                task_id="t2", from_agent="team-lead", to_agent="frontend", description="Build UI"
+            )
+        )
 
         # Execute the batches directly
         batches = orchestrator.protocol.get_parallel_batches()
         assert len(batches) == 1
         assert len(batches[0]) == 2
 
-        results = await asyncio.gather(
-            *(orchestrator._execute_assignment(a) for a in batches[0])
-        )
+        results = await asyncio.gather(*(orchestrator._execute_assignment(a) for a in batches[0]))
         assert all(r.status == TaskStatus.COMPLETED for r in results)
 
     @pytest.mark.asyncio
@@ -312,13 +324,20 @@ class TestOrchestratorParallel:
             skill_registry=SkillRegistry(),
         )
 
-        orchestrator.protocol.assign(TaskAssignment(
-            task_id="api", from_agent="lead", to_agent="backend", description="Build API"
-        ))
-        orchestrator.protocol.assign(TaskAssignment(
-            task_id="ui", from_agent="lead", to_agent="frontend",
-            description="Build UI", depends_on=["api"],
-        ))
+        orchestrator.protocol.assign(
+            TaskAssignment(
+                task_id="api", from_agent="lead", to_agent="backend", description="Build API"
+            )
+        )
+        orchestrator.protocol.assign(
+            TaskAssignment(
+                task_id="ui",
+                from_agent="lead",
+                to_agent="frontend",
+                description="Build UI",
+                depends_on=["api"],
+            )
+        )
 
         # Only API should be ready first
         ready = orchestrator.protocol.get_ready_tasks()
@@ -342,24 +361,29 @@ class TestOrchestratorParallel:
         )
 
         # Backend completes and publishes artifact
-        orchestrator.protocol.assign(TaskAssignment(
-            task_id="api", from_agent="lead", to_agent="backend", description="Build API"
-        ))
-        result = await orchestrator._execute_assignment(
-            orchestrator.protocol.get_ready_tasks()[0]
+        orchestrator.protocol.assign(
+            TaskAssignment(
+                task_id="api", from_agent="lead", to_agent="backend", description="Build API"
+            )
         )
-        orchestrator.protocol.store.publish(Artifact(
-            name="result:api", type="output", content=result.output, produced_by="backend"
-        ))
-        orchestrator.protocol.complete(TaskReport(
-            task_id="api", agent_name="backend", success=True, output=result.output
-        ))
+        result = await orchestrator._execute_assignment(orchestrator.protocol.get_ready_tasks()[0])
+        orchestrator.protocol.store.publish(
+            Artifact(name="result:api", type="output", content=result.output, produced_by="backend")
+        )
+        orchestrator.protocol.complete(
+            TaskReport(task_id="api", agent_name="backend", success=True, output=result.output)
+        )
 
         # Frontend depends on API — should get artifact in context
-        orchestrator.protocol.assign(TaskAssignment(
-            task_id="ui", from_agent="lead", to_agent="frontend",
-            description="Build UI", depends_on=["api"],
-        ))
+        orchestrator.protocol.assign(
+            TaskAssignment(
+                task_id="ui",
+                from_agent="lead",
+                to_agent="frontend",
+                description="Build UI",
+                depends_on=["api"],
+            )
+        )
         ready = orchestrator.protocol.get_ready_tasks()
         assert len(ready) == 1
 
@@ -403,12 +427,10 @@ class TestOrchestratorParallel:
             skill_registry=SkillRegistry(),
         )
 
-        orchestrator.protocol.assign(TaskAssignment(
-            task_id="t1", from_agent="lead", to_agent="backend", description="Task"
-        ))
-        await orchestrator._execute_assignment(
-            orchestrator.protocol.get_ready_tasks()[0]
+        orchestrator.protocol.assign(
+            TaskAssignment(task_id="t1", from_agent="lead", to_agent="backend", description="Task")
         )
+        await orchestrator._execute_assignment(orchestrator.protocol.get_ready_tasks()[0])
 
         messages = orchestrator.protocol.store.get_messages()
         assert len(messages) == 2  # start + completion

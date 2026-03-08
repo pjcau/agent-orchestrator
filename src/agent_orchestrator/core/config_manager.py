@@ -11,6 +11,7 @@ from typing import Any
 @dataclass
 class AgentConfigEntry:
     """Configuration for a single agent."""
+
     name: str
     role: str
     provider_key: str
@@ -22,6 +23,7 @@ class AgentConfigEntry:
 @dataclass
 class ProviderConfigEntry:
     """Configuration for a single provider."""
+
     key: str
     type: str  # "ollama", "openrouter", "openai", "anthropic", "google"
     model: str
@@ -33,6 +35,7 @@ class ProviderConfigEntry:
 @dataclass
 class OrchestratorConfiguration:
     """Complete orchestrator configuration."""
+
     version: str = "1.0.0"
     agents: list[AgentConfigEntry] = field(default_factory=list)
     providers: list[ProviderConfigEntry] = field(default_factory=list)
@@ -95,12 +98,24 @@ class ConfigManager:
         # Check agent provider references exist
         for agent in cfg.agents:
             if agent.provider_key and agent.provider_key not in provider_keys:
-                errors.append(f"Agent '{agent.name}' references unknown provider '{agent.provider_key}'")
+                errors.append(
+                    f"Agent '{agent.name}' references unknown provider '{agent.provider_key}'"
+                )
             if agent.escalation_provider_key and agent.escalation_provider_key not in provider_keys:
-                errors.append(f"Agent '{agent.name}' escalation references unknown provider '{agent.escalation_provider_key}'")
+                errors.append(
+                    f"Agent '{agent.name}' escalation references unknown provider '{agent.escalation_provider_key}'"
+                )
 
         # Validate routing strategy
-        valid_strategies = {"fixed", "local_first", "cost_optimized", "capability_based", "fallback_chain", "complexity_based", "split_execution"}
+        valid_strategies = {
+            "fixed",
+            "local_first",
+            "cost_optimized",
+            "capability_based",
+            "fallback_chain",
+            "complexity_based",
+            "split_execution",
+        }
         if cfg.routing_strategy not in valid_strategies:
             errors.append(f"Unknown routing strategy: '{cfg.routing_strategy}'")
 

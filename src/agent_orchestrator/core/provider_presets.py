@@ -9,6 +9,7 @@ from typing import Any
 @dataclass
 class ProviderPresetEntry:
     """A single provider within a preset."""
+
     key: str
     type: str  # "ollama", "openrouter", "openai", "anthropic", "google"
     model: str
@@ -20,6 +21,7 @@ class ProviderPresetEntry:
 @dataclass
 class ProviderPreset:
     """A named preset with a set of pre-configured providers."""
+
     name: str
     description: str
     providers: list[ProviderPresetEntry] = field(default_factory=list)

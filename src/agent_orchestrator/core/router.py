@@ -26,38 +26,83 @@ logger = logging.getLogger(__name__)
 # High complexity: architecture, deep analysis, multi-system reasoning
 _HIGH_KEYWORDS: frozenset[str] = frozenset(
     {
-        "architect", "architecture", "design", "optimize", "refactor",
-        "security audit", "performance", "distributed", "scalability",
-        "migration", "machine learning", "neural", "inference", "complex",
-        "extensive", "multi-step", "multistep", "comprehensive", "analyse",
-        "analyze", "reasoning", "strategy", "evaluate", "compare",
-        "tradeoff", "trade-off", "deep dive", "redesign",
-        "across the codebase", "multi-system", "plan mode",
+        "architect",
+        "architecture",
+        "design",
+        "optimize",
+        "refactor",
+        "security audit",
+        "performance",
+        "distributed",
+        "scalability",
+        "migration",
+        "machine learning",
+        "neural",
+        "inference",
+        "complex",
+        "extensive",
+        "multi-step",
+        "multistep",
+        "comprehensive",
+        "analyse",
+        "analyze",
+        "reasoning",
+        "strategy",
+        "evaluate",
+        "compare",
+        "tradeoff",
+        "trade-off",
+        "deep dive",
+        "redesign",
+        "across the codebase",
+        "multi-system",
+        "plan mode",
     }
 )
 
 # Low complexity: simple ops, git commands, formatting, lookups
 _LOW_KEYWORDS: frozenset[str] = frozenset(
     {
-        "summarize", "summarise", "list", "simple", "basic", "quick",
-        "brief", "short", "translate", "format", "fix typo", "rename",
-        "echo", "hello", "ping", "status", "check",
+        "summarize",
+        "summarise",
+        "list",
+        "simple",
+        "basic",
+        "quick",
+        "brief",
+        "short",
+        "translate",
+        "format",
+        "fix typo",
+        "rename",
+        "echo",
+        "hello",
+        "ping",
+        "status",
+        "check",
     }
 )
 
 # Regex patterns for low-complexity tasks (git ops, renames, formatting)
 _LOW_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(p) for p in [
+    re.compile(p)
+    for p in [
         r"\bgit\s+(commit|push|pull|status|log|diff|add|stash|branch|merge)\b",
-        r"\brename\b", r"\bmove\s+file\b", r"\bdelete\s+file\b",
-        r"\bformat\b", r"\blint\b", r"\bprettier\b", r"\beslint\b",
-        r"\bremove\s+(unused|dead)\b", r"\bupdate\s+(version|package)\b",
+        r"\brename\b",
+        r"\bmove\s+file\b",
+        r"\bdelete\s+file\b",
+        r"\bformat\b",
+        r"\blint\b",
+        r"\bprettier\b",
+        r"\beslint\b",
+        r"\bremove\s+(unused|dead)\b",
+        r"\bupdate\s+(version|package)\b",
     ]
 ]
 
 # Thresholds (inspired by cost-aware-llm-pipeline)
-_HIGH_WORD_THRESHOLD = 200   # long prompts likely need strong model
-_LOW_WORD_CEILING = 30       # short prompts default to low if no signals
+_HIGH_WORD_THRESHOLD = 200  # long prompts likely need strong model
+_LOW_WORD_CEILING = 30  # short prompts default to low if no signals
 
 
 class TaskComplexityClassifier:
@@ -83,8 +128,7 @@ class TaskComplexityClassifier:
 
         requires_reasoning = high_hits > 0 or word_count > _HIGH_WORD_THRESHOLD
         requires_tools = any(
-            kw in lower
-            for kw in ("code", "file", "run", "execute", "test", "deploy", "write")
+            kw in lower for kw in ("code", "file", "run", "execute", "test", "deploy", "write")
         )
 
         # Classification with combined signals
@@ -108,6 +152,7 @@ class TaskComplexityClassifier:
 # Routing strategies
 # ---------------------------------------------------------------------------
 
+
 class RoutingStrategy(str, Enum):
     LOCAL_FIRST = "local_first"
     COST_OPTIMIZED = "cost_optimized"
@@ -128,6 +173,7 @@ def _is_local(key: str) -> bool:
 # ---------------------------------------------------------------------------
 # TaskRouter
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class RouterConfig:
@@ -203,11 +249,7 @@ class TaskRouter:
 
     def _available_providers(self) -> list[tuple[str, Provider]]:
         """Return (key, provider) pairs whose health is considered available."""
-        return [
-            (k, p)
-            for k, p in self._providers.items()
-            if self._health.is_available(k)
-        ]
+        return [(k, p) for k, p in self._providers.items() if self._health.is_available(k)]
 
     def _local_first(self, complexity: TaskComplexity) -> Provider | None:
         """Prefer local models; fall back to cloud only when unavailable or task is high."""
@@ -241,8 +283,7 @@ class TaskRouter:
         # Filter by context length requirement
         cfg = self._config
         candidates = [
-            (k, p) for k, p in available
-            if p.capabilities.max_context >= cfg.min_context_tokens
+            (k, p) for k, p in available if p.capabilities.max_context >= cfg.min_context_tokens
         ]
         if not candidates:
             candidates = available
@@ -325,8 +366,7 @@ class TaskRouter:
                 return max(
                     cloud,
                     key=lambda kp: (
-                        kp[1].capabilities.reasoning_quality
-                        + kp[1].capabilities.coding_quality
+                        kp[1].capabilities.reasoning_quality + kp[1].capabilities.coding_quality
                     ),
                 )[1]
             # Fallback: any local

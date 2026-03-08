@@ -65,7 +65,8 @@ agent-orchestrator/
 │       │   ├── api.py           # Versioned REST API registry (OpenAPI 3.0)
 │       │   ├── channels.py     # Typed channels (LastValue, Topic, Barrier, Ephemeral)
 │       │   ├── cache.py        # Task-level result caching (InMemory, TTL, cached_node)
-│       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer)
+│       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer, Store)
+│       │   ├── store.py        # Cross-thread persistent store (namespace, filter, TTL)
 │       │   └── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
@@ -101,7 +102,7 @@ agent-orchestrator/
 
 - **Provider** — LLM backend (Claude, GPT, Gemini, local). Swappable per agent.
 - **Agent** — Autonomous unit with a role, tools, and a provider. Stateless between tasks.
-- **Skill** — Reusable capability (test-runner, linter, deployer). Provider-independent.
+- **Skill** — Reusable capability with middleware chain (retry, logging, timeout). Provider-independent.
 - **Orchestrator** — Coordinates agents, task decomposition, anti-stall enforcement.
 - **Cooperation** — Inter-agent messaging: delegation, results, conflict resolution.
 - **TaskRouter** — Smart routing: 6 strategies (local-first, cost-optimized, complexity-based, etc.).
@@ -121,6 +122,8 @@ agent-orchestrator/
 - **ProviderPresetManager** — One-click presets: local_only, cloud_only, hybrid, high_quality.
 - **MigrationManager** — Import configs from LangGraph, CrewAI, AutoGen with auto-detection.
 - **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
+- **BaseStore** — Cross-thread persistent key-value store (namespace, filter, TTL). Separate from checkpoints.
+- **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout).
 
 ## Agents (23)
 

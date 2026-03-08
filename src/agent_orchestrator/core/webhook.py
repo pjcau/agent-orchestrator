@@ -82,9 +82,7 @@ class WebhookRegistry:
         self._events.append(event)
         return event
 
-    def validate_signature(
-        self, webhook_id: str, payload_bytes: bytes, signature: str
-    ) -> bool:
+    def validate_signature(self, webhook_id: str, payload_bytes: bytes, signature: str) -> bool:
         """Validate HMAC-SHA256 signature if a secret is configured.
 
         Returns True when:
@@ -99,9 +97,7 @@ class WebhookRegistry:
             return False
         if config.secret is None:
             return True
-        expected = hmac.new(
-            config.secret.encode(), payload_bytes, hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(config.secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, signature)
 
     def get_events(

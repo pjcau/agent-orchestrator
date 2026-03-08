@@ -127,15 +127,17 @@ class JobLogger:
                     pass
             # Count non-json files (agent-created files)
             all_files = [f for f in d.iterdir() if f.is_file() and f.suffix != ".json"]
-            sessions.append({
-                "session_id": session_id,
-                "dir_name": d.name,
-                "records": record_count,
-                "files": len(all_files),
-                "first_prompt": first_prompt,
-                "last_type": last_type,
-                "is_current": session_id == self._session_id,
-            })
+            sessions.append(
+                {
+                    "session_id": session_id,
+                    "dir_name": d.name,
+                    "records": record_count,
+                    "files": len(all_files),
+                    "first_prompt": first_prompt,
+                    "last_type": last_type,
+                    "is_current": session_id == self._session_id,
+                }
+            )
         return sessions
 
     def load_session(self, session_id: str) -> list[dict[str, Any]]:

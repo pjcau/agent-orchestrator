@@ -58,10 +58,7 @@ class TestAnalyzeContent:
         assert len(result["improvements"]) <= 5
 
     def test_relevance_sorting(self):
-        text = (
-            "api integration sdk cli plugin extension mcp "
-            "routing cost"
-        )
+        text = "api integration sdk cli plugin extension mcp routing cost"
         result = analyze_content(text, "https://example.com")
         if len(result["improvements"]) >= 2:
             assert result["improvements"][0]["relevance"] >= result["improvements"][1]["relevance"]
@@ -101,12 +98,14 @@ class TestWriteFindings:
 
 class TestFetchUrl:
     def test_github_url_uses_api(self):
-        mock_repo = json.dumps({
-            "description": "Test repo",
-            "topics": ["ai"],
-            "language": "Python",
-            "stargazers_count": 50,
-        }).encode()
+        mock_repo = json.dumps(
+            {
+                "description": "Test repo",
+                "topics": ["ai"],
+                "language": "Python",
+                "stargazers_count": 50,
+            }
+        ).encode()
         mock_readme = b"# README\nThis is a test project."
 
         from unittest.mock import MagicMock

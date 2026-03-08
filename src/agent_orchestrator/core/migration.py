@@ -9,6 +9,7 @@ from typing import Any
 @dataclass
 class MigrationResult:
     """Result of a migration import."""
+
     success: bool
     source_format: str
     agents_imported: int = 0
@@ -52,13 +53,14 @@ class MigrationManager:
             return "crewai"
         # AutoGen: has "agents" with "llm_config" inside
         if "agents" in data and any(
-            isinstance(a, dict) and "llm_config" in a
-            for a in data.get("agents", [])
+            isinstance(a, dict) and "llm_config" in a for a in data.get("agents", [])
         ):
             return "autogen"
         return None
 
-    def import_config(self, data: dict[str, Any], source_format: str | None = None) -> MigrationResult:
+    def import_config(
+        self, data: dict[str, Any], source_format: str | None = None
+    ) -> MigrationResult:
         """Import a configuration dict from another framework.
 
         If source_format is None, auto-detection is attempted.
@@ -104,22 +106,26 @@ class MigrationManager:
                 elif node_type not in ("llm", "custom", "subgraph"):
                     warnings.append(f"Node '{name}': mapped unknown type '{node_type}' to 'custom'")
                     node_type = "custom"
-                nodes.append({
-                    "name": name,
-                    "type": node_type,
-                    "config": n.get("config", n.get("kwargs", {})),
-                })
+                nodes.append(
+                    {
+                        "name": name,
+                        "type": node_type,
+                        "config": n.get("config", n.get("kwargs", {})),
+                    }
+                )
             elif isinstance(n, str):
                 nodes.append({"name": n, "type": "custom", "config": {}})
 
         edges = []
         for e in edges_raw:
             if isinstance(e, dict):
-                edges.append({
-                    "source": e.get("source", e.get("from", "")),
-                    "target": e.get("target", e.get("to", "")),
-                    "condition": e.get("condition"),
-                })
+                edges.append(
+                    {
+                        "source": e.get("source", e.get("from", "")),
+                        "target": e.get("target", e.get("to", "")),
+                        "condition": e.get("condition"),
+                    }
+                )
             elif isinstance(e, (list, tuple)) and len(e) >= 2:
                 edges.append({"source": e[0], "target": e[1], "condition": None})
 
@@ -144,22 +150,26 @@ class MigrationManager:
                 name = a.get("name", a.get("role", "unnamed"))
                 # Normalize name to valid identifier
                 safe_name = name.lower().replace(" ", "-").replace("_", "-")
-                agents.append({
-                    "name": safe_name,
-                    "role": a.get("goal", a.get("backstory", a.get("role", ""))),
-                    "provider_key": a.get("llm", "default"),
-                    "tools": a.get("tools", []),
-                })
+                agents.append(
+                    {
+                        "name": safe_name,
+                        "role": a.get("goal", a.get("backstory", a.get("role", ""))),
+                        "provider_key": a.get("llm", "default"),
+                        "tools": a.get("tools", []),
+                    }
+                )
 
         # Convert tasks to a simple list
         tasks = []
         for t in tasks_raw:
             if isinstance(t, dict):
-                tasks.append({
-                    "description": t.get("description", ""),
-                    "agent": t.get("agent", ""),
-                    "expected_output": t.get("expected_output", ""),
-                })
+                tasks.append(
+                    {
+                        "description": t.get("description", ""),
+                        "agent": t.get("agent", ""),
+                        "expected_output": t.get("expected_output", ""),
+                    }
+                )
 
         return MigrationResult(
             success=True,
@@ -186,13 +196,15 @@ class MigrationManager:
                 if agent_type == "user_proxy":
                     warnings.append(f"Agent '{name}': user_proxy mapped to viewer role")
 
-                agents.append({
-                    "name": name.lower().replace(" ", "-"),
-                    "role": a.get("system_message", ""),
-                    "provider_key": _guess_provider_key(model),
-                    "tools": a.get("tools", []),
-                    "model": model,
-                })
+                agents.append(
+                    {
+                        "name": name.lower().replace(" ", "-"),
+                        "role": a.get("system_message", ""),
+                        "provider_key": _guess_provider_key(model),
+                        "tools": a.get("tools", []),
+                        "model": model,
+                    }
+                )
 
         return MigrationResult(
             success=True,
@@ -206,18 +218,22 @@ class MigrationManager:
         """Export our graph template format to LangGraph-compatible dict."""
         nodes = []
         for n in graph_data.get("nodes", []):
-            nodes.append({
-                "id": n.get("name", ""),
-                "type": n.get("type", "custom"),
-                "kwargs": n.get("config", {}),
-            })
+            nodes.append(
+                {
+                    "id": n.get("name", ""),
+                    "type": n.get("type", "custom"),
+                    "kwargs": n.get("config", {}),
+                }
+            )
         edges = []
         for e in graph_data.get("edges", []):
-            edges.append({
-                "from": e.get("source", ""),
-                "to": e.get("target", ""),
-                "condition": e.get("condition"),
-            })
+            edges.append(
+                {
+                    "from": e.get("source", ""),
+                    "to": e.get("target", ""),
+                    "condition": e.get("condition"),
+                }
+            )
         return {"nodes": nodes, "edges": edges}
 
 

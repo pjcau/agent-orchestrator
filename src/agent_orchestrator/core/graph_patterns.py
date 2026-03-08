@@ -18,6 +18,7 @@ from .provider import Provider
 # SubGraphNode
 # ---------------------------------------------------------------------------
 
+
 class SubGraphNode:
     """Wrap a CompiledGraph as a callable node function for parent graphs.
 
@@ -71,6 +72,7 @@ class SubGraphNode:
 # retry_node
 # ---------------------------------------------------------------------------
 
+
 def retry_node(
     node_func: NodeFunc,
     max_retries: int = 3,
@@ -123,6 +125,7 @@ def retry_node(
 # loop_node
 # ---------------------------------------------------------------------------
 
+
 def loop_node(
     node_func: NodeFunc,
     condition: Callable[[State], bool],
@@ -160,6 +163,7 @@ def loop_node(
 # ---------------------------------------------------------------------------
 # map_reduce_node
 # ---------------------------------------------------------------------------
+
 
 def map_reduce_node(
     map_func: NodeFunc,
@@ -269,6 +273,7 @@ def provider_annotated_node(
 # ---------------------------------------------------------------------------
 # long_context_node
 # ---------------------------------------------------------------------------
+
 
 def long_context_node(
     providers: dict[str, Provider],

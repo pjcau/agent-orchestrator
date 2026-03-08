@@ -40,9 +40,9 @@ def _extract_meta(raw: str) -> dict[str, str]:
     )
     return {
         "title": html.unescape(title_match.group(1).strip()) if title_match else "",
-        "description": html.unescape(
-            (desc_match or og_desc).group(1).strip()
-        ) if (desc_match or og_desc) else "",
+        "description": html.unescape((desc_match or og_desc).group(1).strip())
+        if (desc_match or og_desc)
+        else "",
     }
 
 
@@ -81,7 +81,9 @@ class WebReaderSkill(Skill):
 
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            return SkillResult(success=False, output=None, error=f"Invalid URL scheme: {parsed.scheme}")
+            return SkillResult(
+                success=False, output=None, error=f"Invalid URL scheme: {parsed.scheme}"
+            )
 
         try:
             import aiohttp

@@ -57,9 +57,7 @@ class BenchmarkSuite:
         elapsed_ms = (time.monotonic() - t0) * 1000.0
 
         output_tokens = completion.usage.output_tokens or 1
-        tokens_per_second = (
-            output_tokens / (elapsed_ms / 1000.0) if elapsed_ms > 0 else 0.0
-        )
+        tokens_per_second = output_tokens / (elapsed_ms / 1000.0) if elapsed_ms > 0 else 0.0
 
         result = BenchmarkResult(
             provider_key=key,

@@ -19,16 +19,23 @@ class UserRole(str, Enum):
 # Permission matrix: role -> set of allowed actions
 ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
     UserRole.ADMIN: {
-        "config.read", "config.write",
-        "agents.read", "agents.write", "agents.execute",
-        "projects.read", "projects.write",
-        "users.read", "users.write",
+        "config.read",
+        "config.write",
+        "agents.read",
+        "agents.write",
+        "agents.execute",
+        "projects.read",
+        "projects.write",
+        "users.read",
+        "users.write",
         "dashboard.read",
         "audit.read",
     },
     UserRole.DEVELOPER: {
         "config.read",
-        "agents.read", "agents.write", "agents.execute",
+        "agents.read",
+        "agents.write",
+        "agents.execute",
         "projects.read",
         "users.read",
         "dashboard.read",
@@ -46,6 +53,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
 @dataclass
 class User:
     """A user of the orchestrator."""
+
     user_id: str
     username: str
     role: UserRole
@@ -187,9 +195,7 @@ class UserManager:
     def check_permission(self, user_id: str, permission: str) -> None:
         """Raise PermissionError if user lacks the permission."""
         if not self.has_permission(user_id, permission):
-            raise PermissionError(
-                f"User '{user_id}' lacks permission '{permission}'"
-            )
+            raise PermissionError(f"User '{user_id}' lacks permission '{permission}'")
 
 
 def _hash_password(password: str) -> str:

@@ -83,9 +83,7 @@ class Agent:
                 self.provider.model_id,
                 self.escalation_provider.model_id,
             )
-            escalated_result = await self._execute_with_provider(
-                task, self.escalation_provider
-            )
+            escalated_result = await self._execute_with_provider(task, self.escalation_provider)
             escalated_result.escalated = True
             escalated_result.steps_taken += result.steps_taken
             escalated_result.total_tokens += result.total_tokens
@@ -96,9 +94,7 @@ class Agent:
 
         return result
 
-    async def _execute_with_provider(
-        self, task: Task, provider: Provider
-    ) -> TaskResult:
+    async def _execute_with_provider(self, task: Task, provider: Provider) -> TaskResult:
         """Run the agent loop with a specific provider."""
         self._messages = [
             Message(role=Role.USER, content=task.description),
@@ -106,9 +102,7 @@ class Agent:
 
         # Inject context from shared artifacts
         if task.context:
-            context_str = "\n".join(
-                f"[{k}]: {v}" for k, v in task.context.items()
-            )
+            context_str = "\n".join(f"[{k}]: {v}" for k, v in task.context.items())
             self._messages.insert(
                 0,
                 Message(

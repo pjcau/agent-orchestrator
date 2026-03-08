@@ -17,6 +17,7 @@ from typing import Any
 @dataclass
 class CachePolicy:
     """Per-node caching configuration."""
+
     enabled: bool = True
     ttl_seconds: int = 3600  # 1 hour default
     max_entries: int = 1000
@@ -26,6 +27,7 @@ class CachePolicy:
 @dataclass
 class CacheEntry:
     """A cached result."""
+
     key: str
     value: Any
     created_at: float = field(default_factory=time.time)
@@ -71,8 +73,7 @@ class BaseCache(ABC):
         ...
 
     @abstractmethod
-    def put(self, key: str, value: Any, ttl_seconds: int = 3600,
-            node_name: str = "") -> None:
+    def put(self, key: str, value: Any, ttl_seconds: int = 3600, node_name: str = "") -> None:
         """Store a result."""
         ...
 
@@ -119,8 +120,7 @@ class InMemoryCache(BaseCache):
         self._stats.hits += 1
         return entry
 
-    def put(self, key: str, value: Any, ttl_seconds: int = 3600,
-            node_name: str = "") -> None:
+    def put(self, key: str, value: Any, ttl_seconds: int = 3600, node_name: str = "") -> None:
         # Evict oldest if at capacity
         if len(self._store) >= self._max_entries and key not in self._store:
             self._evict_oldest()

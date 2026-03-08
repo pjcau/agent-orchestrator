@@ -127,11 +127,16 @@ class GitHubSkill(Skill):
     async def _get_issue(self, params: dict) -> SkillResult:
         number = params.get("number")
         if number is None:
-            return SkillResult(success=False, output=None, error="'number' is required for get_issue")
-        args = (
-            ["issue", "view", str(number), "--json", "number,title,body,state,url"]
-            + self._repo_args(params)
-        )
+            return SkillResult(
+                success=False, output=None, error="'number' is required for get_issue"
+            )
+        args = [
+            "issue",
+            "view",
+            str(number),
+            "--json",
+            "number,title,body,state,url",
+        ] + self._repo_args(params)
         stdout, stderr, rc = await self._run_gh(*args)
         if rc != 0:
             return SkillResult(success=False, output=None, error=stderr)
@@ -145,13 +150,14 @@ class GitHubSkill(Skill):
         number = params.get("number")
         body = params.get("body", "")
         if number is None:
-            return SkillResult(success=False, output=None, error="'number' is required for add_comment")
+            return SkillResult(
+                success=False, output=None, error="'number' is required for add_comment"
+            )
         if not body:
-            return SkillResult(success=False, output=None, error="'body' is required for add_comment")
-        args = (
-            ["issue", "comment", str(number), "--body", body]
-            + self._repo_args(params)
-        )
+            return SkillResult(
+                success=False, output=None, error="'body' is required for add_comment"
+            )
+        args = ["issue", "comment", str(number), "--body", body] + self._repo_args(params)
         stdout, stderr, rc = await self._run_gh(*args)
         if rc != 0:
             return SkillResult(success=False, output=None, error=stderr)
@@ -172,10 +178,13 @@ class GitHubSkill(Skill):
         number = params.get("number")
         if number is None:
             return SkillResult(success=False, output=None, error="'number' is required for get_pr")
-        args = (
-            ["pr", "view", str(number), "--json", "number,title,body,state,url"]
-            + self._repo_args(params)
-        )
+        args = [
+            "pr",
+            "view",
+            str(number),
+            "--json",
+            "number,title,body,state,url",
+        ] + self._repo_args(params)
         stdout, stderr, rc = await self._run_gh(*args)
         if rc != 0:
             return SkillResult(success=False, output=None, error=stderr)

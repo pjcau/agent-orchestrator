@@ -151,9 +151,7 @@ class SharedContextStore:
     ) -> list[AgentMessage]:
         msgs = self._messages
         if agent_name:
-            msgs = [
-                m for m in msgs if m.to_agent == agent_name or m.to_agent is None
-            ]
+            msgs = [m for m in msgs if m.to_agent == agent_name or m.to_agent is None]
         if task_id:
             msgs = [m for m in msgs if m.related_task_id == task_id]
         return msgs

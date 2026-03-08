@@ -277,9 +277,7 @@ class TestMapReduceNode:
         def merge(results):
             return results
 
-        wrapped = map_reduce_node(
-            tracked, merge, max_concurrency=2
-        )
+        wrapped = map_reduce_node(tracked, merge, max_concurrency=2)
         await wrapped({"items": [1, 2, 3, 4, 5]})
         assert max_concurrent <= 2
 
@@ -558,12 +556,16 @@ class TestGraphTemplateStore:
             description="LLM template",
             version=1,
             nodes=[
-                NodeTemplate("analyze", "llm", {
-                    "system": "Analyze this.",
-                    "prompt_key": "input",
-                    "output_key": "analysis",
-                    "provider": "mock",
-                }),
+                NodeTemplate(
+                    "analyze",
+                    "llm",
+                    {
+                        "system": "Analyze this.",
+                        "prompt_key": "input",
+                        "output_key": "analysis",
+                        "provider": "mock",
+                    },
+                ),
             ],
             edges=[
                 EdgeTemplate("__start__", "analyze"),

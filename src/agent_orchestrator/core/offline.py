@@ -10,9 +10,7 @@ from typing import Any
 class OfflineConfig:
     enabled: bool = False  # when True, only local providers are allowed
     allow_cached: bool = True  # allow cached cloud results
-    local_provider_keys: list[str] = field(
-        default_factory=lambda: ["local", "ollama"]
-    )
+    local_provider_keys: list[str] = field(default_factory=lambda: ["local", "ollama"])
 
 
 class OfflineManager:
@@ -48,9 +46,7 @@ class OfflineManager:
         if not self._is_offline:
             return dict(providers)
         return {
-            key: provider
-            for key, provider in providers.items()
-            if self.is_provider_allowed(key)
+            key: provider for key, provider in providers.items() if self.is_provider_allowed(key)
         }
 
     def is_provider_allowed(self, provider_key: str) -> bool:

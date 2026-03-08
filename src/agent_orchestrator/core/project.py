@@ -10,6 +10,7 @@ from typing import Any
 @dataclass
 class ProjectConfig:
     """Configuration for a single project."""
+
     project_id: str
     name: str
     root_path: str

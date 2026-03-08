@@ -96,7 +96,9 @@ class DocSyncSkill(Skill):
                 report.extend(f"- {i}" for i in website_issues)
 
         if not report:
-            return SkillResult(success=True, output="All documentation is in sync with the codebase.")
+            return SkillResult(
+                success=True, output="All documentation is in sync with the codebase."
+            )
 
         output = "\n".join(report)
         if fix:
@@ -142,9 +144,7 @@ class DocSyncSkill(Skill):
                     continue
                 classes = self._extract_classes(py)
                 facts["providers"].extend(
-                    {"file": py.stem, "classes": classes}
-                    for _ in [None]
-                    if classes
+                    {"file": py.stem, "classes": classes} for _ in [None] if classes
                 )
 
         # Skills (from skills/*.py)

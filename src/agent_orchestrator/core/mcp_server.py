@@ -120,9 +120,7 @@ class MCPServerRegistry:
             )
             self.register_tool(tool)
 
-    def register_skill_tools(
-        self, skill_names: list[str], skill_registry: Any
-    ) -> None:
+    def register_skill_tools(self, skill_names: list[str], skill_registry: Any) -> None:
         """Auto-register tools from the skill registry.
 
         Creates one MCPTool per skill named ``skill_{name}`` using the

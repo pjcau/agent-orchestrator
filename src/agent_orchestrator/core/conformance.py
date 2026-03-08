@@ -75,8 +75,7 @@ class ConformanceReport:
             "skipped": self.skipped,
             "all_passed": self.all_passed,
             "results": [
-                {"name": r.name, "status": r.status.value, "error": r.error}
-                for r in self.results
+                {"name": r.name, "status": r.status.value, "error": r.error} for r in self.results
             ],
         }
 
@@ -91,12 +90,15 @@ async def _run_test(name: str, test_fn: Callable[[], Awaitable[None]]) -> TestRe
     except Exception as e:
         duration = (time.monotonic() - start) * 1000
         return TestResult(
-            name=name, status=TestStatus.FAILED,
-            error=f"{type(e).__name__}: {e}", duration_ms=duration,
+            name=name,
+            status=TestStatus.FAILED,
+            error=f"{type(e).__name__}: {e}",
+            duration_ms=duration,
         )
 
 
 # ─── Provider Conformance ──────────────────────────────────────────────
+
 
 async def run_provider_conformance(provider: Provider) -> ConformanceReport:
     """Run all conformance tests against a Provider implementation."""
@@ -141,7 +143,8 @@ async def run_provider_conformance(provider: Provider) -> ConformanceReport:
     async def test_complete_with_system():
         messages = [Message(role=Role.USER, content="What are you?")]
         result = await provider.complete(
-            messages=messages, system="You are a test bot. Reply with 'test'.",
+            messages=messages,
+            system="You are a test bot. Reply with 'test'.",
             max_tokens=50,
         )
         assert isinstance(result, Completion)
@@ -200,6 +203,7 @@ async def run_provider_conformance(provider: Provider) -> ConformanceReport:
 
 # ─── Checkpointer Conformance ──────────────────────────────────────────
 
+
 async def run_checkpointer_conformance(
     checkpointer: Checkpointer,
 ) -> ConformanceReport:
@@ -232,13 +236,15 @@ async def run_checkpointer_conformance(
 
     async def test_get_latest():
         for i in range(3):
-            await checkpointer.save(Checkpoint(
-                checkpoint_id=f"latest-{i}",
-                thread_id="thread-latest",
-                state={"step": i},
-                next_nodes=[],
-                step_index=i,
-            ))
+            await checkpointer.save(
+                Checkpoint(
+                    checkpoint_id=f"latest-{i}",
+                    thread_id="thread-latest",
+                    state={"step": i},
+                    next_nodes=[],
+                    step_index=i,
+                )
+            )
         latest = await checkpointer.get_latest("thread-latest")
         assert latest is not None
         assert latest.step_index == 2, f"expected step 2, got {latest.step_index}"
@@ -251,13 +257,15 @@ async def run_checkpointer_conformance(
     async def test_list_thread():
         thread_id = "thread-list-test"
         for i in range(4):
-            await checkpointer.save(Checkpoint(
-                checkpoint_id=f"list-{i}",
-                thread_id=thread_id,
-                state={"i": i},
-                next_nodes=[],
-                step_index=i,
-            ))
+            await checkpointer.save(
+                Checkpoint(
+                    checkpoint_id=f"list-{i}",
+                    thread_id=thread_id,
+                    state={"i": i},
+                    next_nodes=[],
+                    step_index=i,
+                )
+            )
         items = await checkpointer.list_thread(thread_id)
         assert len(items) == 4, f"expected 4, got {len(items)}"
         # Should be ordered by step_index
@@ -305,20 +313,24 @@ async def run_checkpointer_conformance(
         assert loaded.metadata.get("custom_key") == 42
 
     async def test_thread_isolation():
-        await checkpointer.save(Checkpoint(
-            checkpoint_id="iso-a",
-            thread_id="thread-iso-a",
-            state={"from": "a"},
-            next_nodes=[],
-            step_index=0,
-        ))
-        await checkpointer.save(Checkpoint(
-            checkpoint_id="iso-b",
-            thread_id="thread-iso-b",
-            state={"from": "b"},
-            next_nodes=[],
-            step_index=0,
-        ))
+        await checkpointer.save(
+            Checkpoint(
+                checkpoint_id="iso-a",
+                thread_id="thread-iso-a",
+                state={"from": "a"},
+                next_nodes=[],
+                step_index=0,
+            )
+        )
+        await checkpointer.save(
+            Checkpoint(
+                checkpoint_id="iso-b",
+                thread_id="thread-iso-b",
+                state={"from": "b"},
+                next_nodes=[],
+                step_index=0,
+            )
+        )
         items_a = await checkpointer.list_thread("thread-iso-a")
         items_b = await checkpointer.list_thread("thread-iso-b")
         assert len(items_a) == 1
@@ -334,13 +346,15 @@ async def run_checkpointer_conformance(
             "empty_list": [],
             "none_value": None,
         }
-        await checkpointer.save(Checkpoint(
-            checkpoint_id="complex-1",
-            thread_id="thread-complex",
-            state=state,
-            next_nodes=["next"],
-            step_index=5,
-        ))
+        await checkpointer.save(
+            Checkpoint(
+                checkpoint_id="complex-1",
+                thread_id="thread-complex",
+                state=state,
+                next_nodes=["next"],
+                step_index=5,
+            )
+        )
         loaded = await checkpointer.get("complex-1")
         assert loaded is not None
         assert loaded.state == state

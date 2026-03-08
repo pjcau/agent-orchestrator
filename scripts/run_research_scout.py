@@ -62,7 +62,9 @@ class UsageTracker:
         self.llm_input_tokens += input_tokens
         self.llm_output_tokens += output_tokens
         pricing = MODEL_PRICING.get(model, MODEL_PRICING["default"])
-        self.llm_cost_usd += (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
+        self.llm_cost_usd += (
+            input_tokens * pricing["input"] + output_tokens * pricing["output"]
+        ) / 1_000_000
 
     def summary(self) -> str:
         lines = [
@@ -72,13 +74,15 @@ class UsageTracker:
         ]
         if self.llm_input_tokens or self.llm_output_tokens:
             total_tokens = self.llm_input_tokens + self.llm_output_tokens
-            lines.extend([
-                f"LLM model:         {self.llm_model}",
-                f"LLM input tokens:  {self.llm_input_tokens:,}",
-                f"LLM output tokens: {self.llm_output_tokens:,}",
-                f"LLM total tokens:  {total_tokens:,}",
-                f"LLM cost:          ${self.llm_cost_usd:.4f}",
-            ])
+            lines.extend(
+                [
+                    f"LLM model:         {self.llm_model}",
+                    f"LLM input tokens:  {self.llm_input_tokens:,}",
+                    f"LLM output tokens: {self.llm_output_tokens:,}",
+                    f"LLM total tokens:  {total_tokens:,}",
+                    f"LLM cost:          ${self.llm_cost_usd:.4f}",
+                ]
+            )
         else:
             lines.append("LLM tokens:        0 (keyword analysis only)")
             lines.append("LLM cost:          $0.0000")
@@ -196,11 +200,13 @@ def analyze_content(text: str, url: str) -> dict:
     for component, keywords in components.items():
         matches = [kw for kw in keywords if kw in text_lower]
         if len(matches) >= 2:
-            improvements.append({
-                "component": component,
-                "keywords_found": matches,
-                "relevance": min(len(matches) / len(keywords), 1.0),
-            })
+            improvements.append(
+                {
+                    "component": component,
+                    "keywords_found": matches,
+                    "relevance": min(len(matches) / len(keywords), 1.0),
+                }
+            )
 
     improvements.sort(key=lambda x: x["relevance"], reverse=True)
     return {
@@ -218,7 +224,9 @@ def _write_findings(findings: list[dict]) -> None:
 
     lines = ["## Research Scout Findings\n"]
     total = sum(len(f["improvements"]) for f in findings)
-    lines.append(f"Found **{total}** potential improvement(s) from **{len(findings)}** source(s).\n")
+    lines.append(
+        f"Found **{total}** potential improvement(s) from **{len(findings)}** source(s).\n"
+    )
 
     for finding in findings:
         url = finding["url"]
@@ -247,7 +255,9 @@ def main():
     # Load state and bookmarks
     state = load_state(STATE_FILE)
     bookmarks = load_bookmarks(BOOKMARKS_FILE)
-    print(f"Loaded {len(bookmarks)} bookmark(s), {len(state.get('processed', {}))} already processed")
+    print(
+        f"Loaded {len(bookmarks)} bookmark(s), {len(state.get('processed', {}))} already processed"
+    )
 
     # Filter to unprocessed within lookback window
     to_process = filter_unprocessed(bookmarks, state, lookback_days=lookback)
@@ -294,8 +304,7 @@ def main():
             url,
             summary=title,
             improvements=[
-                imp.get("title", str(imp.get("keywords_found", "")))
-                for imp in improvements
+                imp.get("title", str(imp.get("keywords_found", ""))) for imp in improvements
             ],
         )
 

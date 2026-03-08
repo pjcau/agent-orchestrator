@@ -125,25 +125,51 @@ class TestGetAgentRegistry:
         registry = get_agent_registry()
         se_agents = registry["categories"].get("software-engineering", [])
         se_names = {a["name"] for a in se_agents}
-        assert {"backend", "frontend", "devops", "platform-engineer", "ai-engineer", "scout", "research-scout"}.issubset(se_names)
+        assert {
+            "backend",
+            "frontend",
+            "devops",
+            "platform-engineer",
+            "ai-engineer",
+            "scout",
+            "research-scout",
+        }.issubset(se_names)
 
     def test_data_science_agents(self):
         registry = get_agent_registry()
         ds_agents = registry["categories"].get("data-science", [])
         ds_names = {a["name"] for a in ds_agents}
-        assert {"data-analyst", "ml-engineer", "data-engineer", "nlp-specialist", "bi-analyst"} == ds_names
+        assert {
+            "data-analyst",
+            "ml-engineer",
+            "data-engineer",
+            "nlp-specialist",
+            "bi-analyst",
+        } == ds_names
 
     def test_finance_agents(self):
         registry = get_agent_registry()
         fin_agents = registry["categories"].get("finance", [])
         fin_names = {a["name"] for a in fin_agents}
-        assert {"financial-analyst", "risk-analyst", "quant-developer", "compliance-officer", "accountant"} == fin_names
+        assert {
+            "financial-analyst",
+            "risk-analyst",
+            "quant-developer",
+            "compliance-officer",
+            "accountant",
+        } == fin_names
 
     def test_marketing_agents(self):
         registry = get_agent_registry()
         mkt_agents = registry["categories"].get("marketing", [])
         mkt_names = {a["name"] for a in mkt_agents}
-        assert {"content-strategist", "seo-specialist", "growth-hacker", "social-media-manager", "email-marketer"} == mkt_names
+        assert {
+            "content-strategist",
+            "seo-specialist",
+            "growth-hacker",
+            "social-media-manager",
+            "email-marketer",
+        } == mkt_names
 
     def test_flat_agents_list_contains_all(self):
         registry = get_agent_registry()
@@ -165,9 +191,21 @@ class TestAgentSkills:
     def test_new_agents_have_web_research(self):
         """All new category agents should have web-research as a baseline skill."""
         new_agents = [
-            "data-analyst", "ml-engineer", "data-engineer", "nlp-specialist", "bi-analyst",
-            "financial-analyst", "risk-analyst", "quant-developer", "compliance-officer", "accountant",
-            "content-strategist", "seo-specialist", "growth-hacker", "social-media-manager", "email-marketer",
+            "data-analyst",
+            "ml-engineer",
+            "data-engineer",
+            "nlp-specialist",
+            "bi-analyst",
+            "financial-analyst",
+            "risk-analyst",
+            "quant-developer",
+            "compliance-officer",
+            "accountant",
+            "content-strategist",
+            "seo-specialist",
+            "growth-hacker",
+            "social-media-manager",
+            "email-marketer",
         ]
         for name in new_agents:
             assert "web-research" in AGENT_SKILLS[name], f"{name} missing web-research skill"

@@ -644,12 +644,14 @@ class TestAPIRegistry:
     def test_register_custom_endpoint(self):
         reg = APIRegistry()
         before = len(reg.list_endpoints())
-        reg.register(APIEndpoint(
-            path="/custom",
-            method=HTTPMethod.GET,
-            summary="Custom endpoint",
-            tags=["custom"],
-        ))
+        reg.register(
+            APIEndpoint(
+                path="/custom",
+                method=HTTPMethod.GET,
+                summary="Custom endpoint",
+                tags=["custom"],
+            )
+        )
         assert len(reg.list_endpoints()) == before + 1
         assert reg.get_endpoint("/custom", HTTPMethod.GET) is not None
 

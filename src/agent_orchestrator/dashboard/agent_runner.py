@@ -25,10 +25,12 @@ def create_skill_registry(
     registry.register(FileReadSkill(working_directory=working_directory))
     registry.register(FileWriteSkill(working_directory=working_directory))
     registry.register(GlobSkill(working_directory=working_directory))
-    registry.register(ShellExecSkill(
-        allowed_commands=allowed_commands,
-        working_directory=working_directory,
-    ))
+    registry.register(
+        ShellExecSkill(
+            allowed_commands=allowed_commands,
+            working_directory=working_directory,
+        )
+    )
     return registry
 
 
@@ -209,7 +211,11 @@ async def _instrumented_execute(
                 total_tokens=total_tokens,
                 total_cost_usd=total_cost,
                 error=f"Timeout after {elapsed:.0f}s",
-                artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
+                artifacts={
+                    "files_created": files_created,
+                    "step_log": step_log,
+                    "fallback_log": fallback_log,
+                },
             )
 
         # Emit step event
@@ -262,7 +268,11 @@ async def _instrumented_execute(
                 steps_taken=steps,
                 total_tokens=total_tokens,
                 total_cost_usd=total_cost,
-                artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
+                artifacts={
+                    "files_created": files_created,
+                    "step_log": step_log,
+                    "fallback_log": fallback_log,
+                },
             )
 
         # Process tool calls
@@ -287,7 +297,11 @@ async def _instrumented_execute(
                     total_tokens=total_tokens,
                     total_cost_usd=total_cost,
                     error=f"Max retries exceeded for: {approach_key}",
-                    artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
+                    artifacts={
+                        "files_created": files_created,
+                        "step_log": step_log,
+                        "fallback_log": fallback_log,
+                    },
                 )
 
             # Emit tool call event
@@ -345,7 +359,11 @@ async def _instrumented_execute(
         total_tokens=total_tokens,
         total_cost_usd=total_cost,
         error=f"Max steps ({config.max_steps}) reached",
-        artifacts={"files_created": files_created, "step_log": step_log, "fallback_log": fallback_log},
+        artifacts={
+            "files_created": files_created,
+            "step_log": step_log,
+            "fallback_log": fallback_log,
+        },
     )
 
 
@@ -372,16 +390,20 @@ async def run_team(
     all_fallback_logs: list[dict] = []
 
     # --- Step 1: Team-lead plans ---
-    await bus.emit(Event(
-        event_type=EventType.AGENT_SPAWN,
-        agent_name="team-lead",
-        data={"provider": provider.model_id, "role": "Task decomposition", "tools": []},
-    ))
-    await bus.emit(Event(
-        event_type=EventType.AGENT_STEP,
-        agent_name="team-lead",
-        data={"step": 1, "model": provider.model_id},
-    ))
+    await bus.emit(
+        Event(
+            event_type=EventType.AGENT_SPAWN,
+            agent_name="team-lead",
+            data={"provider": provider.model_id, "role": "Task decomposition", "tools": []},
+        )
+    )
+    await bus.emit(
+        Event(
+            event_type=EventType.AGENT_STEP,
+            agent_name="team-lead",
+            data={"step": 1, "model": provider.model_id},
+        )
+    )
 
     plan_completion = await provider.complete(
         messages=[Message(role=Role.USER, content=task_description)],
@@ -394,7 +416,9 @@ async def run_team(
         ),
     )
     if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
-        all_fallback_logs.extend({"agent": "team-lead (plan)", **e} for e in provider.last_fallback_log)
+        all_fallback_logs.extend(
+            {"agent": "team-lead (plan)", **e} for e in provider.last_fallback_log
+        )
 
     plan_tokens = plan_completion.usage.input_tokens + plan_completion.usage.output_tokens
     plan_cost = plan_completion.usage.cost_usd
@@ -408,21 +432,31 @@ async def run_team(
     }
 
     # Incremental metrics update after planning step
-    await bus.emit(Event(
-        event_type=EventType.TOKEN_UPDATE,
-        agent_name="team-lead",
-        data={"total_tokens": total_tokens, "agent_tokens": plan_tokens, "agent_cost_usd": plan_cost},
-    ))
-    await bus.emit(Event(
-        event_type=EventType.COST_UPDATE,
-        data={"total_cost_usd": total_cost},
-    ))
+    await bus.emit(
+        Event(
+            event_type=EventType.TOKEN_UPDATE,
+            agent_name="team-lead",
+            data={
+                "total_tokens": total_tokens,
+                "agent_tokens": plan_tokens,
+                "agent_cost_usd": plan_cost,
+            },
+        )
+    )
+    await bus.emit(
+        Event(
+            event_type=EventType.COST_UPDATE,
+            data={"total_cost_usd": total_cost},
+        )
+    )
 
-    await bus.emit(Event(
-        event_type=EventType.AGENT_COMPLETE,
-        agent_name="team-lead",
-        data={"output": plan[:200], "steps": 1},
-    ))
+    await bus.emit(
+        Event(
+            event_type=EventType.AGENT_COMPLETE,
+            agent_name="team-lead",
+            data={"output": plan[:200], "steps": 1},
+        )
+    )
 
     # --- Step 2: Sub-agents execute with tools ---
     sub_agents = [
@@ -459,16 +493,18 @@ async def run_team(
 
     for agent_def in sub_agents:
         # Emit task delegation
-        await bus.emit(Event(
-            event_type=EventType.TASK_ASSIGNED,
-            data={
-                "task_id": agent_def["name"],
-                "from_agent": "team-lead",
-                "to_agent": agent_def["name"],
-                "description": f"Execute: {agent_def['prompt'][:80]}",
-                "priority": "normal",
-            },
-        ))
+        await bus.emit(
+            Event(
+                event_type=EventType.TASK_ASSIGNED,
+                data={
+                    "task_id": agent_def["name"],
+                    "from_agent": "team-lead",
+                    "to_agent": agent_def["name"],
+                    "description": f"Execute: {agent_def['prompt'][:80]}",
+                    "priority": "normal",
+                },
+            )
+        )
 
         result = await run_agent(
             agent_name=agent_def["name"],
@@ -495,23 +531,27 @@ async def run_team(
         for fb in result.get("fallback_log", []):
             all_fallback_logs.append({"agent": agent_def["name"], **fb})
 
-        await bus.emit(Event(
-            event_type=EventType.TASK_COMPLETED,
-            data={
-                "task_id": agent_def["name"],
-                "from_agent": agent_def["name"],
-                "to_agent": "team-lead",
-                "success": result.get("success", False),
-                "summary": result.get("output", "")[:100],
-            },
-        ))
+        await bus.emit(
+            Event(
+                event_type=EventType.TASK_COMPLETED,
+                data={
+                    "task_id": agent_def["name"],
+                    "from_agent": agent_def["name"],
+                    "to_agent": "team-lead",
+                    "success": result.get("success", False),
+                    "summary": result.get("output", "")[:100],
+                },
+            )
+        )
 
     # --- Step 3: Team-lead summarizes ---
-    await bus.emit(Event(
-        event_type=EventType.AGENT_SPAWN,
-        agent_name="team-lead",
-        data={"provider": provider.model_id, "role": "Summary", "tools": []},
-    ))
+    await bus.emit(
+        Event(
+            event_type=EventType.AGENT_SPAWN,
+            agent_name="team-lead",
+            data={"provider": provider.model_id, "role": "Summary", "tools": []},
+        )
+    )
 
     # Build evidence of what each agent actually did
     evidence_parts = []
@@ -528,12 +568,16 @@ async def run_team(
         evidence_parts.append(part)
 
     summary_completion = await provider.complete(
-        messages=[Message(role=Role.USER, content=(
-            f"Original request:\n{task_description}\n\n"
-            + "\n".join(evidence_parts) + "\n"
-            "Based on the files actually created and actions taken above, "
-            "write a final summary of what was built and how to run it. Be concise."
-        ))],
+        messages=[
+            Message(
+                role=Role.USER,
+                content=(
+                    f"Original request:\n{task_description}\n\n" + "\n".join(evidence_parts) + "\n"
+                    "Based on the files actually created and actions taken above, "
+                    "write a final summary of what was built and how to run it. Be concise."
+                ),
+            )
+        ],
         system=(
             "You are the team lead. Summarize the work done by your team. "
             "Focus on CONCRETE results: files created, project structure, how to build/run. "
@@ -541,7 +585,9 @@ async def run_team(
         ),
     )
     if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
-        all_fallback_logs.extend({"agent": "team-lead (summary)", **e} for e in provider.last_fallback_log)
+        all_fallback_logs.extend(
+            {"agent": "team-lead (summary)", **e} for e in provider.last_fallback_log
+        )
 
     summary_tokens = summary_completion.usage.input_tokens + summary_completion.usage.output_tokens
     summary_cost = summary_completion.usage.cost_usd
@@ -555,21 +601,31 @@ async def run_team(
     }
 
     # Incremental metrics update after summary step
-    await bus.emit(Event(
-        event_type=EventType.TOKEN_UPDATE,
-        agent_name="team-lead",
-        data={"total_tokens": total_tokens, "agent_tokens": summary_tokens, "agent_cost_usd": summary_cost},
-    ))
-    await bus.emit(Event(
-        event_type=EventType.COST_UPDATE,
-        data={"total_cost_usd": total_cost},
-    ))
+    await bus.emit(
+        Event(
+            event_type=EventType.TOKEN_UPDATE,
+            agent_name="team-lead",
+            data={
+                "total_tokens": total_tokens,
+                "agent_tokens": summary_tokens,
+                "agent_cost_usd": summary_cost,
+            },
+        )
+    )
+    await bus.emit(
+        Event(
+            event_type=EventType.COST_UPDATE,
+            data={"total_cost_usd": total_cost},
+        )
+    )
 
-    await bus.emit(Event(
-        event_type=EventType.AGENT_COMPLETE,
-        agent_name="team-lead",
-        data={"output": summary[:200], "steps": 1},
-    ))
+    await bus.emit(
+        Event(
+            event_type=EventType.AGENT_COMPLETE,
+            agent_name="team-lead",
+            data={"output": summary[:200], "steps": 1},
+        )
+    )
 
     elapsed = time.time() - start_time
 

@@ -798,17 +798,20 @@ class TestOpenRouterModels:
 # Job Logger Tests
 # ===========================================================================
 
+
 class TestJobLogger:
     """Tests for the job persistence logger."""
 
     def test_creates_session_directory(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         assert logger.session_dir.exists()
         assert logger.session_dir.name.startswith("job_")
 
     def test_session_id_format(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         # Format: YYYYMMDD_HHMMSS_hexhex
         parts = logger.session_id.split("_")
@@ -819,12 +822,14 @@ class TestJobLogger:
 
     def test_session_dir_has_job_prefix(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         assert logger.session_dir.name == f"job_{logger.session_id}"
 
     def test_log_creates_json_file(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
         import json
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         path = logger.log("prompt", {"prompt": "hello", "result": {"success": True}})
         assert path.exists()
@@ -836,6 +841,7 @@ class TestJobLogger:
 
     def test_sequential_job_numbers(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         p1 = logger.log("prompt", {"prompt": "a"})
         p2 = logger.log("agent_run", {"agent": "test"})
@@ -847,6 +853,7 @@ class TestJobLogger:
     def test_log_contains_timestamp(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
         import json
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         path = logger.log("prompt", {"prompt": "test"})
         data = json.loads(path.read_text())
@@ -856,6 +863,7 @@ class TestJobLogger:
     def test_log_preserves_nested_data(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
         import json
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         result = {
             "success": True,
@@ -864,12 +872,15 @@ class TestJobLogger:
             "total_tokens": 500,
             "total_cost_usd": 0.001,
         }
-        path = logger.log("agent_run", {
-            "agent": "backend",
-            "task": "Write tests",
-            "model": "qwen3-coder",
-            "result": result,
-        })
+        path = logger.log(
+            "agent_run",
+            {
+                "agent": "backend",
+                "task": "Write tests",
+                "model": "qwen3-coder",
+                "result": result,
+            },
+        )
         data = json.loads(path.read_text())
         assert data["result"]["success"] is True
         assert data["result"]["total_tokens"] == 500
@@ -877,11 +888,13 @@ class TestJobLogger:
 
     def test_inactivity_creates_new_session(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs", inactivity_timeout_s=0.0)
         first_id = logger.session_id
         first_dir = logger.session_dir
         # Immediately expired (timeout=0), next access creates new session
         import time
+
         time.sleep(0.01)
         second_id = logger.session_id
         assert first_id != second_id
@@ -889,6 +902,7 @@ class TestJobLogger:
 
     def test_touch_keeps_session_alive(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
+
         logger = JobLogger(jobs_dir=tmp_path / "jobs", inactivity_timeout_s=10.0)
         session_id = logger.session_id
         logger.touch()
@@ -901,7 +915,10 @@ class TestDashboardStaticUI:
     @pytest.fixture(autouse=True)
     def load_static(self):
         from pathlib import Path
-        static = Path(__file__).parent.parent / "src" / "agent_orchestrator" / "dashboard" / "static"
+
+        static = (
+            Path(__file__).parent.parent / "src" / "agent_orchestrator" / "dashboard" / "static"
+        )
         self.html = (static / "index.html").read_text()
         self.css = (static / "style.css").read_text()
         self.js = (static / "app.js").read_text()
@@ -980,6 +997,7 @@ class TestUsageDB:
     @pytest.fixture
     def usage_db(self):
         from agent_orchestrator.dashboard.usage_db import UsageDB
+
         return UsageDB(dsn="")
 
     @pytest.mark.asyncio
@@ -992,8 +1010,11 @@ class TestUsageDB:
     @pytest.mark.asyncio
     async def test_record_updates_totals(self, usage_db):
         await usage_db.record(
-            model="gpt-4", input_tokens=100, output_tokens=50,
-            cost_usd=0.005, elapsed_s=1.2,
+            model="gpt-4",
+            input_tokens=100,
+            output_tokens=50,
+            cost_usd=0.005,
+            elapsed_s=1.2,
         )
         totals = usage_db.get_totals()
         assert totals["total_tokens"] == 150
@@ -1014,9 +1035,15 @@ class TestUsageDB:
 
     @pytest.mark.asyncio
     async def test_per_model_tracking(self, usage_db):
-        await usage_db.record(model="gpt-4", input_tokens=100, output_tokens=50, cost_usd=0.01, elapsed_s=2.0)
-        await usage_db.record(model="gpt-4", input_tokens=200, output_tokens=100, cost_usd=0.02, elapsed_s=3.0)
-        await usage_db.record(model="claude", input_tokens=50, output_tokens=25, cost_usd=0.005, elapsed_s=1.0)
+        await usage_db.record(
+            model="gpt-4", input_tokens=100, output_tokens=50, cost_usd=0.01, elapsed_s=2.0
+        )
+        await usage_db.record(
+            model="gpt-4", input_tokens=200, output_tokens=100, cost_usd=0.02, elapsed_s=3.0
+        )
+        await usage_db.record(
+            model="claude", input_tokens=50, output_tokens=25, cost_usd=0.005, elapsed_s=1.0
+        )
         per_model = usage_db.get_per_model()
         assert "gpt-4" in per_model
         assert "claude" in per_model
@@ -1027,8 +1054,12 @@ class TestUsageDB:
 
     @pytest.mark.asyncio
     async def test_per_agent_tracking(self, usage_db):
-        await usage_db.record(agent="backend-dev", input_tokens=50, output_tokens=25, cost_usd=0.003)
-        await usage_db.record(agent="frontend-dev", input_tokens=30, output_tokens=15, cost_usd=0.002)
+        await usage_db.record(
+            agent="backend-dev", input_tokens=50, output_tokens=25, cost_usd=0.003
+        )
+        await usage_db.record(
+            agent="frontend-dev", input_tokens=30, output_tokens=15, cost_usd=0.002
+        )
         per_agent = usage_db.get_per_agent()
         assert "backend-dev" in per_agent
         assert per_agent["backend-dev"]["tokens"] == 75
@@ -1036,7 +1067,9 @@ class TestUsageDB:
 
     @pytest.mark.asyncio
     async def test_summary(self, usage_db):
-        await usage_db.record(model="m1", agent="a1", input_tokens=10, output_tokens=5, cost_usd=0.001)
+        await usage_db.record(
+            model="m1", agent="a1", input_tokens=10, output_tokens=5, cost_usd=0.001
+        )
         summary = usage_db.get_summary()
         assert summary["total_tokens"] == 15
         assert summary["total_requests"] == 1
@@ -1055,37 +1088,44 @@ class TestRepairJson:
 
     def test_valid_json_passes_through(self):
         from agent_orchestrator.providers.openai import _repair_json
+
         assert _repair_json('{"a": 1, "b": "hello"}') == {"a": 1, "b": "hello"}
 
     def test_unterminated_string(self):
         from agent_orchestrator.providers.openai import _repair_json
+
         result = _repair_json('{"file_path": "/tmp/test.py", "content": "hello')
         assert isinstance(result, dict)
         assert "content" in result or "input" in result
 
     def test_missing_closing_brace(self):
         from agent_orchestrator.providers.openai import _repair_json
+
         result = _repair_json('{"a": 1, "b": 2')
         assert isinstance(result, dict)
         assert result.get("a") == 1
 
     def test_trailing_comma(self):
         from agent_orchestrator.providers.openai import _repair_json
+
         result = _repair_json('{"a": 1, "b": 2,}')
         assert isinstance(result, dict)
 
     def test_empty_string(self):
         from agent_orchestrator.providers.openai import _repair_json
+
         assert _repair_json("") == {}
         assert _repair_json("  ") == {}
 
     def test_totally_broken_returns_input_key(self):
         from agent_orchestrator.providers.openai import _repair_json
+
         result = _repair_json("not json at all")
         assert isinstance(result, dict)
         assert result.get("input") == "not json at all"
 
     def test_missing_closing_bracket_and_brace(self):
         from agent_orchestrator.providers.openai import _repair_json
+
         result = _repair_json('{"items": [1, 2, 3')
         assert isinstance(result, dict)

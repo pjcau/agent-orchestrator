@@ -54,6 +54,7 @@ from .llm_nodes import llm_node
 # Data model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class NodeTemplate:
     """Descriptor for a single graph node.
@@ -108,6 +109,7 @@ class GraphTemplate:
 # ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
+
 
 class GraphTemplateStore:
     """In-memory store for graph templates with versioning.
@@ -289,6 +291,7 @@ class GraphTemplateStore:
                 def router(state: dict[str, Any]) -> str:
                     key = state.get("_route", "")
                     return rm.get(key, next(iter(rm.values())))
+
                 return router
 
             graph.add_conditional_edges(source, make_router(route_map), route_map)
@@ -355,6 +358,7 @@ class GraphTemplateStore:
 # Serialisation helpers
 # ---------------------------------------------------------------------------
 
+
 def _template_to_dict(tmpl: GraphTemplate) -> dict[str, Any]:
     return {
         "name": tmpl.name,
@@ -362,13 +366,9 @@ def _template_to_dict(tmpl: GraphTemplate) -> dict[str, Any]:
         "version": tmpl.version,
         "created_at": tmpl.created_at,
         "metadata": tmpl.metadata,
-        "nodes": [
-            {"name": n.name, "type": n.type, "config": n.config}
-            for n in tmpl.nodes
-        ],
+        "nodes": [{"name": n.name, "type": n.type, "config": n.config} for n in tmpl.nodes],
         "edges": [
-            {"source": e.source, "target": e.target, "condition": e.condition}
-            for e in tmpl.edges
+            {"source": e.source, "target": e.target, "condition": e.condition} for e in tmpl.edges
         ],
     }
 

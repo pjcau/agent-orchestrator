@@ -27,13 +27,15 @@ class TestPluginLoader:
 
     def test_load_from_dict(self):
         loader = PluginLoader()
-        manifest = loader.load_from_dict({
-            "name": "test-plugin",
-            "version": "2.0",
-            "plugin_type": "provider",
-            "description": "Test",
-            "author": "tester",
-        })
+        manifest = loader.load_from_dict(
+            {
+                "name": "test-plugin",
+                "version": "2.0",
+                "plugin_type": "provider",
+                "description": "Test",
+                "author": "tester",
+            }
+        )
         assert manifest.name == "test-plugin"
         assert loader.get_manifest("test-plugin") is not None
 
@@ -237,10 +239,12 @@ class TestMCPServerRegistry:
 
     def test_register_agent_tools(self):
         reg = MCPServerRegistry()
-        reg.register_agent_tools({
-            "backend": {"role": "Backend developer"},
-            "frontend": {"role": "Frontend developer"},
-        })
+        reg.register_agent_tools(
+            {
+                "backend": {"role": "Backend developer"},
+                "frontend": {"role": "Frontend developer"},
+            }
+        )
         tools = reg.list_tools()
         assert len(tools) == 2
         names = {t.name for t in tools}
@@ -316,10 +320,12 @@ class TestWebhookSkill:
     @pytest.mark.asyncio
     async def test_send_webhook(self):
         skill = WebhookSkill()
-        result = await skill.execute({
-            "url": "https://hooks.example.com/notify",
-            "payload": {"event": "deploy", "status": "success"},
-        })
+        result = await skill.execute(
+            {
+                "url": "https://hooks.example.com/notify",
+                "payload": {"event": "deploy", "status": "success"},
+            }
+        )
         assert result.success is True
         assert result.output["status"] == "queued"
         assert result.output["url"] == "https://hooks.example.com/notify"
@@ -327,12 +333,14 @@ class TestWebhookSkill:
     @pytest.mark.asyncio
     async def test_send_with_method_and_headers(self):
         skill = WebhookSkill()
-        result = await skill.execute({
-            "url": "https://api.example.com",
-            "method": "PUT",
-            "payload": {"data": "test"},
-            "headers": {"Authorization": "Bearer token"},
-        })
+        result = await skill.execute(
+            {
+                "url": "https://api.example.com",
+                "method": "PUT",
+                "payload": {"data": "test"},
+                "headers": {"Authorization": "Bearer token"},
+            }
+        )
         assert result.success is True
         assert result.output["method"] == "PUT"
         assert result.output["headers"]["Authorization"] == "Bearer token"

@@ -43,16 +43,18 @@ async def example_1_simple():
     graph.add_edge(START, "review")
     graph.add_edge("review", END)
 
-    result = await graph.compile().invoke({
-        "code": "def fibonacci(n): return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"
-    })
+    result = await graph.compile().invoke(
+        {"code": "def fibonacci(n): return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"}
+    )
 
     if not result.success:
         print(f"ERROR: {result.error}")
         return
 
     print(f"Review: {result.state['review']}")
-    print(f"Tokens: {result.state['_usage']['input_tokens']} in, {result.state['_usage']['output_tokens']} out")
+    print(
+        f"Tokens: {result.state['_usage']['input_tokens']} in, {result.state['_usage']['output_tokens']} out"
+    )
     print("Cost: $0.00 (local)")
 
 
@@ -72,7 +74,9 @@ async def example_2_chain():
     fix = llm_node(
         provider=qwen,
         system="You fix code based on analysis. Return ONLY the fixed code, no explanation.",
-        prompt_template=lambda s: f"Analysis:\n{s['analysis']}\n\nOriginal code:\n{s['code']}\n\nFix it:",
+        prompt_template=lambda s: (
+            f"Analysis:\n{s['analysis']}\n\nOriginal code:\n{s['code']}\n\nFix it:"
+        ),
         output_key="fixed_code",
     )
 
@@ -121,7 +125,9 @@ async def example_3_parallel():
     summarize = llm_node(
         provider=qwen,
         system="Combine the security and performance reviews into a final summary. Max 5 lines.",
-        prompt_template=lambda s: f"Security:\n{s.get('security','')}\n\nPerformance:\n{s.get('performance','')}\n\nSummarize:",
+        prompt_template=lambda s: (
+            f"Security:\n{s.get('security', '')}\n\nPerformance:\n{s.get('performance', '')}\n\nSummarize:"
+        ),
         output_key="summary",
     )
 
@@ -135,8 +141,9 @@ async def example_3_parallel():
     graph.add_edge("performance", "summarize")
     graph.add_edge("summarize", END)
 
-    result = await graph.compile().invoke({
-        "code": """
+    result = await graph.compile().invoke(
+        {
+            "code": """
 import sqlite3
 def get_user(name):
     conn = sqlite3.connect('db.sqlite')
@@ -145,7 +152,8 @@ def get_user(name):
     conn.close()
     return results
 """
-    })
+        }
+    )
 
     if not result.success:
         print(f"ERROR: {result.error}")
@@ -217,9 +225,9 @@ async def example_4_conditional():
     graph.add_edge("feature", END)
     graph.add_edge("refactor", END)
 
-    result = await graph.compile().invoke({
-        "request": "The login page crashes when the password contains a single quote character"
-    })
+    result = await graph.compile().invoke(
+        {"request": "The login page crashes when the password contains a single quote character"}
+    )
 
     if not result.success:
         print(f"ERROR: {result.error}")
@@ -241,12 +249,15 @@ async def main():
     # Check Ollama is running
     try:
         from openai import AsyncOpenAI
+
         client = AsyncOpenAI(api_key="ollama", base_url="http://localhost:11434/v1")
         models = await client.models.list()
         available = [m.id for m in models.data]
         print(f"Ollama models available: {available}")
         if "qwen2.5-coder:7b-instruct" not in available:
-            print("WARNING: qwen2.5-coder:7b-instruct not found. Run: ollama pull qwen2.5-coder:7b-instruct")
+            print(
+                "WARNING: qwen2.5-coder:7b-instruct not found. Run: ollama pull qwen2.5-coder:7b-instruct"
+            )
             sys.exit(1)
     except Exception as e:
         print(f"ERROR: Cannot connect to Ollama at localhost:11434 — {e}")

@@ -118,10 +118,14 @@ class Orchestrator:
                 context=context or {},
             )
         )
-        await self._emit("decomposition.end", agent="team-lead", data={
-            "status": decomposition.status.value,
-            "steps": decomposition.steps_taken,
-        })
+        await self._emit(
+            "decomposition.end",
+            agent="team-lead",
+            data={
+                "status": decomposition.status.value,
+                "steps": decomposition.steps_taken,
+            },
+        )
 
         if decomposition.status != TaskStatus.COMPLETED:
             result = OrchestratorResult(
@@ -148,10 +152,7 @@ class Orchestrator:
                     output="Deadlock detected: pending tasks have unresolvable dependencies",
                     agent_results=agent_results,
                     total_cost_usd=self._cost_tracker,
-                    conflicts=[
-                        {"resource": c.resource, "agents": c.agents}
-                        for c in conflicts
-                    ],
+                    conflicts=[{"resource": c.resource, "agents": c.agents} for c in conflicts],
                 )
                 await self._emit("orchestrator.end", data={"success": False, "deadlock": True})
                 return result
@@ -165,10 +166,13 @@ class Orchestrator:
                     self.protocol.mark_running(assignment.task_id)
 
                 # Execute batch in parallel
-                await self._emit("batch.start", data={
-                    "tasks": [a.task_id for a in batch],
-                    "agents": [a.to_agent for a in batch],
-                })
+                await self._emit(
+                    "batch.start",
+                    data={
+                        "tasks": [a.task_id for a in batch],
+                        "agents": [a.to_agent for a in batch],
+                    },
+                )
 
                 results = await asyncio.gather(
                     *(self._execute_assignment(a) for a in batch),
@@ -211,13 +215,17 @@ class Orchestrator:
 
                     self._cost_tracker += task_result.total_cost_usd
 
-                    await self._emit("task.complete", agent=assignment.to_agent, data={
-                        "task_id": assignment.task_id,
-                        "status": task_result.status.value,
-                        "cost_usd": task_result.total_cost_usd,
-                        "tokens": task_result.total_tokens,
-                        "escalated": task_result.escalated,
-                    })
+                    await self._emit(
+                        "task.complete",
+                        agent=assignment.to_agent,
+                        data={
+                            "task_id": assignment.task_id,
+                            "status": task_result.status.value,
+                            "cost_usd": task_result.total_cost_usd,
+                            "tokens": task_result.total_tokens,
+                            "escalated": task_result.escalated,
+                        },
+                    )
 
                     # Budget check
                     if (
@@ -230,14 +238,17 @@ class Orchestrator:
                             agent_results=agent_results,
                             total_cost_usd=self._cost_tracker,
                         )
-                        await self._emit("orchestrator.end", data={
-                            "success": False, "reason": "budget_exceeded"
-                        })
+                        await self._emit(
+                            "orchestrator.end", data={"success": False, "reason": "budget_exceeded"}
+                        )
                         return result
 
-                await self._emit("batch.end", data={
-                    "tasks": [a.task_id for a in batch],
-                })
+                await self._emit(
+                    "batch.end",
+                    data={
+                        "tasks": [a.task_id for a in batch],
+                    },
+                )
 
         # Phase 3: Collect results and check for conflicts
         total_cost = sum(r.total_cost_usd for r in agent_results.values())
@@ -257,12 +268,15 @@ class Orchestrator:
                 for c in conflicts
             ],
         )
-        await self._emit("orchestrator.end", data={
-            "success": result.success,
-            "total_cost_usd": total_cost,
-            "total_tokens": total_tokens,
-            "conflict_count": len(conflicts),
-        })
+        await self._emit(
+            "orchestrator.end",
+            data={
+                "success": result.success,
+                "total_cost_usd": total_cost,
+                "total_tokens": total_tokens,
+                "conflict_count": len(conflicts),
+            },
+        )
         return result
 
     def resolve_provider(
@@ -314,10 +328,14 @@ class Orchestrator:
                 error=f"No agent config for '{assignment.to_agent}'",
             )
 
-        await self._emit("agent.start", agent=assignment.to_agent, data={
-            "task_id": assignment.task_id,
-            "description": assignment.description[:200],
-        })
+        await self._emit(
+            "agent.start",
+            agent=assignment.to_agent,
+            data={
+                "task_id": assignment.task_id,
+                "description": assignment.description[:200],
+            },
+        )
 
         # Inject artifacts from completed dependencies into task context
         dep_context = dict(assignment.context)

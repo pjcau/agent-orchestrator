@@ -292,7 +292,8 @@ class TestTaskRouter:
         health = HealthMonitor(max_consecutive_errors=1)
         health.record_error("p1", "down")
         router = TaskRouter(
-            providers, health_monitor=health,
+            providers,
+            health_monitor=health,
             config=RouterConfig(strategy=RoutingStrategy.LOCAL_FIRST),
         )
         result = router.route("task")
@@ -317,50 +318,88 @@ class TestTaskRouter:
 class TestUsageTracker:
     def test_record_and_session_cost(self):
         tracker = UsageTracker()
-        tracker.record(UsageRecord(
-            provider="openrouter", model="qwen", input_tokens=1000,
-            output_tokens=500, cost_usd=0.01,
-        ))
-        tracker.record(UsageRecord(
-            provider="openrouter", model="qwen", input_tokens=500,
-            output_tokens=200, cost_usd=0.005,
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="openrouter",
+                model="qwen",
+                input_tokens=1000,
+                output_tokens=500,
+                cost_usd=0.01,
+            )
+        )
+        tracker.record(
+            UsageRecord(
+                provider="openrouter",
+                model="qwen",
+                input_tokens=500,
+                output_tokens=200,
+                cost_usd=0.005,
+            )
+        )
         assert tracker.get_session_cost() == pytest.approx(0.015)
 
     def test_cost_by_provider(self):
         tracker = UsageTracker()
-        tracker.record(UsageRecord(
-            provider="openrouter", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.01,
-        ))
-        tracker.record(UsageRecord(
-            provider="local-ollama", model="m2", input_tokens=100,
-            output_tokens=50, cost_usd=0.0,
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="openrouter",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.01,
+            )
+        )
+        tracker.record(
+            UsageRecord(
+                provider="local-ollama",
+                model="m2",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.0,
+            )
+        )
         by_provider = tracker.get_cost_by_provider()
         assert by_provider["openrouter"] == pytest.approx(0.01)
         assert by_provider["local-ollama"] == pytest.approx(0.0)
 
     def test_cost_by_agent(self):
         tracker = UsageTracker()
-        tracker.record(UsageRecord(
-            provider="p1", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.01, agent_name="backend",
-        ))
-        tracker.record(UsageRecord(
-            provider="p1", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.02, agent_name="frontend",
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="p1",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.01,
+                agent_name="backend",
+            )
+        )
+        tracker.record(
+            UsageRecord(
+                provider="p1",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.02,
+                agent_name="frontend",
+            )
+        )
         by_agent = tracker.get_cost_by_agent()
         assert by_agent["backend"] == pytest.approx(0.01)
         assert by_agent["frontend"] == pytest.approx(0.02)
 
     def test_budget_within_limits(self):
         tracker = UsageTracker()
-        tracker.record(UsageRecord(
-            provider="p1", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.01, task_id="t1",
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="p1",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.01,
+                task_id="t1",
+            )
+        )
         status = tracker.check_budget(
             BudgetConfig(max_per_task=0.05, max_per_session=1.0),
             task_id="t1",
@@ -371,10 +410,16 @@ class TestUsageTracker:
 
     def test_budget_task_exceeded(self):
         tracker = UsageTracker()
-        tracker.record(UsageRecord(
-            provider="p1", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.10, task_id="t1",
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="p1",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.10,
+                task_id="t1",
+            )
+        )
         status = tracker.check_budget(
             BudgetConfig(max_per_task=0.05),
             task_id="t1",
@@ -385,24 +430,39 @@ class TestUsageTracker:
     def test_budget_session_exceeded(self):
         tracker = UsageTracker()
         for i in range(20):
-            tracker.record(UsageRecord(
-                provider="p1", model="m1", input_tokens=100,
-                output_tokens=50, cost_usd=0.1,
-            ))
+            tracker.record(
+                UsageRecord(
+                    provider="p1",
+                    model="m1",
+                    input_tokens=100,
+                    output_tokens=50,
+                    cost_usd=0.1,
+                )
+            )
         status = tracker.check_budget(BudgetConfig(max_per_session=1.0))
         assert status.within_budget is False
         assert status.limit_type == "session"
 
     def test_cost_breakdown_local_vs_cloud(self):
         tracker = UsageTracker()
-        tracker.record(UsageRecord(
-            provider="local-ollama", model="llama", input_tokens=1000,
-            output_tokens=500, cost_usd=0.0,
-        ))
-        tracker.record(UsageRecord(
-            provider="openrouter", model="qwen", input_tokens=1000,
-            output_tokens=500, cost_usd=0.01,
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="local-ollama",
+                model="llama",
+                input_tokens=1000,
+                output_tokens=500,
+                cost_usd=0.0,
+            )
+        )
+        tracker.record(
+            UsageRecord(
+                provider="openrouter",
+                model="qwen",
+                input_tokens=1000,
+                output_tokens=500,
+                cost_usd=0.01,
+            )
+        )
         breakdown = tracker.get_cost_breakdown()
         assert breakdown.local_cost == 0.0
         assert breakdown.cloud_cost == pytest.approx(0.01)
@@ -413,26 +473,43 @@ class TestUsageTracker:
 
     def test_get_records_with_since_filter(self):
         import time
+
         tracker = UsageTracker()
         early = time.time() - 100
-        tracker.record(UsageRecord(
-            provider="p1", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.01, timestamp=early,
-        ))
-        tracker.record(UsageRecord(
-            provider="p1", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.02,
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="p1",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.01,
+                timestamp=early,
+            )
+        )
+        tracker.record(
+            UsageRecord(
+                provider="p1",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.02,
+            )
+        )
         recent = tracker.get_records(since=early + 50)
         assert len(recent) == 1
         assert recent[0].cost_usd == pytest.approx(0.02)
 
     def test_daily_cost(self):
         tracker = UsageTracker()
-        tracker.record(UsageRecord(
-            provider="p1", model="m1", input_tokens=100,
-            output_tokens=50, cost_usd=0.05,
-        ))
+        tracker.record(
+            UsageRecord(
+                provider="p1",
+                model="m1",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.05,
+            )
+        )
         assert tracker.get_daily_cost() == pytest.approx(0.05)
 
 

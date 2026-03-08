@@ -66,10 +66,12 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/session")
     async def session():
         """Return current session info (ID and jobs directory)."""
-        return JSONResponse(content={
-            "session_id": job_logger.session_id,
-            "jobs_dir": str(job_logger.session_dir),
-        })
+        return JSONResponse(
+            content={
+                "session_id": job_logger.session_id,
+                "jobs_dir": str(job_logger.session_dir),
+            }
+        )
 
     @app.get("/api/session/history")
     async def session_history():
@@ -88,9 +90,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         """Load all records from a specific session."""
         records = job_logger.load_session(session_id)
         if not records:
-            return JSONResponse(
-                content={"error": "Session not found"}, status_code=404
-            )
+            return JSONResponse(content={"error": "Session not found"}, status_code=404)
         return JSONResponse(content={"session_id": session_id, "records": records})
 
     @app.post("/api/jobs/{session_id}/switch")
@@ -102,11 +102,13 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 content={"success": False, "error": "Session not found"},
                 status_code=404,
             )
-        return JSONResponse(content={
-            "success": True,
-            "session_id": session_id,
-            "jobs_dir": str(job_logger.session_dir),
-        })
+        return JSONResponse(
+            content={
+                "success": True,
+                "session_id": session_id,
+                "jobs_dir": str(job_logger.session_dir),
+            }
+        )
 
     @app.get("/api/usage")
     async def usage_stats():
@@ -190,13 +192,16 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 event_bus=bus,
                 working_directory=str(job_logger.session_dir),
             )
-            job_logger.log("agent_run", {
-                "agent": agent_name,
-                "task": task_desc,
-                "model": model,
-                "provider": provider_type,
-                "result": result,
-            })
+            job_logger.log(
+                "agent_run",
+                {
+                    "agent": agent_name,
+                    "task": task_desc,
+                    "model": model,
+                    "provider": provider_type,
+                    "result": result,
+                },
+            )
 
             await usage_db.record(
                 model=model,
@@ -210,13 +215,16 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             )
             return JSONResponse(content=result)
         except Exception as exc:
-            job_logger.log("agent_run", {
-                "agent": agent_name,
-                "task": task_desc,
-                "model": model,
-                "provider": provider_type,
-                "result": {"success": False, "error": str(exc)},
-            })
+            job_logger.log(
+                "agent_run",
+                {
+                    "agent": agent_name,
+                    "task": task_desc,
+                    "model": model,
+                    "provider": provider_type,
+                    "result": {"success": False, "error": str(exc)},
+                },
+            )
             return JSONResponse(
                 content={"success": False, "error": str(exc)},
                 status_code=500,
@@ -252,20 +260,23 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 event_bus=bus,
                 working_directory=str(job_logger.session_dir),
             )
-            job_logger.log("team_run", {
-                "task": task_desc,
-                "model": model,
-                "provider": provider_type,
-                "result": {
-                    "success": result.get("success"),
-                    "output": result.get("output", "")[:2000],
-                    "plan": result.get("plan", "")[:1000],
-                    "agent_costs": result.get("agent_costs", {}),
-                    "total_tokens": result.get("total_tokens"),
-                    "total_cost_usd": result.get("total_cost_usd"),
-                    "elapsed_s": result.get("elapsed_s"),
+            job_logger.log(
+                "team_run",
+                {
+                    "task": task_desc,
+                    "model": model,
+                    "provider": provider_type,
+                    "result": {
+                        "success": result.get("success"),
+                        "output": result.get("output", "")[:2000],
+                        "plan": result.get("plan", "")[:1000],
+                        "agent_costs": result.get("agent_costs", {}),
+                        "total_tokens": result.get("total_tokens"),
+                        "total_cost_usd": result.get("total_cost_usd"),
+                        "elapsed_s": result.get("elapsed_s"),
+                    },
                 },
-            })
+            )
 
             # Record per-agent costs
             for ag_name, ag_cost in (result.get("agent_costs") or {}).items():
@@ -281,12 +292,15 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 )
             return JSONResponse(content=result)
         except Exception as exc:
-            job_logger.log("team_run", {
-                "task": task_desc,
-                "model": model,
-                "provider": provider_type,
-                "result": {"success": False, "error": str(exc)},
-            })
+            job_logger.log(
+                "team_run",
+                {
+                    "task": task_desc,
+                    "model": model,
+                    "provider": provider_type,
+                    "result": {"success": False, "error": str(exc)},
+                },
+            )
             return JSONResponse(
                 content={"success": False, "error": str(exc)},
                 status_code=500,
@@ -432,14 +446,16 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 # Filter by query if provided
                 if q and q.lower() not in name.lower():
                     continue
-                models.append({
-                    "id": name,
-                    "name": m.get("name", name),
-                    "input_per_m": round(prompt_cost, 4),
-                    "output_per_m": round(completion_cost, 4),
-                    "context": m.get("context_length", 0),
-                    "is_free": prompt_cost == 0 and completion_cost == 0,
-                })
+                models.append(
+                    {
+                        "id": name,
+                        "name": m.get("name", name),
+                        "input_per_m": round(prompt_cost, 4),
+                        "output_per_m": round(completion_cost, 4),
+                        "context": m.get("context_length", 0),
+                        "is_free": prompt_cost == 0 and completion_cost == 0,
+                    }
+                )
 
             # Sort: free first, then by input cost
             models.sort(key=lambda x: (not x["is_free"], x["input_per_m"]))
@@ -672,13 +688,16 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             event_bus=bus,
         )
 
-        job_logger.log("prompt", {
-            "prompt": user_prompt,
-            "model": model,
-            "provider": provider_type,
-            "graph_type": graph_type,
-            "result": result,
-        })
+        job_logger.log(
+            "prompt",
+            {
+                "prompt": user_prompt,
+                "model": model,
+                "provider": provider_type,
+                "graph_type": graph_type,
+                "result": result,
+            },
+        )
 
         # Record usage
         usage = result.get("usage") or {}
@@ -855,18 +874,21 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                         }
                     )
 
-                    job_logger.log("stream", {
-                        "prompt": prompt_text,
-                        "model": model,
-                        "provider": provider_type,
-                        "result": {
-                            "success": True,
-                            "output": full_response,
-                            "tokens": total_tokens,
-                            "elapsed_s": round(elapsed, 2),
-                            "speed": round(speed, 1),
+                    job_logger.log(
+                        "stream",
+                        {
+                            "prompt": prompt_text,
+                            "model": model,
+                            "provider": provider_type,
+                            "result": {
+                                "success": True,
+                                "output": full_response,
+                                "tokens": total_tokens,
+                                "elapsed_s": round(elapsed, 2),
+                                "speed": round(speed, 1),
+                            },
                         },
-                    })
+                    )
 
                     await usage_db.record(
                         model=model,

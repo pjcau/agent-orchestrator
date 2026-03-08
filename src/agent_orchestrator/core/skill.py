@@ -1,10 +1,17 @@
-"""Skill — provider-independent capabilities that agents can invoke."""
+"""Skill — provider-independent capabilities that agents can invoke.
+
+Includes a middleware pattern (SkillMiddleware) for composable interceptors:
+retry, caching, logging, authorization, rate limiting.
+
+Inspired by LangGraph's ToolCallWrapper (analysis/langgraph/18-tool-node.md).
+"""
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Callable, Awaitable
 
 
 @dataclass
@@ -17,6 +24,33 @@ class SkillResult:
         if self.success:
             return str(self.output)
         return f"Error: {self.error}"
+
+
+@dataclass(frozen=True)
+class SkillRequest:
+    """Immutable request object passed through the middleware chain.
+
+    Use override() to create a modified copy without mutating the original.
+    """
+
+    skill_name: str
+    params: dict[str, Any]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def override(self, **kwargs: Any) -> SkillRequest:
+        """Create a new request with overridden fields."""
+        return SkillRequest(
+            skill_name=kwargs.get("skill_name", self.skill_name),
+            params=kwargs.get("params", self.params),
+            metadata=kwargs.get("metadata", self.metadata),
+        )
+
+
+# Type for middleware: takes request + next_fn, returns result
+SkillMiddleware = Callable[
+    [SkillRequest, Callable[[SkillRequest], Awaitable[SkillResult]]],
+    Awaitable[SkillResult],
+]
 
 
 class Skill(ABC):
@@ -41,10 +75,11 @@ class Skill(ABC):
 
 
 class SkillRegistry:
-    """Central registry of all available skills."""
+    """Central registry of all available skills with middleware support."""
 
     def __init__(self) -> None:
         self._skills: dict[str, Skill] = {}
+        self._middlewares: list[SkillMiddleware] = []
 
     def register(self, skill: Skill) -> None:
         self._skills[skill.name] = skill
@@ -52,14 +87,39 @@ class SkillRegistry:
     def get(self, name: str) -> Skill | None:
         return self._skills.get(name)
 
+    def use(self, middleware: SkillMiddleware) -> None:
+        """Add a middleware to the execution chain.
+
+        Middlewares execute in registration order (first registered = outermost).
+        Each middleware calls next_fn(request) to continue the chain.
+        """
+        self._middlewares.append(middleware)
+
     async def execute(self, name: str, params: dict) -> SkillResult:
         skill = self._skills.get(name)
         if skill is None:
             return SkillResult(success=False, output=None, error=f"Unknown skill: {name}")
-        try:
-            return await skill.execute(params)
-        except Exception as e:
-            return SkillResult(success=False, output=None, error=str(e))
+
+        request = SkillRequest(skill_name=name, params=params)
+
+        # Build the middleware chain (innermost = actual skill execution)
+        async def core_executor(req: SkillRequest) -> SkillResult:
+            s = self._skills.get(req.skill_name)
+            if s is None:
+                return SkillResult(
+                    success=False, output=None, error=f"Unknown skill: {req.skill_name}"
+                )
+            try:
+                return await s.execute(req.params)
+            except Exception as e:
+                return SkillResult(success=False, output=None, error=str(e))
+
+        # Wrap middlewares from inside out
+        chain = core_executor
+        for mw in reversed(self._middlewares):
+            chain = _wrap_middleware(mw, chain)
+
+        return await chain(request)
 
     def list_skills(self) -> list[str]:
         return list(self._skills.keys())
@@ -74,3 +134,81 @@ class SkillRegistry:
             }
             for s in self._skills.values()
         ]
+
+
+def _wrap_middleware(
+    mw: SkillMiddleware,
+    next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+) -> Callable[[SkillRequest], Awaitable[SkillResult]]:
+    """Wrap a middleware around a next function."""
+
+    async def wrapped(request: SkillRequest) -> SkillResult:
+        return await mw(request, next_fn)
+
+    return wrapped
+
+
+# ─── Built-in Middlewares ─────────────────────────────────────────────
+
+
+def logging_middleware(
+    logger: Callable[[str], None] | None = None,
+) -> SkillMiddleware:
+    """Log skill execution: name, params, duration, success/error."""
+
+    log = logger or (lambda msg: None)
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        start = time.monotonic()
+        log(f"Skill '{request.skill_name}' starting with params={request.params}")
+        result = await next_fn(request)
+        duration_ms = (time.monotonic() - start) * 1000
+        if result.success:
+            log(f"Skill '{request.skill_name}' completed in {duration_ms:.1f}ms")
+        else:
+            log(f"Skill '{request.skill_name}' failed in {duration_ms:.1f}ms: {result.error}")
+        return result
+
+    return middleware
+
+
+def retry_middleware(max_retries: int = 2) -> SkillMiddleware:
+    """Retry failed skill executions up to max_retries times."""
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        last_result: SkillResult | None = None
+        for attempt in range(1 + max_retries):
+            result = await next_fn(request)
+            if result.success:
+                return result
+            last_result = result
+        return last_result  # type: ignore[return-value]
+
+    return middleware
+
+
+def timeout_middleware(timeout_seconds: float = 30.0) -> SkillMiddleware:
+    """Enforce a timeout on skill execution."""
+
+    import asyncio
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        try:
+            return await asyncio.wait_for(next_fn(request), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            return SkillResult(
+                success=False,
+                output=None,
+                error=f"Skill '{request.skill_name}' timed out after {timeout_seconds}s",
+            )
+
+    return middleware
