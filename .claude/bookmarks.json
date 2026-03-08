@@ -1,0 +1,32 @@
+[
+  {
+    "url": "https://example.com/sample-article",
+    "added": "2026-03-08T10:00:00Z",
+    "source": "manual",
+    "notes": "Example bookmark — replace with real URLs"
+  },
+  {
+    "url": "https://github.com/IgorWarzocha/opencode-planning-toolkit",
+    "added": "2026-03-08T15:03:18Z",
+    "source": "github-star",
+    "notes": "A set of tools that allow sharing a repo-wide todoliist between sessions. | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/m1k1o/neko",
+    "added": "2026-03-08T15:01:39Z",
+    "source": "github-star",
+    "notes": "A self hosted virtual browser that runs in docker and uses WebRTC. | Language: Go | Topics: docker, golang, media-streaming, remote-control, remote-desktop"
+  },
+  {
+    "url": "https://github.com/f/prompts.chat",
+    "added": "2026-03-08T15:05:21Z",
+    "source": "github-star",
+    "notes": "f.k.a. Awesome ChatGPT Prompts. Share, discover, and collect prompts from the community. Free and open source — self-host for your organization with complete privacy. | Language: HTML | Topics: ai, artificial-intelligence, awesome-list, chatgpt, chatgpt-prompts"
+  },
+  {
+    "url": "https://github.com/itzharshitmavi/awsome-LLM-model-apps-for-daily-uses",
+    "added": "2026-03-08T15:04:32Z",
+    "source": "github-star",
+    "notes": "here is the collection of ai agents mostly and highly used in specific filed for our day to day life check them out and fast&up your work | Language: Python"
+  }
+]
