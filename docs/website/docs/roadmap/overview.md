@@ -31,8 +31,8 @@ AWS infrastructure and monitoring come **first** — the product must be live an
 
 | Phase | Focus | Timeline | Page |
 |-------|-------|----------|------|
-| **Phase 0** | AWS Infrastructure + Prometheus/Grafana | **NOW** | [Details](../roadmap) |
-| **Phase 1** | Agent Autonomy Lab (sandbox, sprints, observability) | Month 1 | [Details](../roadmap) |
+| **Phase 0** | AWS Infrastructure + Prometheus/Grafana | **NOW** | [Details](./overview) |
+| **Phase 1** | Agent Autonomy Lab (sandbox, sprints, observability) | Month 1 | [Details](./overview) |
 | **Phase 2** | Optimization & First Revenue | Month 2-4 | [Details](./v050-routing) |
 | **Phase 3** | Platform Maturity | Month 4-6 | [Details](./v060-hardening) |
 | **Phase 4** | Hybrid GPU Scaling | Month 6+ | [Details](./post-mvp-scaling) |
