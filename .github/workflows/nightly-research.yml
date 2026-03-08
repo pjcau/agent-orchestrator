@@ -49,6 +49,29 @@ jobs:
             echo "has_findings=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Usage report
+        if: always()
+        run: |
+          echo "## Research Scout Usage Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f .claude/research-scout-usage.json ]; then
+            echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            python -c "
+          import json
+          u = json.load(open('.claude/research-scout-usage.json'))
+          print(f'| GitHub API calls | {u[\"github_api_calls\"]} |')
+          print(f'| Characters fetched | {u[\"chars_fetched\"]:,} |')
+          print(f'| LLM model | {u[\"llm_model\"] or \"n/a (keyword only)\"} |')
+          print(f'| LLM input tokens | {u[\"llm_input_tokens\"]:,} |')
+          print(f'| LLM output tokens | {u[\"llm_output_tokens\"]:,} |')
+          print(f'| LLM total tokens | {u[\"llm_total_tokens\"]:,} |')
+          print(f'| **LLM cost** | **\${u[\"llm_cost_usd\"]:.4f}** |')
+          " >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No usage data available." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Create PR with findings
         if: steps.scout.outputs.has_findings == 'true'
         env:

@@ -32,7 +32,72 @@ from agent_orchestrator.core.bookmark_tracker import (
 STATE_FILE = Path(".claude/research-scout-state.json")
 BOOKMARKS_FILE = Path(".claude/bookmarks.json")
 FINDINGS_FILE = Path(".claude/research-scout-findings.md")
+USAGE_FILE = Path(".claude/research-scout-usage.json")
 MAX_URLS_PER_RUN = 10
+
+# Model pricing per 1M tokens (USD) — update as needed
+MODEL_PRICING = {
+    "qwen/qwen3-coder:free": {"input": 0.0, "output": 0.0},
+    "default": {"input": 0.50, "output": 1.50},
+}
+
+
+class UsageTracker:
+    """Track token usage and costs across the run."""
+
+    def __init__(self):
+        self.github_api_calls = 0
+        self.chars_fetched = 0
+        self.llm_input_tokens = 0
+        self.llm_output_tokens = 0
+        self.llm_model = ""
+        self.llm_cost_usd = 0.0
+
+    def add_fetch(self, char_count: int):
+        self.github_api_calls += 1
+        self.chars_fetched += char_count
+
+    def add_llm_usage(self, model: str, input_tokens: int, output_tokens: int):
+        self.llm_model = model
+        self.llm_input_tokens += input_tokens
+        self.llm_output_tokens += output_tokens
+        pricing = MODEL_PRICING.get(model, MODEL_PRICING["default"])
+        self.llm_cost_usd += (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
+
+    def summary(self) -> str:
+        lines = [
+            "\n--- USAGE REPORT ---",
+            f"GitHub API calls:  {self.github_api_calls}",
+            f"Characters fetched: {self.chars_fetched:,}",
+        ]
+        if self.llm_input_tokens or self.llm_output_tokens:
+            total_tokens = self.llm_input_tokens + self.llm_output_tokens
+            lines.extend([
+                f"LLM model:         {self.llm_model}",
+                f"LLM input tokens:  {self.llm_input_tokens:,}",
+                f"LLM output tokens: {self.llm_output_tokens:,}",
+                f"LLM total tokens:  {total_tokens:,}",
+                f"LLM cost:          ${self.llm_cost_usd:.4f}",
+            ])
+        else:
+            lines.append("LLM tokens:        0 (keyword analysis only)")
+            lines.append("LLM cost:          $0.0000")
+        lines.append("--------------------")
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict:
+        return {
+            "github_api_calls": self.github_api_calls,
+            "chars_fetched": self.chars_fetched,
+            "llm_model": self.llm_model,
+            "llm_input_tokens": self.llm_input_tokens,
+            "llm_output_tokens": self.llm_output_tokens,
+            "llm_total_tokens": self.llm_input_tokens + self.llm_output_tokens,
+            "llm_cost_usd": round(self.llm_cost_usd, 6),
+        }
+
+
+usage = UsageTracker()
 
 # Regex to extract owner/repo from GitHub URLs
 _GH_REPO_RE = re.compile(r"github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/|$)")
@@ -84,10 +149,13 @@ def _fetch_github_readme(owner: str, repo: str) -> dict:
         readme_text,
     ]
 
+    total_chars = sum(len(p) for p in text_parts)
+    usage.add_fetch(total_chars)
+
     return {
         "title": title,
         "text": "\n".join(text_parts),
-        "char_count": sum(len(p) for p in text_parts),
+        "char_count": total_chars,
     }
 
 
@@ -241,7 +309,11 @@ def main():
 
     # Save state
     save_state(STATE_FILE, state)
-    print(f"\nDone. State saved to {STATE_FILE}")
+
+    # Write usage report
+    print(usage.summary())
+    USAGE_FILE.write_text(json.dumps(usage.to_dict(), indent=2), encoding="utf-8")
+    print(f"Done. State saved to {STATE_FILE}")
 
 
 if __name__ == "__main__":
