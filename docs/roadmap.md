@@ -28,23 +28,157 @@
 
 ---
 
-## URGENT: Phase 0 — AWS Infrastructure (ASAP)
+## URGENT: Phase 0 — AWS Infrastructure + Auth (ASAP)
 
-**Goal:** Get the orchestrator running on AWS immediately. Everything else depends on this.
+**Goal:** EC2 up, HTTPS working, OAuth2 active, first agent reachable remotely.
 **Budget:** ~42 EUR/month
+**Duration:** 2 sprints (2 weeks)
 
-### 0A — AWS Setup (Week 1)
+> **IaC:** Terraform · **CI/CD:** GitHub Actions · **Cloud:** AWS EC2 + Docker Compose
+> **Auth:** OAuth2 (Google/GitHub) + JWT session cookies · **State:** S3 + DynamoDB lock
 
-| Task | Priority | Detail |
-|------|----------|--------|
-| AWS EC2 t3.medium | CRITICAL | Deploy orchestrator + FastAPI + dashboard |
-| Docker Compose on EC2 | CRITICAL | Same stack as local, with production config |
-| Elastic IP + HTTPS | CRITICAL | Let's Encrypt, nginx reverse proxy |
-| S3 storage | HIGH | Checkpoints, outputs, prompt templates |
-| Security groups | CRITICAL | Restrict ports, SSH key-only, no open DB |
-| `.env.production` | CRITICAL | API keys, budget caps, provider config |
+### Architecture Target
 
-### 0B — Monitoring Board (Week 2)
+```
+Internet
+   │
+   ▼
+Route53 (DNS) ──► ACM (SSL cert)
+   │
+   ▼
+EC2 t3.medium (Elastic IP + Security Group)
+   │
+   Docker Compose
+   ├── Nginx (reverse proxy + SSL termination)
+   │     └── /          → Dashboard (FastAPI + static UI)
+   │     └── /api/      → FastAPI (orchestrator API)
+   │     └── /auth/     → OAuth2 callback handler
+   ├── FastAPI + StateGraph (multi-agent orchestrator)
+   ├── PostgreSQL (checkpoints, usage data)
+   ├── Redis (semantic cache + session store)
+   ├── Prometheus (metrics collection)
+   ├── Grafana (visualization, alerts)
+   └── Node Exporter (system metrics)
+   │
+   ▼
+OpenRouter API (free models + fallback chains)
+```
+
+### Prerequisites
+
+- [ ] AWS account with dedicated IAM user (not root): EC2, S3, DynamoDB, IAM, Route53
+- [ ] AWS CLI configured locally (`aws configure`)
+- [ ] Terraform installed (`brew install terraform`)
+- [ ] GitHub Secrets configured:
+  ```
+  AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+  EC2_SSH_PRIVATE_KEY
+  OPENROUTER_API_KEY          ← already configured ✓
+  GOOGLE_CLIENT_ID            ← from Google Cloud Console
+  GOOGLE_CLIENT_SECRET
+  GITHUB_OAUTH_CLIENT_ID      ← from GitHub Developer Settings
+  GITHUB_OAUTH_CLIENT_SECRET
+  JWT_SECRET_KEY              ← random 256-bit string
+  ```
+- [ ] Domain registered (e.g. `agents.yourdomain.com`)
+- [ ] Google Cloud Console: OAuth2 app + redirect URI `https://agents.yourdomain.com/auth/google/callback`
+- [ ] GitHub Developer Settings: OAuth App + redirect URI `https://agents.yourdomain.com/auth/github/callback`
+
+### Sprint 1 — Terraform: Bootstrap AWS Infrastructure
+
+#### Step 1.1 — Terraform Backend (S3 + DynamoDB)
+
+One-time manual bootstrap:
+
+```bash
+# S3 bucket for state
+aws s3api create-bucket \
+  --bucket ai-agents-terraform-state \
+  --region eu-west-1 \
+  --create-bucket-configuration LocationConstraint=eu-west-1
+
+aws s3api put-bucket-versioning \
+  --bucket ai-agents-terraform-state \
+  --versioning-configuration Status=Enabled
+
+# DynamoDB table for lock
+aws dynamodb create-table \
+  --table-name terraform-state-lock \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --region eu-west-1
+```
+
+Files to create: `terraform/backend.tf`, `terraform/main.tf`, `terraform/variables.tf`, `terraform/outputs.tf`
+
+#### Step 1.2 — VPC + EC2 + Security Group
+
+Terraform modules: `terraform/modules/ec2/`, `terraform/modules/networking/`, `terraform/modules/iam/`
+
+Key resources:
+- Security group: SSH (your IP only), HTTP 80, HTTPS 443
+- EC2 `t3.medium`, Ubuntu 24.04, 30GB gp3
+- Elastic IP for stable address
+- User data script: install Docker + docker-compose
+
+#### Step 1.3 — GitHub Actions: Terraform Pipeline
+
+File: `.github/workflows/terraform.yml`
+- Trigger on push to `main` (paths: `terraform/**`)
+- Steps: checkout → AWS credentials → terraform init/plan/apply
+
+**Sprint 1 Deliverables:**
+- [ ] S3 bucket + DynamoDB created manually
+- [ ] `terraform apply` creates EC2, SG, EIP without errors
+- [ ] SSH to EC2 working, Docker installed
+- [ ] GitHub Actions runs plan/apply on push
+
+### Sprint 2 — Auth OAuth2 + App Deploy + Monitoring
+
+#### Step 2.1 — OAuth2 Authentication
+
+OAuth2 flow with JWT session cookies:
+
+```
+Browser → GET /auth/google → redirect to Google
+Google  → GET /auth/google/callback?code=xxx
+FastAPI → exchange code → get user info → create JWT session cookie
+Browser → all /api/* requests use JWT cookie
+```
+
+Implementation: `authlib` for OAuth2 + `PyJWT` for session tokens.
+Middleware: `get_current_user` dependency on all protected endpoints.
+
+Security:
+- JWT cookie: `httponly=True`, `secure=True`, `samesite=lax`
+- Rate limiting on `/api/*` (max 60 req/min per user)
+
+#### Step 2.2 — Docker Compose Production
+
+File: `docker-compose.prod.yml`
+- nginx (reverse proxy + SSL termination)
+- backend (FastAPI orchestrator)
+- redis (semantic cache + sessions)
+- postgres (checkpoints, usage)
+- prometheus + grafana (monitoring)
+
+#### Step 2.3 — GitHub Actions: Deploy Pipeline
+
+File: `.github/workflows/deploy.yml`
+- Trigger on push to `main` (paths: `backend/**`, `docker-compose.prod.yml`, `nginx/**`)
+- Steps: get EC2 IP from Terraform → SSH deploy → health check (`/health`)
+
+#### Step 2.4 — SSL with Let's Encrypt
+
+One-time on EC2:
+```bash
+sudo apt install certbot -y
+sudo certbot certonly --standalone -d agents.yourdomain.com --agree-tos --non-interactive
+echo "0 12 * * * certbot renew --quiet" | sudo crontab -
+```
+
+#### Step 2.5 — Monitoring Board
 
 | Task | Priority | Detail |
 |------|----------|--------|
@@ -54,24 +188,35 @@
 | Alert rules | HIGH | Cost threshold, error rate spike, agent stall detection |
 | CloudWatch basics | MEDIUM | EC2 auto-recovery, uptime monitoring |
 
-**Target stack:**
+**Sprint 2 Deliverables:**
+- [ ] OAuth2 Google + GitHub working
+- [ ] Dashboard accessible only after login
+- [ ] Streaming agent responses in UI
+- [ ] GitHub Actions auto-deploys on push to `main`
+- [ ] HTTPS active on custom domain
+- [ ] Grafana accessible via SSH tunnel (`ssh -L 3001:localhost:3001 ubuntu@ec2-ip`)
+- [ ] Prometheus scraping orchestrator metrics
 
-```
-[EC2 t3.medium]
-  ├── docker-compose.production.yml
-  │   ├── dashboard (port 5005, nginx reverse proxy + HTTPS)
-  │   ├── postgres (checkpoints, usage data)
-  │   ├── prometheus (metrics collection)
-  │   ├── grafana (visualization, alerts)
-  │   └── node-exporter (system metrics)
-  └── S3 (outputs, templates, backups)
-```
+### Phase 0 KPIs
 
-### KPIs
+| KPI | Target |
+|-----|--------|
+| Deploy time (push → live) | < 5 min |
+| Auth success rate | 100% |
+| First token latency | < 5s |
+| Uptime | 99% |
+| Monthly infra cost | < 60 EUR |
 
-- System live and reachable on AWS within 1 week
-- Grafana dashboard showing real-time agent metrics within 2 weeks
-- Monthly infra cost < 60 EUR
+### Security Checklist
+
+- [ ] SSH open only from your fixed IP (Terraform SG)
+- [ ] Grafana not publicly exposed (SSH tunnel only)
+- [ ] `.env.prod` never in repository (GitHub Secrets only)
+- [ ] JWT cookie `httponly=True`, `secure=True`, `samesite=lax`
+- [ ] Rate limiting on `/api/*` (max 60 req/min per user)
+- [ ] OpenRouter API key rotated every 90 days
+- [ ] AWS IAM: EC2 uses Instance Role (no hardcoded credentials)
+- [ ] S3 state bucket: access restricted to CI/CD IAM user
 
 ---
 
@@ -130,43 +275,47 @@ flowchart LR
 
 ## Phase 2: Optimization & First Revenue (Month 2-4)
 
-**Goal:** Reduce costs, add smart routing, acquire first paying users.
-**Budget:** 42-100 EUR/month
+**Goal:** Semantic cache, smart routing, multi-agent workflows, beta users.
+**Budget:** 60-100 EUR/month
 
-### 2A — Cost Optimization
+### Sprint 3 — Semantic Cache + Monitoring
 
-| Task | Detail |
-|------|--------|
-| Prompt caching | Cache repeated contexts (50-80% token savings) |
-| Smart model routing | Route by task complexity: expensive models (complex) vs cheap (simple) |
-| Context pruning | Send only relevant code snippets, not full files |
-| Streaming + early cancel | Stop generation when first tokens indicate wrong approach |
+- [ ] Redis semantic cache (hash prompt → response, TTL 24h)
+- [ ] Smart model routing by task complexity:
+  ```python
+  def select_model(task: str, context_length: int) -> str:
+      if context_length > 16000 or needs_reasoning(task):
+          return "high_quality_model"    # complex tasks
+      return "fast_cheap_model"          # simple tasks
+  ```
+- [ ] Alert on OpenRouter daily spend > threshold (Telegram/email)
+- [ ] Grafana dashboards: token/hour, cost/user, latency p95
 
-### 2B — Product Features
+### Sprint 4 — Multi-Agent Workflow
 
-| Task | Detail |
-|------|--------|
-| Multi-tenancy | User accounts, isolated workspaces, per-user rate limits |
-| Usage analytics | Dashboard showing tokens used, cost, latency per user/graph |
-| REST API docs | OpenAPI spec, usage examples, SDK stubs |
-| Graph templates | Pre-built workflows users can customize (code review, analysis, Q&A) |
-| Webhook integrations | GitHub, Slack, custom webhook for agent results |
+- [ ] Supervisor agent (StateGraph) routes tasks to specialized agents
+- [ ] At least 2 workflows: `researcher` (analysis) + `executor` (actions/output)
+- [ ] Shared memory Redis between agents (cross-agent state)
+- [ ] Tool integration: web search or external API
 
-### 2C — Business
+### Sprint 5 — Beta Users + Revenue
 
-| Task | Detail |
-|------|--------|
-| Pricing model | Define tiers: Free (limited), Pro (higher limits), Enterprise |
-| Landing page | Simple static site explaining the product |
-| Beta program | Onboard 5-10 beta users, collect feedback |
-| Payment integration | Stripe for subscriptions |
+- [ ] Multi-user management: each user sees only their own history
+- [ ] Usage quota per user (configurable, hard limit)
+- [ ] Onboard 3-5 beta testers
+- [ ] Structured feedback collection
+- [ ] Pricing model: Free (limited), Pro (higher limits), Enterprise
+- [ ] Landing page + Stripe payment integration
 
 ### KPIs
 
-- Monthly revenue > 100 EUR
-- Cost per request optimized (prompt caching active)
-- 5+ active beta users
-- NPS positive
+| KPI | Target |
+|-----|--------|
+| Cache hit rate | > 20% |
+| Cost per request | < $0.02 |
+| Latency first token | < 3s |
+| Monthly revenue | > 100 EUR |
+| Active beta users | 5+ |
 
 ---
 
@@ -215,29 +364,36 @@ flowchart LR
 **Trigger:** Monthly revenue > 600 EUR for 2 consecutive months.
 **Budget:** ~625 EUR/month
 
-### 4A — GPU Infrastructure
+### Sprint 6 — Vast.ai Integration
 
-| Task | Detail |
-|------|--------|
-| Vast.ai H200 setup | vLLM inference server for complex/fine-tuned tasks |
-| Hybrid routing | EC2 orchestrator routes to Vast.ai (complex) or OpenRouter (burst/simple) |
-| Model hosting | Self-host Qwen3 30B or fine-tuned variant on H200 |
-| Auto-scaling | Scale between OpenRouter and self-hosted based on load |
+- [ ] WireGuard tunnel between EC2 and Vast.ai instances (secure private IP)
+- [ ] Deploy vLLM + quantized model on GPU instances
+- [ ] Terraform/bash scripts for Vast.ai provisioning via API
+- [ ] Health check: if Vast.ai unresponsive → automatic failover to OpenRouter
 
 **Architecture:**
 
-```mermaid
-graph LR
-    EC2["AWS EC2<br/>Orchestrator + Dashboard<br/>Prometheus + Grafana"]
-    EC2 -->|"Complex / fine-tuned"| VAST["Vast.ai H200<br/>vLLM"]
-    EC2 -->|"Standard / burst"| OR1["OpenRouter<br/>Qwen3 30B"]
-    EC2 -->|"Simple / economical"| OR2["OpenRouter<br/>Qwen3.5-Flash"]
-
-    style EC2 fill:#4a90d9,color:#fff
-    style VAST fill:#e6a23c,color:#fff
-    style OR1 fill:#7bc67e,color:#fff
-    style OR2 fill:#7bc67e,color:#fff
 ```
+EC2 AWS (Orchestrator) ←──WireGuard VPN──► Vast.ai GPU #1 (vLLM)
+         │                                ──► Vast.ai GPU #2 (vLLM)
+         │
+         └──► OpenRouter (fallback if Vast.ai down)
+```
+
+### Sprint 7 — Smart Hybrid Router
+
+```python
+async def smart_route(request) -> str:
+    if await vastai_healthy() and not request.urgent:
+        return "vastai"           # $0 marginal cost
+    elif request.complexity == "high":
+        return "openrouter_high"  # quality fallback
+    return "openrouter_cheap"     # economy fallback
+```
+
+- [ ] Load balancing across GPU instances
+- [ ] Metrics: % requests served by Vast.ai vs OpenRouter
+- [ ] Alert if Vast.ai down > 30 minutes (interruptible = normal)
 
 ### 4B — Fine-Tuning
 
@@ -421,13 +577,33 @@ graph LR
 
 ---
 
+## Full Technology Stack
+
+| Layer | Technology |
+|-------|------------|
+| IaC | Terraform 1.7+ |
+| CI/CD | GitHub Actions |
+| Cloud | AWS EC2 t3.medium (eu-west-1) |
+| State | S3 + DynamoDB lock |
+| Container | Docker + Compose (OrbStack locally) |
+| Reverse proxy | Nginx + Let's Encrypt |
+| Auth | OAuth2 Google/GitHub + JWT cookie (Phase 0) → SSO/SAML (Phase 4) |
+| Backend | FastAPI + StateGraph engine |
+| Cache | Redis 7 (semantic cache + sessions) |
+| Database | PostgreSQL (checkpoints, usage) |
+| Monitoring | Prometheus + Grafana + Node Exporter |
+| LLM Phase 0-2 | OpenRouter (free models + fallback chains) |
+| LLM Phase 3+ | vLLM on Vast.ai GPU + OpenRouter fallback |
+
 ## Immediate Next Steps (This Week)
 
-1. **AWS EC2 setup** — t3.medium, security groups, Elastic IP, SSH key
-2. **Production Docker config** — `docker-compose.production.yml` with nginx, HTTPS, Prometheus, Grafana
-3. **Deploy to EC2** — push current codebase, verify dashboard works remotely
-4. **Grafana dashboards** — agent metrics, cost tracking, system health
-5. **Alert rules** — cost > threshold, error rate, agent stall → Telegram notification
+1. **Terraform bootstrap** — S3 state bucket + DynamoDB lock table
+2. **Terraform modules** — VPC, EC2, security groups, Elastic IP
+3. **GitHub Actions** — Terraform plan/apply + app deploy pipelines
+4. **OAuth2 auth** — Google/GitHub login with JWT session cookies
+5. **Production Docker config** — `docker-compose.prod.yml` with nginx, HTTPS, Redis, Prometheus, Grafana
+6. **Deploy to EC2** — push current codebase, verify dashboard works remotely
+7. **Grafana dashboards** — agent metrics, cost tracking, system health
 
 ---
 

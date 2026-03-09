@@ -1,25 +1,86 @@
 ---
 sidebar_position: 2
-title: "Phase 0: AWS Infrastructure"
+title: "Phase 0: AWS Infrastructure + Auth"
 ---
 
-# Phase 0 — AWS Infrastructure (ASAP)
+# Phase 0 — AWS Infrastructure + Auth (ASAP)
 
-**Goal:** Get the orchestrator running on AWS immediately. Everything else depends on this.
+**Goal:** EC2 up, HTTPS working, OAuth2 active, first agent reachable remotely.
 **Budget:** ~42 EUR/month
+**Duration:** 2 sprints (2 weeks)
 
-## 0A — AWS Setup (Week 1)
+> **IaC:** Terraform · **CI/CD:** GitHub Actions · **Cloud:** AWS EC2 + Docker Compose
+> **Auth:** OAuth2 (Google/GitHub) + JWT session cookies · **State:** S3 + DynamoDB lock
 
-| Task | Priority | Detail |
-|------|----------|--------|
-| AWS EC2 t3.medium | CRITICAL | Deploy orchestrator + FastAPI + dashboard |
-| Docker Compose on EC2 | CRITICAL | Same stack as local, with production config |
-| Elastic IP + HTTPS | CRITICAL | Let's Encrypt, nginx reverse proxy |
-| S3 storage | HIGH | Checkpoints, outputs, prompt templates |
-| Security groups | CRITICAL | Restrict ports, SSH key-only, no open DB |
-| `.env.production` | CRITICAL | API keys, budget caps, provider config |
+## Architecture Target
 
-## 0B — Monitoring Board (Week 2)
+```
+Internet
+   │
+   ▼
+Route53 (DNS) ──► ACM (SSL cert)
+   │
+   ▼
+EC2 t3.medium (Elastic IP + Security Group)
+   │
+   Docker Compose
+   ├── Nginx (reverse proxy + SSL termination)
+   │     └── /          → Dashboard (FastAPI + static UI)
+   │     └── /api/      → FastAPI (orchestrator API)
+   │     └── /auth/     → OAuth2 callback handler
+   ├── FastAPI + StateGraph (multi-agent orchestrator)
+   ├── PostgreSQL (checkpoints, usage data)
+   ├── Redis (semantic cache + session store)
+   ├── Prometheus (metrics collection)
+   ├── Grafana (visualization, alerts)
+   └── Node Exporter (system metrics)
+   │
+   ▼
+OpenRouter API (free models + fallback chains)
+```
+
+## Sprint 1 — Terraform: Bootstrap AWS Infrastructure
+
+### Step 1.1 — Terraform Backend (S3 + DynamoDB)
+
+One-time manual bootstrap for state management.
+
+### Step 1.2 — VPC + EC2 + Security Group
+
+Terraform modules: `terraform/modules/ec2/`, `terraform/modules/networking/`, `terraform/modules/iam/`
+
+### Step 1.3 — GitHub Actions: Terraform Pipeline
+
+`.github/workflows/terraform.yml` — plan on PR, apply on merge to main.
+
+**Deliverables:**
+- [ ] S3 bucket + DynamoDB created
+- [ ] `terraform apply` creates EC2, SG, EIP
+- [ ] SSH to EC2 working, Docker installed
+- [ ] GitHub Actions runs plan/apply on push
+
+## Sprint 2 — Auth OAuth2 + App Deploy + Monitoring
+
+### Step 2.1 — OAuth2 Authentication
+
+OAuth2 flow with JWT session cookies (authlib + PyJWT):
+
+```
+Browser → GET /auth/google → redirect to Google
+Google  → GET /auth/google/callback?code=xxx
+FastAPI → exchange code → get user info → create JWT session cookie
+Browser → all /api/* requests use JWT cookie
+```
+
+### Step 2.2 — Docker Compose Production
+
+`docker-compose.prod.yml` with nginx, backend, redis, postgres, prometheus, grafana.
+
+### Step 2.3 — GitHub Actions: Deploy Pipeline
+
+`.github/workflows/deploy.yml` — SSH deploy + health check.
+
+### Step 2.4 — Monitoring Board
 
 | Task | Priority | Detail |
 |------|----------|--------|
@@ -27,23 +88,29 @@ title: "Phase 0: AWS Infrastructure"
 | Grafana dashboards | CRITICAL | Agent activity, latency, token usage, cost per model |
 | Node Exporter | HIGH | EC2 system metrics (CPU, RAM, disk, network) |
 | Alert rules | HIGH | Cost threshold, error rate spike, agent stall detection |
-| CloudWatch basics | MEDIUM | EC2 auto-recovery, uptime monitoring |
 
-## Target Stack
-
-```
-[EC2 t3.medium]
-  ├── docker-compose.production.yml
-  │   ├── dashboard (port 5005, nginx reverse proxy + HTTPS)
-  │   ├── postgres (checkpoints, usage data)
-  │   ├── prometheus (metrics collection)
-  │   ├── grafana (visualization, alerts)
-  │   └── node-exporter (system metrics)
-  └── S3 (outputs, templates, backups)
-```
+**Deliverables:**
+- [ ] OAuth2 Google + GitHub working
+- [ ] Dashboard accessible only after login
+- [ ] GitHub Actions auto-deploys on push to `main`
+- [ ] HTTPS active on custom domain
+- [ ] Grafana accessible via SSH tunnel
 
 ## KPIs
 
-- System live and reachable on AWS within 1 week
-- Grafana dashboard showing real-time agent metrics within 2 weeks
-- Monthly infra cost < 60 EUR
+| KPI | Target |
+|-----|--------|
+| Deploy time (push → live) | < 5 min |
+| Auth success rate | 100% |
+| First token latency | < 5s |
+| Uptime | 99% |
+| Monthly infra cost | < 60 EUR |
+
+## Security Checklist
+
+- [ ] SSH open only from your fixed IP (Terraform SG)
+- [ ] Grafana not publicly exposed (SSH tunnel only)
+- [ ] `.env.prod` never in repository (GitHub Secrets only)
+- [ ] JWT cookie `httponly=True`, `secure=True`, `samesite=lax`
+- [ ] Rate limiting on `/api/*` (max 60 req/min per user)
+- [ ] OpenRouter API key rotated every 90 days

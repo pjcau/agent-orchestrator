@@ -31,6 +31,8 @@ from .graphs import (
     replay_node,
     run_graph,
 )
+from .auth import APIKeyMiddleware
+from .oauth_routes import router as oauth_router
 from .usage_db import UsageDB
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -41,6 +43,24 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     bus = event_bus or EventBus.get()
 
     app = FastAPI(title="Agent Orchestrator Dashboard", version="0.2.0")
+
+    # Wire API key authentication middleware
+    # Keys from DASHBOARD_API_KEYS env var (comma-separated), or empty = dev mode (no auth)
+    api_keys_raw = os.environ.get("DASHBOARD_API_KEYS", "")
+    api_keys = [k.strip() for k in api_keys_raw.split(",") if k.strip()] if api_keys_raw else []
+    app.add_middleware(APIKeyMiddleware, api_keys=api_keys or None)
+
+    # Starlette session middleware (required for authlib OAuth2 state)
+    try:
+        from starlette.middleware.sessions import SessionMiddleware
+
+        session_secret = os.environ.get("JWT_SECRET_KEY", "dev-secret-change-me")
+        app.add_middleware(SessionMiddleware, secret_key=session_secret)
+    except ImportError:
+        pass  # itsdangerous not installed, sessions disabled
+
+    # OAuth2 routes (Google/GitHub login)
+    app.include_router(oauth_router)
 
     # In-memory conversation store (per session)
     conversations: dict[str, list[dict]] = {}
@@ -57,6 +77,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Mount static files
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    @app.get("/health")
+    async def health():
+        """Health check endpoint (unauthenticated) for load balancers and CI/CD."""
+        return JSONResponse(content={"status": "ok"})
 
     @app.get("/", response_class=HTMLResponse)
     async def index():
