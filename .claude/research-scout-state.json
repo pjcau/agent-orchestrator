@@ -41,7 +41,90 @@
         "['tool', 'chain']",
         "['routing', 'cost']"
       ]
+    },
+    "https://github.com/Gentleman-Programming/agent-teams-lite": {
+      "processed_at": "2026-03-09T19:07:30.106333+00:00",
+      "summary": "Gentleman-Programming/agent-teams-lite",
+      "improvements": [
+        "['memory', 'state', 'persistence', 'context', 'session', 'store']",
+        "['skill', 'tool', 'capability', 'workflow']",
+        "['agent', 'orchestrat']"
+      ]
+    },
+    "https://github.com/virattt/dexter": {
+      "processed_at": "2026-03-09T19:07:30.377609+00:00",
+      "summary": "virattt/dexter",
+      "improvements": []
+    },
+    "https://github.com/microsoft/RD-Agent": {
+      "processed_at": "2026-03-09T19:07:30.736999+00:00",
+      "summary": "microsoft/RD-Agent",
+      "improvements": [
+        "['api', 'integration', 'cli']",
+        "['agent', 'multi-agent']",
+        "['strategy', 'cost']"
+      ]
+    },
+    "https://github.com/Versatly/clawvault": {
+      "processed_at": "2026-03-09T19:07:31.021447+00:00",
+      "summary": "Versatly/clawvault",
+      "improvements": [
+        "['memory', 'state', 'context', 'session', 'store']",
+        "['api', 'integration', 'cli', 'plugin']",
+        "['skill', 'workflow', 'pipeline']",
+        "['agent', 'role']",
+        "['router', 'strategy']"
+      ]
+    },
+    "https://github.com/BlockRunAI/ClawRouter": {
+      "processed_at": "2026-03-09T19:07:31.408247+00:00",
+      "summary": "BlockRunAI/ClawRouter",
+      "improvements": [
+        "['routing', 'router', 'strategy', 'cost', 'optimize']",
+        "['api', 'integration', 'cli', 'plugin']",
+        "['workflow', 'chain']",
+        "['context', 'store']"
+      ]
+    },
+    "https://github.com/pathsim/pathsim": {
+      "processed_at": "2026-03-09T19:07:31.704305+00:00",
+      "summary": "pathsim/pathsim",
+      "improvements": []
+    },
+    "https://github.com/msitarzewski/agency-agents": {
+      "processed_at": "2026-03-09T19:07:31.986319+00:00",
+      "summary": "msitarzewski/agency-agents",
+      "improvements": [
+        "['agent', 'multi-agent', 'coordination', 'orchestrat']",
+        "['tool', 'workflow', 'pipeline']",
+        "['api', 'integration', 'cli']",
+        "['session', 'store']",
+        "['strategy', 'optimize']"
+      ]
+    },
+    "https://github.com/langchain-ai/agent-inbox": {
+      "processed_at": "2026-03-09T19:07:32.327092+00:00",
+      "summary": "langchain-ai/agent-inbox",
+      "improvements": [
+        "['state', 'context', 'store']",
+        "['tool', 'chain']",
+        "['api', 'cli']"
+      ]
+    },
+    "https://github.com/trevin-creator/autoresearch-mlx": {
+      "processed_at": "2026-03-09T19:07:32.596733+00:00",
+      "summary": "trevin-creator/autoresearch-mlx",
+      "improvements": []
+    },
+    "https://github.com/samuelmtimbo/unit": {
+      "processed_at": "2026-03-09T19:07:32.857174+00:00",
+      "summary": "samuelmtimbo/unit",
+      "improvements": [
+        "['tool', 'workflow']",
+        "['state', 'context']",
+        "['api', 'cli']"
+      ]
     }
   },
-  "last_run": "2026-03-08T15:11:37.445066+00:00"
+  "last_run": "2026-03-09T19:07:32.857509+00:00"
 }
