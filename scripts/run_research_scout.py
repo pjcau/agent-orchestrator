@@ -267,6 +267,73 @@ def _write_findings(repo_title: str, repo_url: str, improvements: list[dict]) ->
     print(f"Findings written to {FINDINGS_FILE}")
 
 
+def _create_pr(findings_file: Path) -> bool:
+    """Create a PR branch with findings. Returns True if PR was created."""
+    from datetime import datetime, timezone
+
+    branch = f"research-scout/{datetime.now(timezone.utc).strftime('%Y-%m-%d-%H%M')}"
+    files_to_add = [
+        str(STATE_FILE),
+        str(BOOKMARKS_FILE),
+        str(findings_file),
+    ]
+
+    try:
+        # Create branch
+        subprocess.run(
+            ["git", "checkout", "-b", branch], check=True, capture_output=True, text=True
+        )
+
+        # Stage files
+        subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True, text=True)
+
+        # Commit
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        subprocess.run(
+            ["git", "commit", "-m", f"research-scout: improvement proposal from {date_str}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        # Push
+        subprocess.run(
+            ["git", "push", "-u", "origin", branch],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        # Create PR
+        body = findings_file.read_text(encoding="utf-8")
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                f"research-scout: improvement proposal {date_str}",
+                "--body",
+                body,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        pr_url = result.stdout.strip()
+        print(f"PR created: {pr_url}")
+
+        # Return to main
+        subprocess.run(["git", "checkout", "main"], check=True, capture_output=True, text=True)
+        return True
+
+    except subprocess.CalledProcessError as exc:
+        print(f"  PR creation failed: {exc.stderr or exc}")
+        # Try to return to main
+        subprocess.run(["git", "checkout", "main"], capture_output=True, text=True)
+        return False
+
+
 def main():
     lookback = int(os.environ.get("LOOKBACK_DAYS", str(LOOKBACK_DAYS)))
     print(f"Research Scout — lookback: {lookback} days, mode: single-repo, LLM: claude CLI")
@@ -375,28 +442,44 @@ If the repo has nothing useful for our codebase, return an empty array: []
         if imp.get("file"):
             print(f"      File: {imp['file']}")
 
-    # Step 5: Write findings (if any)
+    # Step 5: Write findings and create PR (if any)
     if improvements:
         _write_findings(title, url, improvements)
+
+        # Mark as processed before creating PR (so state is committed too)
+        mark_processed(
+            state,
+            url,
+            summary=title,
+            improvements=[imp["title"] for imp in improvements],
+        )
+        save_state(STATE_FILE, state)
+
+        # Create PR with findings
+        print("\nCreating PR...")
+        if _create_pr(FINDINGS_FILE):
+            print("PR created successfully.")
+        else:
+            print("PR creation failed — findings saved locally.")
     else:
         print("  No actionable improvements found.")
         FINDINGS_FILE.unlink(missing_ok=True)
 
-    # Mark as processed
-    mark_processed(
-        state,
-        url,
-        summary=title,
-        improvements=[imp["title"] for imp in improvements],
-    )
+        mark_processed(
+            state,
+            url,
+            summary=title,
+            improvements=[],
+        )
+        save_state(STATE_FILE, state)
 
     # Cleanup old entries
     removed = cleanup_old_entries(state, max_age_days=60)
     if removed:
         print(f"\nCleaned up {removed} old state entries (>60 days)")
+        save_state(STATE_FILE, state)
 
-    save_state(STATE_FILE, state)
-    print(f"Done. State saved to {STATE_FILE}")
+    print("Done.")
 
 
 if __name__ == "__main__":

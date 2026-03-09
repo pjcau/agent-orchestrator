@@ -203,6 +203,46 @@ class TestCallLlm:
         mock_or.assert_called_once_with("test")
 
 
+class TestCreatePr:
+    def test_success(self, scout, tmp_path):
+        findings = tmp_path / "findings.md"
+        findings.write_text("## Test findings\nSome content")
+
+        calls = []
+
+        def mock_run(cmd, **kwargs):
+            calls.append(cmd)
+            stdout = ""
+            if cmd[0] == "gh":
+                stdout = "https://github.com/test/repo/pull/1"
+            return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+        with patch.object(scout.subprocess, "run", side_effect=mock_run):
+            result = scout._create_pr(findings)
+
+        assert result is True
+        # Should have called: checkout -b, add, commit, push, gh pr create, checkout main
+        assert len(calls) == 6
+        assert calls[0][1] == "checkout"
+        assert calls[4][0] == "gh"
+
+    def test_failure_returns_false(self, scout, tmp_path):
+        findings = tmp_path / "findings.md"
+        findings.write_text("## Test findings")
+
+        import subprocess as sp
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "gh":
+                raise sp.CalledProcessError(1, "gh", stderr="gh not found")
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with patch.object(scout.subprocess, "run", side_effect=mock_run):
+            result = scout._create_pr(findings)
+
+        assert result is False
+
+
 class TestConstants:
     def test_lookback_is_30_days(self, scout):
         assert scout.LOOKBACK_DAYS == 30
