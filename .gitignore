@@ -21,3 +21,10 @@ build/
 
 # Job logs
 jobs/
+
+# SSL certificates
+certs/
+
+# Dashboard user data (generated at runtime)
+dashboard-users.json
+dashboard-pending.json

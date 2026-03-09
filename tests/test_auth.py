@@ -94,22 +94,12 @@ class TestOAuthSetup:
     """Test OAuth client creation."""
 
     def test_no_credentials_returns_none(self, monkeypatch):
-        monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
         monkeypatch.delenv("OAUTH_CLIENT_ID", raising=False)
         result = create_oauth()
         assert result is None
 
     @pytest.mark.skipif(not HAS_AUTHLIB, reason="authlib not installed")
-    def test_google_only(self, monkeypatch):
-        monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-google-id")
-        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-google-secret")
-        monkeypatch.delenv("OAUTH_CLIENT_ID", raising=False)
-        oauth = create_oauth()
-        assert oauth is not None
-
-    @pytest.mark.skipif(not HAS_AUTHLIB, reason="authlib not installed")
     def test_github_only(self, monkeypatch):
-        monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
         monkeypatch.setenv("OAUTH_CLIENT_ID", "test-github-id")
         monkeypatch.setenv("OAUTH_CLIENT_SECRET", "test-github-secret")
         oauth = create_oauth()
@@ -141,7 +131,7 @@ class TestAPIKeyMiddleware:
     @pytest.mark.asyncio
     async def test_exempt_paths(self):
         """Static, health, ws, auth paths should be exempt."""
-        for path in ("/static/style.css", "/health", "/ws", "/auth/google", "/login"):
+        for path in ("/static/style.css", "/health", "/ws", "/auth/github", "/login"):
             assert any(path.startswith(p) for p in APIKeyMiddleware.EXEMPT_PREFIXES)
 
     def test_api_key_set_from_list(self):

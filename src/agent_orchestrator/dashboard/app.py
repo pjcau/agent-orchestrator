@@ -33,6 +33,7 @@ from .graphs import (
 )
 from .auth import APIKeyMiddleware
 from .oauth_routes import router as oauth_router
+from .user_store import setup_db as setup_user_db
 from .usage_db import UsageDB
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -74,6 +75,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.on_event("startup")
     async def _startup():
         await usage_db.setup()
+        await setup_user_db()
 
     # Mount static files
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

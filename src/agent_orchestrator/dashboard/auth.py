@@ -2,11 +2,10 @@
 
 Supports two modes:
 1. API key auth (X-API-Key header or ?api_key query param) — for programmatic access
-2. OAuth2 (Google/GitHub) with JWT session cookies — for browser-based access
+2. OAuth2 (GitHub) with JWT session cookies — for browser-based access
 
 Configuration via environment variables:
 - DASHBOARD_API_KEYS: comma-separated API keys (if empty, dev mode = no auth)
-- GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: Google OAuth2 credentials
 - OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET: GitHub OAuth2 credentials
 - JWT_SECRET_KEY: secret for signing JWT session cookies
 - BASE_URL: public URL for OAuth2 callbacks (e.g. https://agents.yourdomain.com)
@@ -83,45 +82,34 @@ def verify_session_token(token: str) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# OAuth2 setup (Google + GitHub)
+# OAuth2 setup (GitHub)
 # ---------------------------------------------------------------------------
 
 
 def create_oauth() -> Any | None:
-    """Create and configure OAuth client for Google and GitHub.
+    """Create and configure OAuth client for GitHub.
 
     Returns None if authlib is not installed or no OAuth credentials configured.
     """
     if not HAS_AUTHLIB:
         return None
 
-    google_id = os.environ.get("GOOGLE_CLIENT_ID", "")
     github_id = os.environ.get("OAUTH_CLIENT_ID", "")
 
-    if not google_id and not github_id:
+    if not github_id:
         return None
 
     oauth = OAuth()
 
-    if google_id:
-        oauth.register(
-            "google",
-            client_id=google_id,
-            client_secret=os.environ.get("GOOGLE_CLIENT_SECRET", ""),
-            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-            client_kwargs={"scope": "openid email profile"},
-        )
-
-    if github_id:
-        oauth.register(
-            "github",
-            client_id=github_id,
-            client_secret=os.environ.get("OAUTH_CLIENT_SECRET", ""),
-            access_token_url="https://github.com/login/oauth/access_token",
-            authorize_url="https://github.com/login/oauth/authorize",
-            api_base_url="https://api.github.com/",
-            client_kwargs={"scope": "user:email"},
-        )
+    oauth.register(
+        "github",
+        client_id=github_id,
+        client_secret=os.environ.get("OAUTH_CLIENT_SECRET", ""),
+        access_token_url="https://github.com/login/oauth/access_token",
+        authorize_url="https://github.com/login/oauth/authorize",
+        api_base_url="https://api.github.com/",
+        client_kwargs={"scope": "user:email"},
+    )
 
     return oauth
 
@@ -151,9 +139,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, api_keys: list[str] | None = None) -> None:
         super().__init__(app)
         self.api_keys: set[str] = set(api_keys) if api_keys else set()
-        self._oauth_configured = bool(
-            os.environ.get("GOOGLE_CLIENT_ID") or os.environ.get("OAUTH_CLIENT_ID")
-        )
+        self._oauth_configured = bool(os.environ.get("OAUTH_CLIENT_ID"))
 
     async def dispatch(self, request: Request, call_next):
         # No keys configured and no OAuth = dev mode, allow all
@@ -170,7 +156,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Check JWT session cookie
-        session_token = request.cookies.get("session")
+        session_token = request.cookies.get("auth_session")
         if session_token:
             user = verify_session_token(session_token)
             if user and user.get("role"):

@@ -1919,7 +1919,237 @@
     }
   }
 
+  // --- User Auth & Admin ---
+  let currentUser = null;
+
+  const $userMenu = $("user-menu");
+  const $userName = $("user-name");
+  const $userRole = $("user-role");
+  const $btnAdmin = $("btn-admin");
+  const $btnLogout = $("btn-logout");
+  const $adminModal = $("admin-modal");
+  const $btnCloseAdmin = $("btn-close-admin");
+  const $adminUsersBody = $("admin-users-body");
+  const $adminPendingBody = $("admin-pending-body");
+  const $pendingSection = $("pending-section");
+  const $pendingCount = $("pending-count");
+  const $btnAdminAdd = $("btn-admin-add");
+  const $adminNewLogin = $("admin-new-login");
+  const $adminNewRole = $("admin-new-role");
+
+  async function fetchCurrentUser() {
+    try {
+      const resp = await fetch("/auth/me");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.authenticated) return;
+      currentUser = data;
+      $userName.textContent = data.name || data.github_login || data.email;
+      $userRole.textContent = data.role;
+      $userRole.className = "user-role-badge " + data.role;
+      $userMenu.classList.remove("hidden");
+      if (data.role === "admin") {
+        $btnAdmin.classList.remove("hidden");
+        fetchPendingCount();
+      }
+    } catch (e) { /* not authenticated */ }
+  }
+
+  async function fetchPendingCount() {
+    try {
+      const resp = await fetch("/api/admin/pending");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const count = (data.pending || []).length;
+      if (count > 0) {
+        $btnAdmin.innerHTML = `Admin <span class="pending-badge-header">${count}</span>`;
+      } else {
+        $btnAdmin.textContent = "Admin";
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  $btnLogout.addEventListener("click", async () => {
+    await fetch("/auth/logout", { method: "POST" });
+    location.href = "/login";
+  });
+
+  $btnAdmin.addEventListener("click", () => {
+    $adminModal.classList.remove("hidden");
+    loadAdminUsers();
+    loadPendingRequests();
+  });
+
+  $btnCloseAdmin.addEventListener("click", () => {
+    $adminModal.classList.add("hidden");
+  });
+
+  async function loadAdminUsers() {
+    try {
+      const resp = await fetch("/api/admin/users");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      renderAdminUsers(data.users || []);
+    } catch (e) {
+      $adminUsersBody.innerHTML = '<tr><td colspan="6">Failed to load users</td></tr>';
+    }
+  }
+
+  function renderAdminUsers(users) {
+    $adminUsersBody.innerHTML = "";
+    for (const u of users) {
+      const tr = document.createElement("tr");
+      const isActive = u.active !== false;
+      tr.innerHTML = `
+        <td><strong>${esc(u.github_login)}</strong></td>
+        <td>${esc(u.name || "-")}</td>
+        <td>${esc(u.email || "-")}</td>
+        <td>
+          <select class="admin-role-select" data-login="${esc(u.github_login)}">
+            <option value="viewer" ${u.role === "viewer" ? "selected" : ""}>Viewer</option>
+            <option value="developer" ${u.role === "developer" ? "selected" : ""}>Developer</option>
+            <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+          </select>
+        </td>
+        <td class="${isActive ? "active-yes" : "active-no"}">${isActive ? "Yes" : "No"}</td>
+        <td class="admin-actions">
+          ${isActive
+            ? `<button class="btn-deactivate" data-login="${esc(u.github_login)}">Deactivate</button>`
+            : `<button class="btn-activate" data-login="${esc(u.github_login)}">Activate</button>`
+          }
+        </td>
+      `;
+      $adminUsersBody.appendChild(tr);
+    }
+
+    // Role change handlers
+    $adminUsersBody.querySelectorAll(".admin-role-select").forEach((sel) => {
+      sel.addEventListener("change", async () => {
+        const login = sel.dataset.login;
+        const role = sel.value;
+        await fetch(`/api/admin/users/${encodeURIComponent(login)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role }),
+        });
+        loadAdminUsers();
+      });
+    });
+
+    // Deactivate/Activate handlers
+    $adminUsersBody.querySelectorAll(".btn-deactivate").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const login = btn.dataset.login;
+        await fetch(`/api/admin/users/${encodeURIComponent(login)}`, { method: "DELETE" });
+        loadAdminUsers();
+      });
+    });
+
+    $adminUsersBody.querySelectorAll(".btn-activate").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const login = btn.dataset.login;
+        await fetch("/api/admin/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ github_login: login, role: "viewer" }),
+        });
+        loadAdminUsers();
+      });
+    });
+  }
+
+  async function loadPendingRequests() {
+    try {
+      const resp = await fetch("/api/admin/pending");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const pending = data.pending || [];
+      $pendingCount.textContent = pending.length;
+      if (pending.length > 0) {
+        $pendingSection.classList.remove("hidden");
+        renderPendingRequests(pending);
+      } else {
+        $pendingSection.classList.add("hidden");
+      }
+    } catch (e) {
+      $pendingSection.classList.add("hidden");
+    }
+  }
+
+  function renderPendingRequests(pending) {
+    $adminPendingBody.innerHTML = "";
+    for (const p of pending) {
+      const tr = document.createElement("tr");
+      const ago = timeAgo(p.requested_at);
+      tr.innerHTML = `
+        <td><strong>${esc(p.github_login)}</strong></td>
+        <td>${esc(p.name || "-")}</td>
+        <td>${esc(p.email || "-")}</td>
+        <td>${ago}</td>
+        <td class="admin-actions">
+          <select class="pending-role-select" data-login="${esc(p.github_login)}">
+            <option value="viewer">Viewer</option>
+            <option value="developer" selected>Developer</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button class="btn-approve" data-login="${esc(p.github_login)}">Approve</button>
+          <button class="btn-reject" data-login="${esc(p.github_login)}">Reject</button>
+        </td>
+      `;
+      $adminPendingBody.appendChild(tr);
+    }
+
+    $adminPendingBody.querySelectorAll(".btn-approve").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const login = btn.dataset.login;
+        const row = btn.closest("tr");
+        const role = row.querySelector(".pending-role-select").value;
+        await fetch(`/api/admin/pending/${encodeURIComponent(login)}/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role }),
+        });
+        loadPendingRequests();
+        loadAdminUsers();
+        fetchPendingCount();
+      });
+    });
+
+    $adminPendingBody.querySelectorAll(".btn-reject").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const login = btn.dataset.login;
+        await fetch(`/api/admin/pending/${encodeURIComponent(login)}`, { method: "DELETE" });
+        loadPendingRequests();
+        fetchPendingCount();
+      });
+    });
+  }
+
+  function timeAgo(ts) {
+    const diff = Math.floor(Date.now() / 1000 - ts);
+    if (diff < 60) return "just now";
+    if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+    if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+    return Math.floor(diff / 86400) + "d ago";
+  }
+
+  function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+  $btnAdminAdd.addEventListener("click", async () => {
+    const login = $adminNewLogin.value.trim();
+    const role = $adminNewRole.value;
+    if (!login) return;
+    await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ github_login: login, role }),
+    });
+    $adminNewLogin.value = "";
+    loadAdminUsers();
+  });
+
   // --- Init ---
+  fetchCurrentUser();
   initCollapsible();
   loadModels();
   loadAgents();

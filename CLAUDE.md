@@ -80,7 +80,9 @@ agent-orchestrator/
 │       │   ├── agents_registry.py # Agent configuration registry (category-aware)
 │       │   ├── graphs.py        # Graph builders for dashboard prompt
 │       │   ├── job_logger.py    # Session-based job persistence
-│       │   ├── auth.py          # API key authentication middleware
+│       │   ├── auth.py          # OAuth2 + API key authentication middleware
+│       │   ├── oauth_routes.py  # GitHub OAuth2 login/callback + admin user API
+│       │   ├── user_store.py    # User store (PostgreSQL + JSON fallback)
 │       │   ├── events.py        # EventBus, Event types
 │       │   ├── instrument.py    # Monkey-patches core classes to emit events
 │       │   ├── usage_db.py      # Persistent usage stats (PostgreSQL + in-memory)

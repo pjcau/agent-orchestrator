@@ -1,13 +1,11 @@
 """OAuth2 login/callback routes for the dashboard.
 
 Provides:
-- GET /auth/google — redirect to Google OAuth2
-- GET /auth/google/callback — handle Google callback, set JWT cookie
 - GET /auth/github — redirect to GitHub OAuth2
 - GET /auth/github/callback — handle GitHub callback, set JWT cookie
 - GET /auth/me — return current user info from JWT cookie
 - POST /auth/logout — clear session cookie
-- GET /login — simple login page with provider buttons
+- GET /login — simple login page with GitHub button
 - GET /api/admin/users — list all users (admin only)
 - POST /api/admin/users — approve a new user (admin only)
 - PATCH /api/admin/users/{login} — update user role (admin only)
@@ -25,24 +23,25 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .auth import create_oauth, create_session_token, get_base_url, verify_session_token
 from .user_store import (
+    approve_pending,
     approve_user,
     deactivate_user,
     get_or_create_user,
+    list_pending,
     list_users,
+    reject_pending,
     update_user_role,
 )
+
 
 router = APIRouter()
 
 
 def _login_page_html() -> str:
-    """Simple login page with Google/GitHub buttons."""
-    google_enabled = bool(os.environ.get("GOOGLE_CLIENT_ID"))
+    """Simple login page with GitHub button."""
     github_enabled = bool(os.environ.get("OAUTH_CLIENT_ID"))
 
     buttons = ""
-    if google_enabled:
-        buttons += '<a href="/auth/google" class="btn google">Login with Google</a>'
     if github_enabled:
         buttons += '<a href="/auth/github" class="btn github">Login with GitHub</a>'
     if not buttons:
@@ -59,7 +58,6 @@ def _login_page_html() -> str:
   .btn {{ display: block; padding: 12px 24px; margin: 12px auto;
           border-radius: 8px; text-decoration: none; color: white;
           font-size: 16px; width: 250px; text-align: center; }}
-  .google {{ background: #4285F4; }}
   .github {{ background: #333; }}
   .btn:hover {{ opacity: 0.9; }}
   .denied {{ color: #ff6b6b; margin-top: 1rem; }}
@@ -95,43 +93,6 @@ def _denied_page_html(login: str) -> str:
 async def login_page():
     """Render login page with OAuth provider buttons."""
     return HTMLResponse(content=_login_page_html())
-
-
-@router.get("/auth/google")
-async def login_google(request: Request):
-    """Redirect to Google OAuth2 authorization."""
-    oauth = create_oauth()
-    if not oauth or not hasattr(oauth, "google"):
-        return JSONResponse({"error": "Google OAuth not configured"}, status_code=501)
-    redirect_uri = get_base_url() + "/auth/google/callback"
-    return await oauth.google.authorize_redirect(request, redirect_uri)
-
-
-@router.get("/auth/google/callback")
-async def callback_google(request: Request):
-    """Handle Google OAuth2 callback, create JWT session cookie."""
-    oauth = create_oauth()
-    if not oauth or not hasattr(oauth, "google"):
-        return JSONResponse({"error": "Google OAuth not configured"}, status_code=501)
-
-    try:
-        token = await oauth.google.authorize_access_token(request)
-        user_info = token.get("userinfo", {})
-        jwt_token = create_session_token(
-            {
-                "email": user_info.get("email", ""),
-                "name": user_info.get("name", ""),
-                "provider": "google",
-                "role": "viewer",
-            }
-        )
-        response = RedirectResponse("/")
-        response.set_cookie(
-            "session", jwt_token, httponly=True, secure=True, samesite="lax", max_age=86400
-        )
-        return response
-    except Exception as exc:
-        return JSONResponse({"error": f"Google auth failed: {exc}"}, status_code=400)
 
 
 @router.get("/auth/github")
@@ -181,9 +142,9 @@ async def callback_github(request: Request):
                 "role": user["role"],
             }
         )
-        response = RedirectResponse("/")
+        response = RedirectResponse("/", status_code=302)
         response.set_cookie(
-            "session", jwt_token, httponly=True, secure=True, samesite="lax", max_age=86400
+            "auth_session", jwt_token, httponly=True, secure=True, samesite="lax", max_age=86400
         )
         return response
     except Exception as exc:
@@ -193,7 +154,7 @@ async def callback_github(request: Request):
 @router.get("/auth/me")
 async def auth_me(request: Request):
     """Return current user info from JWT session cookie."""
-    session_token = request.cookies.get("session")
+    session_token = request.cookies.get("auth_session")
     if not session_token:
         return JSONResponse({"authenticated": False}, status_code=401)
 
@@ -217,7 +178,7 @@ async def auth_me(request: Request):
 async def auth_logout():
     """Clear session cookie."""
     response = RedirectResponse("/login")
-    response.delete_cookie("session")
+    response.delete_cookie("auth_session")
     return response
 
 
@@ -230,7 +191,7 @@ def _require_admin(request: Request) -> dict | None:
     """Extract user from request and verify admin role. Returns user or None."""
     user = getattr(request.state, "user", None)
     if not user:
-        token = request.cookies.get("session")
+        token = request.cookies.get("auth_session")
         if token:
             user = verify_session_token(token)
     if not user or user.get("role") != "admin":
@@ -298,4 +259,48 @@ async def admin_deactivate(request: Request, login: str):
     ok = deactivate_user(login)
     if not ok:
         return JSONResponse({"error": "User not found"}, status_code=404)
+    return JSONResponse({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# Pending access requests
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/admin/pending")
+async def admin_list_pending(request: Request):
+    """List pending access requests (admin only)."""
+    if not _require_admin(request):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
+    return JSONResponse({"pending": list_pending()})
+
+
+@router.post("/api/admin/pending/{login}/approve")
+async def admin_approve_pending(request: Request, login: str):
+    """Approve a pending access request (admin only).
+
+    Body: {"role": "developer"}  (optional, default: developer)
+    """
+    if not _require_admin(request):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
+
+    body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
+    role = body.get("role", "developer")
+
+    if role not in ("admin", "developer", "viewer"):
+        return JSONResponse({"error": "Invalid role"}, status_code=400)
+
+    user = approve_pending(login, role=role)
+    return JSONResponse({"success": True, "user": user})
+
+
+@router.delete("/api/admin/pending/{login}")
+async def admin_reject_pending(request: Request, login: str):
+    """Reject a pending access request (admin only)."""
+    if not _require_admin(request):
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
+
+    ok = reject_pending(login)
+    if not ok:
+        return JSONResponse({"error": "Request not found"}, status_code=404)
     return JSONResponse({"success": True})

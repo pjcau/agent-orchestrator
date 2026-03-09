@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=051">
+    <link rel="stylesheet" href="/static/style.css?v=052">
 </head>
 <body>
     <header>
@@ -50,6 +50,12 @@
             </div>
             <button id="btn-history" class="btn-sidebar-toggle" title="Job history">History</button>
             <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="Toggle logs panel">Logs</button>
+            <div id="user-menu" class="user-menu hidden">
+                <span id="user-name" class="user-name"></span>
+                <span id="user-role" class="user-role-badge"></span>
+                <button id="btn-admin" class="btn-sidebar-toggle hidden" title="Manage users">Admin</button>
+                <button id="btn-logout" class="btn-sidebar-toggle" title="Logout">Logout</button>
+            </div>
             <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
         </div>
     </header>
@@ -296,6 +302,62 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=051"></script>
+    <!-- Admin user management modal -->
+    <div id="admin-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <h3>User Management</h3>
+                <button id="btn-close-admin" class="btn-close">&times;</button>
+            </div>
+
+            <!-- Pending requests section -->
+            <div id="pending-section" class="admin-section hidden">
+                <div class="admin-section-header">
+                    <h4>Pending Requests</h4>
+                    <span id="pending-count" class="pending-badge">0</span>
+                </div>
+                <table class="admin-users-table">
+                    <thead>
+                        <tr>
+                            <th>GitHub Login</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Requested</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-pending-body"></tbody>
+                </table>
+            </div>
+
+            <!-- Add user manually -->
+            <div class="admin-add-user">
+                <input id="admin-new-login" type="text" placeholder="GitHub username" class="admin-input" />
+                <select id="admin-new-role" class="admin-select">
+                    <option value="viewer">Viewer</option>
+                    <option value="developer">Developer</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <button id="btn-admin-add" class="btn-admin-action">Add User</button>
+            </div>
+
+            <!-- Approved users -->
+            <table class="admin-users-table">
+                <thead>
+                    <tr>
+                        <th>GitHub Login</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Active</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="admin-users-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=052"></script>
 </body>
 </html>

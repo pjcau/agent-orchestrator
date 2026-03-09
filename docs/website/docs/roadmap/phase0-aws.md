@@ -10,7 +10,7 @@ title: "Phase 0: AWS Infrastructure + Auth"
 **Duration:** 2 sprints (2 weeks)
 
 > **IaC:** Terraform · **CI/CD:** GitHub Actions · **Cloud:** AWS EC2 + Docker Compose
-> **Auth:** OAuth2 (Google/GitHub) + JWT session cookies · **State:** S3 + DynamoDB lock
+> **Auth:** OAuth2 (GitHub) + JWT session cookies · **State:** S3 + DynamoDB lock
 
 ## Architecture Target
 
@@ -26,7 +26,7 @@ graph TD
         NGX -->|"/api/"| API["FastAPI (orchestrator API)"]
         NGX -->|"/auth/"| AUTH["OAuth2 callback handler"]
         FAST["FastAPI + StateGraph"]
-        PG["PostgreSQL<br/>(checkpoints, usage)"]
+        PG["PostgreSQL<br/>(checkpoints, usage, users)"]
         REDIS["Redis<br/>(semantic cache + sessions)"]
         PROM["Prometheus"]
         GRAF["Grafana"]
@@ -84,20 +84,7 @@ GitHub OAuth Apps cannot be created via CLI/API — web UI only.
    OAUTH_CLIENT_SECRET=abc123...
    ```
 
-#### 2.1.2 — Create Google OAuth App (optional)
-
-1. Go to [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)
-2. **Create Project** (or select existing) > **Create Credentials** > **OAuth client ID**
-3. Application type: **Web application**
-4. Authorized redirect URIs: `https://agents.yourdomain.com/auth/google/callback`
-5. Copy **Client ID** and **Client Secret**
-6. Store in GitHub Secrets:
-   ```
-   GOOGLE_CLIENT_ID=123456789.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-...
-   ```
-
-#### 2.1.3 — Generate JWT Secret
+#### 2.1.2 — Generate JWT Secret
 
 ```bash
 openssl rand -hex 32
@@ -105,14 +92,12 @@ openssl rand -hex 32
 
 Store as GitHub Secret: `JWT_SECRET_KEY`
 
-#### 2.1.4 — All Required Secrets
+#### 2.1.3 — All Required Secrets
 
 | Secret | Source | Required |
 |--------|--------|----------|
 | `OAUTH_CLIENT_ID` | GitHub Developer Settings | Yes |
 | `OAUTH_CLIENT_SECRET` | GitHub Developer Settings | Yes |
-| `GOOGLE_CLIENT_ID` | Google Cloud Console | Optional |
-| `GOOGLE_CLIENT_SECRET` | Google Cloud Console | Optional |
 | `JWT_SECRET_KEY` | `openssl rand -hex 32` | Yes |
 | `BASE_URL` | Your domain | Yes |
 | `OPENROUTER_API_KEY` | OpenRouter dashboard | Yes (already set) |
@@ -120,18 +105,18 @@ Store as GitHub Secret: `JWT_SECRET_KEY`
 | `AWS_SECRET_ACCESS_KEY` | AWS IAM | Yes |
 | `EC2_SSH_PRIVATE_KEY` | `ssh-keygen` | Yes |
 
-#### 2.1.5 — Auth Flow
+#### 2.1.4 — Auth Flow
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant F as FastAPI
-    participant GH as GitHub/Google
+    participant GH as GitHub
 
     B->>F: GET / (no session cookie)
     F-->>B: 302 Redirect /login
     B->>F: GET /login
-    F-->>B: Login page (GitHub/Google buttons)
+    F-->>B: Login page (GitHub button)
     B->>F: GET /auth/github
     F-->>B: 302 Redirect to GitHub OAuth
     B->>GH: Authorize
@@ -144,7 +129,7 @@ sequenceDiagram
     F-->>B: Dashboard HTML
 ```
 
-#### 2.1.6 — Local Testing
+#### 2.1.5 — Local Testing
 
 To test OAuth locally before deploying to AWS:
 
@@ -162,6 +147,29 @@ docker compose up dashboard
 :::caution Cookie secure flag
 In `oauth_routes.py`, cookies are set with `secure=True`. This works on `localhost` in most browsers but not on LAN IPs. For local testing over LAN, temporarily set `secure=False`.
 :::
+
+#### 2.1.6 — User Store in PostgreSQL
+
+The user store (`dashboard_users` + `dashboard_pending` tables) persists approved users, roles, and pending access requests in PostgreSQL. This is required for production — JSON file fallback only works for local dev.
+
+**Tables:**
+
+| Table | Columns | Purpose |
+|-------|---------|---------|
+| `dashboard_users` | `github_login` (PK), `email`, `name`, `role`, `active`, `created_at` | Approved users with roles |
+| `dashboard_pending` | `github_login` (PK), `email`, `name`, `requested_at` | Pending access requests waiting for admin approval |
+
+**Behavior:**
+- On startup, `setup_db()` creates tables if they don't exist
+- If JSON files from local dev exist (`dashboard-users.json`, `dashboard-pending.json`), data is auto-migrated to Postgres and files renamed to `.json.migrated`
+- If Postgres is unavailable, all operations fall back to JSON files transparently
+- Admin panel shows pending requests with approve/reject actions
+
+**Admin flow:**
+1. Unknown user tries to log in → denied, saved to `dashboard_pending`
+2. Admin opens Admin panel → sees pending requests with badge count
+3. Admin approves (with role) or rejects each request
+4. Approved users can log in on next attempt
 
 ### Step 2.2 — Docker Compose Production
 
@@ -181,8 +189,10 @@ In `oauth_routes.py`, cookies are set with `secure=True`. This works on `localho
 | Alert rules | HIGH | Cost threshold, error rate spike, agent stall detection |
 
 **Deliverables:**
-- [ ] OAuth2 Google + GitHub working
+- [ ] OAuth2 GitHub working
 - [ ] Dashboard accessible only after login
+- [ ] User store (users + pending requests) in PostgreSQL
+- [ ] Admin panel for managing users and approving access requests
 - [ ] GitHub Actions auto-deploys on push to `main`
 - [ ] HTTPS active on custom domain
 - [ ] Grafana accessible via SSH tunnel
