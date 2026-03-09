@@ -76,8 +76,8 @@ OpenRouter API (free models + fallback chains)
   OPENROUTER_API_KEY          ← already configured ✓
   GOOGLE_CLIENT_ID            ← from Google Cloud Console
   GOOGLE_CLIENT_SECRET
-  GITHUB_OAUTH_CLIENT_ID      ← from GitHub Developer Settings
-  GITHUB_OAUTH_CLIENT_SECRET
+  OAUTH_CLIENT_ID      ← from GitHub Developer Settings
+  OAUTH_CLIENT_SECRET
   JWT_SECRET_KEY              ← random 256-bit string
   ```
 - [ ] Domain registered (e.g. `agents.yourdomain.com`)

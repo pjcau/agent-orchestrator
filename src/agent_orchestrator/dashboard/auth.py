@@ -7,7 +7,7 @@ Supports two modes:
 Configuration via environment variables:
 - DASHBOARD_API_KEYS: comma-separated API keys (if empty, dev mode = no auth)
 - GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: Google OAuth2 credentials
-- GITHUB_OAUTH_CLIENT_ID / GITHUB_OAUTH_CLIENT_SECRET: GitHub OAuth2 credentials
+- OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET: GitHub OAuth2 credentials
 - JWT_SECRET_KEY: secret for signing JWT session cookies
 - BASE_URL: public URL for OAuth2 callbacks (e.g. https://agents.yourdomain.com)
 """
@@ -51,7 +51,7 @@ def _get_jwt_secret() -> str:
 
 
 def create_session_token(user_info: dict[str, Any]) -> str:
-    """Create a JWT session token from user info (email, name, provider)."""
+    """Create a JWT session token from user info (email, name, provider, role, github_login)."""
     if not HAS_JWT:
         raise RuntimeError("PyJWT is required for session tokens: pip install PyJWT")
     secret = _get_jwt_secret()
@@ -61,6 +61,8 @@ def create_session_token(user_info: dict[str, Any]) -> str:
         "sub": user_info.get("email", ""),
         "name": user_info.get("name", ""),
         "provider": user_info.get("provider", "unknown"),
+        "github_login": user_info.get("github_login", ""),
+        "role": user_info.get("role", "viewer"),
         "iat": int(time.time()),
         "exp": int(time.time()) + JWT_EXPIRY_SECONDS,
     }
@@ -94,7 +96,7 @@ def create_oauth() -> Any | None:
         return None
 
     google_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-    github_id = os.environ.get("GITHUB_OAUTH_CLIENT_ID", "")
+    github_id = os.environ.get("OAUTH_CLIENT_ID", "")
 
     if not google_id and not github_id:
         return None
@@ -114,7 +116,7 @@ def create_oauth() -> Any | None:
         oauth.register(
             "github",
             client_id=github_id,
-            client_secret=os.environ.get("GITHUB_OAUTH_CLIENT_SECRET", ""),
+            client_secret=os.environ.get("OAUTH_CLIENT_SECRET", ""),
             access_token_url="https://github.com/login/oauth/access_token",
             authorize_url="https://github.com/login/oauth/authorize",
             api_base_url="https://api.github.com/",
@@ -150,7 +152,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.api_keys: set[str] = set(api_keys) if api_keys else set()
         self._oauth_configured = bool(
-            os.environ.get("GOOGLE_CLIENT_ID") or os.environ.get("GITHUB_OAUTH_CLIENT_ID")
+            os.environ.get("GOOGLE_CLIENT_ID") or os.environ.get("OAUTH_CLIENT_ID")
         )
 
     async def dispatch(self, request: Request, call_next):
@@ -171,7 +173,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         session_token = request.cookies.get("session")
         if session_token:
             user = verify_session_token(session_token)
-            if user:
+            if user and user.get("role"):
                 # Store user info in request state for route handlers
                 request.state.user = user
                 return await call_next(request)

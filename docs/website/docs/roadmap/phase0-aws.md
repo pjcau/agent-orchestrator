@@ -14,29 +14,30 @@ title: "Phase 0: AWS Infrastructure + Auth"
 
 ## Architecture Target
 
-```
-Internet
-   │
-   ▼
-Route53 (DNS) ──► ACM (SSL cert)
-   │
-   ▼
-EC2 t3.medium (Elastic IP + Security Group)
-   │
-   Docker Compose
-   ├── Nginx (reverse proxy + SSL termination)
-   │     └── /          → Dashboard (FastAPI + static UI)
-   │     └── /api/      → FastAPI (orchestrator API)
-   │     └── /auth/     → OAuth2 callback handler
-   ├── FastAPI + StateGraph (multi-agent orchestrator)
-   ├── PostgreSQL (checkpoints, usage data)
-   ├── Redis (semantic cache + session store)
-   ├── Prometheus (metrics collection)
-   ├── Grafana (visualization, alerts)
-   └── Node Exporter (system metrics)
-   │
-   ▼
-OpenRouter API (free models + fallback chains)
+```mermaid
+graph TD
+    INT["Internet"] --> R53["Route53 (DNS)"]
+    R53 --> ACM["ACM (SSL cert)"]
+    R53 --> EC2["EC2 t3.medium<br/>(Elastic IP + Security Group)"]
+
+    subgraph DC["Docker Compose"]
+        NGX["Nginx<br/>reverse proxy + SSL"]
+        NGX -->|"/"| DASH["Dashboard (FastAPI + static UI)"]
+        NGX -->|"/api/"| API["FastAPI (orchestrator API)"]
+        NGX -->|"/auth/"| AUTH["OAuth2 callback handler"]
+        FAST["FastAPI + StateGraph"]
+        PG["PostgreSQL<br/>(checkpoints, usage)"]
+        REDIS["Redis<br/>(semantic cache + sessions)"]
+        PROM["Prometheus"]
+        GRAF["Grafana"]
+        NODE["Node Exporter"]
+    end
+
+    EC2 --> DC
+    DC --> OR["OpenRouter API<br/>(free models + fallback chains)"]
+
+    style EC2 fill:#4a90d9,color:#fff
+    style OR fill:#7bc67e,color:#fff
 ```
 
 ## Sprint 1 — Terraform: Bootstrap AWS Infrastructure
@@ -63,14 +64,104 @@ Terraform modules: `terraform/modules/ec2/`, `terraform/modules/networking/`, `t
 
 ### Step 2.1 — OAuth2 Authentication
 
-OAuth2 flow with JWT session cookies (authlib + PyJWT):
+OAuth2 flow with JWT session cookies (authlib + PyJWT).
 
+#### 2.1.1 — Create GitHub OAuth App
+
+GitHub OAuth Apps cannot be created via CLI/API — web UI only.
+
+1. Go to [github.com/settings/developers](https://github.com/settings/developers) > **OAuth Apps** > **New OAuth App**
+2. Fill in:
+   - **Application name:** `Agent Orchestrator`
+   - **Homepage URL:** `https://agents.yourdomain.com` (or `http://localhost:5005` for local)
+   - **Authorization callback URL:** `https://agents.yourdomain.com/auth/github/callback`
+3. Click **Register application**
+4. Copy the **Client ID**
+5. Click **Generate a new client secret**, copy it immediately (shown only once)
+6. Store both values in GitHub Secrets:
+   ```
+   OAUTH_CLIENT_ID=Ov23li...
+   OAUTH_CLIENT_SECRET=abc123...
+   ```
+
+#### 2.1.2 — Create Google OAuth App (optional)
+
+1. Go to [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)
+2. **Create Project** (or select existing) > **Create Credentials** > **OAuth client ID**
+3. Application type: **Web application**
+4. Authorized redirect URIs: `https://agents.yourdomain.com/auth/google/callback`
+5. Copy **Client ID** and **Client Secret**
+6. Store in GitHub Secrets:
+   ```
+   GOOGLE_CLIENT_ID=123456789.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-...
+   ```
+
+#### 2.1.3 — Generate JWT Secret
+
+```bash
+openssl rand -hex 32
 ```
-Browser → GET /auth/google → redirect to Google
-Google  → GET /auth/google/callback?code=xxx
-FastAPI → exchange code → get user info → create JWT session cookie
-Browser → all /api/* requests use JWT cookie
+
+Store as GitHub Secret: `JWT_SECRET_KEY`
+
+#### 2.1.4 — All Required Secrets
+
+| Secret | Source | Required |
+|--------|--------|----------|
+| `OAUTH_CLIENT_ID` | GitHub Developer Settings | Yes |
+| `OAUTH_CLIENT_SECRET` | GitHub Developer Settings | Yes |
+| `GOOGLE_CLIENT_ID` | Google Cloud Console | Optional |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud Console | Optional |
+| `JWT_SECRET_KEY` | `openssl rand -hex 32` | Yes |
+| `BASE_URL` | Your domain | Yes |
+| `OPENROUTER_API_KEY` | OpenRouter dashboard | Yes (already set) |
+| `AWS_ACCESS_KEY_ID` | AWS IAM | Yes |
+| `AWS_SECRET_ACCESS_KEY` | AWS IAM | Yes |
+| `EC2_SSH_PRIVATE_KEY` | `ssh-keygen` | Yes |
+
+#### 2.1.5 — Auth Flow
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant F as FastAPI
+    participant GH as GitHub/Google
+
+    B->>F: GET / (no session cookie)
+    F-->>B: 302 Redirect /login
+    B->>F: GET /login
+    F-->>B: Login page (GitHub/Google buttons)
+    B->>F: GET /auth/github
+    F-->>B: 302 Redirect to GitHub OAuth
+    B->>GH: Authorize
+    GH-->>B: 302 Redirect /auth/github/callback?code=xxx
+    B->>F: GET /auth/github/callback?code=xxx
+    F->>GH: Exchange code for token + user info
+    GH-->>F: {email, name}
+    F-->>B: Set-Cookie: session=JWT, 302 Redirect /
+    B->>F: GET / (with session cookie)
+    F-->>B: Dashboard HTML
 ```
+
+#### 2.1.6 — Local Testing
+
+To test OAuth locally before deploying to AWS:
+
+```bash
+# .env.local already has JWT_SECRET_KEY and BASE_URL=http://localhost:5005
+# After creating the GitHub OAuth App with callback http://localhost:5005/auth/github/callback:
+
+# Edit .env.local, fill in OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET
+# Then:
+set -a && source .env.local && set +a
+docker compose up dashboard
+# Visit http://localhost:5005 → redirects to /login → click "Login with GitHub"
+```
+
+:::caution Cookie secure flag
+In `oauth_routes.py`, cookies are set with `secure=True`. This works on `localhost` in most browsers but not on LAN IPs. For local testing over LAN, temporarily set `secure=False`.
+:::
 
 ### Step 2.2 — Docker Compose Production
 
