@@ -1,11 +1,5 @@
 [
   {
-    "url": "https://example.com/sample-article",
-    "added": "2026-03-08T10:00:00Z",
-    "source": "manual",
-    "notes": "Example bookmark — replace with real URLs"
-  },
-  {
     "url": "https://github.com/IgorWarzocha/opencode-planning-toolkit",
     "added": "2026-03-08T15:03:18Z",
     "source": "github-star",
@@ -28,5 +22,89 @@
     "added": "2026-03-08T15:04:32Z",
     "source": "github-star",
     "notes": "here is the collection of ai agents mostly and highly used in specific filed for our day to day life check them out and fast&up your work | Language: Python"
+  },
+  {
+    "url": "https://github.com/Gentleman-Programming/agent-teams-lite",
+    "added": "2026-03-09T18:02:57Z",
+    "source": "github-star",
+    "notes": "Spec-Driven Development with AI Sub-Agents. An orchestrator + 9 specialized sub-agents for structured feature development. Zero dependencies. Pure Markdown. Works with Claude Code, OpenCode, Cursor, a | Language: Shell"
+  },
+  {
+    "url": "https://github.com/virattt/dexter",
+    "added": "2026-03-09T17:43:10Z",
+    "source": "github-star",
+    "notes": "An autonomous agent for deep financial research | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/microsoft/RD-Agent",
+    "added": "2026-03-09T17:36:19Z",
+    "source": "github-star",
+    "notes": "Research and development (R&D) is crucial for the enhancement of industrial productivity, especially in the AI era, where the core aspects of R&D are mainly focused on data and models. We are committe | Language: Python | Topics: agent, ai, automation, data-mining, data-science"
+  },
+  {
+    "url": "https://github.com/Versatly/clawvault",
+    "added": "2026-03-09T11:47:05Z",
+    "source": "github-star",
+    "notes": "🐘 An elephant never forgets. Structured memory system for AI agents. | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/BlockRunAI/ClawRouter",
+    "added": "2026-03-09T07:04:13Z",
+    "source": "github-star",
+    "notes": "The agent-native LLM router for OpenClaw. 41+ models, <1ms routing, USDC payments on Base & Solana via x402. | Language: TypeScript | Topics: ai, ai-agents, anthropic, cost-optimization, deepseek"
+  },
+  {
+    "url": "https://github.com/pathsim/pathsim",
+    "added": "2026-03-09T07:03:32Z",
+    "source": "github-star",
+    "notes": "A Python native dynamical system simulation framework in the block diagram paradigm. | Language: Python | Topics: block-diagram, blockdiagram, control-systems, digital-twin, dynamical-systems"
+  },
+  {
+    "url": "https://github.com/msitarzewski/agency-agents",
+    "added": "2026-03-08T17:45:18Z",
+    "source": "github-star",
+    "notes": "A complete AI agency at your fingertips - From frontend wizards to Reddit community ninjas, from whimsy injectors to reality checkers. Each agent is a specialized expert with personality, processes, a | Language: Shell"
+  },
+  {
+    "url": "https://github.com/langchain-ai/agent-inbox",
+    "added": "2026-03-08T17:16:24Z",
+    "source": "github-star",
+    "notes": "📥 An inbox UX for interacting with human-in-the-loop agents. | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/trevin-creator/autoresearch-mlx",
+    "added": "2026-03-08T16:43:02Z",
+    "source": "github-star",
+    "notes": "Apple Silicon (MLX) port of Karpathy's autoresearch — autonomous AI research loops on Mac, no PyTorch required. | Language: Python"
+  },
+  {
+    "url": "https://github.com/samuelmtimbo/unit",
+    "added": "2026-03-08T16:35:30Z",
+    "source": "github-star",
+    "notes": "Next Generation Visual Programming System | Language: TypeScript | Topics: dataflow-programming, functional-programming, live-programming, programming, programming-language"
+  },
+  {
+    "url": "https://github.com/affaan-m/everything-claude-code",
+    "added": "2026-03-08T15:19:57Z",
+    "source": "github-star",
+    "notes": "The agent harness performance optimization system. Skills, instincts, memory, security, and research-first development for Claude Code, Codex, Opencode, Cursor and beyond. | Language: JavaScript | Topics: ai-agents, anthropic, claude, claude-code, developer-tools"
+  },
+  {
+    "url": "https://github.com/tradermonty/claude-trading-skills",
+    "added": "2026-03-08T15:17:56Z",
+    "source": "github-star",
+    "notes": " | Language: Python"
+  },
+  {
+    "url": "https://github.com/Datus-ai/Datus-agent",
+    "added": "2026-03-08T15:17:00Z",
+    "source": "github-star",
+    "notes": "The Future of Data Engineering — A CLI SQL client for the modern data stack, enabling AI-native context engineering for data. | Language: Python"
+  },
+  {
+    "url": "https://github.com/mehdihadeli/awesome-software-architecture",
+    "added": "2026-03-08T15:16:18Z",
+    "source": "github-star",
+    "notes": "📚 A curated list of awesome articles, videos, and other resources to learn and practice software architecture, patterns, and principles. | Language: C# | Topics: architectural-patterns, architectural-styles, architecture, awesome-list, clean-architecture"
   }
 ]

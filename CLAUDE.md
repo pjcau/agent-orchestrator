@@ -258,6 +258,7 @@ proposes concrete code improvements as PRs. Token-efficient: one repo, one LLM c
 
 - **Source**: GitHub starred repos (fetched via `scripts/fetch_github_stars.py`)
 - **Lookback**: 30 days (stars older than 30 days are ignored)
+- **LLM backend**: `claude` CLI locally, OpenRouter (`qwen/qwen3.5-flash-02-23`) on CI
 - **Analysis**: LLM compares repo's patterns against our codebase, proposes 1-3 improvements with code
 - **State tracking**: `.claude/research-scout-state.json` (tracks processed URLs)
 - **Findings file**: `.claude/research-scout-findings.md` (generated when improvements found)

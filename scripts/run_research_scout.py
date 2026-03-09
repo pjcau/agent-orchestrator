@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Research scout — analyze ONE bookmark per run, propose code improvements via PR.
+"""Research scout — analyze ONE starred repo per run, propose code improvements via PR.
 
 Flow:
-  1. Pick the oldest unprocessed bookmark (30-day lookback)
-  2. Fetch its README/content
-  3. Send to LLM with a summary of our codebase — ask for concrete improvements
-  4. Write the LLM's proposed changes to files
-  5. Output a PR-ready findings file with explanation
+  1. Pick the oldest unprocessed starred repo (30-day lookback)
+  2. Fetch its README via GitHub API
+  3. Call LLM (claude CLI locally, OpenRouter on CI) for concrete improvements
+  4. Parse the JSON response and write a findings file
+  5. Output is PR-ready
 
-Designed to be token-efficient: one repo per run, one LLM call.
+LLM backend:
+  - Local: `claude` CLI (auto-detected, no API key needed)
+  - CI/GitHub Actions: OpenRouter API (set OPENROUTER_API_KEY)
 """
 
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from urllib.error import URLError
@@ -34,15 +37,14 @@ from agent_orchestrator.core.bookmark_tracker import (
 STATE_FILE = Path(".claude/research-scout-state.json")
 BOOKMARKS_FILE = Path(".claude/bookmarks.json")
 FINDINGS_FILE = Path(".claude/research-scout-findings.md")
-USAGE_FILE = Path(".claude/research-scout-usage.json")
 LOOKBACK_DAYS = 30
 
 # Regex to extract owner/repo from GitHub URLs
 _GH_REPO_RE = re.compile(r"github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/|$)")
 
-# OpenRouter API
+# OpenRouter config (used on CI when OPENROUTER_API_KEY is set)
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "qwen/qwen3-coder:free"
+OPENROUTER_MODEL = "qwen/qwen3.5-flash-02-23"
 
 # Our codebase summary — kept short to save tokens
 CODEBASE_SUMMARY = """\
@@ -68,64 +70,6 @@ Providers: anthropic, openai, google, openrouter, local (Ollama/vLLM)
 Dashboard: FastAPI + WebSocket, real-time agent monitoring
 23 agents across 5 categories (software-eng, data-science, finance, marketing, tooling)
 """
-
-# Model pricing per 1M tokens (USD)
-MODEL_PRICING = {
-    "qwen/qwen3-coder:free": {"input": 0.0, "output": 0.0},
-    "default": {"input": 0.50, "output": 1.50},
-}
-
-
-class UsageTracker:
-    """Track token usage and costs across the run."""
-
-    def __init__(self):
-        self.github_api_calls = 0
-        self.chars_fetched = 0
-        self.llm_input_tokens = 0
-        self.llm_output_tokens = 0
-        self.llm_model = ""
-        self.llm_cost_usd = 0.0
-
-    def add_fetch(self, char_count: int):
-        self.github_api_calls += 1
-        self.chars_fetched += char_count
-
-    def add_llm_usage(self, model: str, input_tokens: int, output_tokens: int):
-        self.llm_model = model
-        self.llm_input_tokens += input_tokens
-        self.llm_output_tokens += output_tokens
-        pricing = MODEL_PRICING.get(model, MODEL_PRICING["default"])
-        self.llm_cost_usd += (
-            input_tokens * pricing["input"] + output_tokens * pricing["output"]
-        ) / 1_000_000
-
-    def summary(self) -> str:
-        total_tokens = self.llm_input_tokens + self.llm_output_tokens
-        lines = [
-            "\n--- USAGE REPORT ---",
-            f"GitHub API calls:  {self.github_api_calls}",
-            f"Characters fetched: {self.chars_fetched:,}",
-            f"LLM model:         {self.llm_model or 'none'}",
-            f"LLM tokens:        {total_tokens:,} ({self.llm_input_tokens:,}in / {self.llm_output_tokens:,}out)",
-            f"LLM cost:          ${self.llm_cost_usd:.4f}",
-            "--------------------",
-        ]
-        return "\n".join(lines)
-
-    def to_dict(self) -> dict:
-        return {
-            "github_api_calls": self.github_api_calls,
-            "chars_fetched": self.chars_fetched,
-            "llm_model": self.llm_model,
-            "llm_input_tokens": self.llm_input_tokens,
-            "llm_output_tokens": self.llm_output_tokens,
-            "llm_total_tokens": self.llm_input_tokens + self.llm_output_tokens,
-            "llm_cost_usd": round(self.llm_cost_usd, 6),
-        }
-
-
-usage = UsageTracker()
 
 
 def _fetch_github_readme(owner: str, repo: str) -> dict:
@@ -173,44 +117,52 @@ def _fetch_github_readme(owner: str, repo: str) -> dict:
     ]
 
     total_chars = sum(len(p) for p in text_parts)
-    usage.add_fetch(total_chars)
-
     return {"title": title, "text": "\n".join(text_parts), "char_count": total_chars}
 
 
 def _fetch_url(url: str) -> dict:
-    """Fetch content from a URL. GitHub API for repos, WebReaderSkill otherwise."""
+    """Fetch content from a URL. GitHub API for repos, skip non-GitHub URLs."""
     match = _GH_REPO_RE.search(url)
     if match:
         return _fetch_github_readme(match.group(1), match.group(2))
+    return {"error": "Only GitHub repo URLs are supported"}
 
+
+def _call_claude(prompt: str) -> dict:
+    """Call claude CLI in non-interactive mode. Returns {"content": str} or {"error": str}."""
+    # Remove CLAUDECODE env var to allow nested invocation
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
     try:
-        import asyncio
-        from agent_orchestrator.skills.web_reader import WebReaderSkill
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--output-format", "text"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            return {"error": f"claude CLI failed (exit {result.returncode}): {stderr[:200]}"}
+        content = result.stdout.strip()
+        if not content:
+            return {"error": "claude CLI returned empty output"}
+        return {"content": content}
+    except FileNotFoundError:
+        return {
+            "error": "claude CLI not found — install with: npm install -g @anthropic-ai/claude-code"
+        }
+    except subprocess.TimeoutExpired:
+        return {"error": "claude CLI timed out after 120s"}
 
-        reader = WebReaderSkill(max_chars=10_000, timeout=15)
-        result = asyncio.get_event_loop().run_until_complete(reader.execute({"url": url}))
-        if result.success:
-            return result.output
-        return {"error": result.error}
-    except ImportError:
-        return {"error": "aiohttp not available and URL is not a GitHub repo"}
 
-
-def _call_llm(prompt: str, system: str) -> dict:
-    """Call OpenRouter LLM API. Returns {"content": str, "input_tokens": int, "output_tokens": int}."""
+def _call_openrouter(prompt: str) -> dict:
+    """Call OpenRouter API. Used on CI when OPENROUTER_API_KEY is set."""
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        return {"error": "OPENROUTER_API_KEY not set"}
-
-    model = os.environ.get("SCOUT_MODEL", DEFAULT_MODEL)
+    model = os.environ.get("SCOUT_MODEL", OPENROUTER_MODEL)
     payload = json.dumps(
         {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 2000,
             "temperature": 0.3,
         }
@@ -224,32 +176,32 @@ def _call_llm(prompt: str, system: str) -> dict:
 
     req = Request(OPENROUTER_API_URL, data=payload, headers=headers, method="POST")
     try:
-        with urlopen(req, timeout=60) as resp:
+        with urlopen(req, timeout=90) as resp:
             data = json.loads(resp.read().decode())
     except URLError as exc:
-        return {"error": f"LLM API error: {exc}"}
+        return {"error": f"OpenRouter API error: {exc}"}
 
     choice = data.get("choices", [{}])[0]
     content = choice.get("message", {}).get("content", "")
-    token_usage = data.get("usage", {})
-    input_tokens = token_usage.get("prompt_tokens", 0)
-    output_tokens = token_usage.get("completion_tokens", 0)
+    if not content:
+        return {"error": "OpenRouter returned empty response"}
+    return {"content": content}
 
-    usage.add_llm_usage(model, input_tokens, output_tokens)
 
-    return {"content": content, "input_tokens": input_tokens, "output_tokens": output_tokens}
+def _call_llm(prompt: str) -> dict:
+    """Call LLM — claude CLI locally, OpenRouter on CI."""
+    if os.environ.get("OPENROUTER_API_KEY") and os.environ.get("CI"):
+        print("  Using OpenRouter API (CI mode)")
+        return _call_openrouter(prompt)
+    print("  Using claude CLI (local mode)")
+    return _call_claude(prompt)
 
 
 def _parse_improvements(llm_output: str) -> list[dict]:
     """Parse structured improvements from LLM output.
 
     Expected format: JSON array with objects containing:
-      - component: str (router, agent, skill, etc.)
-      - title: str
-      - description: str
-      - file: str (path to modify)
-      - code: str (code snippet to add/modify)
-      - benefit: str
+      - component, title, description, file, code, benefit
     """
     # Strip markdown fences
     cleaned = re.sub(r"```(?:json)?\s*", "", llm_output).strip().rstrip("`")
@@ -311,20 +263,13 @@ def _write_findings(repo_title: str, repo_url: str, improvements: list[dict]) ->
         if imp.get("benefit"):
             lines.append(f"**Benefit:** {imp['benefit']}\n")
 
-    if usage.llm_input_tokens or usage.llm_output_tokens:
-        total = usage.llm_input_tokens + usage.llm_output_tokens
-        lines.append("---")
-        lines.append(
-            f"*Scout used {total:,} tokens ({usage.llm_model}) — ${usage.llm_cost_usd:.4f}*"
-        )
-
     FINDINGS_FILE.write_text("\n".join(lines), encoding="utf-8")
     print(f"Findings written to {FINDINGS_FILE}")
 
 
 def main():
     lookback = int(os.environ.get("LOOKBACK_DAYS", str(LOOKBACK_DAYS)))
-    print(f"Research Scout — lookback: {lookback} days, mode: single-repo")
+    print(f"Research Scout — lookback: {lookback} days, mode: single-repo, LLM: claude CLI")
 
     state = load_state(STATE_FILE)
     bookmarks = load_bookmarks(BOOKMARKS_FILE)
@@ -334,15 +279,15 @@ def main():
 
     # Filter to unprocessed within lookback window
     to_process = filter_unprocessed(bookmarks, state, lookback_days=lookback)
-    print(f"Unprocessed bookmarks in window: {len(to_process)}")
+    print(f"Unprocessed repos in window: {len(to_process)}")
 
     if not to_process:
-        print("No new bookmarks to process. Done.")
+        print("No new repos to process. Done.")
         FINDINGS_FILE.unlink(missing_ok=True)
         save_state(STATE_FILE, state)
         return
 
-    # Pick ONE — the oldest unprocessed bookmark (first in the list)
+    # Pick ONE — the oldest unprocessed repo
     bm = to_process[0]
     url = bm["url"]
     print(f"\nAnalyzing: {url}")
@@ -377,23 +322,15 @@ def main():
     text_lower = text.lower()
     keyword_hits = sum(1 for kw in relevance_keywords if kw in text_lower)
     if keyword_hits < 2:
-        print(f"  Low relevance ({keyword_hits} keyword hits). Skipping LLM analysis.")
+        print(f"  Low relevance ({keyword_hits} keyword hits). Skipping.")
         mark_processed(state, url, summary=f"low-relevance: {title}")
         FINDINGS_FILE.unlink(missing_ok=True)
         save_state(STATE_FILE, state)
-        print(usage.summary())
         return
 
-    # Step 3: LLM analysis — one call, ask for concrete improvements
-    print("  Sending to LLM for analysis...")
-    system_prompt = (
-        "You are a senior software architect reviewing open-source projects to find "
-        "patterns and techniques that could improve an existing codebase. "
-        "Be specific and actionable. Only propose improvements that are clearly better "
-        "than what exists. Output ONLY a JSON array, no other text."
-    )
-
-    user_prompt = f"""\
+    # Step 3: Call claude CLI for analysis
+    print("  Calling LLM for analysis...")
+    prompt = f"""\
 ## Our codebase
 {CODEBASE_SUMMARY}
 
@@ -407,7 +344,7 @@ agent-orchestrator codebase. Only include improvements that:
 - Map to a specific file in our codebase
 - Include a code snippet showing the improvement
 
-Respond with a JSON array. Each item must have:
+Respond with ONLY a JSON array, no other text. Each item must have:
 - "component": which part of our codebase (router, agent, skill, provider, graph, etc.)
 - "title": short title (max 10 words)
 - "description": 2-3 sentences explaining the improvement and how it's inspired by the repo
@@ -418,7 +355,7 @@ Respond with a JSON array. Each item must have:
 If the repo has nothing useful for our codebase, return an empty array: []
 """
 
-    llm_result = _call_llm(user_prompt, system_prompt)
+    llm_result = _call_llm(prompt)
     if "error" in llm_result:
         print(f"  LLM error: {llm_result['error']}")
         mark_processed(state, url, summary=f"llm-error: {llm_result['error']}")
@@ -427,10 +364,7 @@ If the repo has nothing useful for our codebase, return an empty array: []
         return
 
     llm_content = llm_result["content"]
-    print(
-        f"  LLM response: {len(llm_content)} chars, "
-        f"{llm_result['input_tokens']}in/{llm_result['output_tokens']}out tokens"
-    )
+    print(f"  Claude response: {len(llm_content)} chars")
 
     # Step 4: Parse improvements
     improvements = _parse_improvements(llm_content)
@@ -462,10 +396,6 @@ If the repo has nothing useful for our codebase, return an empty array: []
         print(f"\nCleaned up {removed} old state entries (>60 days)")
 
     save_state(STATE_FILE, state)
-
-    # Write usage report
-    print(usage.summary())
-    USAGE_FILE.write_text(json.dumps(usage.to_dict(), indent=2), encoding="utf-8")
     print(f"Done. State saved to {STATE_FILE}")
 
 

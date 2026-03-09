@@ -3,6 +3,7 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -52,7 +53,13 @@ class TestParseImprovements:
         assert result[0]["file"] == "src/agent_orchestrator/core/router.py"
 
     def test_markdown_fenced_json(self, scout):
-        llm_output = '```json\n[{"component": "agent", "title": "Better prompts", "description": "Use chain-of-thought", "file": "agent.py", "code": "", "benefit": "Better output"}]\n```'
+        llm_output = (
+            "```json\n"
+            '[{"component": "agent", "title": "Better prompts", '
+            '"description": "Use chain-of-thought", "file": "agent.py", '
+            '"code": "", "benefit": "Better output"}]\n'
+            "```"
+        )
         result = scout._parse_improvements(llm_output)
         assert len(result) == 1
         assert result[0]["component"] == "agent"
@@ -66,7 +73,7 @@ class TestParseImprovements:
         assert result == []
 
     def test_missing_required_fields_skipped(self, scout):
-        llm_output = json.dumps([{"component": "router"}])  # missing title + description
+        llm_output = json.dumps([{"component": "router"}])
         result = scout._parse_improvements(llm_output)
         assert result == []
 
@@ -88,7 +95,9 @@ class TestParseImprovements:
     def test_surrounding_text_ignored(self, scout):
         llm_output = (
             "Here are my suggestions:\n"
-            '[{"component": "skill", "title": "New tool", "description": "Add X integration", "file": "skills.py", "code": "", "benefit": "More tools"}]\n'
+            '[{"component": "skill", "title": "New tool", '
+            '"description": "Add X integration", "file": "skills.py", '
+            '"code": "", "benefit": "More tools"}]\n'
             "Hope this helps!"
         )
         result = scout._parse_improvements(llm_output)
@@ -120,66 +129,87 @@ class TestWriteFindings:
         finally:
             scout.FINDINGS_FILE = original
 
-    def test_no_improvements_no_file(self, scout, tmp_path):
+    def test_empty_improvements_still_writes(self, scout, tmp_path):
         original = scout.FINDINGS_FILE
         scout.FINDINGS_FILE = tmp_path / "findings.md"
         try:
-            # Create file first, then verify it gets deleted
-            scout.FINDINGS_FILE.write_text("old content")
             scout._write_findings("test/repo", "https://github.com/test/repo", [])
-            # With empty improvements, _write_findings still writes (only main() deletes)
-            # The function writes even with 0 improvements since the header says "0 improvements"
             assert scout.FINDINGS_FILE.exists()
+            content = scout.FINDINGS_FILE.read_text()
+            assert "0" in content
         finally:
             scout.FINDINGS_FILE = original
 
 
-class TestUsageTracker:
-    def test_initial_state(self, scout):
-        tracker = scout.UsageTracker()
-        assert tracker.github_api_calls == 0
-        assert tracker.chars_fetched == 0
-        assert tracker.llm_input_tokens == 0
-        assert tracker.llm_cost_usd == 0.0
+class TestCallClaude:
+    def test_success(self, scout):
+        mock_result = type(
+            "Result", (), {"returncode": 0, "stdout": '[{"title": "test"}]', "stderr": ""}
+        )()
+        with patch.object(scout.subprocess, "run", return_value=mock_result):
+            result = scout._call_claude("test prompt")
+        assert "content" in result
+        assert result["content"] == '[{"title": "test"}]'
 
-    def test_add_fetch(self, scout):
-        tracker = scout.UsageTracker()
-        tracker.add_fetch(1000)
-        assert tracker.github_api_calls == 1
-        assert tracker.chars_fetched == 1000
+    def test_cli_failure(self, scout):
+        mock_result = type("Result", (), {"returncode": 1, "stdout": "", "stderr": "error"})()
+        with patch.object(scout.subprocess, "run", return_value=mock_result):
+            result = scout._call_claude("test prompt")
+        assert "error" in result
 
-    def test_add_llm_usage_free_model(self, scout):
-        tracker = scout.UsageTracker()
-        tracker.add_llm_usage("qwen/qwen3-coder:free", 500, 200)
-        assert tracker.llm_input_tokens == 500
-        assert tracker.llm_output_tokens == 200
-        assert tracker.llm_cost_usd == 0.0
+    def test_empty_output(self, scout):
+        mock_result = type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        with patch.object(scout.subprocess, "run", return_value=mock_result):
+            result = scout._call_claude("test prompt")
+        assert "error" in result
+        assert "empty" in result["error"]
 
-    def test_add_llm_usage_paid_model(self, scout):
-        tracker = scout.UsageTracker()
-        tracker.add_llm_usage("unknown-model", 1_000_000, 1_000_000)
-        # default pricing: $0.50/M input + $1.50/M output
-        assert tracker.llm_cost_usd == pytest.approx(2.0)
+    def test_timeout(self, scout):
+        import subprocess as sp
 
-    def test_summary_format(self, scout):
-        tracker = scout.UsageTracker()
-        tracker.add_fetch(500)
-        summary = tracker.summary()
-        assert "GitHub API calls" in summary
-        assert "LLM" in summary
+        with patch.object(scout.subprocess, "run", side_effect=sp.TimeoutExpired("claude", 120)):
+            result = scout._call_claude("test prompt")
+        assert "error" in result
+        assert "timed out" in result["error"]
 
-    def test_to_dict(self, scout):
-        tracker = scout.UsageTracker()
-        tracker.add_fetch(100)
-        d = tracker.to_dict()
-        assert d["github_api_calls"] == 1
-        assert d["chars_fetched"] == 100
-        assert "llm_total_tokens" in d
+    def test_not_found(self, scout):
+        with patch.object(scout.subprocess, "run", side_effect=FileNotFoundError()):
+            result = scout._call_claude("test prompt")
+        assert "error" in result
+        assert "not found" in result["error"]
+
+
+class TestCallLlm:
+    def test_local_uses_claude(self, scout):
+        """Without CI env var, _call_llm should use claude CLI."""
+        mock_result = type("Result", (), {"returncode": 0, "stdout": "[]", "stderr": ""})()
+        with (
+            patch.object(scout.subprocess, "run", return_value=mock_result),
+            patch.dict(scout.os.environ, {"CI": "", "OPENROUTER_API_KEY": ""}, clear=False),
+        ):
+            result = scout._call_llm("test")
+        assert "content" in result
+
+    def test_ci_uses_openrouter(self, scout):
+        """With CI + OPENROUTER_API_KEY, _call_llm should use OpenRouter."""
+        with (
+            patch.dict(
+                scout.os.environ, {"CI": "true", "OPENROUTER_API_KEY": "sk-test"}, clear=False
+            ),
+            patch.object(scout, "_call_openrouter", return_value={"content": "[]"}) as mock_or,
+        ):
+            result = scout._call_llm("test")
+        assert "content" in result
+        mock_or.assert_called_once_with("test")
 
 
 class TestConstants:
     def test_lookback_is_30_days(self, scout):
         assert scout.LOOKBACK_DAYS == 30
 
-    def test_default_model(self, scout):
-        assert "free" in scout.DEFAULT_MODEL or "qwen" in scout.DEFAULT_MODEL
+    def test_only_github_urls_supported(self, scout):
+        result = scout._fetch_url("https://example.com/not-github")
+        assert "error" in result
+
+    def test_openrouter_model(self, scout):
+        assert "qwen" in scout.OPENROUTER_MODEL
