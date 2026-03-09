@@ -86,6 +86,8 @@ jobs:
           git commit -m "research-scout: findings from $(date +%Y-%m-%d)"
           git push -u origin "$BRANCH"
           BODY=$(cat .claude/research-scout-findings.md)
+          # Ensure label exists (ignore error if already present)
+          gh label create "research-scout" --description "Automated research scout findings" --color "0E8A16" 2>/dev/null || true
           gh pr create \
             --title "research-scout: findings $(date +%Y-%m-%d)" \
             --body "$BODY" \
