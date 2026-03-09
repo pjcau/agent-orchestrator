@@ -39,9 +39,9 @@ graph LR
 
 | Task | File | Status |
 |------|------|--------|
-| Inject agent registry into team-lead planning prompt | `agent_runner.py` | |
-| Team-lead outputs structured JSON with agent assignments | `agent_runner.py` | |
-| Parse and validate agent selection against registry | `agent_runner.py` | |
+| Inject agent registry into team-lead planning prompt | `agent_runner.py` | Done |
+| Team-lead outputs structured JSON with agent assignments | `agent_runner.py` | Done |
+| Parse and validate agent selection against registry | `agent_runner.py` | Done |
 
 The team-lead receives the full list of available agents with descriptions:
 
@@ -69,18 +69,18 @@ And responds with structured assignments:
 
 | Task | File | Status |
 |------|------|--------|
-| Replace hardcoded sub-agent list with dynamic dispatch | `agent_runner.py` | |
-| Load agent roles/prompts from `agents_registry.py` | `agent_runner.py` | |
-| Support 1-N agents per task (not always 2) | `agent_runner.py` | |
-| Parallel execution for independent sub-tasks | `agent_runner.py` | |
+| Replace hardcoded sub-agent list with dynamic dispatch | `agent_runner.py` | Done |
+| Load agent roles/prompts from `agents_registry.py` | `agent_runner.py` | Done |
+| Support 1-N agents per task (not always 2) | `agent_runner.py` | Done |
+| Parallel execution for independent sub-tasks | `agent_runner.py` | Done |
 
 ### Phase 3: Feedback & Validation
 
 | Task | File | Status |
 |------|------|--------|
-| Team-lead validates sub-agent outputs before summary | `agent_runner.py` | |
-| Re-delegation if agent output is insufficient | `agent_runner.py` | |
-| Dashboard UI shows dynamic agent selection | `static/app.js` | |
+| Team-lead validates sub-agent outputs before summary | `agent_runner.py` | Done |
+| Re-delegation if agent output is insufficient | `agent_runner.py` | Done |
+| Dashboard UI shows dynamic agent selection | `static/app.js` | Planned |
 
 ---
 

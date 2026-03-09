@@ -2,10 +2,16 @@
 
 Wraps Agent.execute() with real-time EventBus emissions so the dashboard
 can show agent spawning, tool calls, tool results, and completion live.
+
+v1.2: Dynamic team routing — team-lead selects agents from the registry
+instead of hardcoded backend-dev + frontend-dev.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import re
 import time
 from typing import Any
 
@@ -367,34 +373,124 @@ async def _instrumented_execute(
     )
 
 
+def _build_agent_catalog(registry: dict) -> str:
+    """Build a text catalog of available agents for the team-lead prompt."""
+    lines = ["Available agents:"]
+    for agent in registry.get("agents", []):
+        name = agent["name"]
+        if name in ("team-lead", "scout", "research-scout", "skillkit-scout"):
+            continue
+        desc = agent.get("description", "")
+        cat = agent.get("category", "")
+        skills = agent.get("skills", [])
+        skills_str = f" Skills: {', '.join(skills)}" if skills else ""
+        lines.append(f"- {name} ({cat}): {desc}.{skills_str}")
+    return "\n".join(lines)
+
+
+_AGENT_ALIASES: dict[str, str] = {
+    "backend-dev": "backend",
+    "frontend-dev": "frontend",
+    "backend-developer": "backend",
+    "frontend-developer": "frontend",
+    "devops-engineer": "devops",
+    "ml-eng": "ml-engineer",
+    "data-eng": "data-engineer",
+}
+
+
+def _parse_team_plan(plan_text: str, valid_names: set[str]) -> list[dict[str, str]] | None:
+    """Parse structured JSON assignments from team-lead plan output.
+
+    Returns a list of {"agent": name, "task": description} dicts, or None on failure.
+    """
+    # Strip markdown code fences
+    cleaned = re.sub(r"```(?:json)?\s*", "", plan_text).strip().rstrip("`")
+
+    # Find the JSON array
+    start = cleaned.find("[")
+    end = cleaned.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    try:
+        data = json.loads(cleaned[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(data, list) or len(data) == 0:
+        return None
+
+    assignments: list[dict[str, str]] = []
+    for item in data[:5]:  # Cap at 5 sub-tasks
+        if not isinstance(item, dict):
+            continue
+        agent_name = str(item.get("agent", "")).strip().lower()
+        task = str(item.get("task", "")).strip()
+        if not agent_name or not task:
+            continue
+
+        # Resolve aliases
+        agent_name = _AGENT_ALIASES.get(agent_name, agent_name)
+
+        if agent_name not in valid_names:
+            continue  # Skip unknown agents
+
+        assignments.append({"agent": agent_name, "task": task})
+
+    return assignments if assignments else None
+
+
+def _build_role_for_agent(agent_info: dict) -> str:
+    """Build a role prompt for a sub-agent from its registry info."""
+    name = agent_info.get("name", "agent")
+    desc = agent_info.get("description", "")
+    return (
+        f"You are {name}: {desc}. "
+        "Write actual code files. Use file_write to create files. "
+        "Be practical, write working code."
+    )
+
+
 async def run_team(
     task_description: str,
     provider: Provider,
     event_bus: EventBus | None = None,
     working_directory: str | None = None,
     max_steps: int = 15,
+    max_sub_agents: int = 5,
 ) -> dict[str, Any]:
-    """Run a multi-agent team: team-lead plans, sub-agents execute with tools, team-lead summarizes.
+    """Run a multi-agent team with dynamic routing.
 
     Flow:
-      1. team-lead decomposes the task into sub-tasks
-      2. backend-dev and frontend-dev execute sub-tasks (with file/shell tools)
-      3. team-lead writes a final summary
+      1. team-lead analyzes the task and selects agents from the registry
+      2. Selected agents execute sub-tasks in parallel (max 3 concurrent)
+      3. team-lead validates outputs, optionally re-delegates
+      4. team-lead writes a final summary
     """
+    from .agents_registry import get_agent_registry
+
     bus = event_bus or EventBus.get()
+    registry = get_agent_registry()
+    agent_catalog = _build_agent_catalog(registry)
+    agent_map = {a["name"]: a for a in registry.get("agents", [])}
+    valid_names = set(agent_map.keys()) - {"team-lead", "scout", "research-scout", "skillkit-scout"}
+
     start_time = time.time()
     total_tokens = 0
     total_cost = 0.0
     agent_outputs: dict[str, str] = {}
     agent_costs: dict[str, dict[str, Any]] = {}
     all_fallback_logs: list[dict] = []
+    agent_files: dict[str, list[str]] = {}
+    agent_steps_log: dict[str, list[str]] = {}
 
-    # --- Step 1: Team-lead plans ---
+    # --- Step 1: Team-lead plans with agent registry ---
     await bus.emit(
         Event(
             event_type=EventType.AGENT_SPAWN,
             agent_name="team-lead",
-            data={"provider": provider.model_id, "role": "Task decomposition", "tools": []},
+            data={"provider": provider.model_id, "role": "Dynamic planning", "tools": []},
         )
     )
     await bus.emit(
@@ -408,11 +504,14 @@ async def run_team(
     plan_completion = await provider.complete(
         messages=[Message(role=Role.USER, content=task_description)],
         system=(
-            "You are a team lead. Decompose this task into concrete sub-tasks.\n"
-            "Reply with a brief plan (max 5 lines):\n"
-            "- BACKEND: what the backend developer should build (files, logic)\n"
-            "- FRONTEND: what the frontend developer should build (files, UI)\n"
-            "Be specific about file names and structure. Be concise."
+            "You are a team lead. Analyze the task and select the best agents.\n\n"
+            f"{agent_catalog}\n\n"
+            "Respond with ONLY a JSON array of assignments (max 5). "
+            'Each item must have "agent" (exact name from the list) and "task" (specific instructions).\n'
+            "Example:\n"
+            '[{"agent": "backend", "task": "Create REST API with FastAPI"}, '
+            '{"agent": "devops", "task": "Write Dockerfile and docker-compose.yml"}]\n\n'
+            "Select only agents relevant to this task. Be specific in task descriptions."
         ),
     )
     if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
@@ -431,25 +530,7 @@ async def run_team(
         "steps": 1,
     }
 
-    # Incremental metrics update after planning step
-    await bus.emit(
-        Event(
-            event_type=EventType.TOKEN_UPDATE,
-            agent_name="team-lead",
-            data={
-                "total_tokens": total_tokens,
-                "agent_tokens": plan_tokens,
-                "agent_cost_usd": plan_cost,
-            },
-        )
-    )
-    await bus.emit(
-        Event(
-            event_type=EventType.COST_UPDATE,
-            data={"total_cost_usd": total_cost},
-        )
-    )
-
+    await _emit_metrics(bus, "team-lead", total_tokens, plan_tokens, plan_cost, total_cost)
     await bus.emit(
         Event(
             event_type=EventType.AGENT_COMPLETE,
@@ -458,85 +539,78 @@ async def run_team(
         )
     )
 
-    # --- Step 2: Sub-agents execute with tools ---
-    sub_agents = [
-        {
-            "name": "backend-dev",
-            "role": (
-                "You are a backend developer. Write actual code files. "
-                "Use file_write to create files. Be practical, write working code. "
-                "Create proper project structure."
-            ),
-            "prompt": (
-                f"Team lead's plan:\n{plan}\n\n"
-                f"Original request:\n{task_description}\n\n"
-                "Implement the BACKEND parts. Write all necessary files using file_write."
-            ),
-        },
-        {
-            "name": "frontend-dev",
-            "role": (
-                "You are a frontend developer. Write actual code files. "
-                "Use file_write to create files. Be practical, write working code. "
-                "Create proper UI structure."
-            ),
-            "prompt": (
-                f"Team lead's plan:\n{plan}\n\n"
-                f"Original request:\n{task_description}\n\n"
-                "Implement the FRONTEND parts. Write all necessary files using file_write."
-            ),
-        },
-    ]
+    # --- Parse assignments (with fallback) ---
+    assignments = _parse_team_plan(plan, valid_names)
+    used_fallback = False
+    if assignments is None:
+        used_fallback = True
+        assignments = [
+            {"agent": "backend", "task": f"Implement the backend parts of: {task_description}"},
+            {"agent": "frontend", "task": f"Implement the frontend parts of: {task_description}"},
+        ]
+        await bus.emit(
+            Event(
+                event_type=EventType.AGENT_STEP,
+                agent_name="team-lead",
+                data={"step": "fallback", "reason": "Could not parse structured plan"},
+            )
+        )
 
-    agent_files: dict[str, list[str]] = {}
-    agent_steps: dict[str, list[str]] = {}
+    # Cap sub-agents
+    assignments = assignments[:max_sub_agents]
 
-    for agent_def in sub_agents:
-        # Emit task delegation
+    # --- Step 2: Execute sub-agents in parallel (max 3 concurrent) ---
+    sem = asyncio.Semaphore(3)
+
+    async def _run_sub_agent(assignment: dict, idx: int) -> tuple[str, dict[str, Any]]:
+        agent_name = assignment["agent"]
+        agent_task = assignment["task"]
+        # Use index suffix for duplicate agent names
+        event_key = f"{agent_name}-{idx}" if assignments.count(assignment) > 1 else agent_name
+
+        agent_info = agent_map.get(agent_name, {})
+        role = (
+            _build_role_for_agent(agent_info)
+            if agent_info
+            else (f"You are {agent_name}. Write actual code files. Be practical.")
+        )
+        prompt = (
+            f"Team lead's plan:\n{plan}\n\n"
+            f"Original request:\n{task_description}\n\n"
+            f"Your specific task:\n{agent_task}\n\n"
+            "Execute your task. Write all necessary files using file_write."
+        )
+
         await bus.emit(
             Event(
                 event_type=EventType.TASK_ASSIGNED,
                 data={
-                    "task_id": agent_def["name"],
+                    "task_id": event_key,
                     "from_agent": "team-lead",
-                    "to_agent": agent_def["name"],
-                    "description": f"Execute: {agent_def['prompt'][:80]}",
+                    "to_agent": agent_name,
+                    "description": agent_task[:80],
                     "priority": "normal",
                 },
             )
         )
 
-        result = await run_agent(
-            agent_name=agent_def["name"],
-            task_description=agent_def["prompt"],
-            provider=provider,
-            role=agent_def["role"],
-            max_steps=max_steps,
-            event_bus=bus,
-            working_directory=working_directory,
-        )
-
-        agent_tok = result.get("total_tokens", 0)
-        agent_cost = result.get("total_cost_usd", 0.0)
-        total_tokens += agent_tok
-        total_cost += agent_cost
-        agent_outputs[agent_def["name"]] = result.get("output", result.get("error", ""))
-        agent_files[agent_def["name"]] = result.get("files_created", [])
-        agent_steps[agent_def["name"]] = result.get("step_log", [])
-        agent_costs[agent_def["name"]] = {
-            "tokens": agent_tok,
-            "cost_usd": agent_cost,
-            "steps": result.get("steps_taken", 0),
-        }
-        for fb in result.get("fallback_log", []):
-            all_fallback_logs.append({"agent": agent_def["name"], **fb})
+        async with sem:
+            result = await run_agent(
+                agent_name=agent_name,
+                task_description=prompt,
+                provider=provider,
+                role=role,
+                max_steps=max_steps,
+                event_bus=bus,
+                working_directory=working_directory,
+            )
 
         await bus.emit(
             Event(
                 event_type=EventType.TASK_COMPLETED,
                 data={
-                    "task_id": agent_def["name"],
-                    "from_agent": agent_def["name"],
+                    "task_id": event_key,
+                    "from_agent": agent_name,
                     "to_agent": "team-lead",
                     "success": result.get("success", False),
                     "summary": result.get("output", "")[:100],
@@ -544,7 +618,107 @@ async def run_team(
             )
         )
 
-    # --- Step 3: Team-lead summarizes ---
+        return event_key, result
+
+    # Run all sub-agents concurrently
+    sub_results = await asyncio.gather(
+        *[_run_sub_agent(a, i) for i, a in enumerate(assignments)],
+        return_exceptions=True,
+    )
+
+    for item in sub_results:
+        if isinstance(item, Exception):
+            continue
+        event_key, result = item
+        agent_tok = result.get("total_tokens", 0)
+        agent_cost_val = result.get("total_cost_usd", 0.0)
+        total_tokens += agent_tok
+        total_cost += agent_cost_val
+        agent_outputs[event_key] = result.get("output", result.get("error", ""))
+        agent_files[event_key] = result.get("files_created", [])
+        agent_steps_log[event_key] = result.get("step_log", [])
+        agent_costs[event_key] = {
+            "tokens": agent_tok,
+            "cost_usd": agent_cost_val,
+            "steps": result.get("steps_taken", 0),
+        }
+        for fb in result.get("fallback_log", []):
+            all_fallback_logs.append({"agent": event_key, **fb})
+
+    # --- Step 3: Team-lead validates outputs ---
+    evidence_parts = _build_evidence(agent_outputs, agent_files, agent_steps_log)
+
+    await bus.emit(
+        Event(
+            event_type=EventType.AGENT_SPAWN,
+            agent_name="team-lead",
+            data={"provider": provider.model_id, "role": "Validation", "tools": []},
+        )
+    )
+
+    validation_completion = await provider.complete(
+        messages=[
+            Message(
+                role=Role.USER,
+                content=(
+                    f"Original request:\n{task_description}\n\n"
+                    + "\n".join(evidence_parts)
+                    + "\n\nReview the outputs. Are they sufficient?\n"
+                    'Reply with JSON: {"sufficient": true} or '
+                    '{"sufficient": false, "re_delegate": '
+                    '[{"agent": "name", "task": "what to fix"}]}'
+                ),
+            )
+        ],
+        system="You are the team lead. Validate sub-agent outputs. Be strict but fair.",
+    )
+    if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
+        all_fallback_logs.extend(
+            {"agent": "team-lead (validation)", **e} for e in provider.last_fallback_log
+        )
+
+    val_tokens = (
+        validation_completion.usage.input_tokens + validation_completion.usage.output_tokens
+    )
+    val_cost = validation_completion.usage.cost_usd
+    total_tokens += val_tokens
+    total_cost += val_cost
+    agent_costs["team-lead (validation)"] = {
+        "tokens": val_tokens,
+        "cost_usd": val_cost,
+        "steps": 1,
+    }
+
+    await _emit_metrics(bus, "team-lead", total_tokens, val_tokens, val_cost, total_cost)
+
+    # One round of re-delegation if needed
+    re_assignments = _parse_team_plan(validation_completion.content, valid_names)
+    if re_assignments:
+        re_results = await asyncio.gather(
+            *[_run_sub_agent(a, i + len(assignments)) for i, a in enumerate(re_assignments[:3])],
+            return_exceptions=True,
+        )
+        for item in re_results:
+            if isinstance(item, Exception):
+                continue
+            event_key, result = item
+            agent_tok = result.get("total_tokens", 0)
+            agent_cost_val = result.get("total_cost_usd", 0.0)
+            total_tokens += agent_tok
+            total_cost += agent_cost_val
+            agent_outputs[event_key] = result.get("output", result.get("error", ""))
+            agent_files[event_key] = result.get("files_created", [])
+            agent_steps_log[event_key] = result.get("step_log", [])
+            agent_costs[event_key] = {
+                "tokens": agent_tok,
+                "cost_usd": agent_cost_val,
+                "steps": result.get("steps_taken", 0),
+            }
+
+        # Rebuild evidence after re-delegation
+        evidence_parts = _build_evidence(agent_outputs, agent_files, agent_steps_log)
+
+    # --- Step 4: Team-lead summarizes ---
     await bus.emit(
         Event(
             event_type=EventType.AGENT_SPAWN,
@@ -553,27 +727,14 @@ async def run_team(
         )
     )
 
-    # Build evidence of what each agent actually did
-    evidence_parts = []
-    for aname in ["backend-dev", "frontend-dev"]:
-        part = f"**{aname}**:\n"
-        files = agent_files.get(aname, [])
-        steps = agent_steps.get(aname, [])
-        output = agent_outputs.get(aname, "N/A")
-        if files:
-            part += f"Files created: {', '.join(files)}\n"
-        if steps:
-            part += f"Actions: {'; '.join(steps[:20])}\n"
-        part += f"Agent message: {output[:500]}\n"
-        evidence_parts.append(part)
-
     summary_completion = await provider.complete(
         messages=[
             Message(
                 role=Role.USER,
                 content=(
-                    f"Original request:\n{task_description}\n\n" + "\n".join(evidence_parts) + "\n"
-                    "Based on the files actually created and actions taken above, "
+                    f"Original request:\n{task_description}\n\n"
+                    + "\n".join(evidence_parts)
+                    + "\nBased on the files actually created and actions taken above, "
                     "write a final summary of what was built and how to run it. Be concise."
                 ),
             )
@@ -600,25 +761,7 @@ async def run_team(
         "steps": 1,
     }
 
-    # Incremental metrics update after summary step
-    await bus.emit(
-        Event(
-            event_type=EventType.TOKEN_UPDATE,
-            agent_name="team-lead",
-            data={
-                "total_tokens": total_tokens,
-                "agent_tokens": summary_tokens,
-                "agent_cost_usd": summary_cost,
-            },
-        )
-    )
-    await bus.emit(
-        Event(
-            event_type=EventType.COST_UPDATE,
-            data={"total_cost_usd": total_cost},
-        )
-    )
-
+    await _emit_metrics(bus, "team-lead", total_tokens, summary_tokens, summary_cost, total_cost)
     await bus.emit(
         Event(
             event_type=EventType.AGENT_COMPLETE,
@@ -628,16 +771,14 @@ async def run_team(
     )
 
     elapsed = time.time() - start_time
-
-    # Merge all created files
-    all_files = []
-    for files in agent_files.values():
-        all_files.extend(files)
+    all_files = [f for files in agent_files.values() for f in files]
 
     return {
         "success": True,
         "output": summary,
         "plan": plan,
+        "agents_selected": [a["agent"] for a in assignments],
+        "used_fallback": used_fallback,
         "agent_outputs": agent_outputs,
         "agent_costs": agent_costs,
         "fallback_log": all_fallback_logs,
@@ -646,6 +787,55 @@ async def run_team(
         "total_cost_usd": total_cost,
         "elapsed_s": round(elapsed, 2),
     }
+
+
+def _build_evidence(
+    agent_outputs: dict[str, str],
+    agent_files: dict[str, list[str]],
+    agent_steps_log: dict[str, list[str]],
+) -> list[str]:
+    """Build evidence text from all agent outputs for team-lead review."""
+    parts = []
+    for aname in agent_outputs:
+        part = f"**{aname}**:\n"
+        files = agent_files.get(aname, [])
+        steps = agent_steps_log.get(aname, [])
+        output = agent_outputs.get(aname, "N/A")
+        if files:
+            part += f"Files created: {', '.join(files)}\n"
+        if steps:
+            part += f"Actions: {'; '.join(steps[:20])}\n"
+        part += f"Agent message: {output[:500]}\n"
+        parts.append(part)
+    return parts
+
+
+async def _emit_metrics(
+    bus: EventBus,
+    agent_name: str,
+    total_tokens: int,
+    step_tokens: int,
+    step_cost: float,
+    total_cost: float,
+) -> None:
+    """Emit token and cost update events."""
+    await bus.emit(
+        Event(
+            event_type=EventType.TOKEN_UPDATE,
+            agent_name=agent_name,
+            data={
+                "total_tokens": total_tokens,
+                "agent_tokens": step_tokens,
+                "agent_cost_usd": step_cost,
+            },
+        )
+    )
+    await bus.emit(
+        Event(
+            event_type=EventType.COST_UPDATE,
+            data={"total_cost_usd": total_cost},
+        )
+    )
 
 
 def _safe_truncate(args: dict) -> dict:
