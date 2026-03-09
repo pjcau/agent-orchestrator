@@ -80,7 +80,6 @@ def get_recent_stars(username: str, token: str = "", lookback_days: int = 7) -> 
 
             repo_url = repo.get("html_url", "")
             description = repo.get("description", "") or ""
-            name = repo.get("full_name", "")
             topics = repo.get("topics", [])
             language = repo.get("language", "")
 
@@ -122,7 +121,7 @@ def merge_bookmarks(existing: list[dict], new_bookmarks: list[dict]) -> list[dic
 def main():
     token = os.environ.get("GITHUB_TOKEN", "")
     username = os.environ.get("GITHUB_USERNAME", "")
-    lookback = int(os.environ.get("LOOKBACK_DAYS", "7"))
+    lookback = int(os.environ.get("LOOKBACK_DAYS", "30"))
 
     # Auto-detect username from token if not set
     if not username and token:

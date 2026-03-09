@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       lookback_days:
-        description: 'Number of days to look back for bookmarks'
+        description: 'Number of days to look back for starred repos'
         required: false
-        default: '7'
+        default: '30'
 
 permissions:
   contents: write
@@ -32,17 +32,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USERNAME: ${{ vars.GH_USERNAME }}
-          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '30' }}
         run: python scripts/fetch_github_stars.py
 
-      - name: Run research scout
+      - name: Analyze one repo and propose improvements
         id: scout
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '30' }}
         run: |
           python scripts/run_research_scout.py
-          # Check if findings were generated
           if [ -f .claude/research-scout-findings.md ]; then
             echo "has_findings=true" >> "$GITHUB_OUTPUT"
           else
@@ -62,7 +62,7 @@ jobs:
           u = json.load(open('.claude/research-scout-usage.json'))
           print(f'| GitHub API calls | {u[\"github_api_calls\"]} |')
           print(f'| Characters fetched | {u[\"chars_fetched\"]:,} |')
-          print(f'| LLM model | {u[\"llm_model\"] or \"n/a (keyword only)\"} |')
+          print(f'| LLM model | {u[\"llm_model\"] or \"none\"} |')
           print(f'| LLM input tokens | {u[\"llm_input_tokens\"]:,} |')
           print(f'| LLM output tokens | {u[\"llm_output_tokens\"]:,} |')
           print(f'| LLM total tokens | {u[\"llm_total_tokens\"]:,} |')
@@ -72,24 +72,23 @@ jobs:
             echo "No usage data available." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Create PR with findings
+      - name: Create PR with improvements
         if: steps.scout.outputs.has_findings == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH="research-scout/$(date +%Y-%m-%d)"
+          BRANCH="research-scout/$(date +%Y-%m-%d-%H%M)"
           git config user.name "research-scout[bot]"
           git config user.email "research-scout[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add .claude/research-scout-state.json .claude/bookmarks.json .claude/research-scout-findings.md
           git diff --cached --quiet && exit 0
-          git commit -m "research-scout: findings from $(date +%Y-%m-%d)"
+          git commit -m "research-scout: improvement proposal from $(date +%Y-%m-%d)"
           git push -u origin "$BRANCH"
           BODY=$(cat .claude/research-scout-findings.md)
-          # Ensure label exists (ignore error if already present)
-          gh label create "research-scout" --description "Automated research scout findings" --color "0E8A16" 2>/dev/null || true
+          gh label create "research-scout" --description "Automated research scout improvements" --color "0E8A16" 2>/dev/null || true
           gh pr create \
-            --title "research-scout: findings $(date +%Y-%m-%d)" \
+            --title "research-scout: improvement proposal $(date +%Y-%m-%d)" \
             --body "$BODY" \
             --label "research-scout"
 

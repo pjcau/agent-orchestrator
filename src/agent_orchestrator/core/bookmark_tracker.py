@@ -1,4 +1,4 @@
-"""Bookmark tracker — JSON-based tracking of processed URLs with 7-day lookback."""
+"""Bookmark tracker — JSON-based tracking of processed URLs with 30-day lookback."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_STATE_FILE = ".claude/research-scout-state.json"
 DEFAULT_BOOKMARKS_FILE = ".claude/bookmarks.json"
-LOOKBACK_DAYS = 7
+LOOKBACK_DAYS = 30
 
 
 def load_state(state_path: str | Path) -> dict:

@@ -147,7 +147,7 @@ team-lead (sonnet) ──── orchestrator, coordinates all categories
   ├── platform-engineer (sonnet) system design, scalability, observability
   ├── ai-engineer (opus) ────── LLM integration, prompt engineering
   ├── scout (opus) ──────────── GitHub pattern discovery
-  └── research-scout (opus) ─── Web content analysis for orchestrator improvements
+  └── research-scout (opus) ─── Analyzes starred repos, proposes code improvements
 ```
 
 #### Cross-Agent Dependencies
@@ -253,15 +253,17 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 
 ### Research Scout & Nightly Workflow
 
-The `research-scout` agent reads URLs from bookmarks (GitHub stars, web pages) and
-analyzes content for orchestrator improvements (memory, router, agents, skills, tools).
+The `research-scout` analyzes **GitHub starred repos** (one per run) via LLM and
+proposes concrete code improvements as PRs. Token-efficient: one repo, one LLM call.
 
-- **Bookmarks file**: `.claude/bookmarks.json` (auto-populated from GitHub stars or manual)
+- **Source**: GitHub starred repos (fetched via `scripts/fetch_github_stars.py`)
+- **Lookback**: 30 days (stars older than 30 days are ignored)
+- **Analysis**: LLM compares repo's patterns against our codebase, proposes 1-3 improvements with code
 - **State tracking**: `.claude/research-scout-state.json` (tracks processed URLs)
 - **Findings file**: `.claude/research-scout-findings.md` (generated when improvements found)
 - **GitHub Action**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC)
 - **Scripts**: `scripts/fetch_github_stars.py`, `scripts/run_research_scout.py`
-- **PR creation**: When findings exist, a PR is created on branch `research-scout/YYYY-MM-DD` instead of pushing to main. Both `/fetch-star-repos` and the nightly workflow follow this pattern.
+- **PR creation**: When improvements are found, a PR is created on branch `research-scout/YYYY-MM-DD-HHMM`.
 
 GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_KEY` (secret, for LLM analysis), `GITHUB_TOKEN` (auto-provided).
 
