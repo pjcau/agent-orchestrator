@@ -8,7 +8,7 @@ All code, comments, commit messages, documentation, and any written content in t
 
 Every code change (new feature, bug fix, refactor) **MUST** include:
 
-1. **Tests** — Add or update tests covering the change. Run `docker compose run --rm test` to verify.
+1. **Tests** — Add or update tests covering the change. Run `pytest` to verify.
 2. **Documentation** — Update relevant docs (CLAUDE.md, README.md, `docs/`, inline comments) to reflect the change.
 
 Do NOT skip these steps. They are required for every modification.
@@ -22,8 +22,9 @@ Provider-agnostic AI agent orchestration framework. Abstracts the concepts of sk
 ```
 agent-orchestrator/
 ├── docker/
-│   └── app/Dockerfile           # Python dev container (OrbStack)
-├── docker-compose.yml           # All services (app, test, lint, format, dashboard, postgres)
+│   ├── dashboard/Dockerfile     # Dashboard container (FastAPI + auth)
+│   └── docs/Dockerfile          # Docusaurus docs site
+├── docker-compose.yml           # Services (postgres, dashboard, docs)
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
@@ -266,7 +267,7 @@ GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_K
 
 ## Container Runtime: OrbStack
 
-All containers run on **OrbStack** (not Docker Desktop). Same `docker` / `docker-compose` commands, zero code changes.
+Docker containers (Postgres, dashboard, docs) run on **OrbStack**. Tests and linting run locally via Python venv.
 
 - Container startup: **0.2s** (vs 3.2s Docker Desktop) — **16x faster**
 - Idle RAM: ~180 MB (vs 2+ GB) — **11x less memory**
@@ -276,22 +277,27 @@ All containers run on **OrbStack** (not Docker Desktop). Same `docker` / `docker
 Real-time monitoring UI for the orchestrator. Shows agent interactions, technical metrics, task plan, and graph visualization.
 
 ```bash
-docker compose up dashboard    # http://localhost:5005
+docker compose up dashboard    # https://localhost:5005
 ```
 
 ## Development
 
 ```bash
-# Via Docker (preferred — runs on OrbStack)
-docker compose run --rm test
-docker compose run --rm lint
+# Setup (once)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,dashboard]"
 
-# Dashboard
+# Tests & linting (local venv)
+pytest
+ruff check src/ tests/
+ruff format src/ tests/
+
+# Dashboard (Docker — needs Postgres)
 docker compose up dashboard
 
-# Local (if deps installed)
-pip install -e ".[dev,dashboard]"
-pytest
+# Docs site (Docker — Docusaurus)
+docker compose up docs          # http://localhost:3000
 ```
 
 ## Hooks (auto-guards)

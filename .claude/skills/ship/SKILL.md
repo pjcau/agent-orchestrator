@@ -24,7 +24,7 @@ Before running the test suite, check that tests cover the current changes:
 ## Phase 2: Run Test Suite
 
 ```bash
-docker compose run --rm test
+source .venv/bin/activate && pytest --tb=short
 ```
 
 If tests fail, STOP and report which tests failed. Do NOT continue.
@@ -32,11 +32,11 @@ If tests fail, STOP and report which tests failed. Do NOT continue.
 ## Phase 3: Lint & Format
 
 ```bash
-docker compose run --rm lint
-docker compose run --rm format
+source .venv/bin/activate && ruff check src/ tests/
+source .venv/bin/activate && ruff format --check src/ tests/
 ```
 
-If lint or format fails, fix automatically and re-run. If unfixable, STOP.
+If lint or format fails, fix automatically (`ruff check --fix`, `ruff format`) and re-run. If unfixable, STOP.
 
 ## Phase 4: Documentation Sync
 

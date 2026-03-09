@@ -1,5 +1,5 @@
 services:
-  # PostgreSQL for checkpointing
+  # PostgreSQL for checkpointing + user store
   postgres:
     image: postgres:16-alpine
     environment:
@@ -16,54 +16,11 @@ services:
       timeout: 3s
       retries: 5
 
-  # Python development environment
-  app:
-    build:
-      context: .
-      dockerfile: docker/app/Dockerfile
-    volumes:
-      - .:/workspace
-    working_dir: /workspace
-    environment:
-      - PYTHONPATH=/workspace/src
-      - DATABASE_URL=postgresql://orchestrator:orchestrator@postgres:5432/orchestrator
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: sleep infinity
-
-  # Test runner
-  test:
-    build:
-      context: .
-      dockerfile: docker/app/Dockerfile
-    volumes:
-      - .:/workspace:ro
-      - test-results:/results
-      - pytest-cache:/tmp/pytest-cache
-    working_dir: /workspace
-    environment:
-      - PYTHONPATH=/workspace/src
-    command: pytest --tb=short --junitxml=/results/report.xml -o cache_dir=/tmp/pytest-cache
-
-  # Linter
-  lint:
-    build:
-      context: .
-      dockerfile: docker/app/Dockerfile
-    volumes:
-      - .:/workspace:ro
-      - ruff-cache:/tmp/ruff-cache
-    working_dir: /workspace
-    environment:
-      - RUFF_CACHE_DIR=/tmp/ruff-cache
-    command: ruff check src/ tests/
-
   # Dashboard — real-time monitoring UI with interactive prompt
   dashboard:
     build:
       context: .
-      dockerfile: docker/app/Dockerfile
+      dockerfile: docker/dashboard/Dockerfile
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - .:/workspace
@@ -97,21 +54,5 @@ services:
       - "3000:3000"
     command: npm start -- --host 0.0.0.0 --port 3000
 
-  # Format checker
-  format:
-    build:
-      context: .
-      dockerfile: docker/app/Dockerfile
-    volumes:
-      - .:/workspace:ro
-      - ruff-cache:/tmp/ruff-cache
-    working_dir: /workspace
-    environment:
-      - RUFF_CACHE_DIR=/tmp/ruff-cache
-    command: ruff format --check src/ tests/
-
 volumes:
   pgdata:
-  test-results:
-  pytest-cache:
-  ruff-cache:
