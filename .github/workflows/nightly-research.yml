@@ -31,7 +31,7 @@ jobs:
       - name: Fetch GitHub starred repos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_USERNAME: ${{ vars.GITHUB_USERNAME }}
+          GITHUB_USERNAME: ${{ vars.GH_USERNAME }}
           LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
         run: python scripts/fetch_github_stars.py
 
