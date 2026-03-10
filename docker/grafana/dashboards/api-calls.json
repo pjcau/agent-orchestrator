@@ -1,0 +1,175 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Total Requests",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "orchestrator_requests_total", "legendFormat": "Requests" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Total Tokens",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "sum(orchestrator_tokens_total)", "legendFormat": "Tokens" }
+      ],
+      "fieldConfig": { "defaults": {} }
+    },
+    {
+      "title": "Total Cost (USD)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "orchestrator_cost_usd_total", "legendFormat": "Cost" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Cache Hit Rate",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "orchestrator_cache_hits_total / (orchestrator_cache_hits_total + orchestrator_cache_misses_total) * 100",
+          "legendFormat": "Hit Rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 80 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Requests / min",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "rate(orchestrator_requests_total[1m]) * 60",
+          "legendFormat": "req/min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      }
+    },
+    {
+      "title": "Tokens / min (Input vs Output)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "expr": "rate(orchestrator_tokens_total{type=\"input\"}[5m]) * 60",
+          "legendFormat": "Input tokens/min"
+        },
+        {
+          "expr": "rate(orchestrator_tokens_total{type=\"output\"}[5m]) * 60",
+          "legendFormat": "Output tokens/min"
+        }
+      ]
+    },
+    {
+      "title": "Requests by Model",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "rate(orchestrator_model_requests_total[5m]) * 60",
+          "legendFormat": "{{ model }}"
+        }
+      ]
+    },
+    {
+      "title": "Cost by Model (USD cumulative)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "orchestrator_model_cost_usd_total",
+          "legendFormat": "{{ model }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "title": "Model Speed (avg tok/s)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "orchestrator_model_speed_avg",
+          "legendFormat": "{{ model }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "tok/s" }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "title": "Tokens by Model (cumulative)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "expr": "orchestrator_model_tokens_total",
+          "legendFormat": "{{ model }}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["agent-orchestrator", "api"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "API Calls & Costs",
+  "uid": "agent-orchestrator-api"
+}

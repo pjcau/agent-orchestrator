@@ -1,0 +1,249 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 2,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Total Cost (USD)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "orchestrator_cost_usd_total", "legendFormat": "Total" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Cost / Hour (trend)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "increase(orchestrator_cost_usd_total[1h])", "legendFormat": "$/hour" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Cost per Request (avg)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "orchestrator_cost_usd_total / orchestrator_requests_total",
+          "legendFormat": "$/req"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Cost per 1K Tokens (avg)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "orchestrator_cost_usd_total / (sum(orchestrator_tokens_total) / 1000)",
+          "legendFormat": "$/1K tok"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.005 },
+              { "color": "red", "value": 0.02 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Model Cost Breakdown (cumulative)",
+      "description": "Which OpenRouter models cost the most",
+      "type": "piechart",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "expr": "orchestrator_model_cost_usd_total",
+          "legendFormat": "{{ model }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" }
+      }
+    },
+    {
+      "title": "Agent Cost Breakdown (cumulative)",
+      "description": "Which agents spend the most",
+      "type": "piechart",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 5 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_cost_usd_total",
+          "legendFormat": "{{ agent }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" }
+      }
+    },
+    {
+      "title": "Cost Over Time: by Model (USD/hour)",
+      "description": "Cost burn rate per model — spot the expensive ones",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "expr": "increase(orchestrator_model_cost_usd_total[1h])",
+          "legendFormat": "{{ model }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+    {
+      "title": "Cost Over Time: by Agent (USD/hour)",
+      "description": "Cost burn rate per agent — identify heavy users",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "expr": "increase(orchestrator_agent_cost_usd_total[1h])",
+          "legendFormat": "{{ agent }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+    {
+      "title": "Model Efficiency: Tokens per Dollar",
+      "description": "More is better — which model gives you the most tokens for your money",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "orchestrator_model_tokens_total / orchestrator_model_cost_usd_total",
+          "legendFormat": "{{ model }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 100000 },
+              { "color": "green", "value": 500000 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "title": "Agent Efficiency: Cost per Request",
+      "description": "Less is better — which agent is the cheapest per task",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_cost_usd_total / orchestrator_agent_requests_total",
+          "legendFormat": "{{ agent }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "title": "Model Speed vs Cost (scatter)",
+      "description": "X: cost per request, Y: avg speed — ideal is top-left (fast & cheap)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "expr": "orchestrator_model_speed_avg",
+          "legendFormat": "{{ model }} speed"
+        },
+        {
+          "expr": "orchestrator_model_cost_usd_total / orchestrator_model_requests_total * 1000",
+          "legendFormat": "{{ model }} cost (mUSD/req)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "points", "pointSize": 8 }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["agent-orchestrator", "costs", "openrouter"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Cost Analysis — Models vs Agents",
+  "uid": "agent-orchestrator-costs"
+}

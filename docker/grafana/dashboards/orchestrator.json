@@ -1,19 +1,18 @@
 {
   "annotations": { "list": [] },
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
     {
-      "title": "Agent Tasks / min",
+      "title": "Requests / min",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "rate(orchestrator_tasks_total[1m]) * 60",
-          "legendFormat": "{{ agent }}"
+          "expr": "rate(orchestrator_requests_total[1m]) * 60",
+          "legendFormat": "req/min"
         }
       ]
     },
@@ -22,9 +21,7 @@
       "type": "stat",
       "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
       "targets": [
-        {
-          "expr": "increase(orchestrator_cost_usd_total[1h])"
-        }
+        { "expr": "increase(orchestrator_cost_usd_total[1h])" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -44,9 +41,7 @@
       "type": "stat",
       "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
       "targets": [
-        {
-          "expr": "rate(orchestrator_errors_total[5m])"
-        }
+        { "expr": "rate(orchestrator_errors_total[5m])" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -62,28 +57,28 @@
       }
     },
     {
-      "title": "Token Usage by Provider",
+      "title": "Tokens (Input vs Output) / min",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "rate(orchestrator_tokens_total[5m]) * 60",
-          "legendFormat": "{{ provider }}"
+          "expr": "rate(orchestrator_tokens_total{type=\"input\"}[5m]) * 60",
+          "legendFormat": "Input"
+        },
+        {
+          "expr": "rate(orchestrator_tokens_total{type=\"output\"}[5m]) * 60",
+          "legendFormat": "Output"
         }
       ]
     },
     {
-      "title": "Task Latency (p95)",
+      "title": "Agent Activity",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(orchestrator_task_duration_seconds_bucket[5m]))",
-          "legendFormat": "p95"
-        },
-        {
-          "expr": "histogram_quantile(0.50, rate(orchestrator_task_duration_seconds_bucket[5m]))",
-          "legendFormat": "p50"
+          "expr": "rate(orchestrator_agent_requests_total[5m]) * 60",
+          "legendFormat": "{{ agent }}"
         }
       ]
     },
@@ -92,9 +87,7 @@
       "type": "gauge",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
       "targets": [
-        {
-          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)"
-        }
+        { "expr": "100 - (avg(rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -115,9 +108,7 @@
       "type": "gauge",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
       "targets": [
-        {
-          "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100"
-        }
+        { "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -138,9 +129,7 @@
       "type": "gauge",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
       "targets": [
-        {
-          "expr": "(1 - node_filesystem_avail_bytes{mountpoint='/'} / node_filesystem_size_bytes{mountpoint='/'}) * 100"
-        }
+        { "expr": "(1 - node_filesystem_avail_bytes{mountpoint='/'} / node_filesystem_size_bytes{mountpoint='/'}) * 100" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -163,6 +152,6 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Agent Orchestrator",
+  "title": "Agent Orchestrator — Overview",
   "uid": "agent-orchestrator-main"
 }

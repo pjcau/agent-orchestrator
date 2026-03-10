@@ -1,0 +1,189 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Active Agents",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "count(orchestrator_agent_status{status=\"running\"})", "legendFormat": "Running" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Completed Agents",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "count(orchestrator_agent_status{status=\"completed\"})", "legendFormat": "Completed" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Failed / Stalled Agents",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "count(orchestrator_agent_status{status=~\"error|stalled\"})", "legendFormat": "Error/Stalled" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Delegated Tasks",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum(orchestrator_tasks_total)", "legendFormat": "Total Tasks" }
+      ],
+      "fieldConfig": { "defaults": {} }
+    },
+    {
+      "title": "Agent Requests (cumulative)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_requests_total",
+          "legendFormat": "{{ agent }}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "title": "Agent Cost (USD cumulative)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_cost_usd_total",
+          "legendFormat": "{{ agent }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "title": "Agent Token Usage (cumulative)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_tokens_total",
+          "legendFormat": "{{ agent }}"
+        }
+      ]
+    },
+    {
+      "title": "Agent Status Map",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_status",
+          "legendFormat": "{{ agent }}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "Value": true } } }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "running": { "color": "blue", "text": "Running" } } },
+                  { "type": "value", "options": { "completed": { "color": "green", "text": "Completed" } } },
+                  { "type": "value", "options": { "error": { "color": "red", "text": "Error" } } },
+                  { "type": "value", "options": { "stalled": { "color": "orange", "text": "Stalled" } } }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Agent Requests / min",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "rate(orchestrator_agent_requests_total[5m]) * 60",
+          "legendFormat": "{{ agent }}"
+        }
+      ]
+    },
+    {
+      "title": "Agent Cost Rate (USD/hour)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "expr": "increase(orchestrator_agent_cost_usd_total[1h])",
+          "legendFormat": "{{ agent }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["agent-orchestrator", "agents"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Agent Usage & Interactions",
+  "uid": "agent-orchestrator-agents"
+}
