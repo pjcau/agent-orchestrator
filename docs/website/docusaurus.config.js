@@ -53,10 +53,17 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       colorMode: {
+        defaultMode: 'dark',
         respectPrefersColorScheme: true,
       },
       navbar: {
         title: 'Agent Orchestrator',
+        logo: {
+          alt: 'Agent Orchestrator Logo',
+          src: 'img/logo.svg',
+          width: 32,
+          height: 32,
+        },
         items: [
           {
             type: 'docSidebar',
@@ -95,16 +102,28 @@ const config = {
             ],
           },
           {
-            title: 'More',
+            title: 'Resources',
+            items: [
+              {label: 'Security', to: '/docs/architecture/overview'},
+              {label: 'Cost Analysis', to: '/docs/business/cost-analysis'},
+              {label: 'Infrastructure', to: '/docs/business/infrastructure'},
+            ],
+          },
+          {
+            title: 'Community',
             items: [
               {
                 label: 'GitHub',
                 href: 'https://github.com/pjcau/agent-orchestrator',
               },
+              {
+                label: 'Issues',
+                href: 'https://github.com/pjcau/agent-orchestrator/issues',
+              },
             ],
           },
         ],
-        copyright: `Copyright ${new Date().getFullYear()} Agent Orchestrator. Built with Docusaurus.`,
+        copyright: `Copyright \u00A9 ${new Date().getFullYear()} Agent Orchestrator. Built with Docusaurus.`,
       },
       prism: {
         theme: prismThemes.github,

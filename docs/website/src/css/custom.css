@@ -1,30 +1,303 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * Agent Orchestrator — Dark Violet/Cyan theme
+ *
+ * Design system:
+ *   Primary: violet (#7c3aed -> #a78bfa)
+ *   Accent:  cyan (#06b6d4 -> #22d3ee)
+ *   Surface: deep navy (#0f0a1e -> #1a1333)
+ *   Text:    warm white (#e8e3f3)
  */
 
-/* You can override the default Infima variables here. */
+/* --- Light mode --------------------------------------------------- */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-color-primary: #7c3aed;
+  --ifm-color-primary-dark: #6d28d9;
+  --ifm-color-primary-darker: #5b21b6;
+  --ifm-color-primary-darkest: #4c1d95;
+  --ifm-color-primary-light: #8b5cf6;
+  --ifm-color-primary-lighter: #a78bfa;
+  --ifm-color-primary-lightest: #c4b5fd;
+
+  --ifm-background-color: #faf8ff;
+  --ifm-background-surface-color: #f3f0fa;
+  --ifm-font-color-base: #1e1b4b;
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(124, 58, 237, 0.1);
+
+  --ifm-navbar-background-color: #faf8ff;
+  --ifm-navbar-shadow: 0 1px 2px rgba(124, 58, 237, 0.08);
+  --ifm-link-color: #6d28d9;
+  --ifm-link-hover-color: #7c3aed;
+
+  --ifm-footer-background-color: #1a1333;
+  --ifm-footer-color: #c4b5fd;
+  --ifm-footer-link-color: #a78bfa;
+  --ifm-footer-link-hover-color: #c4b5fd;
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+/* --- Dark mode ---------------------------------------------------- */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: #a78bfa;
+  --ifm-color-primary-dark: #8b5cf6;
+  --ifm-color-primary-darker: #7c3aed;
+  --ifm-color-primary-darkest: #6d28d9;
+  --ifm-color-primary-light: #c4b5fd;
+  --ifm-color-primary-lighter: #ddd6fe;
+  --ifm-color-primary-lightest: #ede9fe;
+
+  --ifm-background-color: #0f0a1e;
+  --ifm-background-surface-color: #1a1333;
+  --ifm-font-color-base: #e8e3f3;
+  --docusaurus-highlighted-code-line-bg: rgba(167, 139, 250, 0.15);
+
+  --ifm-navbar-background-color: #130e24;
+  --ifm-navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  --ifm-footer-background-color: #0a0715;
+  --ifm-footer-color: #a78bfa;
+  --ifm-footer-link-color: #c4b5fd;
+  --ifm-footer-link-hover-color: #e8e3f3;
+
+  --ifm-link-color: #c4b5fd;
+  --ifm-link-hover-color: #ddd6fe;
+
+  --ifm-code-background: #1a1333;
+}
+
+/* --- Global ------------------------------------------------------- */
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* --- Navbar ------------------------------------------------------- */
+.navbar {
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(167, 139, 250, 0.1);
+}
+
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.navbar__link--active {
+  color: var(--ifm-color-primary) !important;
+}
+
+/* --- Sidebar ------------------------------------------------------ */
+.menu__link--active:not(.menu__link--sublist) {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(6, 182, 212, 0.08));
+  border-left: 3px solid var(--ifm-color-primary);
+  font-weight: 600;
+}
+
+[data-theme='dark'] .menu__link--active:not(.menu__link--sublist) {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(34, 211, 238, 0.08));
+}
+
+/* --- Hero section ------------------------------------------------- */
+.hero--primary {
+  background: linear-gradient(135deg, #1a1333 0%, #0f0a1e 30%, #0c1a2e 70%, #0f0a1e 100%);
+  color: #e8e3f3;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero--primary::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(ellipse at 30% 50%, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 50%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.hero--primary .hero__title {
+  font-size: 3.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, #e8e3f3 0%, #a78bfa 50%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero--primary .hero__subtitle {
+  font-size: 1.35rem;
+  opacity: 0.8;
+  max-width: 640px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* --- Buttons ------------------------------------------------------ */
+.button--secondary {
+  background: transparent;
+  border: 2px solid #a78bfa;
+  color: #a78bfa;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.hero--primary .button--secondary {
+  background: transparent;
+  border: 2px solid #a78bfa;
+  color: #e8e3f3;
+}
+
+.hero--primary .button--secondary:hover {
+  background: linear-gradient(135deg, #7c3aed, #06b6d4);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 0 24px rgba(124, 58, 237, 0.4);
+  transform: translateY(-1px);
+}
+
+/* --- Feature cards ------------------------------------------------ */
+.feature-card {
+  background: var(--ifm-background-surface-color);
+  border: 1px solid rgba(167, 139, 250, 0.12);
+  border-radius: 12px;
+  padding: 2rem;
+  transition: all 0.25s ease;
+  height: 100%;
+}
+
+.feature-card:hover {
+  border-color: rgba(167, 139, 250, 0.3);
+  box-shadow: 0 8px 30px rgba(124, 58, 237, 0.1);
+  transform: translateY(-2px);
+}
+
+[data-theme='dark'] .feature-card {
+  background: rgba(26, 19, 51, 0.6);
+  border: 1px solid rgba(167, 139, 250, 0.1);
+}
+
+[data-theme='dark'] .feature-card:hover {
+  border-color: rgba(167, 139, 250, 0.25);
+  box-shadow: 0 8px 30px rgba(124, 58, 237, 0.15);
+}
+
+.feature-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(6, 182, 212, 0.1));
+  border: 1px solid rgba(167, 139, 250, 0.15);
+}
+
+[data-theme='dark'] .feature-icon {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.25), rgba(6, 182, 212, 0.15));
+}
+
+.feature-card h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.5rem;
+}
+
+.feature-card p {
+  opacity: 0.8;
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+
+/* --- Stats bar ---------------------------------------------------- */
+.stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  padding: 2rem 0;
+  flex-wrap: wrap;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #a78bfa, #22d3ee);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.25rem;
+}
+
+/* --- Code blocks -------------------------------------------------- */
+[data-theme='dark'] .prism-code {
+  background: #130e24 !important;
+  border: 1px solid rgba(167, 139, 250, 0.1);
+}
+
+/* --- Table of contents -------------------------------------------- */
+.table-of-contents__link--active {
+  color: var(--ifm-color-primary);
+  font-weight: 600;
+}
+
+/* --- Scrollbar (dark mode) ---------------------------------------- */
+[data-theme='dark'] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-track {
+  background: #0f0a1e;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: #2d2250;
+  border-radius: 4px;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: #3d3266;
+}
+
+/* --- Footer ------------------------------------------------------- */
+.footer--dark {
+  background: var(--ifm-footer-background-color);
+  border-top: 1px solid rgba(167, 139, 250, 0.1);
+}
+
+.footer__title {
+  color: #e8e3f3;
+  font-weight: 700;
+}
+
+/* --- Doc pages ---------------------------------------------------- */
+.markdown h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.markdown h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* --- Mermaid diagrams (dark mode) --------------------------------- */
+[data-theme='dark'] .docusaurus-mermaid-container {
+  background: #1a1333;
+  border-radius: 8px;
+  padding: 1rem;
 }

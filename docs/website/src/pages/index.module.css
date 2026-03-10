@@ -1,10 +1,9 @@
 /**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
+ * Homepage hero styles
  */
 
 .heroBanner {
-  padding: 4rem 0;
+  padding: 5rem 0 3rem;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -12,12 +11,36 @@
 
 @media screen and (max-width: 996px) {
   .heroBanner {
-    padding: 2rem;
+    padding: 3rem 1rem 2rem;
   }
+}
+
+.heroLogo {
+  margin-bottom: 1.5rem;
+}
+
+.heroLogo img {
+  filter: drop-shadow(0 0 20px rgba(124, 58, 237, 0.3));
 }
 
 .buttons {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.buttonOutline {
+  background: transparent;
+  border: 2px solid rgba(167, 139, 250, 0.3);
+  color: #c4b5fd;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.buttonOutline:hover {
+  background: rgba(167, 139, 250, 0.1);
+  border-color: rgba(167, 139, 250, 0.5);
+  color: #e8e3f3;
 }
