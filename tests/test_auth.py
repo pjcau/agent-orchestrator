@@ -131,7 +131,14 @@ class TestAPIKeyMiddleware:
     @pytest.mark.asyncio
     async def test_exempt_paths(self):
         """Static, health, ws, auth paths should be exempt."""
-        for path in ("/static/style.css", "/health", "/ws", "/auth/github", "/login"):
+        for path in (
+            "/static/style.css",
+            "/health",
+            "/ws",
+            "/auth/github",
+            "/login",
+            "/api/models",
+        ):
             assert any(path.startswith(p) for p in APIKeyMiddleware.EXEMPT_PREFIXES)
 
     def test_api_key_set_from_list(self):

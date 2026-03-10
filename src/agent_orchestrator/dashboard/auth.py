@@ -134,7 +134,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     """
 
     # Paths that bypass authentication
-    EXEMPT_PREFIXES = ("/static", "/health", "/ws", "/auth/", "/login")
+    EXEMPT_PREFIXES = ("/static", "/health", "/ws", "/auth/", "/login", "/api/models")
 
     def __init__(self, app, api_keys: list[str] | None = None) -> None:
         super().__init__(app)
