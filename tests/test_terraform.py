@@ -82,6 +82,12 @@ class TestTerraformSecurity:
         content = self._read("modules", "ec2", "main.tf")
         assert "encrypted" in content
 
+    def test_ec2_uses_spot(self):
+        """EC2 must use spot instances for cost optimization."""
+        content = self._read("modules", "ec2", "main.tf")
+        assert "spot" in content
+        assert "instance_market_options" in content
+
     def test_ssh_restricted_to_allowed_cidrs(self):
         """SSH must not be open to 0.0.0.0/0."""
         content = self._read("modules", "networking", "main.tf")

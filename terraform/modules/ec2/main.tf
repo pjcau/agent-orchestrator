@@ -48,6 +48,15 @@ resource "aws_instance" "app" {
 
   user_data = file("${path.module}/user_data.sh")
 
+  # Spot instance — ~60-70% cheaper than On-Demand
+  instance_market_options {
+    market_type = "spot"
+    spot_options {
+      spot_instance_type             = "persistent"
+      instance_interruption_behavior = "stop"
+    }
+  }
+
   root_block_device {
     volume_size = var.root_volume_size
     volume_type = "gp3"
