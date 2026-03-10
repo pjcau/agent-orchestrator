@@ -46,15 +46,19 @@ class TestDockerComposeProd:
         cmd = config["services"]["redis"]["command"]
         assert "maxmemory" in cmd
 
-    def test_prometheus_not_exposed(self):
-        """Prometheus must not have public ports — SSH tunnel only."""
+    def test_prometheus_localhost_only(self):
+        """Prometheus ports must be bound to 127.0.0.1 only (SSH tunnel access)."""
         config = self._load()
-        assert "ports" not in config["services"]["prometheus"]
+        ports = config["services"]["prometheus"].get("ports", [])
+        for p in ports:
+            assert p.startswith("127.0.0.1:"), f"Prometheus port {p} is not localhost-only"
 
-    def test_grafana_not_exposed(self):
-        """Grafana must not have public ports — SSH tunnel only."""
+    def test_grafana_localhost_only(self):
+        """Grafana ports must be bound to 127.0.0.1 only (SSH tunnel access)."""
         config = self._load()
-        assert "ports" not in config["services"]["grafana"]
+        ports = config["services"]["grafana"].get("ports", [])
+        for p in ports:
+            assert p.startswith("127.0.0.1:"), f"Grafana port {p} is not localhost-only"
 
     def test_nginx_exposes_port_80(self):
         config = self._load()

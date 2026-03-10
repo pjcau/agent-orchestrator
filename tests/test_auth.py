@@ -278,6 +278,31 @@ class TestCheckWsAuth:
 # ---------------------------------------------------------------------------
 
 
+class TestCookieSameSite:
+    """Verify OAuth cookies use samesite=lax for cross-origin redirect compatibility."""
+
+    def test_auth_session_cookie_uses_lax(self):
+        """The auth_session cookie in oauth_routes must use samesite='lax', not 'strict'.
+
+        samesite='strict' blocks cookies on cross-origin redirects (GitHub OAuth callback),
+        causing CSRF state mismatch errors.
+        """
+        import inspect
+        from agent_orchestrator.dashboard import oauth_routes
+
+        source = inspect.getsource(oauth_routes)
+        assert 'samesite="lax"' in source
+        assert 'samesite="strict"' not in source
+
+    def test_session_middleware_uses_lax(self):
+        """SessionMiddleware must use same_site='lax' so OAuth state survives redirects."""
+        import inspect
+        from agent_orchestrator.dashboard import app as app_module
+
+        source = inspect.getsource(app_module.create_dashboard_app)
+        assert 'same_site="lax"' in source
+
+
 class TestOllamaUrlValidation:
     """Test SSRF protection on Ollama base URL."""
 

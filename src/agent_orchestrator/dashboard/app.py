@@ -112,7 +112,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             import secrets
 
             session_secret = secrets.token_hex(32)
-        app.add_middleware(SessionMiddleware, secret_key=session_secret)
+        app.add_middleware(SessionMiddleware, secret_key=session_secret, same_site="lax")
     except ImportError:
         pass  # itsdangerous not installed, sessions disabled
 

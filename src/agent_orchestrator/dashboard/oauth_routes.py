@@ -147,7 +147,7 @@ async def callback_github(request: Request):
         )
         response = RedirectResponse("/", status_code=302)
         response.set_cookie(
-            "auth_session", jwt_token, httponly=True, secure=True, samesite="strict", max_age=14400
+            "auth_session", jwt_token, httponly=True, secure=True, samesite="lax", max_age=14400
         )
         logger.info("AUTH login success: %s (role=%s)", github_login, user["role"])
         return response
