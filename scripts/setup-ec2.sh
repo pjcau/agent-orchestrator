@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # ============================================================
 # EC2 First-Time Setup Script
-# Sets up the monitoring dashboard at monitoring.agents-orchestrator.com
+# Sets up the Agent Orchestrator:
+#   - agents-orchestrator.com         → Dashboard
+#   - monitoring.agents-orchestrator.com → Grafana
 # ============================================================
 # Usage:
 #   scp scripts/setup-ec2.sh ec2-user@<EC2_IP>:~/
@@ -11,10 +13,11 @@
 
 set -euo pipefail
 
-DOMAIN="monitoring.agents-orchestrator.com"
+DOMAIN="agents-orchestrator.com"
+MONITORING_DOMAIN="monitoring.agents-orchestrator.com"
 APP_DIR="/opt/agent-orchestrator"
 
-echo "=== EC2 Setup for $DOMAIN ==="
+echo "=== EC2 Setup for $DOMAIN + $MONITORING_DOMAIN ==="
 
 # --- 1. Install Docker & Docker Compose ---
 echo "[1/6] Installing Docker..."
@@ -88,25 +91,32 @@ echo "  - TCP 22  (SSH, your IP only)"
 # --- 5. SSL certificate ---
 echo "[5/6] SSL certificate setup..."
 echo ""
-echo "After DNS propagation (A record: ${DOMAIN} -> this IP), run:"
+echo "After DNS propagation, run:"
+echo "  A record: ${DOMAIN}            -> this IP"
+echo "  A record: ${MONITORING_DOMAIN}  -> this IP"
 echo ""
 echo "  cd $APP_DIR"
-echo "  docker compose -f docker-compose.prod.yml up -d nginx"
+echo "  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d nginx"
+echo ""
+echo "  # Request certs for both domains:"
 echo "  docker compose -f docker-compose.prod.yml run --rm certbot certonly \\"
 echo "    --webroot -w /var/www/certbot \\"
-echo "    -d ${DOMAIN} \\"
+echo "    -d ${DOMAIN} -d ${MONITORING_DOMAIN} \\"
 echo "    --agree-tos --email YOUR_EMAIL --non-interactive"
+echo ""
 echo "  docker compose -f docker-compose.prod.yml restart nginx"
 echo ""
 
 # --- 6. Start services ---
 echo "[6/6] Ready to start!"
 echo ""
-echo "After editing .env.prod and obtaining SSL cert:"
+echo "After editing .env.prod and obtaining SSL certs:"
 echo ""
 echo "  cd $APP_DIR"
 echo "  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
 echo ""
-echo "Health check: curl -sk https://${DOMAIN}/health"
+echo "Dashboard:  https://${DOMAIN}"
+echo "Grafana:    https://${MONITORING_DOMAIN}"
+echo "Health:     curl -sk https://${DOMAIN}/health"
 echo ""
 echo "=== Setup complete ==="

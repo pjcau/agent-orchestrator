@@ -61,12 +61,12 @@ class TestDockerComposeProd:
         for p in ports:
             assert p.startswith("127.0.0.1:"), f"Prometheus port {p} is not localhost-only"
 
-    def test_grafana_localhost_only(self):
-        """Grafana ports must be bound to 127.0.0.1 only (SSH tunnel access)."""
+    def test_grafana_not_exposed_directly(self):
+        """Grafana must not expose ports directly (accessed via Nginx reverse proxy)."""
         config = self._load()
-        ports = config["services"]["grafana"].get("ports", [])
-        for p in ports:
-            assert p.startswith("127.0.0.1:"), f"Grafana port {p} is not localhost-only"
+        assert "ports" not in config["services"]["grafana"], "Grafana should use expose, not ports"
+        expose = config["services"]["grafana"].get("expose", [])
+        assert "3000" in [str(p) for p in expose]
 
     def test_nginx_exposes_port_80(self):
         config = self._load()
@@ -122,9 +122,14 @@ class TestNginxConfig:
         assert "limit_req_zone" in content
         assert "limit_req zone" in content
 
-    def test_monitoring_domain(self):
+    def test_domains_configured(self):
         content = self._read()
+        assert "agents-orchestrator.com" in content
         assert "monitoring.agents-orchestrator.com" in content
+
+    def test_grafana_upstream(self):
+        content = self._read()
+        assert "upstream grafana" in content
 
 
 class TestPrometheusConfig:
