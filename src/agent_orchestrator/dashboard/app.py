@@ -708,7 +708,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 resp.raise_for_status()
                 return JSONResponse(content={"success": True})
         except Exception:
-            logger.exception("Ollama delete failed for model %s", model_name)
+            logger.exception("Ollama delete failed for model %r", model_name)
             return JSONResponse(
                 content={"success": False, "error": "Failed to delete model"}, status_code=500
             )
@@ -768,7 +768,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             content = target.read_text(errors="replace")
             return JSONResponse(content={"path": path, "content": content})
         except Exception:
-            logger.exception("Failed to read file: %s", path)
+            logger.exception("Failed to read file: %r", path)
             return JSONResponse(content={"error": "Failed to read file"}, status_code=500)
 
     # --- Conversations (Multi-turn) ---

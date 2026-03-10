@@ -127,8 +127,8 @@ class TestNginxConfig:
 
     def test_domains_configured(self):
         content = self._read()
-        assert "agents-orchestrator.com" in content
-        assert "monitoring.agents-orchestrator.com" in content
+        assert "server_name agents-orchestrator.com" in content
+        assert "server_name monitoring.agents-orchestrator.com" in content
 
     def test_grafana_upstream(self):
         content = self._read()

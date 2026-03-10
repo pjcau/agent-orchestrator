@@ -242,7 +242,7 @@ class OpenRouterProvider(OpenAIProvider):
         self.last_fallback_log = []
 
         logger.warning(
-            "Fallback chain: trying %d models starting with %s",
+            "Fallback chain: trying %d models starting with %r",
             len(models_to_try),
             models_to_try[0],
         )
@@ -250,7 +250,7 @@ class OpenRouterProvider(OpenAIProvider):
             original_model = self._model
             self._model = model
             logger.warning(
-                "Trying model %d/%d: %s (max_tokens=%d)",
+                "Trying model %d/%d: %r (max_tokens=%d)",
                 i + 1,
                 len(models_to_try),
                 model,
@@ -265,7 +265,7 @@ class OpenRouterProvider(OpenAIProvider):
                     temperature=temperature,
                 )
                 if model != original_model:
-                    logger.info("Fallback: %s unavailable, used %s", original_model, model)
+                    logger.info("Fallback: %r unavailable, used %r", original_model, model)
                 self.last_fallback_log.append({"model": model, "status": "ok"})
                 return result
             except Exception as exc:
@@ -278,7 +278,7 @@ class OpenRouterProvider(OpenAIProvider):
                     if affordable and affordable >= 256 and effective_max_tokens > affordable:
                         effective_max_tokens = affordable
                         logger.warning(
-                            "Credit limit on %s: reducing max_tokens to %d",
+                            "Credit limit on %r: reducing max_tokens to %d",
                             model,
                             effective_max_tokens,
                         )
@@ -321,7 +321,7 @@ class OpenRouterProvider(OpenAIProvider):
                             {"model": model, "status": "402", "detail": f"affordable={affordable}"}
                         )
                     # Fall through to try cheaper models
-                    logger.warning("Insufficient credits for %s, trying cheaper model...", model)
+                    logger.warning("Insufficient credits for %r, trying cheaper model...", model)
                     last_error = exc
                     await asyncio.sleep(0.3)
                     continue
@@ -332,7 +332,7 @@ class OpenRouterProvider(OpenAIProvider):
                     or "data policy" in err_str.lower()
                     or "No endpoints" in err_str
                 ):
-                    logger.warning("Model %s blocked (data policy/404), trying next...", model)
+                    logger.warning("Model %r blocked (data policy/404), trying next...", model)
                     self.last_fallback_log.append(
                         {"model": model, "status": "404", "detail": "data policy/not found"}
                     )
@@ -341,7 +341,7 @@ class OpenRouterProvider(OpenAIProvider):
 
                 # 400: provider error (e.g. model doesn't support system prompt)
                 if "400" in err_str and "Provider returned error" in err_str:
-                    logger.warning("Model %s returned provider error, trying next...", model)
+                    logger.warning("Model %r returned provider error, trying next...", model)
                     self.last_fallback_log.append(
                         {"model": model, "status": "400", "detail": "provider error"}
                     )
@@ -350,7 +350,7 @@ class OpenRouterProvider(OpenAIProvider):
 
                 # 429: rate limited — try next model
                 if "429" in err_str or "rate" in err_str.lower():
-                    logger.warning("Rate limited on %s, trying next...", model)
+                    logger.warning("Rate limited on %r, trying next...", model)
                     self.last_fallback_log.append(
                         {"model": model, "status": "429", "detail": "rate limited"}
                     )
