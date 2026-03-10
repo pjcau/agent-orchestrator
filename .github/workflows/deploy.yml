@@ -72,12 +72,13 @@ jobs:
             --exclude='terraform' \
             --exclude='jobs/' \
             --exclude='.ruff_cache' \
+            --exclude='certs/' \
             -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
             . $USER@$HOST:$APP_DIR/
 
           # Build and restart services
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml build --no-cache dashboard"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml up -d"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
 
       - name: Health Check
         env:
