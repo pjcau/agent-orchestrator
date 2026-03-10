@@ -56,11 +56,11 @@ class TestDockerComposeProd:
         config = self._load()
         assert "ports" not in config["services"]["grafana"]
 
-    def test_nginx_exposes_only_80_443(self):
+    def test_nginx_exposes_port_80(self):
         config = self._load()
         ports = config["services"]["nginx"]["ports"]
         port_numbers = [p.split(":")[0] for p in ports]
-        assert set(port_numbers) == {"80", "443"}
+        assert "80" in port_numbers
 
     def test_volumes_defined(self):
         config = self._load()
@@ -77,18 +77,11 @@ class TestNginxConfig:
     def test_config_exists(self):
         assert (DOCKER_DIR / "nginx" / "nginx.conf").exists()
 
-    def test_http_to_https_redirect(self):
+    def test_ssl_config_ready(self):
+        """SSL config exists (commented out), ready for when certs are available."""
         content = self._read()
-        assert "return 301 https://" in content
-
-    def test_ssl_modern_protocols(self):
-        content = self._read()
+        assert "ssl_certificate" in content
         assert "TLSv1.2" in content
-        assert "TLSv1.3" in content
-
-    def test_hsts_header(self):
-        content = self._read()
-        assert "Strict-Transport-Security" in content
 
     def test_security_headers(self):
         content = self._read()

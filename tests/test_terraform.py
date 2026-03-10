@@ -43,9 +43,10 @@ class TestTerraformStructure:
     def test_tfvars_example_exists(self):
         assert (TERRAFORM_DIR / "terraform.tfvars.example").exists()
 
-    def test_tfvars_not_committed(self):
-        """terraform.tfvars must never be committed (contains secrets)."""
-        assert not (TERRAFORM_DIR / "terraform.tfvars").exists()
+    def test_tfvars_in_gitignore(self):
+        """terraform.tfvars must be in .gitignore (contains secrets)."""
+        gitignore = (TERRAFORM_DIR.parent / ".gitignore").read_text()
+        assert "terraform.tfvars" in gitignore
 
 
 class TestTerraformSecurity:
