@@ -24,7 +24,15 @@ class TestDockerComposeProd:
     def test_required_services(self):
         config = self._load()
         services = set(config["services"].keys())
-        assert {"nginx", "dashboard", "postgres", "redis", "prometheus", "grafana"} <= services
+        assert {
+            "nginx",
+            "dashboard",
+            "postgres",
+            "redis",
+            "prometheus",
+            "grafana",
+            "certbot",
+        } <= services
 
     def test_dashboard_uses_production_env(self):
         config = self._load()
@@ -69,7 +77,14 @@ class TestDockerComposeProd:
     def test_volumes_defined(self):
         config = self._load()
         assert "pgdata" in config["volumes"]
-        assert "ssl-certs" in config["volumes"]
+        assert "certbot-certs" in config["volumes"]
+        assert "certbot-webroot" in config["volumes"]
+
+    def test_certbot_uses_letsencrypt_volume(self):
+        config = self._load()
+        certbot = config["services"]["certbot"]
+        volumes = certbot["volumes"]
+        assert any("certbot-certs" in v or "letsencrypt" in v for v in volumes)
 
 
 class TestNginxConfig:
