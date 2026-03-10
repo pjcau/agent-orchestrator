@@ -68,14 +68,23 @@ jobs:
       - name: Build dashboard image
         run: docker build -f docker/dashboard/Dockerfile -t dashboard-scan .
 
-      - name: Run Trivy vulnerability scanner
+      - name: Trivy scan (table — show vulnerabilities)
         uses: aquasecurity/trivy-action@0.34.2
+        with:
+          image-ref: "dashboard-scan"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Trivy scan (SARIF — upload to GitHub Security)
+        uses: aquasecurity/trivy-action@0.34.2
+        if: always()
         with:
           image-ref: "dashboard-scan"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
-          exit-code: "1"
           ignore-unfixed: true
 
       - name: Upload Trivy results to GitHub Security
