@@ -119,8 +119,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # OAuth2 routes (Google/GitHub login)
     app.include_router(oauth_router)
 
-    # In-memory conversation store (per session)
-    conversations: dict[str, list[dict]] = {}
+    # Conversations are persisted in PostgreSQL via usage_db
 
     # Job logger — persists all task results to jobs/<session_id>/
     job_logger = JobLogger()
@@ -776,12 +775,12 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.post("/api/conversation/new")
     async def new_conversation():
         conv_id = str(uuid.uuid4())[:8]
-        conversations[conv_id] = []
+        await usage_db.create_conversation(conv_id)
         return JSONResponse(content={"conversation_id": conv_id})
 
     @app.get("/api/conversation/{conv_id}")
     async def get_conversation(conv_id: str):
-        msgs = conversations.get(conv_id, [])
+        msgs = await usage_db.get_conversation(conv_id)
         return JSONResponse(content={"conversation_id": conv_id, "messages": msgs})
 
     # --- Presets ---
@@ -864,8 +863,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
         # Add conversation history context
         history_context = ""
-        if conv_id and conv_id in conversations:
-            recent = conversations[conv_id][-6:]  # last 3 exchanges
+        if conv_id:
+            recent = await usage_db.get_recent_messages(conv_id, limit=6)
             if recent:
                 history_context = "\n".join(
                     f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'][:500]}"
@@ -914,15 +913,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             session_id=job_logger.session_id,
         )
 
-        # Save to conversation
+        # Save to conversation (PostgreSQL)
         if conv_id:
-            if conv_id not in conversations:
-                conversations[conv_id] = []
-            conversations[conv_id].append({"role": "user", "content": user_prompt})
+            await usage_db.append_message(conv_id, "user", user_prompt)
             if result.get("success"):
-                conversations[conv_id].append(
-                    {"role": "assistant", "content": result.get("output", "")}
-                )
+                await usage_db.append_message(conv_id, "assistant", result.get("output", ""))
 
         return JSONResponse(content=result)
 
@@ -1008,8 +1003,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     full_prompt = f"{prompt_text}\n\n```\n{file_context}\n```"
 
                 # Add conversation history
-                if conv_id and conv_id in conversations:
-                    recent = conversations[conv_id][-6:]
+                if conv_id:
+                    recent = await usage_db.get_recent_messages(conv_id, limit=6)
                     if recent:
                         history = "\n".join(
                             f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'][:500]}"
@@ -1116,14 +1111,10 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                         session_id=job_logger.session_id,
                     )
 
-                    # Save to conversation
+                    # Save to conversation (PostgreSQL)
                     if conv_id:
-                        if conv_id not in conversations:
-                            conversations[conv_id] = []
-                        conversations[conv_id].append({"role": "user", "content": prompt_text})
-                        conversations[conv_id].append(
-                            {"role": "assistant", "content": full_response}
-                        )
+                        await usage_db.append_message(conv_id, "user", prompt_text)
+                        await usage_db.append_message(conv_id, "assistant", full_response)
 
                     # Emit token update
                     await bus.emit(

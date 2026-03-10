@@ -886,19 +886,36 @@ class TestJobLogger:
         assert data["result"]["total_tokens"] == 500
         assert data["agent"] == "backend"
 
-    def test_inactivity_creates_new_session(self, tmp_path):
+    def test_inactivity_creates_new_session_on_write(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
 
         logger = JobLogger(jobs_dir=tmp_path / "jobs", inactivity_timeout_s=0.0)
         first_id = logger.session_id
         first_dir = logger.session_dir
-        # Immediately expired (timeout=0), next access creates new session
+        # Immediately expired (timeout=0), but reading session_id does NOT rotate
         import time
 
         time.sleep(0.01)
-        second_id = logger.session_id
-        assert first_id != second_id
-        assert first_dir != logger.session_dir
+        assert logger.session_id == first_id  # read-only, no rotation
+        assert logger.session_dir == first_dir
+        # Only write operations (touch/log) trigger rotation
+        logger.touch()
+        assert logger.session_id != first_id
+        assert logger.session_dir != first_dir
+
+    def test_read_does_not_rotate_session(self, tmp_path):
+        """Reading session_id, session_dir, get_history must never rotate session."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        logger = JobLogger(jobs_dir=tmp_path / "jobs", inactivity_timeout_s=0.0)
+        original_id = logger.session_id
+        import time
+
+        time.sleep(0.01)
+        # All reads return same session
+        assert logger.session_id == original_id
+        assert logger.session_dir.name == f"job_{original_id}"
+        assert logger.get_history() == []  # empty but same session
 
     def test_touch_keeps_session_alive(self, tmp_path):
         from agent_orchestrator.dashboard.job_logger import JobLogger
@@ -1081,6 +1098,37 @@ class TestUsageDB:
     async def test_setup_without_dsn(self, usage_db):
         await usage_db.setup()
         assert usage_db._available is False
+
+
+class TestConversationPersistence:
+    """Tests for conversation persistence in UsageDB (no DB — graceful fallback)."""
+
+    @pytest.fixture
+    def usage_db(self):
+        from agent_orchestrator.dashboard.usage_db import UsageDB
+
+        return UsageDB(dsn="")
+
+    @pytest.mark.asyncio
+    async def test_append_without_db_does_not_crash(self, usage_db):
+        """Without DB, append is a no-op (no crash)."""
+        await usage_db.append_message("conv1", "user", "hello")
+
+    @pytest.mark.asyncio
+    async def test_get_conversation_without_db_returns_empty(self, usage_db):
+        msgs = await usage_db.get_conversation("conv1")
+        assert msgs == []
+
+    @pytest.mark.asyncio
+    async def test_get_recent_without_db_returns_empty(self, usage_db):
+        msgs = await usage_db.get_recent_messages("conv1", limit=6)
+        assert msgs == []
+
+    @pytest.mark.asyncio
+    async def test_create_conversation_no_op(self, usage_db):
+        """create_conversation is a no-op (conv_id is implicit from messages)."""
+        await usage_db.create_conversation("test123")
+        # Should not crash, just a no-op
 
 
 class TestRepairJson:

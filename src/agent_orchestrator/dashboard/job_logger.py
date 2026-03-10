@@ -62,13 +62,11 @@ class JobLogger:
 
     @property
     def session_id(self) -> str:
-        self._check_session()
         return self._session_id
 
     @property
     def session_dir(self) -> Path:
         """Working directory for the current session (agent files go here)."""
-        self._check_session()
         return self._session_dir
 
     def log(self, job_type: str, data: dict[str, Any]) -> Path:
@@ -92,7 +90,6 @@ class JobLogger:
 
     def get_history(self) -> list[dict[str, Any]]:
         """Load all job records from the current session directory (sorted)."""
-        self._check_session()
         records: list[dict[str, Any]] = []
         if not self._session_dir.exists():
             return records

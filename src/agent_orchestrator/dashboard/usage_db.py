@@ -1,6 +1,7 @@
-"""Persistent usage tracking in PostgreSQL.
+"""Persistent usage tracking and conversation storage in PostgreSQL.
 
-Stores cumulative token usage, cost, and per-model/per-agent stats.
+Stores cumulative token usage, cost, per-model/per-agent stats,
+and conversation history (messages per conversation_id).
 Falls back gracefully if DB is unavailable.
 """
 
@@ -57,6 +58,19 @@ class UsageDB:
                 """)
                 await conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_usage_model ON usage_stats (model)
+                """)
+                # Conversation persistence table
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS conversations (
+                        id SERIAL PRIMARY KEY,
+                        conv_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        ts DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
+                    )
+                """)
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_conv_id ON conversations (conv_id)
                 """)
             self._available = True
             # Load cumulative totals from DB
@@ -215,3 +229,58 @@ class UsageDB:
             "per_agent": self.get_per_agent(),
             "db_connected": self._available,
         }
+
+    # --- Conversation persistence ---
+
+    async def create_conversation(self, conv_id: str) -> None:
+        """Create a conversation (no-op if DB unavailable — conv just won't persist)."""
+        # Nothing to insert; the conv_id is implicit from messages.
+        pass
+
+    async def append_message(self, conv_id: str, role: str, content: str) -> None:
+        """Append a message to a conversation."""
+        if not self._available or not self._pool:
+            return
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO conversations (conv_id, role, content, ts) VALUES ($1, $2, $3, $4)",
+                    conv_id,
+                    role,
+                    content,
+                    time.time(),
+                )
+        except Exception:
+            pass
+
+    async def get_conversation(self, conv_id: str) -> list[dict[str, str]]:
+        """Load all messages for a conversation, ordered chronologically."""
+        if not self._available or not self._pool:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT role, content FROM conversations WHERE conv_id = $1 ORDER BY id",
+                    conv_id,
+                )
+                return [{"role": r["role"], "content": r["content"]} for r in rows]
+        except Exception:
+            return []
+
+    async def get_recent_messages(self, conv_id: str, limit: int = 6) -> list[dict[str, str]]:
+        """Load the most recent N messages for context injection."""
+        if not self._available or not self._pool:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT role, content FROM (
+                        SELECT role, content, id FROM conversations
+                        WHERE conv_id = $1 ORDER BY id DESC LIMIT $2
+                    ) sub ORDER BY id""",
+                    conv_id,
+                    limit,
+                )
+                return [{"role": r["role"], "content": r["content"]} for r in rows]
+        except Exception:
+            return []
