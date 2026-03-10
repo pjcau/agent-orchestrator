@@ -32,6 +32,8 @@ class TestDockerComposeProd:
             "prometheus",
             "grafana",
             "certbot",
+            "node-exporter",
+            "cadvisor",
         } <= services
 
     def test_dashboard_uses_production_env(self):
@@ -150,6 +152,11 @@ class TestPrometheusConfig:
         config = yaml.safe_load((DOCKER_DIR / "prometheus" / "prometheus.yml").read_text())
         jobs = [s["job_name"] for s in config["scrape_configs"]]
         assert "node" in jobs
+
+    def test_scrapes_cadvisor(self):
+        config = yaml.safe_load((DOCKER_DIR / "prometheus" / "prometheus.yml").read_text())
+        jobs = [s["job_name"] for s in config["scrape_configs"]]
+        assert "cadvisor" in jobs
 
     def test_alert_rules_defined(self):
         alerts = yaml.safe_load((DOCKER_DIR / "prometheus" / "alerts.yml").read_text())

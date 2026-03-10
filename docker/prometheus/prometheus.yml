@@ -14,17 +14,19 @@ scrape_configs:
         labels:
           service: "agent-orchestrator"
 
-  # Node Exporter (EC2 system metrics)
+  # Node Exporter (host system metrics)
   - job_name: "node"
     static_configs:
-      - targets: ["host.docker.internal:9100"]
+      - targets: ["node-exporter:9100"]
         labels:
           service: "ec2-host"
 
-  # PostgreSQL (if pg_exporter is added later)
-  # - job_name: "postgres"
-  #   static_configs:
-  #     - targets: ["postgres-exporter:9187"]
+  # cAdvisor (container metrics)
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          service: "containers"
 
   # Prometheus self-monitoring
   - job_name: "prometheus"
