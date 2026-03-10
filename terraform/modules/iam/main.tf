@@ -76,6 +76,26 @@ resource "aws_iam_role_policy" "ecr_pull" {
   })
 }
 
+# --- Cost Explorer (AWS cost monitoring dashboard) ---
+resource "aws_iam_role_policy" "cost_explorer" {
+  name = "${var.project}-cost-explorer"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ce:GetCostAndUsage",
+          "ce:GetCostForecast"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # --- SSM Session Manager (alternative to SSH) ---
 resource "aws_iam_role_policy_attachment" "ssm" {
   role       = aws_iam_role.ec2.name
