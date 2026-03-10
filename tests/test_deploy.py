@@ -77,14 +77,14 @@ class TestDockerComposeProd:
     def test_volumes_defined(self):
         config = self._load()
         assert "pgdata" in config["volumes"]
-        assert "certbot-certs" in config["volumes"]
         assert "certbot-webroot" in config["volumes"]
 
-    def test_certbot_uses_letsencrypt_volume(self):
+    def test_certbot_uses_bind_mount_certs(self):
+        """Certbot must use bind mount ./certs for Let's Encrypt data."""
         config = self._load()
         certbot = config["services"]["certbot"]
         volumes = certbot["volumes"]
-        assert any("certbot-certs" in v or "letsencrypt" in v for v in volumes)
+        assert any("./certs" in v or "letsencrypt" in v for v in volumes)
 
 
 class TestNginxConfig:
