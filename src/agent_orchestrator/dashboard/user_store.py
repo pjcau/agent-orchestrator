@@ -190,7 +190,9 @@ def _row_to_pending(row) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-async def async_get_or_create_user(github_login: str, email: str, name: str) -> dict[str, Any] | None:
+async def async_get_or_create_user(
+    github_login: str, email: str, name: str
+) -> dict[str, Any] | None:
     """Async version — use this from async contexts (e.g. OAuth callbacks).
 
     Calls the DB directly without thread-pool workarounds.
