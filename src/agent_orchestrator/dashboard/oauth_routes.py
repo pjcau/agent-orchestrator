@@ -26,6 +26,7 @@ from .auth import create_oauth, create_session_token, get_base_url, verify_sessi
 from .user_store import (
     approve_pending,
     approve_user,
+    async_get_or_create_user,
     deactivate_user,
     get_or_create_user,
     list_pending,
@@ -132,7 +133,7 @@ async def callback_github(request: Request):
             email = primary["email"] if primary else ""
 
         # Check user_store: admin auto-created, others must be approved
-        user = get_or_create_user(github_login, email, name)
+        user = await async_get_or_create_user(github_login, email, name)
         if user is None:
             return HTMLResponse(content=_denied_page_html(github_login), status_code=403)
 

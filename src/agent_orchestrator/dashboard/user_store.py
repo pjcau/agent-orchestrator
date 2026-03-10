@@ -190,6 +190,19 @@ def _row_to_pending(row) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+async def async_get_or_create_user(github_login: str, email: str, name: str) -> dict[str, Any] | None:
+    """Async version — use this from async contexts (e.g. OAuth callbacks).
+
+    Calls the DB directly without thread-pool workarounds.
+    """
+    if _db_available and _pool:
+        try:
+            return await _get_or_create_user_db(github_login, email, name)
+        except Exception:
+            pass  # Fall through to JSON
+    return _get_or_create_user_json(github_login, email, name)
+
+
 def get_or_create_user(github_login: str, email: str, name: str) -> dict[str, Any] | None:
     """Get or create a user after GitHub OAuth login.
 
@@ -197,8 +210,8 @@ def get_or_create_user(github_login: str, email: str, name: str) -> dict[str, An
     - Known users are returned if active.
     - Unknown users are rejected (return None) and saved as pending.
 
-    Note: This is sync because OAuth callbacks are sync. DB operations
-    use a sync wrapper when available, falling back to JSON.
+    Note: Prefer async_get_or_create_user from async contexts.
+    This sync version uses a thread-pool wrapper for DB access.
     """
     if _db_available and _pool:
         import asyncio
@@ -206,7 +219,6 @@ def get_or_create_user(github_login: str, email: str, name: str) -> dict[str, An
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # We're inside an async context — use the pool directly via a future
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
