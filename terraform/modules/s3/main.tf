@@ -50,6 +50,13 @@ resource "aws_s3_bucket_versioning" "jobs_archive" {
   }
 }
 
+# --- Request Metrics (enables CloudWatch S3 metrics for monitoring) ---
+resource "aws_s3_bucket_metric" "entire_bucket" {
+  bucket = aws_s3_bucket.jobs_archive.id
+  name   = "EntireBucket"
+  # No filter = entire bucket metrics
+}
+
 # --- Lifecycle: Glacier after 90 days, delete after 365 days ---
 resource "aws_s3_bucket_lifecycle_configuration" "jobs_archive" {
   bucket = aws_s3_bucket.jobs_archive.id

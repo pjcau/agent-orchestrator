@@ -55,6 +55,44 @@ def _get_ce_client():
     return boto3.client("ce", region_name="us-east-1")
 
 
+def _enable_s3_request_metrics():
+    """Enable S3 request metrics on all buckets (required for request/error/bandwidth data).
+
+    Creates a metrics configuration named 'EntireBucket' on each bucket.
+    This is idempotent — AWS overwrites existing config with same ID.
+    Metrics typically appear in CloudWatch within 15 minutes of enabling.
+    """
+    try:
+        s3 = boto3.client("s3")
+        buckets = [b["Name"] for b in s3.list_buckets().get("Buckets", [])]
+
+        enabled = 0
+        for bucket in buckets:
+            try:
+                s3.put_bucket_metrics_configuration(
+                    Bucket=bucket,
+                    Id="EntireBucket",
+                    MetricsConfiguration={
+                        "Id": "EntireBucket",
+                        # No Filter = entire bucket
+                    },
+                )
+                enabled += 1
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                if code == "AccessDenied":
+                    logger.warning("Cannot enable metrics on %r: access denied", bucket)
+                else:
+                    logger.warning("Cannot enable metrics on %r: %s", bucket, code)
+
+        logger.info("S3 request metrics enabled on %d/%d buckets", enabled, len(buckets))
+
+    except NoCredentialsError:
+        logger.error("No AWS credentials — cannot enable S3 request metrics")
+    except Exception:
+        logger.exception("Failed to enable S3 request metrics")
+
+
 def _fetch_costs():
     """Fetch costs from AWS Cost Explorer."""
     global _metrics, _service_costs_today, _service_costs_yesterday
@@ -471,6 +509,9 @@ def _s3_refresh_loop():
 
 def main():
     logger.info("Starting AWS Cost + S3 Exporter on :9101")
+
+    # Enable S3 request metrics on all buckets (idempotent)
+    _enable_s3_request_metrics()
 
     # Initial fetch
     _fetch_costs()

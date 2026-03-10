@@ -122,6 +122,38 @@ resource "aws_iam_role_policy" "s3_jobs_archive" {
   })
 }
 
+# --- S3 + CloudWatch Monitoring (S3 dashboard metrics) ---
+resource "aws_iam_role_policy" "s3_monitoring" {
+  name = "${var.project}-s3-monitoring"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListAllMyBuckets",
+          "s3:GetBucketLocation",
+          "s3:GetMetricsConfiguration",
+          "s3:PutMetricsConfiguration",
+          "s3:ListBucketMetricsConfigurations"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:GetMetricStatistics",
+          "cloudwatch:ListMetrics",
+          "cloudwatch:GetMetricData"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # --- SSM Session Manager (alternative to SSH) ---
 resource "aws_iam_role_policy_attachment" "ssm" {
   role       = aws_iam_role.ec2.name

@@ -178,6 +178,25 @@ docker compose -f docker-compose.prod.yml restart nginx
 - **Grafana**: `https://monitoring.agents-orchestrator.com` (login: admin / `GRAFANA_PASSWORD`)
 - **Prometheus**: `127.0.0.1:9090` (localhost only, access via SSH tunnel)
 
+### Grafana Dashboards
+
+| Dashboard | Description |
+|-----------|-------------|
+| Orchestrator | Overview: requests, tokens, cost, status |
+| API Calls & Costs | Per-model API call volume and cost |
+| Errors & Alerts | Error rates, alert history |
+| Agent Usage | Agent interactions and delegation |
+| Cost Analysis | OpenRouter cost vs agent correlation |
+| Infrastructure | EC2 host + container metrics |
+| AWS Costs | Cost Explorer: MTD, forecast, per-service |
+| AWS S3 Storage | Bucket size, objects, requests, bandwidth, latency |
+
+### S3 Monitoring
+
+The S3 dashboard requires **request metrics** enabled on S3 buckets. The exporter auto-enables these at startup (`PutMetricsConfiguration` with ID `EntireBucket`). Storage metrics (size, object count) are always available. Request metrics (GET/PUT counts, errors, bandwidth, latency) appear ~15 minutes after being enabled.
+
+Required IAM permissions: `s3:PutMetricsConfiguration`, `s3:ListAllMyBuckets`, `cloudwatch:GetMetricStatistics`.
+
 ```bash
 # Prometheus (raw metrics, SSH tunnel)
 ssh -L 9090:localhost:9090 ec2-user@<EC2_IP>
