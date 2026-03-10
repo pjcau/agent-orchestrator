@@ -204,6 +204,7 @@ class TestGrafanaConfig:
             "cost-analysis.json",
             "infrastructure.json",
             "aws-costs.json",
+            "s3.json",
         }
         actual = {f.name for f in dashboards_dir.glob("*.json")}
         assert expected <= actual, f"Missing dashboards: {expected - actual}"

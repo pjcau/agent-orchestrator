@@ -60,3 +60,23 @@ groups:
         annotations:
           summary: "Low disk space"
           description: "Disk usage is {{ $value }}%."
+
+      # S3 high error rate
+      - alert: S3HighErrorRate
+        expr: sum(aws_s3_errors_total) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High S3 error rate"
+          description: "S3 errors: {{ $value }} in the last scrape."
+
+      # S3 bucket growing fast
+      - alert: S3BucketLarge
+        expr: sum by(bucket) (aws_s3_bucket_size_bytes) > 10737418240
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "S3 bucket {{ $labels.bucket }} exceeds 10 GB"
+          description: "Bucket size is {{ $value | humanize1024 }}."
