@@ -26,5 +26,5 @@ jobs/
 certs/
 
 # Dashboard user data (generated at runtime)
-dashboard-users.json
-dashboard-pending.json
+dashboard-users*
+dashboard-pending*
