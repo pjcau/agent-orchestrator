@@ -42,6 +42,8 @@ services:
       - ENVIRONMENT=production
       - CORS_ALLOWED_ORIGINS=${BASE_URL}
       - GITHUB_USERNAME=${GITHUB_USERNAME}
+    volumes:
+      - ./jobs:/workspace/jobs
     depends_on:
       postgres:
         condition: service_healthy
