@@ -29,7 +29,8 @@ agent-orchestrator/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
 │   ├── infrastructure.md        # Cloud vs on-prem decision framework
-│   └── migration-from-claude.md # How to abstract away from Claude Code
+│   ├── migration-from-claude.md # How to abstract away from Claude Code
+│   └── security.md             # Auth, RBAC, secrets, network, AWS checklist
 ├── src/
 │   └── agent_orchestrator/
 │       ├── core/
