@@ -52,11 +52,19 @@ module "networking" {
   ssh_allowed_cidrs  = var.ssh_allowed_cidrs
 }
 
+# --- S3 ---
+module "s3" {
+  source = "./modules/s3"
+
+  project = var.project
+}
+
 # --- IAM ---
 module "iam" {
   source = "./modules/iam"
 
-  project = var.project
+  project             = var.project
+  jobs_archive_bucket_arn = module.s3.bucket_arn
 }
 
 # --- EC2 ---

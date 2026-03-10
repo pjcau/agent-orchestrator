@@ -40,6 +40,12 @@ class TestTerraformStructure:
         assert (mod / "variables.tf").exists()
         assert (mod / "outputs.tf").exists()
 
+    def test_s3_module_exists(self):
+        mod = TERRAFORM_DIR / "modules" / "s3"
+        assert (mod / "main.tf").exists()
+        assert (mod / "variables.tf").exists()
+        assert (mod / "outputs.tf").exists()
+
     def test_tfvars_example_exists(self):
         assert (TERRAFORM_DIR / "terraform.tfvars.example").exists()
 
@@ -151,3 +157,77 @@ class TestUserDataScript:
     def test_script_uses_strict_mode(self):
         content = (TERRAFORM_DIR / "modules" / "ec2" / "user_data.sh").read_text()
         assert "set -euo pipefail" in content
+
+
+class TestS3Module:
+    """Verify S3 jobs archive module security and lifecycle configuration."""
+
+    def _read(self, *parts: str) -> str:
+        return (TERRAFORM_DIR / os.path.join(*parts)).read_text()
+
+    def test_s3_bucket_blocks_public_access(self):
+        content = self._read("modules", "s3", "main.tf")
+        assert "block_public_acls" in content
+        assert "block_public_policy" in content
+        assert "ignore_public_acls" in content
+        assert "restrict_public_buckets" in content
+
+    def test_s3_bucket_encryption_aes256(self):
+        content = self._read("modules", "s3", "main.tf")
+        assert "AES256" in content
+
+    def test_s3_bucket_lifecycle_glacier_transition(self):
+        content = self._read("modules", "s3", "main.tf")
+        assert "GLACIER" in content
+        assert "90" in content
+
+    def test_s3_bucket_lifecycle_expiration(self):
+        content = self._read("modules", "s3", "main.tf")
+        assert "expiration" in content
+        assert "365" in content
+
+    def test_s3_bucket_versioning_disabled(self):
+        content = self._read("modules", "s3", "main.tf")
+        assert "Disabled" in content
+
+    def test_s3_module_outputs_bucket_name_and_arn(self):
+        content = self._read("modules", "s3", "outputs.tf")
+        assert "bucket_name" in content
+        assert "bucket_arn" in content
+
+    def test_s3_module_wired_in_root(self):
+        content = self._read("main.tf")
+        assert 'source = "./modules/s3"' in content
+
+
+class TestIAMS3Policy:
+    """Verify IAM role includes scoped S3 permissions for jobs archive."""
+
+    def _read(self, *parts: str) -> str:
+        return (TERRAFORM_DIR / os.path.join(*parts)).read_text()
+
+    def test_iam_role_has_s3_put_object(self):
+        content = self._read("modules", "iam", "main.tf")
+        assert "s3:PutObject" in content
+
+    def test_iam_role_has_s3_get_object(self):
+        content = self._read("modules", "iam", "main.tf")
+        assert "s3:GetObject" in content
+
+    def test_iam_role_has_s3_list_bucket(self):
+        content = self._read("modules", "iam", "main.tf")
+        assert "s3:ListBucket" in content
+
+    def test_iam_role_has_s3_delete_object(self):
+        content = self._read("modules", "iam", "main.tf")
+        assert "s3:DeleteObject" in content
+
+    def test_iam_s3_policy_scoped_to_bucket_arn(self):
+        """S3 permissions must reference the bucket ARN variable, not a wildcard."""
+        content = self._read("modules", "iam", "main.tf")
+        assert "jobs_archive_bucket_arn" in content
+
+    def test_iam_receives_bucket_arn_from_root(self):
+        content = self._read("main.tf")
+        assert "jobs_archive_bucket_arn" in content
+        assert "module.s3.bucket_arn" in content

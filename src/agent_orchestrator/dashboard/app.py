@@ -684,7 +684,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     content={"success": True, "status": resp.json().get("status", "ok")}
                 )
         except Exception:
-            logger.exception("Ollama pull failed for model %s", model_name)
+            logger.exception("Ollama pull failed for model %r", model_name)
             return JSONResponse(
                 content={"success": False, "error": "Failed to pull model"}, status_code=500
             )
@@ -718,11 +718,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/files")
     async def list_files(path: str = ""):
         """List files in the project directory."""
-        base = PROJECT_ROOT
+        base = PROJECT_ROOT.resolve()
         target = (base / path).resolve()
 
-        # Security: don't allow escaping project root
-        if not str(target).startswith(str(base)):
+        # Security: prevent path traversal
+        if not target.is_relative_to(base):
             return JSONResponse(content={"error": "Path outside project"}, status_code=400)
 
         if not target.is_dir():
@@ -750,10 +750,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/file")
     async def read_file(path: str):
         """Read a file's content."""
-        base = PROJECT_ROOT
+        base = PROJECT_ROOT.resolve()
         target = (base / path).resolve()
 
-        if not str(target).startswith(str(base)):
+        # Security: prevent path traversal
+        if not target.is_relative_to(base):
             return JSONResponse(content={"error": "Path outside project"}, status_code=400)
 
         if not target.is_file():

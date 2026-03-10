@@ -168,6 +168,22 @@ services:
       - prometheus
     restart: unless-stopped
 
+  # --- Job archiver (weekly S3 upload + PostgreSQL metadata) ---
+  archiver:
+    build:
+      context: .
+      dockerfile: docker/archiver/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://orchestrator:${POSTGRES_PASSWORD}@postgres:5432/orchestrator
+      # AWS credentials come from the host IAM role — no access keys needed here.
+    volumes:
+      - ./jobs:/workspace/jobs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["--jobs-dir", "/workspace/jobs", "--days", "7"]
+    restart: unless-stopped
+
   # --- Certbot (auto-renew Let's Encrypt) ---
   certbot:
     image: certbot/certbot

@@ -96,6 +96,32 @@ resource "aws_iam_role_policy" "cost_explorer" {
   })
 }
 
+# --- S3 Jobs Archive (session log archiving) ---
+resource "aws_iam_role_policy" "s3_jobs_archive" {
+  name = "${var.project}-s3-jobs-archive"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${var.jobs_archive_bucket_arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = var.jobs_archive_bucket_arn
+      }
+    ]
+  })
+}
+
 # --- SSM Session Manager (alternative to SSH) ---
 resource "aws_iam_role_policy_attachment" "ssm" {
   role       = aws_iam_role.ec2.name

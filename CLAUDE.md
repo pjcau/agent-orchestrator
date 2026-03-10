@@ -26,7 +26,8 @@ agent-orchestrator/
 │   ├── modules/
 │   │   ├── networking/          # VPC, subnet, IGW, security group
 │   │   ├── ec2/                 # EC2 instance, EIP, user_data.sh
-│   │   └── iam/                 # IAM role + instance profile
+│   │   ├── iam/                 # IAM role + instance profile
+│   │   └── s3/                  # S3 jobs archive bucket (lifecycle → Glacier)
 │   ├── main.tf                  # Root module (composes all modules)
 │   ├── variables.tf             # Root variables
 │   ├── outputs.tf               # Root outputs
@@ -34,11 +35,17 @@ agent-orchestrator/
 ├── docker/
 │   ├── dashboard/Dockerfile     # Dashboard container (FastAPI + auth)
 │   ├── docs/Dockerfile          # Docusaurus docs site
+│   ├── archiver/Dockerfile      # Job archiver (S3 upload + PG metadata)
 │   ├── nginx/nginx.conf         # Reverse proxy (TLS, rate limiting, WebSocket)
+│   ├── aws-cost-exporter/       # Custom Prometheus exporter for AWS billing
 │   ├── prometheus/              # prometheus.yml + alerts.yml
-│   └── grafana/                 # Provisioning (datasources, dashboards)
+│   └── grafana/                 # Provisioning (datasources, dashboards, alerts)
+├── scripts/
+│   ├── archive_jobs.py          # S3 job archiver (tarball + PG metadata)
+│   ├── fetch_github_stars.py    # Fetch starred repos for research scout
+│   └── run_research_scout.py    # LLM analysis of starred repos
 ├── docker-compose.yml           # Dev services (postgres, dashboard, docs)
-├── docker-compose.prod.yml      # Production (nginx, redis, prometheus, grafana)
+├── docker-compose.prod.yml      # Production (nginx, redis, prometheus, grafana, archiver)
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
@@ -299,6 +306,17 @@ Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC).
 | **TruffleHog** | Leaked secrets in git history | `security-scan.yml` |
 
 Dependabot opens PRs automatically for outdated/vulnerable dependencies. Results appear in GitHub's Security tab.
+
+## Job Log Archiving
+
+Session logs (`jobs/job_<session_id>/`) are archived to S3 and metadata stored in PostgreSQL.
+
+- **Archiver script**: `scripts/archive_jobs.py` — scans for sessions older than N days, tarballs them, uploads to S3, records metadata in `job_archives` table, deletes local files
+- **Docker service**: `archiver` in `docker-compose.prod.yml` — runs every 7 days automatically
+- **S3 bucket**: `agent-orchestrator-jobs-archive` (Terraform: `terraform/modules/s3/`)
+- **Lifecycle**: S3 Standard → Glacier at 90 days → deleted at 365 days
+- **IAM**: EC2 role has `s3:PutObject/GetObject/DeleteObject/ListBucket` (Terraform: `terraform/modules/iam/`)
+- **Dry run**: `python scripts/archive_jobs.py --dry-run` to preview without uploading
 
 ## Container Runtime: OrbStack
 
