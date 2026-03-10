@@ -1,0 +1,62 @@
+groups:
+  - name: agent-orchestrator
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(orchestrator_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors/sec over the last 5 minutes."
+
+      # Agent stall detection
+      - alert: AgentStalled
+        expr: orchestrator_agent_task_duration_seconds > 300
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent task stalled"
+          description: "Agent task has been running for over 5 minutes."
+
+      # High cost alert
+      - alert: HighCostSpike
+        expr: increase(orchestrator_cost_usd_total[1h]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cost spike detected"
+          description: "Over $5 spent in the last hour ({{ $value }} USD)."
+
+      # EC2 high CPU
+      - alert: HighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}%."
+
+      # EC2 high memory
+      - alert: HighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%."
+
+      # EC2 disk space
+      - alert: LowDiskSpace
+        expr: (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is {{ $value }}%."

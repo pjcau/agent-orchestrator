@@ -1,0 +1,100 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "terraform/**"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  APP_DIR: /opt/agent-orchestrator
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,dashboard]"
+
+      - name: Run tests
+        run: pytest --tb=short -q
+
+      - name: Lint check
+        run: |
+          ruff check src/ tests/
+          ruff format --check src/ tests/
+
+  deploy:
+    name: Deploy to EC2
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy to EC2
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ec2-user
+        run: |
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
+
+          # Sync code (exclude dev files)
+          rsync -azP --delete \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='node_modules' \
+            --exclude='__pycache__' \
+            --exclude='.env*' \
+            --exclude='terraform' \
+            --exclude='jobs/' \
+            --exclude='.ruff_cache' \
+            -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
+            . $USER@$HOST:$APP_DIR/
+
+          # Build and restart services
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml build --no-cache dashboard"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml up -d"
+
+      - name: Health Check
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          echo "Waiting for service to start..."
+          sleep 10
+
+          for i in $(seq 1 6); do
+            STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$HOST/health" 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: status=$STATUS, retrying in 10s..."
+            sleep 10
+          done
+
+          echo "Health check failed after 6 attempts"
+          exit 1

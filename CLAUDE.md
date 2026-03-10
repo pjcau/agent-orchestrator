@@ -33,8 +33,12 @@ agent-orchestrator/
 │   └── terraform.tfvars.example # Example config (never commit .tfvars)
 ├── docker/
 │   ├── dashboard/Dockerfile     # Dashboard container (FastAPI + auth)
-│   └── docs/Dockerfile          # Docusaurus docs site
-├── docker-compose.yml           # Services (postgres, dashboard, docs)
+│   ├── docs/Dockerfile          # Docusaurus docs site
+│   ├── nginx/nginx.conf         # Reverse proxy (TLS, rate limiting, WebSocket)
+│   ├── prometheus/              # prometheus.yml + alerts.yml
+│   └── grafana/                 # Provisioning (datasources, dashboards)
+├── docker-compose.yml           # Dev services (postgres, dashboard, docs)
+├── docker-compose.prod.yml      # Production (nginx, redis, prometheus, grafana)
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling

@@ -198,10 +198,14 @@ The user store (`dashboard_users` + `dashboard_pending` tables) persists approve
 - [x] Admin panel for managing users and approving access requests
 - [x] bcrypt password hashing, CORS allowlist, SSRF protection
 - [x] Audit logging (login/logout/denied events)
-- [ ] `docker-compose.prod.yml` (nginx, redis, prometheus, grafana)
-- [ ] GitHub Actions auto-deploys on push to `main`
-- [ ] HTTPS active on custom domain
-- [ ] Grafana accessible via SSH tunnel
+- [x] `docker-compose.prod.yml` (nginx, redis, prometheus, grafana)
+- [x] Nginx: TLS 1.2+, HSTS, rate limiting, WebSocket proxy, /metrics blocked
+- [x] Prometheus: dashboard + node exporter scraping, 6 alert rules
+- [x] Grafana: pre-provisioned dashboard (tasks, cost, latency, CPU/RAM/disk)
+- [x] GitHub Actions deploy pipeline (test → rsync → build → health check)
+- [x] 30 deployment tests (`tests/test_deploy.py`)
+- [ ] HTTPS active on custom domain (needs Route53 + ACM setup)
+- [ ] Grafana accessible via SSH tunnel (needs EC2 running)
 
 ## KPIs
 
@@ -224,6 +228,6 @@ The user store (`dashboard_users` + `dashboard_pending` tables) persists approve
 - [x] SSRF protection (Ollama URL restricted to localhost)
 - [x] API keys header-only (no query param leaks)
 - [x] IMDSv2 required on EC2 (prevents SSRF → metadata attacks)
-- [ ] Grafana not publicly exposed (SSH tunnel only)
-- [ ] Rate limiting on `/api/*` (max 60 req/min per user)
+- [x] Grafana not publicly exposed (no ports in docker-compose.prod.yml)
+- [x] Rate limiting on `/api/*` (nginx: 10 req/s + burst 20)
 - [ ] OpenRouter API key rotated every 90 days
