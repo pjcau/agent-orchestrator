@@ -120,7 +120,7 @@ def create_oauth() -> Any | None:
 
 def get_base_url() -> str:
     """Get the public base URL for OAuth2 callbacks."""
-    return os.environ.get("BASE_URL", "http://localhost:5005")
+    return os.environ.get("BASE_URL", "https://localhost:5005")
 
 
 # ---------------------------------------------------------------------------

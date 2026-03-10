@@ -3,12 +3,15 @@
 Usage:
     python -m agent_orchestrator.dashboard.server
     # or via Docker: docker compose up dashboard
+
+HTTPS is always enabled. Self-signed certs are auto-generated if missing.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
 from pathlib import Path
 
 import uvicorn
@@ -16,13 +19,46 @@ import uvicorn
 from .app import create_dashboard_app
 from .events import EventBus
 
+logger = logging.getLogger(__name__)
+
+
+def _ensure_certs(cert_dir: Path) -> None:
+    """Generate self-signed certs if they don't exist."""
+    cert_file = cert_dir / "cert.pem"
+    key_file = cert_dir / "key.pem"
+    if cert_file.exists() and key_file.exists():
+        return
+
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    logger.warning("SSL certs not found — generating self-signed certificate for localhost")
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-keyout",
+            str(key_file),
+            "-out",
+            str(cert_file),
+            "-days",
+            "365",
+            "-nodes",
+            "-subj",
+            "/CN=localhost",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    logger.info("Self-signed cert created at %s", cert_dir)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Agent Orchestrator Dashboard")
     parser.add_argument("--host", default="0.0.0.0", help="Bind host")
     parser.add_argument("--port", type=int, default=5005, help="Bind port")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
-    parser.add_argument("--no-ssl", action="store_true", help="Disable SSL (HTTP only)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING)
@@ -39,15 +75,18 @@ def main() -> None:
 
     app = create_dashboard_app(bus)
 
-    # SSL: use certs/ if present (self-signed for local, Let's Encrypt for prod)
-    ssl_kwargs: dict = {}
+    # HTTPS always — auto-generate self-signed certs if missing
     cert_dir = Path("certs")
-    if not args.no_ssl and (cert_dir / "cert.pem").exists() and (cert_dir / "key.pem").exists():
-        ssl_kwargs["ssl_certfile"] = str(cert_dir / "cert.pem")
-        ssl_kwargs["ssl_keyfile"] = str(cert_dir / "key.pem")
-        logging.getLogger(__name__).info("SSL enabled (certs/cert.pem)")
+    _ensure_certs(cert_dir)
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info", **ssl_kwargs)
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level="info",
+        ssl_certfile=str(cert_dir / "cert.pem"),
+        ssl_keyfile=str(cert_dir / "key.pem"),
+    )
 
 
 if __name__ == "__main__":

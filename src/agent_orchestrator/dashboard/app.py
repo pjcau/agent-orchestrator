@@ -72,8 +72,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     allowed_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
     allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
     if not allowed_origins:
-        # Default: only same-origin (no wildcard)
-        allowed_origins = [os.environ.get("BASE_URL", "http://localhost:5005")]
+        # Default: HTTPS only (always-HTTPS policy)
+        base = os.environ.get("BASE_URL", "https://localhost:5005")
+        allowed_origins = [base]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
