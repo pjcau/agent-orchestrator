@@ -31,6 +31,14 @@ scrape_configs:
         labels:
           service: "containers"
 
+  # AWS Cost Explorer (hourly refresh)
+  - job_name: "aws-costs"
+    scrape_interval: 5m
+    static_configs:
+      - targets: ["aws-cost-exporter:9101"]
+        labels:
+          service: "aws-billing"
+
   # Prometheus self-monitoring
   - job_name: "prometheus"
     static_configs:

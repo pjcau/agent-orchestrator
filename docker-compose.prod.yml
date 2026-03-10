@@ -114,6 +114,18 @@ services:
       - "8080"
     restart: unless-stopped
 
+  # --- AWS Cost Exporter (Cost Explorer → Prometheus) ---
+  aws-cost-exporter:
+    build:
+      context: ./docker/aws-cost-exporter
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=eu-west-1
+    expose:
+      - "9101"
+    restart: unless-stopped
+
   # --- Prometheus ---
   prometheus:
     image: prom/prometheus:v3.2.1

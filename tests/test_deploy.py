@@ -34,6 +34,7 @@ class TestDockerComposeProd:
             "certbot",
             "node-exporter",
             "cadvisor",
+            "aws-cost-exporter",
         } <= services
 
     def test_dashboard_uses_production_env(self):
@@ -165,6 +166,11 @@ class TestPrometheusConfig:
         jobs = [s["job_name"] for s in config["scrape_configs"]]
         assert "cadvisor" in jobs
 
+    def test_scrapes_aws_costs(self):
+        config = yaml.safe_load((DOCKER_DIR / "prometheus" / "prometheus.yml").read_text())
+        jobs = [s["job_name"] for s in config["scrape_configs"]]
+        assert "aws-costs" in jobs
+
     def test_alert_rules_defined(self):
         alerts = yaml.safe_load((DOCKER_DIR / "prometheus" / "alerts.yml").read_text())
         rules = alerts["groups"][0]["rules"]
@@ -197,6 +203,7 @@ class TestGrafanaConfig:
             "agents.json",
             "cost-analysis.json",
             "infrastructure.json",
+            "aws-costs.json",
         }
         actual = {f.name for f in dashboards_dir.glob("*.json")}
         assert expected <= actual, f"Missing dashboards: {expected - actual}"
