@@ -108,17 +108,28 @@
   const $historyDetail = $("history-detail");
   const $btnCloseHistory = $("btn-close-history");
 
+  // --- WebSocket management ---
+  // Track page unload to prevent reconnection during refresh
+  let pageUnloading = false;
+  window.addEventListener("beforeunload", () => {
+    pageUnloading = true;
+    if (ws) { ws.onclose = null; ws.close(); }
+    if (streamWs) { streamWs.onclose = null; streamWs.close(); }
+  });
+
   // --- Event WebSocket ---
-  let wsReconnectTimer = null;
   function connect() {
-    // Close previous connection to avoid zombie sockets eating browser connection slots
+    if (pageUnloading) return;
     if (ws && ws.readyState <= WebSocket.OPEN) { ws.onclose = null; ws.close(); }
-    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
 
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${proto}//${location.host}/ws`);
     ws.onopen = () => { $wsIndicator.className = "ws-dot connected"; };
-    ws.onclose = () => { $wsIndicator.className = "ws-dot disconnected"; wsReconnectTimer = setTimeout(connect, 2000); };
+    ws.onclose = (e) => {
+      $wsIndicator.className = "ws-dot disconnected";
+      // Only reconnect on unexpected close (not page unload or server replacement)
+      if (!pageUnloading && e.code !== 1001) setTimeout(connect, 2000);
+    };
     ws.onerror = () => ws.close();
     ws.onmessage = (msg) => {
       const payload = JSON.parse(msg.data);
@@ -133,24 +144,17 @@
   }
 
   // --- Streaming WebSocket ---
-  let streamReconnectTimer = null;
   function connectStream() {
+    if (pageUnloading) return;
     if (streamWs && streamWs.readyState <= WebSocket.OPEN) { streamWs.onclose = null; streamWs.close(); }
-    if (streamReconnectTimer) { clearTimeout(streamReconnectTimer); streamReconnectTimer = null; }
 
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     streamWs = new WebSocket(`${proto}//${location.host}/ws/stream`);
-    streamWs.onclose = () => { streamReconnectTimer = setTimeout(connectStream, 3000); };
+    streamWs.onclose = (e) => {
+      if (!pageUnloading && e.code !== 1001) setTimeout(connectStream, 3000);
+    };
     streamWs.onerror = () => streamWs.close();
   }
-
-  // Clean up on page unload to free browser connection slots immediately
-  window.addEventListener("beforeunload", () => {
-    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
-    if (streamReconnectTimer) clearTimeout(streamReconnectTimer);
-    if (ws) { ws.onclose = null; ws.close(); }
-    if (streamWs) { streamWs.onclose = null; streamWs.close(); }
-  });
 
   // --- Load Models ---
   async function loadModels() {
@@ -2174,33 +2178,41 @@
   });
 
   // --- Init ---
-  fetchCurrentUser();
+  // Sequential loading to avoid HTTP/1.1 connection slot exhaustion.
+  // Models load FIRST (highest priority), then remaining fetches, then WebSockets.
   initCollapsible();
-  loadModels();
-  loadAgents();
-  loadPresets();
-  fetchUsageStats();
-  startNewConversation();
-  restoreSessionHistory();
+  (async function init() {
+    // Phase 1: Models — must complete before anything else
+    await loadModels();
 
-  fetch("/api/events?limit=200")
-    .then((r) => r.json())
-    .then((data) => { events = data; data.forEach((e) => renderTimelineEvent(e)); })
-    .catch(() => {})
-    .finally(() => connect());
+    // Phase 2: Other HTTP fetches (parallel, max 5 at once to leave 1 slot free)
+    await Promise.all([
+      loadAgents(),
+      fetchCurrentUser(),
+      loadPresets(),
+      fetchUsageStats(),
+      startNewConversation(),
+    ]);
 
-  fetch("/api/snapshot")
-    .then((r) => r.json())
-    .then((data) => { snapshot = data; renderHeader(); renderGraph(); renderAgentMessages(); })
-    .catch(() => {});
+    // Phase 3: Secondary fetches + WebSockets (all HTTP fetches done, slots are free)
+    restoreSessionHistory();
 
-  function initStream() {
+    fetch("/api/events?limit=200")
+      .then((r) => r.json())
+      .then((data) => { events = data; data.forEach((e) => renderTimelineEvent(e)); })
+      .catch(() => {})
+      .finally(() => connect());
+
+    fetch("/api/snapshot")
+      .then((r) => r.json())
+      .then((data) => { snapshot = data; renderHeader(); renderGraph(); renderAgentMessages(); })
+      .catch(() => {});
+
     connectStream();
     const check = setInterval(() => {
       if (streamWs && streamWs.readyState === WebSocket.OPEN) { clearInterval(check); setupStreamHandler(); }
     }, 200);
-  }
-  initStream();
+  })();
 
   const origConnectStream = connectStream;
   connectStream = function () {

@@ -94,6 +94,10 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # Store api_keys set for WebSocket auth checks
     _ws_api_keys = set(api_keys) if api_keys else set()
 
+    # Track active WebSocket connections — close old ones when new arrive
+    # Only one connection per endpoint path is allowed at a time
+    _active_ws: dict[str, WebSocket] = {}  # key: "/ws" or "/ws/stream"
+
     # Starlette session middleware (required for authlib OAuth2 state)
     try:
         from starlette.middleware.sessions import SessionMiddleware
@@ -857,7 +861,17 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         if not ws_user:
             await ws.close(code=1008, reason="Authentication required")
             return
+
+        # Close previous stream connection (prevents zombie sockets)
+        old_ws = _active_ws.get("/ws/stream")
+        if old_ws:
+            try:
+                await old_ws.close(code=1001, reason="Replaced by new connection")
+            except Exception:
+                pass
+
         await ws.accept()
+        _active_ws["/ws/stream"] = ws
         try:
             while True:
                 data = await ws.receive_json()
@@ -1013,6 +1027,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             pass
         except Exception:
             pass
+        finally:
+            if _active_ws.get("/ws/stream") is ws:
+                _active_ws.pop("/ws/stream", None)
 
     # --- Events WebSocket ---
 
@@ -1023,7 +1040,17 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         if not ws_user:
             await ws.close(code=1008, reason="Authentication required")
             return
+
+        # Close previous connection (prevents zombie sockets eating browser connection slots)
+        old_ws = _active_ws.get("/ws")
+        if old_ws:
+            try:
+                await old_ws.close(code=1001, reason="Replaced by new connection")
+            except Exception:
+                pass
+
         await ws.accept()
+        _active_ws["/ws"] = ws
         queue = bus.subscribe()
         try:
             await ws.send_json({"type": "snapshot", "data": bus.get_snapshot()})
@@ -1037,5 +1064,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             pass
         finally:
             bus.unsubscribe(queue)
+            if _active_ws.get("/ws") is ws:
+                _active_ws.pop("/ws", None)
 
     return app
