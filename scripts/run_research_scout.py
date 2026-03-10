@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Research scout — analyze ONE starred repo per run, propose code improvements via PR.
+"""Research scout — analyze ONE starred repo per run, propose code improvements.
 
 Flow:
   1. Pick the oldest unprocessed starred repo (30-day lookback)
   2. Fetch its README via GitHub API
   3. Call LLM (claude CLI locally, OpenRouter on CI) for concrete improvements
   4. Parse the JSON response and write a findings file
-  5. Output is PR-ready
+  5. PR creation is handled by the CI workflow (nightly-research.yml)
 
 LLM backend:
   - Local: `claude` CLI (auto-detected, no API key needed)
@@ -267,73 +267,6 @@ def _write_findings(repo_title: str, repo_url: str, improvements: list[dict]) ->
     print(f"Findings written to {FINDINGS_FILE}")
 
 
-def _create_pr(findings_file: Path) -> bool:
-    """Create a PR branch with findings. Returns True if PR was created."""
-    from datetime import datetime, timezone
-
-    branch = f"research-scout/{datetime.now(timezone.utc).strftime('%Y-%m-%d-%H%M')}"
-    files_to_add = [
-        str(STATE_FILE),
-        str(BOOKMARKS_FILE),
-        str(findings_file),
-    ]
-
-    try:
-        # Create branch
-        subprocess.run(
-            ["git", "checkout", "-b", branch], check=True, capture_output=True, text=True
-        )
-
-        # Stage files
-        subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True, text=True)
-
-        # Commit
-        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        subprocess.run(
-            ["git", "commit", "-m", f"research-scout: improvement proposal from {date_str}"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        # Push
-        subprocess.run(
-            ["git", "push", "-u", "origin", branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        # Create PR
-        body = findings_file.read_text(encoding="utf-8")
-        result = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--title",
-                f"research-scout: improvement proposal {date_str}",
-                "--body",
-                body,
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        pr_url = result.stdout.strip()
-        print(f"PR created: {pr_url}")
-
-        # Return to main
-        subprocess.run(["git", "checkout", "main"], check=True, capture_output=True, text=True)
-        return True
-
-    except subprocess.CalledProcessError as exc:
-        print(f"  PR creation failed: {exc.stderr or exc}")
-        # Try to return to main
-        subprocess.run(["git", "checkout", "main"], capture_output=True, text=True)
-        return False
-
-
 def main():
     lookback = int(os.environ.get("LOOKBACK_DAYS", str(LOOKBACK_DAYS)))
     print(f"Research Scout — lookback: {lookback} days, mode: single-repo, LLM: claude CLI")
@@ -446,7 +379,7 @@ If the repo has nothing useful for our codebase, return an empty array: []
     if improvements:
         _write_findings(title, url, improvements)
 
-        # Mark as processed before creating PR (so state is committed too)
+        # Mark as processed (PR creation is handled by the CI workflow)
         mark_processed(
             state,
             url,
@@ -454,13 +387,6 @@ If the repo has nothing useful for our codebase, return an empty array: []
             improvements=[imp["title"] for imp in improvements],
         )
         save_state(STATE_FILE, state)
-
-        # Create PR with findings
-        print("\nCreating PR...")
-        if _create_pr(FINDINGS_FILE):
-            print("PR created successfully.")
-        else:
-            print("PR creation failed — findings saved locally.")
     else:
         print("  No actionable improvements found.")
         FINDINGS_FILE.unlink(missing_ok=True)
