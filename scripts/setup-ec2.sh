@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 # EC2 First-Time Setup Script
-# Sets up the Agent Orchestrator:
+# Sets up the Agent Orchestrator on EC2 t3.medium spot (~$9.50/mo):
 #   - agents-orchestrator.com         → Dashboard
 #   - monitoring.agents-orchestrator.com → Grafana
 # ============================================================

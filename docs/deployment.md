@@ -27,7 +27,7 @@ Browser
 
 | Requirement | Details |
 |-------------|---------|
-| AWS EC2 | Amazon Linux 2023 or Ubuntu 22.04, t3.small+ |
+| AWS EC2 | Amazon Linux 2023 or Ubuntu 22.04, **t3.medium spot** (2 vCPU, 4 GB RAM, ~$9.50/mo) |
 | Elastic IP | Static public IP associated to the EC2 instance |
 | DNS A records | `agents-orchestrator.com` + `monitoring.agents-orchestrator.com` → Elastic IP |
 | Security Group | TCP 22 (SSH, your IP), TCP 80 (HTTP), TCP 443 (HTTPS) |
