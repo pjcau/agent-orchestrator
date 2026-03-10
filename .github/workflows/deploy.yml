@@ -80,6 +80,9 @@ jobs:
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard"
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
 
+          # Restart nginx to pick up new dashboard container IP (avoids 502)
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx"
+
       - name: Health Check
         env:
           HOST: ${{ secrets.EC2_HOST }}

@@ -148,6 +148,13 @@ class TestPrometheusConfig:
         jobs = [s["job_name"] for s in config["scrape_configs"]]
         assert "dashboard" in jobs
 
+    def test_dashboard_scrape_uses_https(self):
+        """Dashboard serves HTTPS (self-signed), Prometheus must use scheme: https."""
+        config = yaml.safe_load((DOCKER_DIR / "prometheus" / "prometheus.yml").read_text())
+        dashboard_job = [s for s in config["scrape_configs"] if s["job_name"] == "dashboard"][0]
+        assert dashboard_job.get("scheme") == "https"
+        assert dashboard_job.get("tls_config", {}).get("insecure_skip_verify") is True
+
     def test_scrapes_node_exporter(self):
         config = yaml.safe_load((DOCKER_DIR / "prometheus" / "prometheus.yml").read_text())
         jobs = [s["job_name"] for s in config["scrape_configs"]]
@@ -226,6 +233,11 @@ class TestDeployWorkflow:
         content = self.WORKFLOW.read_text()
         assert "Health Check" in content
         assert "/health" in content
+
+    def test_nginx_restart_after_deploy(self):
+        """Nginx must be restarted after dashboard rebuild to pick up new container IP."""
+        content = self.WORKFLOW.read_text()
+        assert "restart nginx" in content
 
     def test_excludes_sensitive_files(self):
         content = self.WORKFLOW.read_text()
