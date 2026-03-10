@@ -174,6 +174,28 @@ class TestGrafanaConfig:
     def test_dashboard_provisioned(self):
         assert (DOCKER_DIR / "grafana" / "dashboards" / "orchestrator.json").exists()
 
+    def test_all_dashboards_exist(self):
+        dashboards_dir = DOCKER_DIR / "grafana" / "dashboards"
+        expected = {
+            "orchestrator.json",
+            "api-calls.json",
+            "errors.json",
+            "agents.json",
+            "cost-analysis.json",
+        }
+        actual = {f.name for f in dashboards_dir.glob("*.json")}
+        assert expected <= actual, f"Missing dashboards: {expected - actual}"
+
+    def test_dashboards_valid_json(self):
+        import json
+
+        dashboards_dir = DOCKER_DIR / "grafana" / "dashboards"
+        for f in dashboards_dir.glob("*.json"):
+            data = json.loads(f.read_text())
+            assert "panels" in data, f"{f.name} missing panels"
+            assert "uid" in data, f"{f.name} missing uid"
+            assert "title" in data, f"{f.name} missing title"
+
 
 class TestDeployWorkflow:
     """Verify GitHub Actions deploy workflow."""

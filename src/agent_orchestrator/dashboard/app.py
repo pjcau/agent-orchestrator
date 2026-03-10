@@ -198,6 +198,118 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         """Return cumulative usage stats (tokens, cost, per-model, per-agent)."""
         return JSONResponse(content=usage_db.get_summary())
 
+    @app.get("/metrics")
+    async def prometheus_metrics():
+        """Expose metrics in Prometheus text exposition format."""
+        lines: list[str] = []
+        totals = usage_db.get_totals()
+        per_model = usage_db.get_per_model()
+        per_agent = usage_db.get_per_agent()
+        snap = bus.get_snapshot()
+
+        # --- Request totals ---
+        lines.append("# HELP orchestrator_requests_total Total API requests")
+        lines.append("# TYPE orchestrator_requests_total counter")
+        lines.append(f"orchestrator_requests_total {totals['total_requests']}")
+
+        # --- Token totals ---
+        lines.append("# HELP orchestrator_tokens_total Total tokens consumed")
+        lines.append("# TYPE orchestrator_tokens_total counter")
+        lines.append(f'orchestrator_tokens_total{{type="input"}} {totals["total_input_tokens"]}')
+        lines.append(f'orchestrator_tokens_total{{type="output"}} {totals["total_output_tokens"]}')
+
+        # --- Cost ---
+        lines.append("# HELP orchestrator_cost_usd_total Total cost in USD")
+        lines.append("# TYPE orchestrator_cost_usd_total counter")
+        lines.append(f"orchestrator_cost_usd_total {totals['total_cost_usd']:.6f}")
+
+        # --- Per-model metrics ---
+        lines.append("# HELP orchestrator_model_requests_total Requests per model")
+        lines.append("# TYPE orchestrator_model_requests_total counter")
+        lines.append("# HELP orchestrator_model_tokens_total Tokens per model")
+        lines.append("# TYPE orchestrator_model_tokens_total counter")
+        lines.append("# HELP orchestrator_model_cost_usd_total Cost per model")
+        lines.append("# TYPE orchestrator_model_cost_usd_total counter")
+        lines.append("# HELP orchestrator_model_speed_avg Average output tokens/s per model")
+        lines.append("# TYPE orchestrator_model_speed_avg gauge")
+        for model, stats in per_model.items():
+            m = model.replace('"', '\\"')
+            lines.append(f'orchestrator_model_requests_total{{model="{m}"}} {stats["requests"]}')
+            lines.append(f'orchestrator_model_tokens_total{{model="{m}"}} {stats["tokens"]}')
+            lines.append(
+                f'orchestrator_model_cost_usd_total{{model="{m}"}} {stats["cost_usd"]:.6f}'
+            )
+            lines.append(f'orchestrator_model_speed_avg{{model="{m}"}} {stats.get("avg_speed", 0)}')
+
+        # --- Per-agent metrics ---
+        lines.append("# HELP orchestrator_agent_requests_total Requests per agent")
+        lines.append("# TYPE orchestrator_agent_requests_total counter")
+        lines.append("# HELP orchestrator_agent_tokens_total Tokens per agent")
+        lines.append("# TYPE orchestrator_agent_tokens_total counter")
+        lines.append("# HELP orchestrator_agent_cost_usd_total Cost per agent")
+        lines.append("# TYPE orchestrator_agent_cost_usd_total counter")
+        for agent, stats in per_agent.items():
+            a = agent.replace('"', '\\"')
+            lines.append(f'orchestrator_agent_requests_total{{agent="{a}"}} {stats["requests"]}')
+            lines.append(f'orchestrator_agent_tokens_total{{agent="{a}"}} {stats["tokens"]}')
+            lines.append(
+                f'orchestrator_agent_cost_usd_total{{agent="{a}"}} {stats["cost_usd"]:.6f}'
+            )
+
+        # --- Agent status from event bus ---
+        lines.append("# HELP orchestrator_agent_status Current agent status (1=active)")
+        lines.append("# TYPE orchestrator_agent_status gauge")
+        for name, info in snap.get("agents", {}).items():
+            status = info.get("status", "unknown")
+            a = name.replace('"', '\\"')
+            lines.append(f'orchestrator_agent_status{{agent="{a}",status="{status}"}} 1')
+
+        # --- Orchestrator status ---
+        lines.append("# HELP orchestrator_status Current orchestrator status")
+        lines.append("# TYPE orchestrator_status gauge")
+        status = snap.get("orchestrator_status", "idle")
+        lines.append(f'orchestrator_status{{status="{status}"}} 1')
+
+        # --- Event count ---
+        lines.append("# HELP orchestrator_events_total Total events emitted")
+        lines.append("# TYPE orchestrator_events_total counter")
+        lines.append(f"orchestrator_events_total {snap.get('event_count', 0)}")
+
+        # --- Error count from event history ---
+        error_count = sum(
+            1 for e in bus.get_history() if e.event_type.value in ("agent.error", "agent.stalled")
+        )
+        lines.append("# HELP orchestrator_errors_total Total agent errors and stalls")
+        lines.append("# TYPE orchestrator_errors_total counter")
+        lines.append(f"orchestrator_errors_total {error_count}")
+
+        # --- Cache stats ---
+        cache = snap.get("cache", {})
+        lines.append("# HELP orchestrator_cache_hits_total Cache hits")
+        lines.append("# TYPE orchestrator_cache_hits_total counter")
+        lines.append(f"orchestrator_cache_hits_total {cache.get('hits', 0)}")
+        lines.append("# HELP orchestrator_cache_misses_total Cache misses")
+        lines.append("# TYPE orchestrator_cache_misses_total counter")
+        lines.append(f"orchestrator_cache_misses_total {cache.get('misses', 0)}")
+
+        # --- Task delegation (cooperation) ---
+        tasks = snap.get("tasks", [])
+        completed_tasks = sum(1 for t in tasks if t.get("status") == "completed")
+        failed_tasks = sum(1 for t in tasks if t.get("status") == "failed")
+        pending_tasks = sum(1 for t in tasks if t.get("status") == "pending")
+        lines.append("# HELP orchestrator_tasks_total Task delegation counts by status")
+        lines.append("# TYPE orchestrator_tasks_total gauge")
+        lines.append(f'orchestrator_tasks_total{{status="completed"}} {completed_tasks}')
+        lines.append(f'orchestrator_tasks_total{{status="failed"}} {failed_tasks}')
+        lines.append(f'orchestrator_tasks_total{{status="pending"}} {pending_tasks}')
+
+        from starlette.responses import Response
+
+        return Response(
+            content="\n".join(lines) + "\n",
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
     @app.get("/api/snapshot")
     async def snapshot():
         return JSONResponse(content=bus.get_snapshot())
