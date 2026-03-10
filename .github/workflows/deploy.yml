@@ -59,6 +59,8 @@ jobs:
           SSH_KEY: ~/.ssh/deploy_key
           HOST: ${{ secrets.EC2_HOST }}
           USER: ec2-user
+          AWS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
 
@@ -75,6 +77,10 @@ jobs:
             --exclude='certs/' \
             -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
             . $USER@$HOST:$APP_DIR/
+
+          # Ensure AWS credentials are in .env.prod (for aws-cost-exporter)
+          $SSH_CMD "cd $APP_DIR && grep -q '^AWS_ACCESS_KEY_ID=' .env.prod && sed -i 's|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=$AWS_KEY_ID|' .env.prod || echo 'AWS_ACCESS_KEY_ID=$AWS_KEY_ID' >> .env.prod"
+          $SSH_CMD "cd $APP_DIR && grep -q '^AWS_SECRET_ACCESS_KEY=' .env.prod && sed -i 's|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=$AWS_SECRET|' .env.prod || echo 'AWS_SECRET_ACCESS_KEY=$AWS_SECRET' >> .env.prod"
 
           # Build and restart services
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
