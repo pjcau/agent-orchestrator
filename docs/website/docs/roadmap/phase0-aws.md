@@ -55,10 +55,13 @@ Terraform modules: `terraform/modules/ec2/`, `terraform/modules/networking/`, `t
 `.github/workflows/terraform.yml` — plan on PR, apply on merge to main.
 
 **Deliverables:**
-- [ ] S3 bucket + DynamoDB created
-- [ ] `terraform apply` creates EC2, SG, EIP
-- [ ] SSH to EC2 working, Docker installed
-- [ ] GitHub Actions runs plan/apply on push
+- [x] S3 bucket + DynamoDB backend (`terraform/backend/main.tf`)
+- [x] `terraform apply` creates VPC, EC2 (t3.medium), SG, EIP (`terraform/modules/`)
+- [x] EC2 user data: Docker + Compose + Node Exporter (`modules/ec2/user_data.sh`)
+- [x] IAM role with CloudWatch, ECR pull, SSM (`modules/iam/`)
+- [x] IMDSv2 required, EBS encrypted, SSH restricted
+- [x] GitHub Actions: plan on PR, apply on merge (`terraform.yml`)
+- [x] 26 infrastructure tests (`tests/test_terraform.py`)
 
 ## Sprint 2 — Auth OAuth2 + App Deploy + Monitoring
 
@@ -189,10 +192,13 @@ The user store (`dashboard_users` + `dashboard_pending` tables) persists approve
 | Alert rules | HIGH | Cost threshold, error rate spike, agent stall detection |
 
 **Deliverables:**
-- [ ] OAuth2 GitHub working
-- [ ] Dashboard accessible only after login
-- [ ] User store (users + pending requests) in PostgreSQL
-- [ ] Admin panel for managing users and approving access requests
+- [x] OAuth2 GitHub working (fail-closed, security-hardened)
+- [x] Dashboard accessible only after login (WebSocket pre-accept auth)
+- [x] User store (users + pending requests) in PostgreSQL
+- [x] Admin panel for managing users and approving access requests
+- [x] bcrypt password hashing, CORS allowlist, SSRF protection
+- [x] Audit logging (login/logout/denied events)
+- [ ] `docker-compose.prod.yml` (nginx, redis, prometheus, grafana)
 - [ ] GitHub Actions auto-deploys on push to `main`
 - [ ] HTTPS active on custom domain
 - [ ] Grafana accessible via SSH tunnel
@@ -209,9 +215,15 @@ The user store (`dashboard_users` + `dashboard_pending` tables) persists approve
 
 ## Security Checklist
 
-- [ ] SSH open only from your fixed IP (Terraform SG)
+- [x] SSH open only from your fixed IP (Terraform SG — `ssh_allowed_cidrs`)
+- [x] `.env.prod` never in repository (GitHub Secrets only, `.gitignore`)
+- [x] JWT cookie `httponly=True`, `secure=True`, `samesite=strict`, 4h expiry
+- [x] Fail-closed auth (no default bypass, dev mode blocked in production)
+- [x] WebSocket pre-accept authentication
+- [x] CORS allowlist (no wildcard origins)
+- [x] SSRF protection (Ollama URL restricted to localhost)
+- [x] API keys header-only (no query param leaks)
+- [x] IMDSv2 required on EC2 (prevents SSRF → metadata attacks)
 - [ ] Grafana not publicly exposed (SSH tunnel only)
-- [ ] `.env.prod` never in repository (GitHub Secrets only)
-- [ ] JWT cookie `httponly=True`, `secure=True`, `samesite=lax`
 - [ ] Rate limiting on `/api/*` (max 60 req/min per user)
 - [ ] OpenRouter API key rotated every 90 days

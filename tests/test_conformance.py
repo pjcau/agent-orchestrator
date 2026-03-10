@@ -62,9 +62,7 @@ class TestConformanceReport:
 class TestCheckpointerConformance:
     def test_inmemory_passes_all(self):
         checkpointer = InMemoryCheckpointer()
-        report = asyncio.run(
-            run_checkpointer_conformance(checkpointer)
-        )
+        report = asyncio.run(run_checkpointer_conformance(checkpointer))
         assert report.all_passed, (
             f"InMemoryCheckpointer failed conformance: "
             f"{[r.name + ': ' + (r.error or '') for r in report.results if r.status == TestStatus.FAILED]}"

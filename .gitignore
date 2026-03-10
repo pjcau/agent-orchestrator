@@ -28,3 +28,14 @@ certs/
 # Dashboard user data (generated at runtime)
 dashboard-users*
 dashboard-pending*
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/terraform.tfvars
+terraform/backend/.terraform/
+terraform/backend/*.tfstate
+terraform/backend/*.tfstate.backup
+terraform/backend/.terraform.lock.hcl

@@ -21,6 +21,16 @@ Provider-agnostic AI agent orchestration framework. Abstracts the concepts of sk
 
 ```
 agent-orchestrator/
+├── terraform/
+│   ├── backend/main.tf          # S3 + DynamoDB bootstrap (one-time)
+│   ├── modules/
+│   │   ├── networking/          # VPC, subnet, IGW, security group
+│   │   ├── ec2/                 # EC2 instance, EIP, user_data.sh
+│   │   └── iam/                 # IAM role + instance profile
+│   ├── main.tf                  # Root module (composes all modules)
+│   ├── variables.tf             # Root variables
+│   ├── outputs.tf               # Root outputs
+│   └── terraform.tfvars.example # Example config (never commit .tfvars)
 ├── docker/
 │   ├── dashboard/Dockerfile     # Dashboard container (FastAPI + auth)
 │   └── docs/Dockerfile          # Docusaurus docs site
