@@ -138,14 +138,22 @@
   // --- Load Models ---
   async function loadModels() {
     try {
-      const resp = await fetch("/api/models");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const resp = await fetch("/api/models", { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!resp.ok) {
+        console.error("loadModels: HTTP", resp.status);
+        $promptModel.innerHTML = `<option value="">Error ${resp.status}</option>`;
+        return;
+      }
       const data = await resp.json();
       allModels = data;
       updateModelSelector();
       updateCompareSelectors();
-
     } catch (e) {
-      $promptModel.innerHTML = '<option value="">Failed to load</option>';
+      console.error("loadModels failed:", e);
+      $promptModel.innerHTML = '<option value="">Failed to load models</option>';
     }
   }
 

@@ -152,7 +152,7 @@ class BaseStore(ABC):
             loop = None
         if loop and loop.is_running():
             raise RuntimeError("Use aget() in async context")
-        return asyncio.get_event_loop().run_until_complete(self.aget(namespace, key))
+        return asyncio.run(self.aget(namespace, key))
 
     def put(
         self,
@@ -171,7 +171,7 @@ class BaseStore(ABC):
             loop = None
         if loop and loop.is_running():
             raise RuntimeError("Use aput() in async context")
-        asyncio.get_event_loop().run_until_complete(self.aput(namespace, key, value, ttl=ttl))
+        asyncio.run(self.aput(namespace, key, value, ttl=ttl))
 
     def delete(self, namespace: Namespace, key: str) -> None:
         """Sync wrapper for adelete."""
@@ -183,7 +183,7 @@ class BaseStore(ABC):
             loop = None
         if loop and loop.is_running():
             raise RuntimeError("Use adelete() in async context")
-        asyncio.get_event_loop().run_until_complete(self.adelete(namespace, key))
+        asyncio.run(self.adelete(namespace, key))
 
 
 # ─── InMemoryStore ────────────────────────────────────────────────────

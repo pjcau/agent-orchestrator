@@ -62,7 +62,7 @@ class TestConformanceReport:
 class TestCheckpointerConformance:
     def test_inmemory_passes_all(self):
         checkpointer = InMemoryCheckpointer()
-        report = asyncio.get_event_loop().run_until_complete(
+        report = asyncio.run(
             run_checkpointer_conformance(checkpointer)
         )
         assert report.all_passed, (

@@ -157,8 +157,8 @@ class TestCachedNode:
             call_count += 1
             return {"result": state["x"] * 2}
 
-        result1 = asyncio.get_event_loop().run_until_complete(my_node({"x": 5}))
-        result2 = asyncio.get_event_loop().run_until_complete(my_node({"x": 5}))
+        result1 = asyncio.run(my_node({"x": 5}))
+        result2 = asyncio.run(my_node({"x": 5}))
         assert result1 == {"result": 10}
         assert result2 == {"result": 10}
         assert call_count == 1  # second call was cached
@@ -173,8 +173,8 @@ class TestCachedNode:
             call_count += 1
             return {"result": state["x"]}
 
-        asyncio.get_event_loop().run_until_complete(my_node({"x": 1}))
-        asyncio.get_event_loop().run_until_complete(my_node({"x": 2}))
+        asyncio.run(my_node({"x": 1}))
+        asyncio.run(my_node({"x": 2}))
         assert call_count == 2
 
     def test_disabled_policy(self):
@@ -187,8 +187,8 @@ class TestCachedNode:
             call_count += 1
             return {"result": 1}
 
-        asyncio.get_event_loop().run_until_complete(my_node({"x": 1}))
-        asyncio.get_event_loop().run_until_complete(my_node({"x": 1}))
+        asyncio.run(my_node({"x": 1}))
+        asyncio.run(my_node({"x": 1}))
         assert call_count == 2  # no caching
 
     def test_custom_key_fn(self):
@@ -199,8 +199,8 @@ class TestCachedNode:
         async def my_node(state):
             return {"out": state["id"]}
 
-        asyncio.get_event_loop().run_until_complete(my_node({"id": "abc", "extra": 1}))
-        result = asyncio.get_event_loop().run_until_complete(my_node({"id": "abc", "extra": 999}))
+        asyncio.run(my_node({"id": "abc", "extra": 1}))
+        result = asyncio.run(my_node({"id": "abc", "extra": 999}))
         assert result == {"out": "abc"}  # cached despite different "extra"
 
     def test_none_result_not_cached(self):
@@ -213,6 +213,6 @@ class TestCachedNode:
             call_count += 1
             return None
 
-        asyncio.get_event_loop().run_until_complete(my_node({"x": 1}))
-        asyncio.get_event_loop().run_until_complete(my_node({"x": 1}))
+        asyncio.run(my_node({"x": 1}))
+        asyncio.run(my_node({"x": 1}))
         assert call_count == 2  # None results not cached
