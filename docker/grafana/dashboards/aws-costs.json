@@ -4,8 +4,8 @@
   "tags": ["aws", "costs", "billing"],
   "timezone": "browser",
   "editable": true,
-  "refresh": "1h",
-  "time": { "from": "now-30d", "to": "now" },
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
   "panels": [
     {
       "id": 1,
@@ -14,13 +14,16 @@
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
       "targets": [
         {
+          "refId": "A",
           "expr": "aws_cost_monthly_usd",
-          "legendFormat": "MTD"
+          "legendFormat": "MTD",
+          "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -33,7 +36,7 @@
       },
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "datasource": { "type": "prometheus", "uid": "prometheus" }
@@ -45,13 +48,16 @@
       "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
       "targets": [
         {
+          "refId": "A",
           "expr": "aws_cost_monthly_forecast_usd",
-          "legendFormat": "Forecast"
+          "legendFormat": "Forecast",
+          "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -76,13 +82,16 @@
       "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
       "targets": [
         {
+          "refId": "A",
           "expr": "sum(aws_cost_daily_usd)",
-          "legendFormat": "Yesterday"
+          "legendFormat": "Yesterday",
+          "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
+          "decimals": 4,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -95,7 +104,7 @@
       },
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "datasource": { "type": "prometheus", "uid": "prometheus" }
@@ -107,13 +116,16 @@
       "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
       "targets": [
         {
+          "refId": "A",
           "expr": "sum(aws_cost_daily_usd) - sum(aws_cost_yesterday_usd)",
-          "legendFormat": "Change vs day before"
+          "legendFormat": "Change vs day before",
+          "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
+          "decimals": 4,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -138,8 +150,10 @@
       "gridPos": { "h": 10, "w": 12, "x": 0, "y": 6 },
       "targets": [
         {
+          "refId": "A",
           "expr": "aws_cost_daily_usd",
-          "legendFormat": "{{service}}"
+          "legendFormat": "{{service}}",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -161,6 +175,7 @@
       "gridPos": { "h": 10, "w": 12, "x": 12, "y": 6 },
       "targets": [
         {
+          "refId": "A",
           "expr": "aws_cost_daily_usd",
           "legendFormat": "{{service}}",
           "instant": true,
@@ -190,10 +205,12 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
       "targets": [
         {
+          "refId": "A",
           "expr": "aws_cost_monthly_usd",
           "legendFormat": "Monthly Total (MTD)"
         },
         {
+          "refId": "B",
           "expr": "aws_cost_monthly_forecast_usd",
           "legendFormat": "Month Forecast"
         }
@@ -222,6 +239,7 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
       "targets": [
         {
+          "refId": "A",
           "expr": "aws_cost_daily_usd",
           "legendFormat": "{{service}}"
         }
