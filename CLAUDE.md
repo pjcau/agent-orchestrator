@@ -271,6 +271,20 @@ proposes concrete code improvements as PRs. Token-efficient: one repo, one LLM c
 
 GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_KEY` (secret, for LLM analysis), `GITHUB_TOKEN` (auto-provided).
 
+## Security Scanning (CI)
+
+Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC).
+
+| Tool | What it scans | Config |
+|------|--------------|--------|
+| **Dependabot** | Python, npm, Docker, GitHub Actions deps | `.github/dependabot.yml` |
+| **pip-audit** | Python packages for known CVEs | `security-scan.yml` |
+| **CodeQL** | Python & JS static analysis (SAST) | `security-scan.yml` |
+| **Trivy** | Docker image vulnerabilities | `security-scan.yml` |
+| **TruffleHog** | Leaked secrets in git history | `security-scan.yml` |
+
+Dependabot opens PRs automatically for outdated/vulnerable dependencies. Results appear in GitHub's Security tab.
+
 ## Container Runtime: OrbStack
 
 Docker containers (Postgres, dashboard, docs) run on **OrbStack**. Tests and linting run locally via Python venv.
