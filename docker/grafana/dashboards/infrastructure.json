@@ -1,0 +1,285 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 2,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "CPU Usage (%)",
+      "type": "gauge",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "100 - (avg(rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)", "legendFormat": "CPU" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100,
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 60 },
+            { "color": "red", "value": 85 }
+          ]}
+        }
+      }
+    },
+    {
+      "title": "Memory Usage (%)",
+      "type": "gauge",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        { "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100", "legendFormat": "Memory" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100,
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 70 },
+            { "color": "red", "value": 90 }
+          ]}
+        }
+      }
+    },
+    {
+      "title": "Disk Usage (%)",
+      "type": "gauge",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "expr": "(1 - node_filesystem_avail_bytes{mountpoint='/'} / node_filesystem_size_bytes{mountpoint='/'}) * 100", "legendFormat": "Disk" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100,
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 70 },
+            { "color": "red", "value": 85 }
+          ]}
+        }
+      }
+    },
+    {
+      "title": "CPU Usage Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        { "expr": "100 - (avg by(cpu) (rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)", "legendFormat": "CPU {{ cpu }}" },
+        { "expr": "100 - (avg(rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)", "legendFormat": "Total avg" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100,
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Memory Usage Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "legendFormat": "Used" },
+        { "expr": "node_memory_MemAvailable_bytes", "legendFormat": "Available" },
+        { "expr": "node_memory_Buffers_bytes + node_memory_Cached_bytes", "legendFormat": "Buffers+Cache" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+    {
+      "title": "System Load (1m / 5m / 15m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        { "expr": "node_load1", "legendFormat": "1 min" },
+        { "expr": "node_load5", "legendFormat": "5 min" },
+        { "expr": "node_load15", "legendFormat": "15 min" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 2, "fillOpacity": 5 }
+        }
+      }
+    },
+    {
+      "title": "Disk I/O (bytes/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        { "expr": "rate(node_disk_read_bytes_total[5m])", "legendFormat": "Read {{ device }}" },
+        { "expr": "rate(node_disk_written_bytes_total[5m])", "legendFormat": "Write {{ device }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "fillOpacity": 15 }
+        }
+      }
+    },
+    {
+      "title": "Network Traffic (bytes/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total{device!~'lo|veth.*|br.*|docker.*'}[5m])", "legendFormat": "RX {{ device }}" },
+        { "expr": "rate(node_network_transmit_bytes_total{device!~'lo|veth.*|br.*|docker.*'}[5m])", "legendFormat": "TX {{ device }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "fillOpacity": 15 }
+        }
+      }
+    },
+    {
+      "title": "Network Errors & Drops",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "targets": [
+        { "expr": "rate(node_network_receive_errs_total[5m])", "legendFormat": "RX errors {{ device }}" },
+        { "expr": "rate(node_network_transmit_errs_total[5m])", "legendFormat": "TX errors {{ device }}" },
+        { "expr": "rate(node_network_receive_drop_total[5m])", "legendFormat": "RX drops {{ device }}" },
+        { "expr": "rate(node_network_transmit_drop_total[5m])", "legendFormat": "TX drops {{ device }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 10 },
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "title": "Filesystem Usage (all mounts)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "targets": [
+        {
+          "expr": "(1 - node_filesystem_avail_bytes{fstype!~'tmpfs|overlay'} / node_filesystem_size_bytes{fstype!~'tmpfs|overlay'}) * 100",
+          "legendFormat": "{{ mountpoint }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100,
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 70 },
+            { "color": "red", "value": 85 }
+          ]}
+        }
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "Open File Descriptors",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "targets": [
+        { "expr": "node_filefd_allocated", "legendFormat": "Allocated FDs" },
+        { "expr": "node_filefd_maximum", "legendFormat": "Max FDs" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 5 }
+        }
+      }
+    },
+    {
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 39 },
+      "targets": [
+        { "expr": "time() - node_boot_time_seconds", "legendFormat": "Uptime" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "dtdurations" }
+      }
+    },
+    {
+      "title": "Total RAM",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 39 },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes", "legendFormat": "Total RAM" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "title": "CPU Cores",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 39 },
+      "targets": [
+        { "expr": "count(node_cpu_seconds_total{mode='idle'})", "legendFormat": "Cores" }
+      ],
+      "fieldConfig": { "defaults": {} }
+    },
+    {
+      "title": "Docker Containers",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 },
+      "targets": [
+        { "expr": "count(container_last_seen{name!=''})", "legendFormat": "Running containers" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "title": "Container CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 },
+      "targets": [
+        { "expr": "rate(container_cpu_usage_seconds_total{name!=''}[5m]) * 100", "legendFormat": "{{ name }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Container Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 51 },
+      "targets": [
+        { "expr": "container_memory_usage_bytes{name!=''}", "legendFormat": "{{ name }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Container Network I/O",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 51 },
+      "targets": [
+        { "expr": "rate(container_network_receive_bytes_total{name!=''}[5m])", "legendFormat": "RX {{ name }}" },
+        { "expr": "rate(container_network_transmit_bytes_total{name!=''}[5m])", "legendFormat": "TX {{ name }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["agent-orchestrator", "infrastructure", "node"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Infrastructure — EC2 & Containers",
+  "uid": "agent-orchestrator-infra"
+}
