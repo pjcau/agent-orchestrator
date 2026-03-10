@@ -63,7 +63,7 @@ module "s3" {
 module "iam" {
   source = "./modules/iam"
 
-  project             = var.project
+  project                 = var.project
   jobs_archive_bucket_arn = module.s3.bucket_arn
 }
 
