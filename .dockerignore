@@ -27,6 +27,8 @@ Thumbs.db
 # CI/IDE
 .github/
 .claude/
+!.claude/agents/
+!.claude/skills/
 .husky/
 
 # Runtime data
