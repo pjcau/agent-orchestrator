@@ -74,7 +74,7 @@ def _fetch_costs():
             for group in daily.get("ResultsByTime", [{}])[0].get("Groups", []):
                 service = group["Keys"][0]
                 amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
-                if amount > 0.001:
+                if amount > 0.0:
                     daily_costs_today[service] = amount
         except (ClientError, IndexError):
             pass
@@ -92,7 +92,7 @@ def _fetch_costs():
             for group in daily_y.get("ResultsByTime", [{}])[0].get("Groups", []):
                 service = group["Keys"][0]
                 amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
-                if amount > 0.001:
+                if amount > 0.0:
                     daily_costs_yesterday[service] = amount
         except (ClientError, IndexError):
             pass
