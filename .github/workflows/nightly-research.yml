@@ -42,6 +42,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '30' }}
         run: |
+          echo "::add-mask::$OPENROUTER_API_KEY"
           python scripts/run_research_scout.py
           if [ -f .claude/research-scout-findings.md ]; then
             echo "has_findings=true" >> "$GITHUB_OUTPUT"

@@ -9,6 +9,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+try:
+    import bcrypt
+
+    HAS_BCRYPT = True
+except ImportError:
+    HAS_BCRYPT = False
+
 
 class UserRole(str, Enum):
     ADMIN = "admin"
@@ -126,7 +133,7 @@ class UserManager:
         user = self.get_by_username(username)
         if user is None or not user.active:
             return None
-        if user._password_hash != _hash_password(password):
+        if not _verify_password(password, user._password_hash):
             return None
         return user
 
@@ -199,9 +206,28 @@ class UserManager:
 
 
 def _hash_password(password: str) -> str:
-    """Hash a password with SHA-256. Uses a fixed salt for simplicity.
+    """Hash a password using bcrypt (cost=12).
 
-    For production use, replace with bcrypt or argon2.
+    Falls back to SHA-256 with per-hash random salt only if bcrypt is not installed.
+    Install bcrypt for production: pip install bcrypt
     """
-    salted = f"agent-orchestrator:{password}"
-    return hashlib.sha256(salted.encode()).hexdigest()
+    if HAS_BCRYPT:
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+    # Fallback: SHA-256 with random salt (weaker, but better than fixed salt)
+    salt = secrets.token_hex(16)
+    hashed = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+    return f"sha256${salt}${hashed}"
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    """Verify a password against a stored hash (bcrypt or SHA-256 fallback)."""
+    if hashed.startswith("$2b$") or hashed.startswith("$2a$"):
+        if not HAS_BCRYPT:
+            return False
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    if hashed.startswith("sha256$"):
+        _, salt, expected = hashed.split("$", 2)
+        return hashlib.sha256(f"{salt}:{password}".encode()).hexdigest() == expected
+    # Legacy: fixed-salt SHA-256 (migration path)
+    legacy = hashlib.sha256(f"agent-orchestrator:{password}".encode()).hexdigest()
+    return hashed == legacy

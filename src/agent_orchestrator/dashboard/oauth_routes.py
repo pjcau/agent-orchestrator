@@ -16,6 +16,7 @@ Requires: authlib, PyJWT, itsdangerous (for Starlette sessions)
 
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import APIRouter, Request
@@ -32,6 +33,8 @@ from .user_store import (
     reject_pending,
     update_user_role,
 )
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -144,11 +147,13 @@ async def callback_github(request: Request):
         )
         response = RedirectResponse("/", status_code=302)
         response.set_cookie(
-            "auth_session", jwt_token, httponly=True, secure=True, samesite="lax", max_age=86400
+            "auth_session", jwt_token, httponly=True, secure=True, samesite="strict", max_age=14400
         )
+        logger.info("AUTH login success: %s (role=%s)", github_login, user["role"])
         return response
     except Exception as exc:
-        return JSONResponse({"error": f"GitHub auth failed: {exc}"}, status_code=400)
+        logger.warning("AUTH login failed: %s", exc)
+        return JSONResponse({"error": "GitHub authentication failed"}, status_code=400)
 
 
 @router.get("/auth/me")
@@ -175,8 +180,14 @@ async def auth_me(request: Request):
 
 
 @router.post("/auth/logout")
-async def auth_logout():
+async def auth_logout(request: Request):
     """Clear session cookie."""
+    # Log the logout
+    token = request.cookies.get("auth_session")
+    if token:
+        user = verify_session_token(token)
+        if user:
+            logger.info("AUTH logout: %s", user.get("github_login", "unknown"))
     response = RedirectResponse("/login")
     response.delete_cookie("auth_session")
     return response

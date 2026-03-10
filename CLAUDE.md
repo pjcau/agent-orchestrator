@@ -128,7 +128,7 @@ agent-orchestrator/
 - **BaseStore** — Cross-thread persistent key-value store (namespace, filter, TTL). Separate from checkpoints.
 - **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout).
 
-## Agents (23)
+## Agents (24)
 
 Agents are organised by **category** under `.claude/agents/<category>/`.
 The `team-lead` lives at root level (`.claude/agents/team-lead.md`).
@@ -137,7 +137,7 @@ The `team-lead` lives at root level (`.claude/agents/team-lead.md`).
 team-lead (sonnet) ──── orchestrator, coordinates all categories
 ```
 
-### Software Engineering (7 agents)
+### Software Engineering (8 agents)
 
 ```
 .claude/agents/software-engineering/
@@ -147,7 +147,8 @@ team-lead (sonnet) ──── orchestrator, coordinates all categories
   ├── platform-engineer (sonnet) system design, scalability, observability
   ├── ai-engineer (opus) ────── LLM integration, prompt engineering
   ├── scout (opus) ──────────── GitHub pattern discovery
-  └── research-scout (opus) ─── Analyzes starred repos, proposes code improvements
+  ├── research-scout (opus) ─── Analyzes starred repos, proposes code improvements
+  └── security-auditor (opus) ─ Vulnerability scanning, OWASP, secrets detection
 ```
 
 #### Cross-Agent Dependencies
@@ -158,6 +159,7 @@ Backend ↔ Platform:  database, caching, queues
 DevOps  ↔ All:       Docker, CI/CD, deployment
 AI-Eng  ↔ Backend:   provider implementations, LLM integration
 Scout   →  All:       discovers patterns, creates PRs for integration
+Security → All:       audits code, deps, config for vulnerabilities
 ```
 
 ### Data Science (5 agents)

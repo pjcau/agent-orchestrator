@@ -10,6 +10,7 @@ Serves:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 import uuid
@@ -31,13 +32,33 @@ from .graphs import (
     replay_node,
     run_graph,
 )
-from .auth import APIKeyMiddleware
+from .auth import APIKeyMiddleware, check_ws_auth
 from .oauth_routes import router as oauth_router
 from .user_store import setup_db as setup_user_db
 from .usage_db import UsageDB
 
+logger = logging.getLogger(__name__)
+
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+
+# Allowed Ollama URL prefixes (SSRF protection)
+_OLLAMA_ALLOWED_PREFIXES = (
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://host.docker.internal",
+    "http://ollama",  # Docker service name
+)
+
+
+def _get_ollama_url() -> str:
+    """Get and validate the Ollama base URL (SSRF-safe)."""
+    url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+    if not any(url.startswith(p) for p in _OLLAMA_ALLOWED_PREFIXES):
+        raise ValueError(
+            f"OLLAMA_BASE_URL must start with one of {_OLLAMA_ALLOWED_PREFIXES}, got: {url}"
+        )
+    return url
 
 
 def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
@@ -45,17 +66,44 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     app = FastAPI(title="Agent Orchestrator Dashboard", version="0.2.0")
 
-    # Wire API key authentication middleware
-    # Keys from DASHBOARD_API_KEYS env var (comma-separated), or empty = dev mode (no auth)
+    # CORS middleware — restrict to allowed origins
+    from starlette.middleware.cors import CORSMiddleware
+
+    allowed_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
+    if not allowed_origins:
+        # Default: only same-origin (no wildcard)
+        allowed_origins = [os.environ.get("BASE_URL", "http://localhost:5005")]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["X-API-Key", "Content-Type", "Authorization"],
+    )
+
+    # Wire API key authentication middleware (fail-closed: auth required by default)
     api_keys_raw = os.environ.get("DASHBOARD_API_KEYS", "")
     api_keys = [k.strip() for k in api_keys_raw.split(",") if k.strip()] if api_keys_raw else []
     app.add_middleware(APIKeyMiddleware, api_keys=api_keys or None)
+
+    # Store api_keys set for WebSocket auth checks
+    _ws_api_keys = set(api_keys) if api_keys else set()
 
     # Starlette session middleware (required for authlib OAuth2 state)
     try:
         from starlette.middleware.sessions import SessionMiddleware
 
-        session_secret = os.environ.get("JWT_SECRET_KEY", "dev-secret-change-me")
+        session_secret = os.environ.get("JWT_SECRET_KEY", "")
+        if not session_secret:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "JWT_SECRET_KEY not set. Sessions will use a random key (not persistent across restarts)."
+            )
+            import secrets
+
+            session_secret = secrets.token_hex(32)
         app.add_middleware(SessionMiddleware, secret_key=session_secret)
     except ImportError:
         pass  # itsdangerous not installed, sessions disabled
@@ -194,7 +242,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 status_code=400,
             )
 
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = _get_ollama_url()
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
         provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
@@ -275,7 +323,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 status_code=400,
             )
 
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = _get_ollama_url()
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
         provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
 
@@ -410,7 +458,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 }
             )
 
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = _get_ollama_url()
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
         provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
 
@@ -434,7 +482,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/models")
     async def models():
         """List all available models (Ollama local + OpenRouter cloud)."""
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = _get_ollama_url()
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
         # Fetch in parallel
@@ -487,9 +535,10 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             # Sort: free first, then by input cost
             models.sort(key=lambda x: (not x["is_free"], x["input_per_m"]))
             return JSONResponse(content={"models": models, "count": len(models)})
-        except Exception as e:
+        except Exception:
+            logger.exception("OpenRouter pricing fetch failed")
             return JSONResponse(
-                content={"error": str(e), "models": []},
+                content={"error": "Failed to fetch pricing", "models": []},
                 status_code=502,
             )
 
@@ -502,7 +551,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         if not model_name:
             return JSONResponse(content={"error": "No model name"}, status_code=400)
 
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = _get_ollama_url()
         import httpx
 
         try:
@@ -515,8 +564,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 return JSONResponse(
                     content={"success": True, "status": resp.json().get("status", "ok")}
                 )
-        except Exception as e:
-            return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("Ollama pull failed for model %s", model_name)
+            return JSONResponse(
+                content={"success": False, "error": "Failed to pull model"}, status_code=500
+            )
 
     @app.delete("/api/ollama/model")
     async def ollama_delete(body: dict):
@@ -525,7 +577,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         if not model_name:
             return JSONResponse(content={"error": "No model name"}, status_code=400)
 
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = _get_ollama_url()
         import httpx
 
         try:
@@ -536,8 +588,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 )
                 resp.raise_for_status()
                 return JSONResponse(content={"success": True})
-        except Exception as e:
-            return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("Ollama delete failed for model %s", model_name)
+            return JSONResponse(
+                content={"success": False, "error": "Failed to delete model"}, status_code=500
+            )
 
     # --- File Context ---
 
@@ -592,8 +647,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         try:
             content = target.read_text(errors="replace")
             return JSONResponse(content={"path": path, "content": content})
-        except Exception as e:
-            return JSONResponse(content={"error": str(e)}, status_code=500)
+        except Exception:
+            logger.exception("Failed to read file: %s", path)
+            return JSONResponse(content={"error": "Failed to read file"}, status_code=500)
 
     # --- Conversations (Multi-turn) ---
 
@@ -701,7 +757,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 f"Previous conversation:\n{history_context}\n\nCurrent request:\n{full_prompt}"
             )
 
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = _get_ollama_url()
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
         job_logger.touch()
@@ -791,7 +847,12 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     @app.websocket("/ws/stream")
     async def stream_endpoint(ws: WebSocket):
-        """Stream LLM responses token-by-token."""
+        """Stream LLM responses token-by-token (authenticated)."""
+        # Check auth BEFORE accepting the connection
+        ws_user = check_ws_auth(ws, _ws_api_keys)
+        if not ws_user:
+            await ws.close(code=1008, reason="Authentication required")
+            return
         await ws.accept()
         try:
             while True:
@@ -828,7 +889,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                             f"Previous conversation:\n{history}\n\nCurrent request:\n{full_prompt}"
                         )
 
-                ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+                ollama_url = _get_ollama_url()
                 openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
                 try:
@@ -953,6 +1014,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
+        # Check auth BEFORE accepting the connection
+        ws_user = check_ws_auth(ws, _ws_api_keys)
+        if not ws_user:
+            await ws.close(code=1008, reason="Authentication required")
+            return
         await ws.accept()
         queue = bus.subscribe()
         try:
