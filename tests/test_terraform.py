@@ -88,11 +88,10 @@ class TestTerraformSecurity:
         assert "spot" in content
         assert "instance_market_options" in content
 
-    def test_ssh_restricted_to_allowed_cidrs(self):
-        """SSH must not be open to 0.0.0.0/0."""
-        content = self._read("modules", "networking", "main.tf")
-        # SSH ingress uses var.ssh_allowed_cidrs, not 0.0.0.0/0
-        assert "ssh_allowed_cidrs" in content
+    def test_ssh_key_pair_protected(self):
+        """SSH access must be key-pair protected (EC2 key_name configured)."""
+        content = self._read("modules", "ec2", "main.tf")
+        assert "key_name" in content
 
     def test_state_backend_encrypted(self):
         content = self._read("main.tf")

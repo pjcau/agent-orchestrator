@@ -72,13 +72,13 @@ resource "aws_security_group" "app" {
   description = "Allow HTTP, HTTPS, SSH (restricted)"
   vpc_id      = aws_vpc.main.id
 
-  # SSH — restricted to allowed IPs only
+  # SSH — key-pair protected, open for GitHub Actions CI/CD deploy
   ingress {
-    description = "SSH from allowed IPs"
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = var.ssh_allowed_cidrs
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # HTTP
