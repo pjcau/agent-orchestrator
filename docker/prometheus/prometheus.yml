@@ -31,9 +31,9 @@ scrape_configs:
         labels:
           service: "containers"
 
-  # AWS Cost Explorer (hourly refresh)
+  # AWS Cost Explorer (data refreshes hourly, scrape every 30s)
   - job_name: "aws-costs"
-    scrape_interval: 5m
+    scrape_interval: 30s
     static_configs:
       - targets: ["aws-cost-exporter:9101"]
         labels:
