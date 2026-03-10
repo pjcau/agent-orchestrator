@@ -19,6 +19,16 @@ groups:
               expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
               instant: false
               refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
           - refId: C
             relativeTimeRange:
               from: 0
@@ -27,7 +37,7 @@ groups:
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -51,6 +61,16 @@ groups:
               expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100
               instant: false
               refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
           - refId: C
             relativeTimeRange:
               from: 0
@@ -59,7 +79,7 @@ groups:
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -83,6 +103,16 @@ groups:
               expr: (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100
               instant: false
               refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
           - refId: C
             relativeTimeRange:
               from: 0
@@ -91,7 +121,7 @@ groups:
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -120,6 +150,16 @@ groups:
               expr: aws_cost_monthly_forecast_usd
               instant: true
               refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
           - refId: C
             relativeTimeRange:
               from: 0
@@ -128,7 +168,7 @@ groups:
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -157,6 +197,16 @@ groups:
               expr: up{job="dashboard"}
               instant: true
               refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
           - refId: C
             relativeTimeRange:
               from: 0
@@ -165,7 +215,7 @@ groups:
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: lt
