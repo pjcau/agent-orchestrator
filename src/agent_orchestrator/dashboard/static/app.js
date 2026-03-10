@@ -109,11 +109,16 @@
   const $btnCloseHistory = $("btn-close-history");
 
   // --- Event WebSocket ---
+  let wsReconnectTimer = null;
   function connect() {
+    // Close previous connection to avoid zombie sockets eating browser connection slots
+    if (ws && ws.readyState <= WebSocket.OPEN) { ws.onclose = null; ws.close(); }
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${proto}//${location.host}/ws`);
     ws.onopen = () => { $wsIndicator.className = "ws-dot connected"; };
-    ws.onclose = () => { $wsIndicator.className = "ws-dot disconnected"; setTimeout(connect, 2000); };
+    ws.onclose = () => { $wsIndicator.className = "ws-dot disconnected"; wsReconnectTimer = setTimeout(connect, 2000); };
     ws.onerror = () => ws.close();
     ws.onmessage = (msg) => {
       const payload = JSON.parse(msg.data);
@@ -128,12 +133,24 @@
   }
 
   // --- Streaming WebSocket ---
+  let streamReconnectTimer = null;
   function connectStream() {
+    if (streamWs && streamWs.readyState <= WebSocket.OPEN) { streamWs.onclose = null; streamWs.close(); }
+    if (streamReconnectTimer) { clearTimeout(streamReconnectTimer); streamReconnectTimer = null; }
+
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     streamWs = new WebSocket(`${proto}//${location.host}/ws/stream`);
-    streamWs.onclose = () => setTimeout(connectStream, 3000);
+    streamWs.onclose = () => { streamReconnectTimer = setTimeout(connectStream, 3000); };
     streamWs.onerror = () => streamWs.close();
   }
+
+  // Clean up on page unload to free browser connection slots immediately
+  window.addEventListener("beforeunload", () => {
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    if (streamReconnectTimer) clearTimeout(streamReconnectTimer);
+    if (ws) { ws.onclose = null; ws.close(); }
+    if (streamWs) { streamWs.onclose = null; streamWs.close(); }
+  });
 
   // --- Load Models ---
   async function loadModels() {

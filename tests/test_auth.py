@@ -154,6 +154,33 @@ class TestAPIKeyMiddleware:
         assert not middleware._dev_mode
 
     @pytest.mark.asyncio
+    async def test_options_preflight_always_passes(self, monkeypatch):
+        """OPTIONS requests (CORS preflight) must always pass through auth."""
+        monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "test-id")
+
+        from starlette.testclient import TestClient
+        from starlette.applications import Starlette
+        from starlette.responses import JSONResponse as StarletteJSONResponse
+        from starlette.routing import Route
+
+        async def endpoint(request):
+            return StarletteJSONResponse({"ok": True})
+
+        starlette_app = Starlette(
+            routes=[Route("/api/prompt", endpoint, methods=["GET", "OPTIONS"])]
+        )
+        starlette_app.add_middleware(APIKeyMiddleware, api_keys=["secret"])
+
+        client = TestClient(starlette_app)
+        # OPTIONS should pass through auth (not get 401)
+        resp = client.options("/api/prompt")
+        assert resp.status_code == 200
+        # GET without API key should be blocked
+        resp = client.get("/api/prompt")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
     async def test_exempt_paths_no_websocket(self):
         """WebSocket paths should NOT be exempt (they check auth themselves)."""
         assert not any("/ws".startswith(p) for p in APIKeyMiddleware.EXEMPT_PREFIXES if p != "/ws")

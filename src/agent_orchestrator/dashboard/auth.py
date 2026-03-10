@@ -164,6 +164,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             )
 
     async def dispatch(self, request: Request, call_next):
+        # CORS preflight — always pass through (handled by CORSMiddleware)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Dev mode must be explicitly opted in
         if self._dev_mode:
             return await call_next(request)

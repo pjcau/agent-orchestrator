@@ -66,27 +66,30 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     app = FastAPI(title="Agent Orchestrator Dashboard", version="0.2.0")
 
-    # CORS middleware — restrict to allowed origins
+    # Middleware order: Starlette runs LAST-added FIRST.
+    # We want: Request → CORS → Auth → Route handler
+    # So register Auth FIRST, then CORS (CORS wraps Auth).
+
+    # 1) Auth middleware (innermost — runs after CORS)
+    api_keys_raw = os.environ.get("DASHBOARD_API_KEYS", "")
+    api_keys = [k.strip() for k in api_keys_raw.split(",") if k.strip()] if api_keys_raw else []
+    app.add_middleware(APIKeyMiddleware, api_keys=api_keys or None)
+
+    # 2) CORS middleware (outermost — runs first, handles OPTIONS preflight)
     from starlette.middleware.cors import CORSMiddleware
 
     allowed_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
     allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
     if not allowed_origins:
-        # Default: HTTPS only (always-HTTPS policy)
         base = os.environ.get("BASE_URL", "https://localhost:5005")
         allowed_origins = [base]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["X-API-Key", "Content-Type", "Authorization"],
     )
-
-    # Wire API key authentication middleware (fail-closed: auth required by default)
-    api_keys_raw = os.environ.get("DASHBOARD_API_KEYS", "")
-    api_keys = [k.strip() for k in api_keys_raw.split(",") if k.strip()] if api_keys_raw else []
-    app.add_middleware(APIKeyMiddleware, api_keys=api_keys or None)
 
     # Store api_keys set for WebSocket auth checks
     _ws_api_keys = set(api_keys) if api_keys else set()
