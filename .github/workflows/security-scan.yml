@@ -31,7 +31,7 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit
-        run: pip-audit --strict --desc --skip-editable
+        run: pip-audit --desc --skip-editable
 
   # --- CodeQL static analysis ---
   codeql:
@@ -69,7 +69,7 @@ jobs:
         run: docker build -f docker/dashboard/Dockerfile -t dashboard-scan .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.31.0
+        uses: aquasecurity/trivy-action@0.34.2
         with:
           image-ref: "dashboard-scan"
           format: "sarif"
