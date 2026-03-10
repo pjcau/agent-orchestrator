@@ -42,6 +42,7 @@ agent-orchestrator/
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
+│   ├── deployment.md            # Production deployment guide (EC2, SSL, CI/CD)
 │   ├── infrastructure.md        # Cloud vs on-prem decision framework
 │   ├── migration-from-claude.md # How to abstract away from Claude Code
 │   └── security.md             # Auth, RBAC, secrets, network, AWS checklist

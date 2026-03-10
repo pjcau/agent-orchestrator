@@ -122,6 +122,10 @@ class TestNginxConfig:
         assert "limit_req_zone" in content
         assert "limit_req zone" in content
 
+    def test_monitoring_domain(self):
+        content = self._read()
+        assert "monitoring.agents-orchestrator.com" in content
+
 
 class TestPrometheusConfig:
     """Verify Prometheus configuration."""
