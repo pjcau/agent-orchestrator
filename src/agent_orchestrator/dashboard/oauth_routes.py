@@ -28,7 +28,6 @@ from .user_store import (
     approve_user,
     async_get_or_create_user,
     deactivate_user,
-    get_or_create_user,
     list_pending,
     list_users,
     reject_pending,
