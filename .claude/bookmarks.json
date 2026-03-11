@@ -106,5 +106,35 @@
     "added": "2026-03-08T15:16:18Z",
     "source": "github-star",
     "notes": "📚 A curated list of awesome articles, videos, and other resources to learn and practice software architecture, patterns, and principles. | Language: C# | Topics: architectural-patterns, architectural-styles, architecture, awesome-list, clean-architecture"
+  },
+  {
+    "url": "https://github.com/jundot/omlx",
+    "added": "2026-03-10T22:27:11Z",
+    "source": "github-star",
+    "notes": "LLM inference server with continuous batching & SSD caching for Apple Silicon — managed from the macOS menu bar | Language: Python | Topics: apple-silicon, inference-server, llm, macos, mlx"
+  },
+  {
+    "url": "https://github.com/Circuit-Digest/ESP-Drone",
+    "added": "2026-03-10T12:15:23Z",
+    "source": "github-star",
+    "notes": " | Language: C"
+  },
+  {
+    "url": "https://github.com/CodeGraphContext/CodeGraphContext",
+    "added": "2026-03-10T10:13:59Z",
+    "source": "github-star",
+    "notes": "An MCP server plus a CLI tool that indexes local code into a graph database to provide context to AI assistants. | Language: Python | Topics: hacktoberfest2025, social-winter-of-code"
+  },
+  {
+    "url": "https://github.com/zjunlp/SkillNet",
+    "added": "2026-03-10T09:31:22Z",
+    "source": "github-star",
+    "notes": "Create, Evaluate, and Connect AI Skills | Language: Python | Topics: ai-agents, ai-skills, artificial-intelligence, knowledge-graph, large-language-models"
+  },
+  {
+    "url": "https://github.com/twwch/JadeAI",
+    "added": "2026-03-09T21:38:22Z",
+    "source": "github-star",
+    "notes": "AI-Powered Smart Resume Builder — 50+ professional templates, PDF/image parsing, AI optimization, JD match analysis, multi-format export. Open source & free, one-click Docker deployment. | Language: TypeScript | Topics: ai, ai-writing, awesome-ai-tools, awesome-cv, awesome-resumes"
   }
 ]
