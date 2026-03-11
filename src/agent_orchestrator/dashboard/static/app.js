@@ -725,6 +725,13 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task: text, model, provider }),
       });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!resp.ok || !contentType.includes("application/json")) {
+        const errText = await resp.text();
+        throw new Error(resp.status === 502 || resp.status === 504
+          ? `Gateway timeout (${resp.status}) — the team run took too long. Try a simpler task or fewer agents.`
+          : `Server error ${resp.status}: ${errText.slice(0, 200)}`);
+      }
       const data = await resp.json();
 
       // Show fallback log if any
@@ -787,6 +794,13 @@
           agent: "team-lead", task: text, model, provider,
         }),
       });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!resp.ok || !contentType.includes("application/json")) {
+        const errText = await resp.text();
+        throw new Error(resp.status === 502 || resp.status === 504
+          ? `Gateway timeout (${resp.status}) — the agent run took too long.`
+          : `Server error ${resp.status}: ${errText.slice(0, 200)}`);
+      }
       const data = await resp.json();
 
       if (data.success) {

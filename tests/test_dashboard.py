@@ -1007,6 +1007,12 @@ class TestDashboardStaticUI:
         assert "/api/usage" in self.js
         assert "cumulativeUsage" in self.js
 
+    def test_js_handles_non_json_responses(self):
+        """Team/agent run endpoints handle non-JSON (e.g. nginx 502) gracefully."""
+        assert "content-type" in self.js
+        assert "application/json" in self.js
+        assert "Gateway timeout" in self.js
+
 
 class TestUsageDB:
     """Tests for the UsageDB in-memory accumulator (no DB required)."""
