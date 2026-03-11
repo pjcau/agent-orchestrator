@@ -1,0 +1,60 @@
+name: EC2 Dashboard Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      tail_lines:
+        description: 'Number of log lines to fetch'
+        required: false
+        default: '200'
+      service:
+        description: 'Service to check (dashboard, nginx, postgres, all)'
+        required: false
+        default: 'dashboard'
+
+permissions:
+  contents: read
+
+env:
+  APP_DIR: /opt/agent-orchestrator
+
+jobs:
+  logs:
+    name: Fetch EC2 Logs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Fetch container logs
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ec2-user
+          LINES: ${{ github.event.inputs.tail_lines }}
+          SERVICE: ${{ github.event.inputs.service }}
+        run: |
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
+
+          echo "## Container status"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml ps"
+
+          echo ""
+          echo "## Logs: $SERVICE (last $LINES lines)"
+          if [ "$SERVICE" = "all" ]; then
+            $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml logs --tail $LINES"
+          else
+            $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml logs $SERVICE --tail $LINES"
+          fi
+
+          echo ""
+          echo "## Recent job logs"
+          $SSH_CMD "ls -lt $APP_DIR/jobs/ 2>/dev/null | head -10" || echo "No job logs found"
+
+          echo ""
+          echo "## Disk usage"
+          $SSH_CMD "df -h / && echo '' && du -sh $APP_DIR/jobs/ 2>/dev/null" || true
