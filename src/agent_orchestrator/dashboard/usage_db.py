@@ -59,6 +59,27 @@ class UsageDB:
                 await conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_usage_model ON usage_stats (model)
                 """)
+                # Agent error tracking table
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS agent_errors (
+                        id SERIAL PRIMARY KEY,
+                        ts DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+                        session_id TEXT NOT NULL DEFAULT '',
+                        agent TEXT NOT NULL DEFAULT '',
+                        tool_name TEXT NOT NULL DEFAULT '',
+                        error_type TEXT NOT NULL DEFAULT '',
+                        error_message TEXT NOT NULL DEFAULT '',
+                        step_number INTEGER NOT NULL DEFAULT 0,
+                        model TEXT NOT NULL DEFAULT '',
+                        provider TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_errors_ts ON agent_errors (ts)
+                """)
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_errors_agent ON agent_errors (agent)
+                """)
                 # Conversation persistence table
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS conversations (
@@ -229,6 +250,81 @@ class UsageDB:
             "per_agent": self.get_per_agent(),
             "db_connected": self._available,
         }
+
+    # --- Error tracking ---
+
+    async def record_error(
+        self,
+        *,
+        session_id: str = "",
+        agent: str = "",
+        tool_name: str = "",
+        error_type: str = "",
+        error_message: str = "",
+        step_number: int = 0,
+        model: str = "",
+        provider: str = "",
+    ) -> None:
+        """Record an agent/tool error for tracking and analysis."""
+        if not self._available or not self._pool:
+            return
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO agent_errors
+                       (ts, session_id, agent, tool_name, error_type, error_message,
+                        step_number, model, provider)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+                    time.time(),
+                    session_id,
+                    agent,
+                    tool_name,
+                    error_type,
+                    error_message[:2000],
+                    step_number,
+                    model,
+                    provider,
+                )
+        except Exception:
+            pass
+
+    async def get_recent_errors(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent errors for the dashboard."""
+        if not self._available or not self._pool:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT id, ts, session_id, agent, tool_name, error_type,
+                              error_message, step_number, model, provider
+                       FROM agent_errors ORDER BY id DESC LIMIT $1""",
+                    limit,
+                )
+                return [dict(r) for r in rows]
+        except Exception:
+            return []
+
+    async def get_error_summary(self) -> dict[str, Any]:
+        """Return error counts grouped by agent and error_type."""
+        if not self._available or not self._pool:
+            return {}
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT agent, error_type, COUNT(*) AS count
+                    FROM agent_errors
+                    GROUP BY agent, error_type
+                    ORDER BY count DESC
+                """)
+                return {
+                    "by_agent": [
+                        {"agent": r["agent"], "error_type": r["error_type"], "count": r["count"]}
+                        for r in rows
+                    ],
+                    "total": sum(r["count"] for r in rows),
+                }
+        except Exception:
+            return {}
 
     # --- Conversation persistence ---
 

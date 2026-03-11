@@ -197,6 +197,13 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         """Return cumulative usage stats (tokens, cost, per-model, per-agent)."""
         return JSONResponse(content=usage_db.get_summary())
 
+    @app.get("/api/errors")
+    async def agent_errors():
+        """Return recent agent errors and error summary."""
+        recent = await usage_db.get_recent_errors(limit=100)
+        summary = await usage_db.get_error_summary()
+        return JSONResponse(content={"recent": recent, "summary": summary})
+
     @app.get("/metrics")
     async def prometheus_metrics():
         """Expose metrics in Prometheus text exposition format."""
@@ -385,6 +392,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 max_steps=max_steps,
                 event_bus=bus,
                 working_directory=str(job_logger.session_dir),
+                usage_db=usage_db,
+                session_id=job_logger.session_id,
             )
             job_logger.log(
                 "agent_run",
@@ -453,6 +462,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 provider=provider,
                 event_bus=bus,
                 working_directory=str(job_logger.session_dir),
+                usage_db=usage_db,
+                session_id=job_logger.session_id,
             )
             job_logger.log(
                 "team_run",

@@ -109,7 +109,7 @@ agent-orchestrator/
 │       │   ├── user_store.py    # User store (PostgreSQL + JSON fallback)
 │       │   ├── events.py        # EventBus, Event types
 │       │   ├── instrument.py    # Monkey-patches core classes to emit events
-│       │   ├── usage_db.py      # Persistent usage stats (PostgreSQL + in-memory)
+│       │   ├── usage_db.py      # Persistent usage stats + agent error tracking (PostgreSQL + in-memory)
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
 │       │   └── static/          # HTML/CSS/JS dashboard UI
 │       └── skills/
@@ -150,6 +150,16 @@ agent-orchestrator/
 - **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
 - **BaseStore** — Cross-thread persistent key-value store (namespace, filter, TTL). Separate from checkpoints.
 - **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout).
+
+## Agent Error Tracking
+
+Tool and LLM errors from sub-agents are persisted to PostgreSQL (`agent_errors` table) for analysis.
+
+- **Storage**: `usage_db.record_error()` — persists session, agent, tool, error type/message, step, model, provider
+- **Classification**: Errors auto-classified as `command_not_found`, `exit_code_error`, `timeout`, `not_allowed`, or generic `tool_error`
+- **Hooks**: `agent_runner._instrumented_execute()` logs errors when `result.success == False`
+- **API**: `GET /api/errors` — returns recent errors (last 100) and summary grouped by agent/error_type
+- **Graceful**: Falls back silently if DB unavailable (no crash, in-memory only)
 
 ## Agents (24)
 

@@ -49,6 +49,8 @@ async def run_agent(
     max_steps: int = 10,
     event_bus: EventBus | None = None,
     working_directory: str | None = None,
+    usage_db: Any | None = None,
+    session_id: str = "",
 ) -> dict[str, Any]:
     """Run an agent on a task with real-time event emissions.
 
@@ -112,6 +114,8 @@ async def run_agent(
         skill_registry=skill_registry,
         task=Task(description=task_description),
         event_bus=bus,
+        usage_db=usage_db,
+        session_id=session_id,
     )
     elapsed = time.time() - start_time
 
@@ -181,6 +185,8 @@ async def _instrumented_execute(
     skill_registry: SkillRegistry,
     task: Task,
     event_bus: EventBus,
+    usage_db: Any | None = None,
+    session_id: str = "",
 ) -> TaskResult:
     """Execute agent loop with real-time event emissions for each step."""
     messages: list[Message] = [
@@ -350,6 +356,29 @@ async def _instrumented_execute(
                 )
             )
 
+            # Persist tool errors to DB for tracking
+            if not result.success and usage_db is not None:
+                error_msg = getattr(result, "error", "") or str(result)[:500]
+                error_type = "tool_error"
+                if "command not found" in error_msg.lower():
+                    error_type = "command_not_found"
+                elif "exit code" in error_msg.lower():
+                    error_type = "exit_code_error"
+                elif "timed out" in error_msg.lower():
+                    error_type = "timeout"
+                elif "not allowed" in error_msg.lower():
+                    error_type = "not_allowed"
+                await usage_db.record_error(
+                    session_id=session_id,
+                    agent=config.name,
+                    tool_name=tool_call.name,
+                    error_type=error_type,
+                    error_message=error_msg,
+                    step_number=steps,
+                    model=getattr(provider, "model_id", ""),
+                    provider=type(provider).__name__,
+                )
+
             messages.append(
                 Message(
                     role=Role.TOOL,
@@ -459,6 +488,8 @@ async def run_team(
     working_directory: str | None = None,
     max_steps: int = 15,
     max_sub_agents: int = 5,
+    usage_db: Any | None = None,
+    session_id: str = "",
 ) -> dict[str, Any]:
     """Run a multi-agent team with dynamic routing.
 
@@ -603,6 +634,8 @@ async def run_team(
                 max_steps=max_steps,
                 event_bus=bus,
                 working_directory=working_directory,
+                usage_db=usage_db,
+                session_id=session_id,
             )
 
         await bus.emit(

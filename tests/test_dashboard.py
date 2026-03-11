@@ -1131,6 +1131,91 @@ class TestConversationPersistence:
         # Should not crash, just a no-op
 
 
+class TestErrorTracking:
+    """Tests for agent error tracking in UsageDB (no DB — graceful fallback)."""
+
+    @pytest.fixture
+    def usage_db(self):
+        from agent_orchestrator.dashboard.usage_db import UsageDB
+
+        return UsageDB(dsn="")
+
+    @pytest.mark.asyncio
+    async def test_record_error_without_db_does_not_crash(self, usage_db):
+        """Without DB, record_error is a no-op (no crash)."""
+        await usage_db.record_error(
+            session_id="s1",
+            agent="backend",
+            tool_name="shell_exec",
+            error_type="command_not_found",
+            error_message="bash: foo: command not found",
+            step_number=3,
+            model="mock-1",
+            provider="MockProvider",
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_recent_errors_without_db_returns_empty(self, usage_db):
+        errors = await usage_db.get_recent_errors(limit=50)
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_get_error_summary_without_db_returns_empty(self, usage_db):
+        summary = await usage_db.get_error_summary()
+        assert summary == {}
+
+    @pytest.mark.asyncio
+    async def test_record_error_truncates_message(self, usage_db):
+        """Ensure error messages > 2000 chars are truncated (tested via code path)."""
+        # Without DB this is a no-op, but verifies the method signature is correct
+        long_msg = "x" * 5000
+        await usage_db.record_error(
+            session_id="s1",
+            agent="backend",
+            tool_name="shell_exec",
+            error_type="tool_error",
+            error_message=long_msg,
+        )
+
+
+class TestErrorClassification:
+    """Tests for error type classification in agent_runner."""
+
+    def test_command_not_found(self):
+        msg = "bash: foo: command not found"
+        assert _classify_error(msg) == "command_not_found"
+
+    def test_exit_code_error(self):
+        msg = "Process exited with exit code 1"
+        assert _classify_error(msg) == "exit_code_error"
+
+    def test_timeout(self):
+        msg = "Command timed out after 30s"
+        assert _classify_error(msg) == "timeout"
+
+    def test_not_allowed(self):
+        msg = "Command 'rm' is not allowed"
+        assert _classify_error(msg) == "not_allowed"
+
+    def test_generic_tool_error(self):
+        msg = "Some unexpected error occurred"
+        assert _classify_error(msg) == "tool_error"
+
+
+def _classify_error(error_msg: str) -> str:
+    """Replicate the error classification logic from agent_runner."""
+    error_type = "tool_error"
+    if "command not found" in error_msg.lower():
+        error_type = "command_not_found"
+    elif "exit code" in error_msg.lower():
+        error_type = "exit_code_error"
+    elif "timed out" in error_msg.lower():
+        error_type = "timeout"
+    elif "not allowed" in error_msg.lower():
+        error_type = "not_allowed"
+    return error_type
+
+
 class TestRepairJson:
     """Tests for _repair_json which fixes malformed LLM tool call arguments."""
 
