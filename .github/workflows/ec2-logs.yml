@@ -11,6 +11,10 @@ on:
         description: 'Service to check (dashboard, nginx, postgres, all)'
         required: false
         default: 'dashboard'
+      command:
+        description: 'Custom SSH command to run (optional, overrides service logs)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -31,6 +35,7 @@ jobs:
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Fetch container logs
+        if: ${{ github.event.inputs.command == '' }}
         env:
           SSH_KEY: ~/.ssh/deploy_key
           HOST: ${{ secrets.EC2_HOST }}
@@ -41,7 +46,7 @@ jobs:
           SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
 
           echo "## Container status"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml ps"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod ps"
 
           echo ""
           echo "## Logs: $SERVICE (last $LINES lines)"
@@ -58,3 +63,14 @@ jobs:
           echo ""
           echo "## Disk usage"
           $SSH_CMD "df -h / && echo '' && du -sh $APP_DIR/jobs/ 2>/dev/null" || true
+
+      - name: Run custom command
+        if: ${{ github.event.inputs.command != '' }}
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ec2-user
+          CMD: ${{ github.event.inputs.command }}
+        run: |
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
+          $SSH_CMD "$CMD"

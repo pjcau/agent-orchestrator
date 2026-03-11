@@ -241,7 +241,7 @@ class OpenRouterProvider(OpenAIProvider):
         effective_max_tokens = max_tokens
         self.last_fallback_log = []
 
-        logger.warning(
+        logger.debug(
             "Fallback chain: trying %d models starting with %r",
             len(models_to_try),
             models_to_try[0],
@@ -249,7 +249,7 @@ class OpenRouterProvider(OpenAIProvider):
         for i, model in enumerate(models_to_try):
             original_model = self._model
             self._model = model
-            logger.warning(
+            logger.debug(
                 "Trying model %d/%d: %r (max_tokens=%d)",
                 i + 1,
                 len(models_to_try),
