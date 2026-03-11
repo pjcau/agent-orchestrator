@@ -1222,6 +1222,35 @@ def _classify_error(error_msg: str) -> str:
     return error_type
 
 
+class TestDynamicMaxTokens:
+    """Tests for dynamic max_output_tokens from provider capabilities."""
+
+    def test_openrouter_models_have_max_output(self):
+        """Every OpenRouter model must define max_output."""
+        from agent_orchestrator.providers.openrouter import OpenRouterProvider
+
+        for model_id, info in OpenRouterProvider.MODELS.items():
+            assert "max_output" in info, f"{model_id} missing max_output"
+            assert info["max_output"] >= 4096, f"{model_id} max_output too low"
+
+    def test_capabilities_exposes_max_output_tokens(self):
+        """Provider.capabilities.max_output_tokens reflects per-model value."""
+        from agent_orchestrator.providers.openrouter import OpenRouterProvider
+
+        p = OpenRouterProvider(model="qwen/qwen3.5-flash-02-23")
+        assert p.capabilities.max_output_tokens == 32_768
+
+        p2 = OpenRouterProvider(model="qwen/qwen3-4b:free")
+        assert p2.capabilities.max_output_tokens == 4_096
+
+    def test_model_capabilities_default(self):
+        """ModelCapabilities.max_output_tokens has a sensible default."""
+        from agent_orchestrator.core.provider import ModelCapabilities
+
+        cap = ModelCapabilities(max_context=8192)
+        assert cap.max_output_tokens == 4096
+
+
 class TestRepairJson:
     """Tests for _repair_json which fixes malformed LLM tool call arguments."""
 

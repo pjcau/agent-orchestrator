@@ -45,6 +45,7 @@ class ModelCapabilities:
     supports_streaming: bool = True
     coding_quality: float = 0.0  # 0-1 relative score
     reasoning_quality: float = 0.0  # 0-1 relative score
+    max_output_tokens: int = 4096  # dynamic per-model output limit
 
 
 @dataclass

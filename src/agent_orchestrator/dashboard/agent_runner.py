@@ -239,11 +239,36 @@ async def _instrumented_execute(
             )
         )
 
+        # Dynamic max_tokens from provider capabilities
+        cap = provider.capabilities
+        current_max_tokens = cap.max_output_tokens
+
         completion = await provider.complete(
             messages=messages,
             tools=tool_defs if tool_defs else None,
             system=config.role,
+            max_tokens=current_max_tokens,
         )
+
+        # Auto-retry with higher max_tokens if response was truncated
+        if completion.stop_reason == "length" and not completion.tool_calls:
+            for _retry in range(2):
+                new_max = min(current_max_tokens * 2, cap.max_context // 2)
+                if new_max <= current_max_tokens:
+                    break
+                current_max_tokens = new_max
+                step_log.append(f"truncated, retrying with max_tokens={current_max_tokens}")
+                try:
+                    completion = await provider.complete(
+                        messages=messages,
+                        tools=tool_defs if tool_defs else None,
+                        system=config.role,
+                        max_tokens=current_max_tokens,
+                    )
+                except Exception:
+                    break  # credits/rate limit — use what we have
+                if completion.stop_reason != "length":
+                    break
 
         # Collect fallback info from OpenRouter provider
         if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:

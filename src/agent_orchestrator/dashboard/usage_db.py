@@ -37,7 +37,12 @@ class UsageDB:
         try:
             import asyncpg
 
-            self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=3)
+            self._pool = await asyncpg.create_pool(
+                self._dsn,
+                min_size=1,
+                max_size=3,
+                command_timeout=10,
+            )
             async with self._pool.acquire() as conn:
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS usage_stats (
