@@ -86,11 +86,10 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "research-scout: improvement proposal from $(date +%Y-%m-%d)"
           git push -u origin "$BRANCH"
-          BODY=$(cat .claude/research-scout-findings.md)
           gh label create "research-scout" --description "Automated research scout improvements" --color "0E8A16" 2>/dev/null || true
           gh pr create \
             --title "research-scout: improvement proposal $(date +%Y-%m-%d)" \
-            --body "$BODY" \
+            --body-file .claude/research-scout-findings.md \
             --label "research-scout"
 
       - name: Update state on main (no findings)

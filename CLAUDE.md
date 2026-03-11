@@ -289,7 +289,7 @@ proposes concrete code improvements as PRs. Token-efficient: one repo, one LLM c
 - **Findings file**: `.claude/research-scout-findings.md` (generated when improvements found)
 - **GitHub Action**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC)
 - **Scripts**: `scripts/fetch_github_stars.py`, `scripts/run_research_scout.py`
-- **PR creation**: Handled by the CI workflow (`nightly-research.yml`). When findings exist, the workflow creates a branch `research-scout/YYYY-MM-DD-HHMM`, commits findings, pushes, and opens a PR.
+- **PR creation**: Automatic on both local and CI. The script creates a branch `research-scout/YYYY-MM-DD-HHMM`, commits findings, pushes, and opens a PR. On CI, the workflow step handles this instead.
 
 GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_KEY` (secret, for LLM analysis), `GITHUB_TOKEN` (auto-provided).
 
