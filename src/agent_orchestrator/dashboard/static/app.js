@@ -1962,6 +1962,152 @@
     }
   }
 
+  // --- Explorer ---
+  const $btnExplorer = $("btn-explorer");
+  const $explorerModal = $("explorer-modal");
+  const $explorerSessions = $("explorer-sessions");
+  const $explorerFiles = $("explorer-files");
+  const $explorerPreview = $("explorer-preview");
+  const $btnCloseExplorer = $("btn-close-explorer");
+  const $btnExplorerDownload = $("btn-explorer-download");
+  let explorerCurrentSession = null;
+
+  if ($btnExplorer) $btnExplorer.addEventListener("click", openExplorer);
+  if ($btnCloseExplorer) $btnCloseExplorer.addEventListener("click", () => $explorerModal.classList.add("hidden"));
+  if ($explorerModal) $explorerModal.addEventListener("click", (e) => { if (e.target === $explorerModal) $explorerModal.classList.add("hidden"); });
+  if ($btnExplorerDownload) $btnExplorerDownload.addEventListener("click", () => {
+    if (explorerCurrentSession) {
+      const a = document.createElement("a");
+      a.href = `/api/jobs/${encodeURIComponent(explorerCurrentSession)}/download`;
+      a.download = `session_${explorerCurrentSession}.zip`;
+      a.click();
+    }
+  });
+
+  async function openExplorer() {
+    $explorerModal.classList.remove("hidden");
+    $explorerSessions.innerHTML = '<div class="empty-state">Loading...</div>';
+    $explorerFiles.innerHTML = '<div class="empty-state">Select a session</div>';
+    $explorerPreview.innerHTML = '<div class="empty-state">Select a file</div>';
+    $btnExplorerDownload.disabled = true;
+    explorerCurrentSession = null;
+    try {
+      const resp = await fetch("/api/jobs/list");
+      const data = await resp.json();
+      renderExplorerSessions(data.sessions || []);
+    } catch (e) {
+      $explorerSessions.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderExplorerSessions(sessions) {
+    if (!sessions.length) {
+      $explorerSessions.innerHTML = '<div class="empty-state">No sessions</div>';
+      return;
+    }
+    $explorerSessions.innerHTML = sessions.map((s) => {
+      const label = s.first_prompt || "(no prompt)";
+      const ts = s.session_id.replace(/_/g, " ").slice(0, 15);
+      return `<div class="explorer-session-item" data-sid="${esc(s.session_id)}">
+        <div class="explorer-session-prompt">${esc(label)}</div>
+        <div class="explorer-session-meta">${esc(ts)} &middot; ${s.records} rec &middot; ${s.files} files</div>
+      </div>`;
+    }).join("");
+    $explorerSessions.querySelectorAll(".explorer-session-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        $explorerSessions.querySelectorAll(".explorer-session-item").forEach((x) => x.classList.remove("active"));
+        el.classList.add("active");
+        loadExplorerFiles(el.dataset.sid);
+      });
+    });
+  }
+
+  async function loadExplorerFiles(sessionId) {
+    explorerCurrentSession = sessionId;
+    $btnExplorerDownload.disabled = false;
+    $explorerFiles.innerHTML = '<div class="empty-state">Loading...</div>';
+    $explorerPreview.innerHTML = '<div class="empty-state">Select a file</div>';
+    try {
+      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/files`);
+      const data = await resp.json();
+      renderExplorerFiles(sessionId, data.files || []);
+    } catch (e) {
+      $explorerFiles.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function fileIcon(name) {
+    const ext = name.split(".").pop().toLowerCase();
+    const icons = { json: "\ud83d\udccb", py: "\ud83d\udc0d", js: "\ud83d\udfe8", md: "\ud83d\udcd6", txt: "\ud83d\udcc4", html: "\ud83c\udf10", css: "\ud83c\udfa8", yml: "\u2699\ufe0f", yaml: "\u2699\ufe0f", sh: "\ud83d\udcdf", log: "\ud83d\udcc3" };
+    return icons[ext] || "\ud83d\udcc4";
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function detectLanguage(name) {
+    const ext = name.split(".").pop().toLowerCase();
+    const map = { py: "python", js: "javascript", json: "json", md: "markdown", html: "xml", css: "css", yml: "yaml", yaml: "yaml", sh: "bash", ts: "typescript", sql: "sql", xml: "xml", toml: "ini", cfg: "ini", txt: "plaintext", log: "plaintext" };
+    return map[ext] || "plaintext";
+  }
+
+  function renderExplorerFiles(sessionId, files) {
+    if (!files.length) {
+      $explorerFiles.innerHTML = '<div class="empty-state">Empty session</div>';
+      return;
+    }
+    $explorerFiles.innerHTML = files.map((f) => {
+      return `<div class="explorer-file-item" data-name="${esc(f.name)}">
+        <span class="explorer-file-icon">${fileIcon(f.name)}</span>
+        <span class="explorer-file-name" title="${esc(f.name)}">${esc(f.name)}</span>
+        <span class="explorer-file-size">${formatBytes(f.size)}</span>
+      </div>`;
+    }).join("");
+    $explorerFiles.querySelectorAll(".explorer-file-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        $explorerFiles.querySelectorAll(".explorer-file-item").forEach((x) => x.classList.remove("active"));
+        el.classList.add("active");
+        loadExplorerPreview(sessionId, el.dataset.name);
+      });
+    });
+  }
+
+  async function loadExplorerPreview(sessionId, filename) {
+    $explorerPreview.innerHTML = '<div class="empty-state">Loading...</div>';
+    try {
+      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(filename)}`);
+      const data = await resp.json();
+      if (data.error) {
+        $explorerPreview.innerHTML = `<div class="empty-state">${esc(data.error)}</div>`;
+        return;
+      }
+      const lang = detectLanguage(filename);
+      const downloadUrl = `/api/jobs/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(filename)}`;
+      $explorerPreview.innerHTML = `<div class="explorer-preview-header">
+        <span class="explorer-preview-filename">${esc(filename)}</span>
+        <span class="explorer-preview-size">${formatBytes(data.size)}</span>
+        <button class="btn-explorer-download-file" data-url="${esc(downloadUrl)}">Download</button>
+      </div><pre><code class="${esc(lang)}">${esc(data.content)}</code></pre>`;
+      // Apply syntax highlighting
+      const codeEl = $explorerPreview.querySelector("code");
+      if (codeEl && window.hljs) window.hljs.highlightElement(codeEl);
+      // Wire download button
+      $explorerPreview.querySelector(".btn-explorer-download-file")?.addEventListener("click", (e) => {
+        const blob = new Blob([data.content], { type: "text/plain" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+    } catch (e) {
+      $explorerPreview.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
   // --- User Auth & Admin ---
   let currentUser = null;
 

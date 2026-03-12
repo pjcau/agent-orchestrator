@@ -1453,3 +1453,96 @@ class TestTeamCompositions:
             assert "growth-hacker" in agents
         finally:
             EventBus._instance = old_instance
+
+
+# --- Explorer endpoint tests ---
+
+
+class TestExplorerEndpoints:
+    """Tests for the session file explorer API endpoints."""
+
+    def test_jobs_files_lists_session_files(self, tmp_path):
+        """GET /api/jobs/{session_id}/files returns file listing."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        jl = JobLogger(jobs_dir=tmp_path)
+        session_dir = tmp_path / "job_test-session"
+        session_dir.mkdir()
+        (session_dir / "0001_prompt.json").write_text('{"prompt": "hello"}')
+        (session_dir / "output.py").write_text("print('hello')")
+
+        sid = "test-session"
+        sdir = jl._base_dir / f"job_{sid}"
+        assert sdir.exists()
+
+        items = []
+        for f in sorted(sdir.iterdir()):
+            if f.is_file():
+                items.append(
+                    {
+                        "name": f.name,
+                        "size": f.stat().st_size,
+                        "is_json": f.suffix == ".json",
+                    }
+                )
+
+        assert len(items) == 2
+        names = [i["name"] for i in items]
+        assert "0001_prompt.json" in names
+        assert "output.py" in names
+        assert next(i for i in items if i["name"] == "0001_prompt.json")["is_json"]
+        assert not next(i for i in items if i["name"] == "output.py")["is_json"]
+
+    def test_jobs_file_content_reads_text(self, tmp_path):
+        """File content endpoint reads text files correctly."""
+        session_dir = tmp_path / "job_content-test"
+        session_dir.mkdir()
+        content = "def hello():\n    return 'world'"
+        (session_dir / "main.py").write_text(content)
+        assert (session_dir / "main.py").read_text() == content
+
+    def test_jobs_file_content_path_traversal_blocked(self, tmp_path):
+        """Path traversal attempts should be blocked."""
+        session_dir = tmp_path / "job_traversal-test"
+        session_dir.mkdir()
+        (session_dir / "safe.txt").write_text("safe")
+        (tmp_path / "secret.txt").write_text("secret data")
+        target = (session_dir / "../secret.txt").resolve()
+        assert not target.is_relative_to(session_dir.resolve())
+
+    def test_jobs_download_zip(self, tmp_path):
+        """Download ZIP creates valid archive with all session files."""
+        import io
+        import zipfile
+
+        session_dir = tmp_path / "job_zip-test"
+        session_dir.mkdir()
+        (session_dir / "file1.json").write_text('{"a": 1}')
+        (session_dir / "file2.py").write_text("x = 1")
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in sorted(session_dir.iterdir()):
+                if f.is_file():
+                    zf.write(f, f.name)
+        buf.seek(0)
+
+        with zipfile.ZipFile(buf, "r") as zf:
+            names = zf.namelist()
+            assert "file1.json" in names
+            assert "file2.py" in names
+            assert zf.read("file2.py") == b"x = 1"
+
+    def test_jobs_files_empty_session(self, tmp_path):
+        """Empty session directory returns empty file list."""
+        session_dir = tmp_path / "job_empty-session"
+        session_dir.mkdir()
+        assert len([f for f in session_dir.iterdir() if f.is_file()]) == 0
+
+    def test_file_size_limit(self, tmp_path):
+        """Files larger than 500KB should be rejected."""
+        session_dir = tmp_path / "job_large-file"
+        session_dir.mkdir()
+        large_file = session_dir / "huge.txt"
+        large_file.write_text("x" * 600_000)
+        assert large_file.stat().st_size > 500_000

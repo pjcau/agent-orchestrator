@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=057">
+    <link rel="stylesheet" href="/static/style.css?v=058">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
     <header>
@@ -49,6 +51,7 @@
                 <span id="cache-hit-rate" class="metric-value">-</span>
             </div>
             <button id="btn-history" class="btn-sidebar-toggle" title="Job history">History</button>
+            <button id="btn-explorer" class="btn-sidebar-toggle" title="Session file explorer">Explorer</button>
             <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="Toggle logs panel">Logs</button>
             <div id="user-menu" class="user-menu hidden">
                 <span id="user-name" class="user-name"></span>
@@ -285,6 +288,30 @@
                 </div>
                 <div class="history-detail" id="history-detail">
                     <div class="empty-state">Select a session</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Explorer modal -->
+    <div id="explorer-modal" class="modal hidden">
+        <div class="modal-content modal-explorer">
+            <div class="modal-header">
+                <h3>Session Explorer</h3>
+                <div class="explorer-header-actions">
+                    <button id="btn-explorer-download" class="btn-explorer-action" title="Download session as ZIP" disabled>Download ZIP</button>
+                    <button id="btn-close-explorer" class="btn-close">&times;</button>
+                </div>
+            </div>
+            <div class="explorer-layout">
+                <div class="explorer-sessions" id="explorer-sessions">
+                    <div class="empty-state">Loading...</div>
+                </div>
+                <div class="explorer-files" id="explorer-files">
+                    <div class="empty-state">Select a session</div>
+                </div>
+                <div class="explorer-preview" id="explorer-preview">
+                    <div class="empty-state">Select a file</div>
                 </div>
             </div>
         </div>

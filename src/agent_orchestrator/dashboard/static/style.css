@@ -861,6 +861,87 @@ main {
 }
 .history-record-cost { margin-left: 8px; color: var(--green); }
 
+/* === Explorer Modal === */
+.modal-explorer { width: 950px; max-height: 85vh; }
+.explorer-header-actions { display: flex; align-items: center; gap: 8px; }
+.btn-explorer-action {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 12px; font-size: 11px; cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-explorer-action:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn-explorer-action:disabled { opacity: 0.4; cursor: default; }
+.explorer-layout {
+    display: flex; flex: 1; overflow: hidden; min-height: 0; height: 60vh;
+}
+.explorer-sessions {
+    width: 220px; flex-shrink: 0; border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 8px;
+}
+.explorer-files {
+    width: 240px; flex-shrink: 0; border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 8px;
+}
+.explorer-preview {
+    flex: 1; overflow: auto; padding: 0; min-width: 0; background: var(--bg-card);
+}
+.explorer-preview pre {
+    margin: 0; padding: 12px; font-size: 12px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word; overflow-x: auto;
+}
+.explorer-preview code.hljs {
+    background: transparent; padding: 0;
+}
+.explorer-session-item {
+    padding: 8px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid transparent; margin-bottom: 4px; transition: all 0.15s;
+}
+.explorer-session-item:hover { background: var(--bg-hover); }
+.explorer-session-item.active {
+    background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3);
+}
+.explorer-session-prompt {
+    font-size: 11px; color: var(--text); display: block;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.explorer-session-meta {
+    font-size: 9px; color: var(--text-dim); margin-top: 2px;
+}
+.explorer-file-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px; border-radius: 5px; cursor: pointer;
+    border: 1px solid transparent; margin-bottom: 2px; transition: all 0.15s;
+}
+.explorer-file-item:hover { background: var(--bg-hover); }
+.explorer-file-item.active {
+    background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3);
+}
+.explorer-file-icon { font-size: 14px; flex-shrink: 0; }
+.explorer-file-name {
+    font-size: 12px; color: var(--text); flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.explorer-file-size {
+    font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); flex-shrink: 0;
+}
+.explorer-preview-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    background: var(--bg); position: sticky; top: 0; z-index: 1;
+}
+.explorer-preview-filename {
+    font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+}
+.explorer-preview-size {
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
+}
+.btn-explorer-download-file {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 4px; padding: 2px 8px; font-size: 10px; cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-explorer-download-file:hover { border-color: var(--accent); color: var(--accent); }
+
 /* === Scrollbar === */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

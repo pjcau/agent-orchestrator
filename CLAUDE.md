@@ -348,6 +348,19 @@ Real-time monitoring UI for the orchestrator. Shows agent interactions, technica
 docker compose up dashboard    # https://localhost:5005
 ```
 
+### Session Explorer
+
+Built-in file browser for navigating agent-created artifacts per session. Access via the **Explorer** button in the header.
+
+- **3-pane layout**: Sessions list → File list → File preview with syntax highlighting
+- **Syntax highlighting**: via highlight.js (CDN) — supports Python, JS, JSON, Markdown, etc.
+- **Download**: individual files or entire session as ZIP archive
+- **API endpoints**:
+  - `GET /api/jobs/{session_id}/files` — list files in a session
+  - `GET /api/jobs/{session_id}/files/{filename}` — read file content
+  - `GET /api/jobs/{session_id}/download` — download session as ZIP
+- **Security**: path traversal protection, 500KB file size limit
+
 ## Development
 
 ```bash

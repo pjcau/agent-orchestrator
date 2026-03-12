@@ -17,8 +17,14 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+
+
+def _sanitize_log(value: str) -> str:
+    """Sanitize user-controlled values for safe logging (prevent log injection)."""
+    return value.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
 
 from ..core.conversation import ConversationManager
 from ..core.checkpoint import InMemoryCheckpointer
@@ -195,6 +201,68 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 "session_id": session_id,
                 "jobs_dir": str(job_logger.session_dir),
             }
+        )
+
+    @app.get("/api/jobs/{session_id}/files")
+    async def jobs_files(session_id: str):
+        """List all files in a session directory."""
+        session_dir = job_logger._base_dir / f"job_{session_id}"
+        if not session_dir.exists() or not session_dir.is_dir():
+            return JSONResponse(content={"error": "Session not found"}, status_code=404)
+        items = []
+        for f in sorted(session_dir.iterdir()):
+            if not f.is_file():
+                continue
+            stat = f.stat()
+            items.append(
+                {
+                    "name": f.name,
+                    "size": stat.st_size,
+                    "modified": stat.st_mtime,
+                    "is_json": f.suffix == ".json",
+                }
+            )
+        return JSONResponse(content={"session_id": session_id, "files": items})
+
+    @app.get("/api/jobs/{session_id}/files/{filename:path}")
+    async def jobs_file_content(session_id: str, filename: str):
+        """Read content of a file in a session directory."""
+        session_dir = job_logger._base_dir / f"job_{session_id}"
+        target = (session_dir / filename).resolve()
+        # Security: prevent path traversal
+        if not target.is_relative_to(session_dir.resolve()):
+            return JSONResponse(content={"error": "Path outside session"}, status_code=400)
+        if not target.is_file():
+            return JSONResponse(content={"error": "File not found"}, status_code=404)
+        if target.stat().st_size > 500_000:
+            return JSONResponse(content={"error": "File too large (>500KB)"}, status_code=400)
+        try:
+            content = target.read_text(errors="replace")
+            return JSONResponse(
+                content={"name": filename, "content": content, "size": target.stat().st_size}
+            )
+        except Exception:
+            return JSONResponse(content={"error": "Failed to read file"}, status_code=500)
+
+    @app.get("/api/jobs/{session_id}/download")
+    async def jobs_download_zip(session_id: str):
+        """Download entire session as a ZIP archive."""
+        import io
+        import zipfile
+
+        session_dir = job_logger._base_dir / f"job_{session_id}"
+        if not session_dir.exists() or not session_dir.is_dir():
+            return JSONResponse(content={"error": "Session not found"}, status_code=404)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in sorted(session_dir.iterdir()):
+                if f.is_file():
+                    zf.write(f, f.name)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="session_{session_id}.zip"'},
         )
 
     @app.get("/api/usage")
@@ -706,7 +774,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     content={"success": True, "status": resp.json().get("status", "ok")}
                 )
         except Exception:
-            logger.exception("Ollama pull failed for model %r", model_name)
+            logger.exception("Ollama pull failed for model %r", _sanitize_log(model_name))
             return JSONResponse(
                 content={"success": False, "error": "Failed to pull model"}, status_code=500
             )
@@ -730,7 +798,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 resp.raise_for_status()
                 return JSONResponse(content={"success": True})
         except Exception:
-            logger.exception("Ollama delete failed for model %r", model_name)
+            logger.exception("Ollama delete failed for model %r", _sanitize_log(model_name))
             return JSONResponse(
                 content={"success": False, "error": "Failed to delete model"}, status_code=500
             )
@@ -740,10 +808,13 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/files")
     async def list_files(path: str = ""):
         """List files in the project directory."""
+        # Security: reject path traversal sequences before constructing path
+        if ".." in path.split("/") or ".." in path.split("\\"):
+            return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
         base = PROJECT_ROOT.resolve()
         target = (base / path).resolve()
 
-        # Security: prevent path traversal
+        # Security: prevent path traversal (defense in depth)
         if not target.is_relative_to(base):
             return JSONResponse(content={"error": "Path outside project"}, status_code=400)
 
@@ -772,10 +843,13 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/file")
     async def read_file(path: str):
         """Read a file's content."""
+        # Security: reject path traversal sequences before constructing path
+        if ".." in path.split("/") or ".." in path.split("\\"):
+            return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
         base = PROJECT_ROOT.resolve()
         target = (base / path).resolve()
 
-        # Security: prevent path traversal
+        # Security: prevent path traversal (defense in depth)
         if not target.is_relative_to(base):
             return JSONResponse(content={"error": "Path outside project"}, status_code=400)
 
@@ -790,7 +864,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             content = target.read_text(errors="replace")
             return JSONResponse(content={"path": path, "content": content})
         except Exception:
-            logger.exception("Failed to read file: %r", path)
+            logger.exception("Failed to read file: %r", _sanitize_log(path))
             return JSONResponse(content={"error": "Failed to read file"}, status_code=500)
 
     # --- Conversations (Multi-turn) ---
