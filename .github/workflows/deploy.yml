@@ -101,10 +101,11 @@ jobs:
           _inject BASE_URL "https://agents-orchestrator.com"
           _inject GITHUB_USERNAME "pjcau"
 
-          # Build and restart services
+          # Build and restart services (stop old containers first to avoid name conflicts)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --force-recreate dashboard aws-cost-exporter"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod rm -sf dashboard aws-cost-exporter"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans dashboard aws-cost-exporter"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans"
 
           # Ensure postgres password matches .env.prod (fixes first-init mismatch)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T postgres psql -U orchestrator -c \"ALTER USER orchestrator WITH PASSWORD 'orchestrator-prod-2026';\"" 2>/dev/null || true
