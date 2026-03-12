@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator  # noqa: F401 (used in type annotation)
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Awaitable
@@ -379,6 +379,216 @@ class CompiledGraph:
             )
 
         return GraphResult(state=state, steps=steps, success=True)
+
+    async def astream(
+        self,
+        initial_state: State,
+        thread_id: str | None = None,
+        resume_from: str | None = None,
+        human_input: dict[str, Any] | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Stream graph execution, yielding a StreamEvent at each step.
+
+        Same execution logic as invoke(), but yields events in real-time
+        as nodes start, complete, or fail. Callers can forward these events
+        to WebSocket clients, SSE endpoints, or logging pipelines.
+
+        Usage:
+            compiled = graph.compile()
+            async for event in compiled.astream({"input": "hello"}):
+                print(f"{event.event_type}: {event.node}")
+                if event.event_type == StreamEventType.GRAPH_END:
+                    final_state = event.state
+        """
+        thread_id = thread_id or str(uuid.uuid4())
+        steps: list[StepRecord] = []
+        step_index = 0
+        graph_start = time.time()
+
+        # Resume from checkpoint if requested
+        if resume_from and self._checkpointer:
+            checkpoint = await self._checkpointer.get(resume_from)
+            if checkpoint:
+                state = dict(checkpoint.state)
+                current_nodes = checkpoint.next_nodes
+                step_index = checkpoint.step_index
+                thread_id = checkpoint.thread_id
+                if human_input:
+                    state = self._apply_update(state, human_input)
+            else:
+                yield StreamEvent(
+                    event_type=StreamEventType.NODE_ERROR,
+                    node=None,
+                    step_index=0,
+                    state=initial_state,
+                    error=f"Checkpoint not found: {resume_from}",
+                )
+                return
+        else:
+            state = dict(initial_state)
+            for key, value in state.items():
+                channel = self._channel_manager.get_channel(key)
+                if channel is not None:
+                    channel.update([value])
+            current_nodes = self._get_next_nodes(START, state)
+
+        yield StreamEvent(
+            event_type=StreamEventType.GRAPH_START,
+            node=None,
+            step_index=0,
+            state=dict(state),
+        )
+
+        while current_nodes and step_index < self._config.recursion_limit:
+            if END in current_nodes:
+                yield StreamEvent(
+                    event_type=StreamEventType.GRAPH_END,
+                    node=None,
+                    step_index=step_index,
+                    state=dict(state),
+                    elapsed_ms=(time.time() - graph_start) * 1000,
+                )
+                return
+
+            exec_nodes = [n for n in current_nodes if n != END and n in self._nodes]
+            if not exec_nodes:
+                yield StreamEvent(
+                    event_type=StreamEventType.NODE_ERROR,
+                    node=None,
+                    step_index=step_index,
+                    state=dict(state),
+                    error=f"No executable nodes found in: {current_nodes}",
+                )
+                return
+
+            # Execute nodes and yield events for each
+            is_parallel = len(exec_nodes) > 1 and self._config.enable_parallel
+
+            if is_parallel:
+                # Yield NODE_START for all parallel nodes
+                for node_name in exec_nodes:
+                    yield StreamEvent(
+                        event_type=StreamEventType.NODE_START,
+                        node=node_name,
+                        step_index=step_index,
+                        state=dict(state),
+                        parallel_group=exec_nodes,
+                    )
+
+                result = await self._execute_parallel(
+                    exec_nodes, state, steps, step_index, thread_id
+                )
+
+                # Yield NODE_END/NODE_ERROR for parallel group
+                if result.success:
+                    # Compute delta from the parallel step
+                    step_record = result.steps[-1] if result.steps else None
+                    delta = (
+                        {
+                            k: v
+                            for k, v in step_record.state_after.items()
+                            if step_record.state_before.get(k) != v
+                        }
+                        if step_record
+                        else None
+                    )
+                    for node_name in exec_nodes:
+                        yield StreamEvent(
+                            event_type=StreamEventType.NODE_END,
+                            node=node_name,
+                            step_index=step_index,
+                            state=dict(result.state),
+                            delta=delta,
+                            parallel_group=exec_nodes,
+                        )
+                else:
+                    yield StreamEvent(
+                        event_type=StreamEventType.NODE_ERROR,
+                        node=",".join(exec_nodes),
+                        step_index=step_index,
+                        state=dict(result.state),
+                        error=result.error,
+                        interrupted=result.interrupted,
+                        parallel_group=exec_nodes,
+                    )
+                    return
+            else:
+                node_name = exec_nodes[0]
+                yield StreamEvent(
+                    event_type=StreamEventType.NODE_START,
+                    node=node_name,
+                    step_index=step_index,
+                    state=dict(state),
+                )
+
+                node_start = time.time()
+                result = await self._execute_single(node_name, state, steps, step_index, thread_id)
+                node_elapsed = (time.time() - node_start) * 1000
+
+                if result.success:
+                    step_record = result.steps[-1] if result.steps else None
+                    delta = (
+                        {
+                            k: v
+                            for k, v in step_record.state_after.items()
+                            if step_record.state_before.get(k) != v
+                        }
+                        if step_record
+                        else None
+                    )
+                    yield StreamEvent(
+                        event_type=StreamEventType.NODE_END,
+                        node=node_name,
+                        step_index=step_index,
+                        state=dict(result.state),
+                        delta=delta,
+                        elapsed_ms=node_elapsed,
+                    )
+                else:
+                    yield StreamEvent(
+                        event_type=StreamEventType.NODE_ERROR,
+                        node=node_name,
+                        step_index=step_index,
+                        state=dict(result.state),
+                        error=result.error,
+                        interrupted=result.interrupted,
+                        elapsed_ms=node_elapsed,
+                    )
+                    return
+
+            state = result.state
+            steps = result.steps
+            step_index += 1
+
+            all_next: list[str] = []
+            executed = exec_nodes if is_parallel else [exec_nodes[0]]
+            for n in executed:
+                all_next.extend(self._get_next_nodes(n, state))
+            seen: set[str] = set()
+            current_nodes = []
+            for n in all_next:
+                if n not in seen:
+                    seen.add(n)
+                    current_nodes.append(n)
+
+        if step_index >= self._config.recursion_limit:
+            yield StreamEvent(
+                event_type=StreamEventType.NODE_ERROR,
+                node=None,
+                step_index=step_index,
+                state=dict(state),
+                error=f"Recursion limit reached ({self._config.recursion_limit})",
+                elapsed_ms=(time.time() - graph_start) * 1000,
+            )
+            return
+
+        yield StreamEvent(
+            event_type=StreamEventType.GRAPH_END,
+            node=None,
+            step_index=step_index,
+            state=dict(state),
+            elapsed_ms=(time.time() - graph_start) * 1000,
+        )
 
     async def _execute_single(
         self,
