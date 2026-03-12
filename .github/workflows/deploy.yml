@@ -106,6 +106,12 @@ jobs:
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --force-recreate dashboard aws-cost-exporter"
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
 
+          # Ensure postgres password matches .env.prod (fixes first-init mismatch)
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T postgres psql -U orchestrator -c \"ALTER USER orchestrator WITH PASSWORD 'orchestrator-prod-2026';\"" 2>/dev/null || true
+
+          # Restart dashboard to pick up DB connection after password sync
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart dashboard"
+
           # Restart nginx to pick up new dashboard container IP (avoids 502)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx"
 
