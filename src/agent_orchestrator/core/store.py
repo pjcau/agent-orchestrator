@@ -323,6 +323,126 @@ class InMemoryStore(BaseStore):
         return sorted_ns[offset : offset + limit]
 
 
+# ─── SessionStore ─────────────────────────────────────────────────────
+
+
+class SessionStore:
+    """Session-scoped wrapper around BaseStore with automatic cleanup.
+
+    Scopes all operations under a session-specific namespace and tracks
+    every key written during the session. On close (or async context exit),
+    all session data is deleted from the backing store.
+
+    Inspired by Neko's ephemeral container isolation: nothing persists
+    after the session ends, preventing data leakage between sessions.
+
+    Usage:
+        store = InMemoryStore()
+        async with SessionStore(store, session_id="sess-123") as session:
+            await session.put("profile", {"name": "Alice"})
+            item = await session.get("profile")
+            # ... use session data ...
+        # All session data is now deleted from the backing store.
+
+    Or without context manager:
+        session = SessionStore(store, session_id="sess-456")
+        await session.put("key", {"data": 1})
+        items_written = session.keys_written  # track what was written
+        await session.close()  # explicit cleanup
+    """
+
+    def __init__(
+        self,
+        store: BaseStore,
+        session_id: str,
+        namespace_prefix: Namespace = ("sessions",),
+    ) -> None:
+        self._store = store
+        self._session_id = session_id
+        self._namespace = (*namespace_prefix, session_id)
+        self._written_keys: set[str] = set()
+        self._closed = False
+
+    @property
+    def session_id(self) -> str:
+        return self._session_id
+
+    @property
+    def namespace(self) -> Namespace:
+        return self._namespace
+
+    @property
+    def keys_written(self) -> frozenset[str]:
+        """Keys written during this session (for inspection/debugging)."""
+        return frozenset(self._written_keys)
+
+    def _check_open(self) -> None:
+        if self._closed:
+            raise RuntimeError(f"SessionStore '{self._session_id}' is already closed")
+
+    async def get(self, key: str) -> Item | None:
+        """Get an item from session-scoped namespace."""
+        self._check_open()
+        return await self._store.aget(self._namespace, key)
+
+    async def put(
+        self,
+        key: str,
+        value: dict[str, Any],
+        *,
+        ttl: float | None = None,
+    ) -> None:
+        """Store an item in session-scoped namespace. Tracked for cleanup."""
+        self._check_open()
+        await self._store.aput(self._namespace, key, value, ttl=ttl)
+        self._written_keys.add(key)
+
+    async def delete(self, key: str) -> None:
+        """Delete an item from session-scoped namespace."""
+        self._check_open()
+        await self._store.adelete(self._namespace, key)
+        self._written_keys.discard(key)
+
+    async def search(
+        self,
+        *,
+        filter: dict[str, Any] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> list[SearchItem]:
+        """Search within session namespace."""
+        self._check_open()
+        return await self._store.asearch(self._namespace, filter=filter, limit=limit, offset=offset)
+
+    async def close(self) -> int:
+        """Delete all session data from the backing store.
+
+        Returns the number of keys deleted.
+        """
+        if self._closed:
+            return 0
+        deleted = 0
+        # Delete all tracked keys
+        for key in list(self._written_keys):
+            await self._store.adelete(self._namespace, key)
+            deleted += 1
+        # Also scan for any keys we might have missed (e.g., written by
+        # other code using the same namespace directly)
+        remaining = await self._store.asearch(self._namespace, limit=1000)
+        for item in remaining:
+            await self._store.adelete(item.namespace, item.key)
+            deleted += 1
+        self._written_keys.clear()
+        self._closed = True
+        return deleted
+
+    async def __aenter__(self) -> SessionStore:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.close()
+
+
 # ─── Store Conformance ────────────────────────────────────────────────
 
 

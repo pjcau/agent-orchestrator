@@ -1,5 +1,6 @@
 # Claude Code
 .claude/settings.local.json
+.claude/research-scout-findings.md
 
 # OS
 .DS_Store

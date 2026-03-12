@@ -151,6 +151,8 @@ agent-orchestrator/
 - **MigrationManager** — Import configs from LangGraph, CrewAI, AutoGen with auto-detection.
 - **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
 - **BaseStore** — Cross-thread persistent key-value store (namespace, filter, TTL). Separate from checkpoints.
+- **SessionStore** — Session-scoped wrapper on BaseStore. Auto-tracks written keys, deletes all session data on close(). Async context manager.
+- **StreamEvent / astream()** — Real-time graph execution streaming. `CompiledGraph.astream()` yields `StreamEvent` at each node start/end/error, with state deltas and timing.
 - **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout).
 - **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim.
 
@@ -299,10 +301,10 @@ proposes concrete code improvements as PRs. Token-efficient: one repo, one LLM c
 - **LLM backend**: `claude` CLI locally, OpenRouter (`qwen/qwen3.5-flash-02-23`) on CI
 - **Analysis**: LLM compares repo's patterns against our codebase, proposes 1-3 improvements with code
 - **State tracking**: `.claude/research-scout-state.json` (tracks processed URLs)
-- **Findings file**: `.claude/research-scout-findings.md` (generated when improvements found)
+- **Findings file**: `.claude/research-scout-findings.md` (ephemeral, gitignored — used only as PR body, never committed)
 - **GitHub Action**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC)
 - **Scripts**: `scripts/fetch_github_stars.py`, `scripts/run_research_scout.py`
-- **PR creation**: Automatic on both local and CI. The script creates a branch `research-scout/YYYY-MM-DD-HHMM`, commits findings, pushes, and opens a PR. On CI, the workflow step handles this instead.
+- **PR creation**: Handled by the CI workflow (`nightly-research.yml`). When findings exist, the workflow creates a branch `research-scout/YYYY-MM-DD-HHMM`, commits state files, pushes, and opens a PR with findings as body. State is always pushed to main.
 
 GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_KEY` (secret, for LLM analysis), `GITHUB_TOKEN` (auto-provided).
 

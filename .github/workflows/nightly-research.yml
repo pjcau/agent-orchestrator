@@ -82,7 +82,8 @@ jobs:
           git config user.name "research-scout[bot]"
           git config user.email "research-scout[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add .claude/research-scout-state.json .claude/bookmarks.json .claude/research-scout-findings.md
+          # Only commit state files — findings.md is used as PR body, not committed
+          git add .claude/research-scout-state.json .claude/bookmarks.json
           git diff --cached --quiet && exit 0
           git commit -m "research-scout: improvement proposal from $(date +%Y-%m-%d)"
           git push -u origin "$BRANCH"

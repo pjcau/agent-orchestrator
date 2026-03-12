@@ -9,6 +9,7 @@ import pytest
 from agent_orchestrator.core.store import (
     InMemoryStore,
     SearchItem,
+    SessionStore,
     _match_filter,
     run_store_conformance,
 )
@@ -182,6 +183,147 @@ class TestInMemoryStore:
 
 
 # ─── Conformance ──────────────────────────────────────────────────────
+
+
+# ─── SessionStore ─────────────────────────────────────────────────────
+
+
+class TestSessionStore:
+    @pytest.mark.asyncio
+    async def test_put_and_get(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.put("profile", {"name": "Alice"})
+        item = await session.get("profile")
+        assert item is not None
+        assert item.value["name"] == "Alice"
+
+    @pytest.mark.asyncio
+    async def test_session_isolation(self):
+        """Two sessions should not see each other's data."""
+        store = InMemoryStore()
+        s1 = SessionStore(store, session_id="s1")
+        s2 = SessionStore(store, session_id="s2")
+        await s1.put("key", {"from": "s1"})
+        await s2.put("key", {"from": "s2"})
+
+        item1 = await s1.get("key")
+        item2 = await s2.get("key")
+        assert item1.value["from"] == "s1"
+        assert item2.value["from"] == "s2"
+
+    @pytest.mark.asyncio
+    async def test_close_deletes_all_data(self):
+        """After close(), all session data should be gone from backing store."""
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.put("a", {"x": 1})
+        await session.put("b", {"x": 2})
+        await session.put("c", {"x": 3})
+
+        deleted = await session.close()
+        assert deleted == 3
+
+        # Verify data is gone from backing store
+        item = await store.aget(("sessions", "s1"), "a")
+        assert item is None
+
+    @pytest.mark.asyncio
+    async def test_context_manager_cleanup(self):
+        """async with should auto-close and cleanup."""
+        store = InMemoryStore()
+        async with SessionStore(store, session_id="ctx") as session:
+            await session.put("temp", {"data": "ephemeral"})
+            item = await session.get("temp")
+            assert item is not None
+
+        # After context exit, data should be gone
+        item = await store.aget(("sessions", "ctx"), "temp")
+        assert item is None
+
+    @pytest.mark.asyncio
+    async def test_keys_written_tracking(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.put("a", {"x": 1})
+        await session.put("b", {"x": 2})
+        assert session.keys_written == frozenset({"a", "b"})
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_tracking(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.put("a", {"x": 1})
+        await session.delete("a")
+        assert "a" not in session.keys_written
+
+    @pytest.mark.asyncio
+    async def test_search_within_session(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.put("item1", {"category": "A"})
+        await session.put("item2", {"category": "B"})
+        await session.put("item3", {"category": "A"})
+
+        results = await session.search(filter={"category": "A"})
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_closed_session_raises(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.close()
+
+        with pytest.raises(RuntimeError, match="already closed"):
+            await session.get("key")
+
+        with pytest.raises(RuntimeError, match="already closed"):
+            await session.put("key", {"x": 1})
+
+    @pytest.mark.asyncio
+    async def test_double_close_is_safe(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.put("a", {"x": 1})
+        await session.close()
+        deleted = await session.close()
+        assert deleted == 0
+
+    @pytest.mark.asyncio
+    async def test_custom_namespace_prefix(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1", namespace_prefix=("tmp",))
+        assert session.namespace == ("tmp", "s1")
+        await session.put("key", {"x": 1})
+        item = await store.aget(("tmp", "s1"), "key")
+        assert item is not None
+
+    @pytest.mark.asyncio
+    async def test_ttl_support(self):
+        store = InMemoryStore()
+        session = SessionStore(store, session_id="s1")
+        await session.put("temp", {"x": 1}, ttl=0.01)
+        item = await session.get("temp")
+        assert item is not None
+        await asyncio.sleep(0.05)
+        item = await session.get("temp")
+        assert item is None
+
+    @pytest.mark.asyncio
+    async def test_close_does_not_affect_other_sessions(self):
+        """Closing one session must not delete another session's data."""
+        store = InMemoryStore()
+        s1 = SessionStore(store, session_id="s1")
+        s2 = SessionStore(store, session_id="s2")
+        await s1.put("key", {"from": "s1"})
+        await s2.put("key", {"from": "s2"})
+
+        await s1.close()
+
+        # s2 data should still exist
+        item = await s2.get("key")
+        assert item is not None
+        assert item.value["from"] == "s2"
 
 
 class TestStoreConformance:

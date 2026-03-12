@@ -19,6 +19,8 @@ from .graph import (
     GraphInterrupt,
     Interrupt,
     InterruptType,
+    StreamEvent,
+    StreamEventType,
     START,
     END,
 )
@@ -84,6 +86,7 @@ from .conformance import (
 from .store import (
     BaseStore,
     InMemoryStore,
+    SessionStore,
     Item,
     SearchItem,
     run_store_conformance,
@@ -121,6 +124,8 @@ __all__ = [
     "GraphInterrupt",
     "Interrupt",
     "InterruptType",
+    "StreamEvent",
+    "StreamEventType",
     "append_reducer",
     "add_reducer",
     "merge_dict_reducer",
@@ -215,6 +220,7 @@ __all__ = [
     # v1.1 — Sprint 2: HITL & Memory
     "BaseStore",
     "InMemoryStore",
+    "SessionStore",
     "Item",
     "SearchItem",
     "run_store_conformance",

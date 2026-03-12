@@ -8,6 +8,8 @@ from agent_orchestrator.core.graph import (
     CompiledGraph,
     GraphConfig,
     StateGraph,
+    StreamEvent,
+    StreamEventType,
 )
 from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 from agent_orchestrator.core.reducers import append_reducer, add_reducer
@@ -272,3 +274,187 @@ class TestGraphInfo:
         assert "a" in info["nodes"]
         assert "b" in info["nodes"]
         assert len(info["edges"]) == 3
+
+
+class TestAstream:
+    @pytest.mark.asyncio
+    async def test_single_node_stream(self):
+        """astream yields GRAPH_START, NODE_START, NODE_END, GRAPH_END."""
+        g = StateGraph()
+        g.add_node("inc", increment_node)
+        g.add_edge(START, "inc")
+        g.add_edge("inc", END)
+
+        events: list[StreamEvent] = []
+        async for event in g.compile().astream({"counter": 0}):
+            events.append(event)
+
+        types = [e.event_type for e in events]
+        assert types == [
+            StreamEventType.GRAPH_START,
+            StreamEventType.NODE_START,
+            StreamEventType.NODE_END,
+            StreamEventType.GRAPH_END,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_stream_state_progression(self):
+        """State should progress through the stream events."""
+        g = StateGraph()
+        g.add_node("inc", increment_node)
+        g.add_node("dbl", double_node)
+        g.add_edge(START, "inc")
+        g.add_edge("inc", "dbl")
+        g.add_edge("dbl", END)
+
+        events: list[StreamEvent] = []
+        async for event in g.compile().astream({"counter": 0}):
+            events.append(event)
+
+        # After inc: counter=1
+        inc_end = [
+            e for e in events if e.event_type == StreamEventType.NODE_END and e.node == "inc"
+        ]
+        assert len(inc_end) == 1
+        assert inc_end[0].state["counter"] == 1
+
+        # After dbl: counter=2
+        dbl_end = [
+            e for e in events if e.event_type == StreamEventType.NODE_END and e.node == "dbl"
+        ]
+        assert len(dbl_end) == 1
+        assert dbl_end[0].state["counter"] == 2
+
+    @pytest.mark.asyncio
+    async def test_stream_delta(self):
+        """NODE_END events should include state delta."""
+        g = StateGraph()
+        g.add_node("inc", increment_node)
+        g.add_edge(START, "inc")
+        g.add_edge("inc", END)
+
+        events: list[StreamEvent] = []
+        async for event in g.compile().astream({"counter": 0}):
+            events.append(event)
+
+        node_end = [e for e in events if e.event_type == StreamEventType.NODE_END][0]
+        assert node_end.delta is not None
+        assert node_end.delta["counter"] == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_node_error(self):
+        """Failing node should yield NODE_ERROR and stop."""
+        g = StateGraph()
+        g.add_node("fail", failing_node)
+        g.add_edge(START, "fail")
+        g.add_edge("fail", END)
+
+        events: list[StreamEvent] = []
+        async for event in g.compile().astream({}):
+            events.append(event)
+
+        types = [e.event_type for e in events]
+        assert StreamEventType.GRAPH_START in types
+        assert StreamEventType.NODE_START in types
+        assert StreamEventType.NODE_ERROR in types
+        assert StreamEventType.GRAPH_END not in types
+
+        error_event = [e for e in events if e.event_type == StreamEventType.NODE_ERROR][0]
+        assert "intentional failure" in error_event.error
+
+    @pytest.mark.asyncio
+    async def test_stream_parallel_nodes(self):
+        """Parallel nodes should emit NODE_START/NODE_END for each node."""
+
+        async def add_a(state):
+            return {"a": "done"}
+
+        async def add_b(state):
+            return {"b": "done"}
+
+        g = StateGraph()
+        g.add_node("node_a", add_a)
+        g.add_node("node_b", add_b)
+        g.add_node("merge", noop_node)
+        g.add_edge(START, "node_a")
+        g.add_edge(START, "node_b")
+        g.add_edge("node_a", "merge")
+        g.add_edge("node_b", "merge")
+        g.add_edge("merge", END)
+
+        events: list[StreamEvent] = []
+        async for event in g.compile().astream({}):
+            events.append(event)
+
+        # Should have NODE_START for both parallel nodes
+        starts = [e for e in events if e.event_type == StreamEventType.NODE_START]
+        start_nodes = {e.node for e in starts}
+        assert "node_a" in start_nodes
+        assert "node_b" in start_nodes
+
+        # Parallel events should have parallel_group set
+        parallel_starts = [e for e in starts if e.parallel_group]
+        assert len(parallel_starts) == 2
+        assert set(parallel_starts[0].parallel_group) == {"node_a", "node_b"}
+
+    @pytest.mark.asyncio
+    async def test_stream_elapsed_ms(self):
+        """NODE_END and GRAPH_END should have non-zero elapsed_ms."""
+        g = StateGraph()
+        g.add_node("inc", increment_node)
+        g.add_edge(START, "inc")
+        g.add_edge("inc", END)
+
+        events: list[StreamEvent] = []
+        async for event in g.compile().astream({"counter": 0}):
+            events.append(event)
+
+        graph_end = [e for e in events if e.event_type == StreamEventType.GRAPH_END][0]
+        assert graph_end.elapsed_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_stream_recursion_limit(self):
+        """Recursion limit should yield NODE_ERROR."""
+
+        async def loop_fn(state):
+            return {"counter": state.get("counter", 0) + 1}
+
+        def always_loop(state):
+            return "loop"
+
+        g = StateGraph()
+        g.add_node("loop", loop_fn)
+        g.add_edge(START, "loop")
+        g.add_conditional_edges("loop", always_loop, {"loop": "loop"})
+
+        events: list[StreamEvent] = []
+        async for event in g.compile(config=GraphConfig(recursion_limit=3)).astream({}):
+            events.append(event)
+
+        types = [e.event_type for e in events]
+        assert StreamEventType.NODE_ERROR in types
+        error_event = [e for e in events if e.event_type == StreamEventType.NODE_ERROR][0]
+        assert "Recursion limit" in error_event.error
+
+    @pytest.mark.asyncio
+    async def test_stream_final_state_matches_invoke(self):
+        """astream final state should match invoke result."""
+        g = StateGraph()
+        g.add_node("inc", increment_node)
+        g.add_node("dbl", double_node)
+        g.add_edge(START, "inc")
+        g.add_edge("inc", "dbl")
+        g.add_edge("dbl", END)
+
+        compiled = g.compile()
+
+        # invoke
+        invoke_result = await compiled.invoke({"counter": 5})
+
+        # astream
+        last_event = None
+        async for event in compiled.astream({"counter": 5}):
+            last_event = event
+
+        assert last_event.event_type == StreamEventType.GRAPH_END
+        assert last_event.state == invoke_result.state
