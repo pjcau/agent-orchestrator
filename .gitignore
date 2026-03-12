@@ -22,6 +22,9 @@ build/
 # Job logs
 jobs/
 
+# Simulation reports (generated at runtime)
+reports/
+
 # SSL certificates
 certs/
 

@@ -43,7 +43,8 @@ agent-orchestrator/
 ├── scripts/
 │   ├── archive_jobs.py          # S3 job archiver (tarball + PG metadata)
 │   ├── fetch_github_stars.py    # Fetch starred repos for research scout
-│   └── run_research_scout.py    # LLM analysis of starred repos
+│   ├── run_research_scout.py    # LLM analysis of starred repos
+│   └── simulate_finance_team.py # Multi-agent finance simulation (OpenRouter)
 ├── docker-compose.yml           # Dev services (postgres, dashboard, docs)
 ├── docker-compose.prod.yml      # Production (nginx, redis, prometheus, grafana, archiver)
 ├── docs/
@@ -132,7 +133,7 @@ agent-orchestrator/
 - **Skill** — Reusable capability with middleware chain (retry, logging, timeout). Provider-independent.
 - **Orchestrator** — Coordinates agents, task decomposition, anti-stall enforcement.
 - **Cooperation** — Inter-agent messaging: delegation, results, conflict resolution.
-- **TaskRouter** — Smart routing: 6 strategies (local-first, cost-optimized, complexity-based, etc.).
+- **TaskRouter** — Smart routing: 6 strategies (local-first, cost-optimized, complexity-based, etc.). Category-aware: auto-detects task domain (finance, data-science, marketing, software) and selects appropriate agents. Fallback routing uses category-matched agents instead of defaulting to backend+frontend.
 - **UsageTracker** — Cost tracking with budget enforcement (per task/session/day).
 - **HealthMonitor** — Provider health: latency, error rates, availability, auto-failover.
 - **AuditLog** — Structured audit trail: 11 event types, filtering, task traces.

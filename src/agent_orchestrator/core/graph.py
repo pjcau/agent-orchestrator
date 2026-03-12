@@ -10,7 +10,9 @@ Core concepts:
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Awaitable
@@ -99,6 +101,37 @@ class StepRecord:
     state_after: State
     step_index: int
     parallel_group: list[str] | None = None  # Nodes executed in parallel
+
+
+class StreamEventType(str, Enum):
+    """Event types emitted during graph streaming."""
+
+    GRAPH_START = "graph_start"
+    NODE_START = "node_start"
+    NODE_END = "node_end"
+    NODE_ERROR = "node_error"
+    GRAPH_END = "graph_end"
+
+
+@dataclass
+class StreamEvent:
+    """Event yielded by CompiledGraph.astream() during execution.
+
+    Provides real-time visibility into graph execution without polling.
+    Each event contains the current state, which node triggered it,
+    timing information, and any state delta produced by the node.
+    """
+
+    event_type: StreamEventType
+    node: str | None
+    step_index: int
+    state: State
+    timestamp: float = field(default_factory=time.time)
+    delta: State | None = None  # State changes from this node
+    parallel_group: list[str] | None = None
+    error: str | None = None
+    interrupted: Interrupt | None = None
+    elapsed_ms: float = 0.0  # Time taken by this node
 
 
 class StateGraph:
