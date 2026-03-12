@@ -8,7 +8,16 @@
         "Skill bundling with metadata and auto-discovery",
         "Linkable reusable specs for graph templates"
       ]
+    },
+    "https://github.com/m1k1o/neko": {
+      "processed_at": "2026-03-12T03:03:19.332439+00:00",
+      "summary": "m1k1o/neko",
+      "improvements": [
+        "Real-time Execution Streaming",
+        "Ephemeral Session Storage",
+        "Multi-User Collaboration Channel"
+      ]
     }
   },
-  "last_run": "2026-03-09T21:10:19.010255+00:00"
+  "last_run": "2026-03-12T03:03:19.332515+00:00"
 }
