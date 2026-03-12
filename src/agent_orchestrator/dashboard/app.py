@@ -20,12 +20,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-
-def _sanitize_log(value: str) -> str:
-    """Sanitize user-controlled values for safe logging (prevent log injection)."""
-    return value.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-
-
 from ..core.conversation import ConversationManager
 from ..core.checkpoint import InMemoryCheckpointer
 from .agent_runner import create_skill_registry, run_agent, run_team
@@ -46,6 +40,12 @@ from .user_store import setup_db as setup_user_db
 from .usage_db import UsageDB
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_log(value: str) -> str:
+    """Sanitize user-controlled values for safe logging (prevent log injection)."""
+    return value.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
 
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent

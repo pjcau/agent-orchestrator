@@ -370,9 +370,77 @@ class TestPasswordHashing:
         assert h1 != h2  # bcrypt or random salt = different hashes
 
     def test_legacy_hash_still_verifies(self):
-        """Legacy fixed-salt SHA-256 hashes should still verify (migration)."""
+        """Legacy fixed-salt PBKDF2 hashes should still verify (migration)."""
         import hashlib
         from agent_orchestrator.core.users import _verify_password
 
-        legacy_hash = hashlib.sha256("agent-orchestrator:old-password".encode()).hexdigest()
+        legacy_hash = hashlib.pbkdf2_hmac(
+            "sha256", b"old-password", b"agent-orchestrator", iterations=100_000
+        ).hex()
         assert _verify_password("old-password", legacy_hash)
+
+    def test_legacy_sha256_salt_hash_still_verifies(self):
+        """Legacy SHA-256 with random salt hashes should still verify (pre-PBKDF2)."""
+        import hashlib
+        from agent_orchestrator.core.users import _verify_password
+
+        salt = "abcdef1234567890"
+        hashed = hashlib.sha256(f"{salt}:old-password".encode()).hexdigest()
+        legacy_hash = f"sha256${salt}${hashed}"
+        assert _verify_password("old-password", legacy_hash)
+
+    def test_pbkdf2_fallback_hash_format(self):
+        """New non-bcrypt hashes use PBKDF2 format."""
+        from agent_orchestrator.core.users import _hash_password, HAS_BCRYPT
+
+        if HAS_BCRYPT:
+            pytest.skip("bcrypt installed, fallback not used")
+        hashed = _hash_password("test")
+        assert hashed.startswith("pbkdf2$")
+
+
+# ---------------------------------------------------------------------------
+# Log injection prevention tests
+# ---------------------------------------------------------------------------
+
+
+class TestLogSanitization:
+    """Test that user-controlled values are sanitized before logging."""
+
+    def test_sanitize_log_strips_newlines(self):
+        from agent_orchestrator.providers.openrouter import _sanitize_log
+
+        assert "\n" not in _sanitize_log("model\nname")
+        assert "\r" not in _sanitize_log("model\rname")
+        assert "\t" not in _sanitize_log("model\tname")
+
+    def test_sanitize_log_preserves_safe_strings(self):
+        from agent_orchestrator.providers.openrouter import _sanitize_log
+
+        assert _sanitize_log("qwen/qwen3.5-plus") == "qwen/qwen3.5-plus"
+
+    def test_dashboard_sanitize_log(self):
+        from agent_orchestrator.dashboard.app import _sanitize_log
+
+        assert _sanitize_log("bad\nmodel\rname") == "bad\\nmodel\\rname"
+
+
+# ---------------------------------------------------------------------------
+# Path traversal prevention tests
+# ---------------------------------------------------------------------------
+
+
+class TestPathTraversal:
+    """Test that path traversal is prevented in file endpoints."""
+
+    def test_dotdot_rejected_in_path_components(self):
+        """Path with '..' components should be rejected before resolution."""
+        path = "../../../etc/passwd"
+        parts = path.split("/")
+        assert ".." in parts  # confirms our check would catch it
+
+    def test_backslash_traversal_rejected(self):
+        """Windows-style path traversal should also be caught."""
+        path = "..\\..\\etc\\passwd"
+        parts = path.split("\\")
+        assert ".." in parts

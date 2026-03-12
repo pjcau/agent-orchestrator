@@ -337,6 +337,22 @@ Before deploying to AWS with the frontend exposed:
 | SSRF via Ollama URL | Internal network scanning | URL prefix allowlist |
 | XSS in dashboard | Cookie theft, session hijack | httponly cookies, CSP headers (TODO) |
 
+## Automated Security Fixes
+
+A daily GitHub Action (`.github/workflows/security-autofix.yml`) runs at 03:00 UTC:
+
+1. Fetches open code scanning alerts via GitHub API
+2. Runs `scripts/fix_security_alerts.py` to apply automated fixes
+3. Runs the test suite to verify fixes
+4. Creates a PR with the fixes if any changes were made
+
+Supported fix categories:
+- **Log injection** (`py/log-injection`): sanitizes user-controlled values with `_sanitize_log()`
+- **Path injection** (`py/path-injection`): adds `..` traversal checks before path construction
+- **Weak hashing** (`py/weak-sensitive-data-hashing`): upgrades SHA-256 to PBKDF2-SHA256
+
+Password hashing uses bcrypt (cost=12) by default, with PBKDF2-SHA256 fallback when bcrypt is not installed. Legacy SHA-256 hashes are still verified for migration but new hashes always use the stronger algorithm.
+
 ## Future Improvements
 
 - **Rate limiting** — Add `slowapi` middleware for per-IP rate limiting on auth endpoints

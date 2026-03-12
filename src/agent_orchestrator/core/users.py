@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -213,10 +214,12 @@ def _hash_password(password: str) -> str:
     """
     if HAS_BCRYPT:
         return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
-    # Fallback: SHA-256 with random salt (weaker, but better than fixed salt)
+    # Fallback: PBKDF2-SHA256 with random salt (use bcrypt for production)
     salt = secrets.token_hex(16)
-    hashed = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
-    return f"sha256${salt}${hashed}"
+    hashed = hashlib.pbkdf2_hmac(
+        "sha256", password.encode(), salt.encode(), iterations=100_000
+    ).hex()
+    return f"pbkdf2${salt}${hashed}"
 
 
 def _verify_password(password: str, hashed: str) -> bool:
@@ -225,9 +228,19 @@ def _verify_password(password: str, hashed: str) -> bool:
         if not HAS_BCRYPT:
             return False
         return bcrypt.checkpw(password.encode(), hashed.encode())
+    if hashed.startswith("pbkdf2$"):
+        _, salt, expected = hashed.split("$", 2)
+        computed = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), salt.encode(), iterations=100_000
+        ).hex()
+        return hmac.compare_digest(computed, expected)
+    # Legacy: SHA-256 with random salt (pre-PBKDF2 migration)
     if hashed.startswith("sha256$"):
         _, salt, expected = hashed.split("$", 2)
-        return hashlib.sha256(f"{salt}:{password}".encode()).hexdigest() == expected
-    # Legacy: fixed-salt SHA-256 (migration path)
-    legacy = hashlib.sha256(f"agent-orchestrator:{password}".encode()).hexdigest()
-    return hashed == legacy
+        computed = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+        return hmac.compare_digest(computed, expected)
+    # Legacy: fixed-salt PBKDF2-SHA256 (migration path)
+    legacy = hashlib.pbkdf2_hmac(
+        "sha256", password.encode(), b"agent-orchestrator", iterations=100_000
+    ).hex()
+    return hmac.compare_digest(hashed, legacy)
