@@ -225,10 +225,13 @@ Multi-turn conversation memory for iterative multi-agent interactions.
 
 ### Completed
 - [x] **Thread-based message history** (Solution 1): `ConversationManager` accumulates messages per thread, uses checkpointing for persistence. Supports multi-turn, thread isolation, fork, clear, max_history trim. Works with InMemory and SQLite checkpointers.
+- [x] **Agent conversation memory**: `Agent.execute()` accepts `conversation_history` parameter. Previous user/assistant exchanges are prepended to the agent's message list for multi-turn context.
+- [x] **Graph/prompt conversation memory**: `run_graph()` accepts `conversation_id` + `conversation_manager`. Previous exchanges are prepended to the prompt automatically.
+- [x] **Dashboard integration**: `ConversationManager` wired into `/api/prompt`, `/api/agent/run`, `/api/team/run`. New endpoints: `DELETE /api/conversation/{id}`, `POST /api/conversation/{id}/fork`, `GET /api/conversations`.
+- [x] **24 tests**: Core manager, agent integration, graph integration, persistence, fork, clear, metadata.
 
 ### Planned
 - [ ] **Store-based semantic memory** (Solution 2): Use `BaseStore` to persist conversation summaries cross-thread. Before each graph run, query store for relevant prior context and inject into system prompt. Enables long-running project memory without context window overflow. Requires LLM summarization step.
-- [ ] **Dashboard integration**: Wire `ConversationManager` into dashboard `run_graph()` so UI sessions persist across page reloads.
 - [ ] **PostgreSQL conversation store**: `ConversationManager` backed by `PostgresCheckpointer` for production persistence.
 
 ---

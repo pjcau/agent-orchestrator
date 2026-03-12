@@ -1342,3 +1342,114 @@ class TestTeamCompositions:
         info = compiled.get_graph_info()
         assert "financial-analyst" in info["nodes"]
         assert "risk-analyst" in info["nodes"]
+        # Should NOT have software agents
+        assert "backend-dev" not in info["nodes"]
+        assert "frontend-dev" not in info["nodes"]
+
+    def test_data_science_team_graph_structure(self):
+        """Data science prompt should produce data-analyst + ml-engineer nodes."""
+        provider = MockProvider()
+        graph, state = _build_team_graph(
+            provider, "Perform EDA and train a classification model on the dataset"
+        )
+        compiled = graph.compile()
+        info = compiled.get_graph_info()
+        assert "data-analyst" in info["nodes"]
+        assert "ml-engineer" in info["nodes"]
+        assert "backend-dev" not in info["nodes"]
+
+    def test_marketing_team_graph_structure(self):
+        """Marketing prompt should produce content-strategist + growth-hacker nodes."""
+        provider = MockProvider()
+        graph, state = _build_team_graph(
+            provider, "Create an SEO content marketing strategy for product launch"
+        )
+        compiled = graph.compile()
+        info = compiled.get_graph_info()
+        assert "content-strategist" in info["nodes"]
+        assert "growth-hacker" in info["nodes"]
+        assert "backend-dev" not in info["nodes"]
+
+    def test_software_team_graph_structure(self):
+        """Software prompt should produce backend-dev + frontend-dev nodes."""
+        provider = MockProvider()
+        graph, state = _build_team_graph(provider, "Build a REST API with authentication")
+        compiled = graph.compile()
+        info = compiled.get_graph_info()
+        assert "backend-dev" in info["nodes"]
+        assert "frontend-dev" in info["nodes"]
+        assert "financial-analyst" not in info["nodes"]
+
+    @pytest.mark.asyncio
+    async def test_finance_team_graph_execution(self):
+        """Finance team graph should run end-to-end with finance output keys."""
+        bus = EventBus()
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(
+                provider, "Calculate VaR for an equity portfolio"
+            )
+            compiled = graph.compile()
+            result = await compiled.invoke(initial_state)
+
+            assert result.success
+            assert "plan" in result.state
+            assert "agent_a_output" in result.state
+            assert "agent_b_output" in result.state
+            assert "response" in result.state
+
+            # Should have finance agent events
+            types = [e.event_type for e in bus.get_history()]
+            assert types.count(EventType.AGENT_SPAWN) >= 3
+            assert EventType.TASK_ASSIGNED in types
+        finally:
+            EventBus._instance = old_instance
+
+    @pytest.mark.asyncio
+    async def test_data_science_team_graph_execution(self):
+        """Data science team graph should run end-to-end."""
+        bus = EventBus()
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(
+                provider, "Build a prediction model with feature engineering"
+            )
+            compiled = graph.compile()
+            result = await compiled.invoke(initial_state)
+
+            assert result.success
+            assert "agent_a_output" in result.state
+            assert "agent_b_output" in result.state
+
+            assigned = [e for e in bus.get_history() if e.event_type == EventType.TASK_ASSIGNED]
+            agents = {a.data["to_agent"] for a in assigned}
+            assert "data-analyst" in agents
+            assert "ml-engineer" in agents
+        finally:
+            EventBus._instance = old_instance
+
+    @pytest.mark.asyncio
+    async def test_marketing_team_graph_execution(self):
+        """Marketing team graph should run end-to-end."""
+        bus = EventBus()
+        old_instance = EventBus._instance
+        EventBus._instance = bus
+        try:
+            provider = MockProvider()
+            graph, initial_state = _build_team_graph(
+                provider, "Plan an email campaign with conversion funnel optimization"
+            )
+            compiled = graph.compile()
+            result = await compiled.invoke(initial_state)
+
+            assert result.success
+            assigned = [e for e in bus.get_history() if e.event_type == EventType.TASK_ASSIGNED]
+            agents = {a.data["to_agent"] for a in assigned}
+            assert "content-strategist" in agents
+            assert "growth-hacker" in agents
+        finally:
+            EventBus._instance = old_instance

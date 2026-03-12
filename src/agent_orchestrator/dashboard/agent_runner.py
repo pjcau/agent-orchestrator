@@ -739,9 +739,7 @@ async def run_team(
     if conversation_id and conversation_manager:
         history = await conversation_manager.get_history(conversation_id)
         for msg in history:
-            team_history_msgs.append(
-                Message(role=Role(msg.role), content=msg.content)
-            )
+            team_history_msgs.append(Message(role=Role(msg.role), content=msg.content))
 
     # --- Step 1: Team-lead plans with agent registry ---
     await bus.emit(
@@ -1063,10 +1061,14 @@ async def run_team(
 
     # Save to conversation memory
     if conversation_id and conversation_manager:
+
         async def _passthrough_team(msgs):
             return summary
+
         await conversation_manager.send(
-            conversation_id, task_description, _passthrough_team,
+            conversation_id,
+            task_description,
+            _passthrough_team,
         )
 
     return {

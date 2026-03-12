@@ -20,6 +20,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..core.conversation import ConversationManager
+from ..core.checkpoint import InMemoryCheckpointer
 from .agent_runner import create_skill_registry, run_agent, run_team
 from .agents_registry import get_agent_registry
 from .events import Event, EventBus, EventType
@@ -801,8 +803,28 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     @app.get("/api/conversation/{conv_id}")
     async def get_conversation(conv_id: str):
-        msgs = await usage_db.get_conversation(conv_id)
+        history = await conv_manager.get_history(conv_id)
+        if history:
+            msgs = [m.to_dict() for m in history]
+        else:
+            msgs = await usage_db.get_conversation(conv_id)
         return JSONResponse(content={"conversation_id": conv_id, "messages": msgs})
+
+    @app.delete("/api/conversation/{conv_id}")
+    async def clear_conversation(conv_id: str):
+        await conv_manager.clear_thread(conv_id)
+        return JSONResponse(content={"success": True, "conversation_id": conv_id})
+
+    @app.post("/api/conversation/{conv_id}/fork")
+    async def fork_conversation(conv_id: str, body: dict = {}):
+        new_id = body.get("new_id")
+        forked_id = await conv_manager.fork_thread(conv_id, new_id)
+        return JSONResponse(content={"success": True, "source_id": conv_id, "forked_id": forked_id})
+
+    @app.get("/api/conversations")
+    async def list_conversations():
+        threads = await conv_manager.list_threads()
+        return JSONResponse(content={"threads": threads})
 
     # --- Presets ---
 

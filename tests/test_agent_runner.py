@@ -84,6 +84,69 @@ MOCK_REGISTRY = {
             "category": "data-science",
             "skills": [],
         },
+        {
+            "name": "ml-engineer",
+            "model": "opus",
+            "description": "Model training and evaluation",
+            "category": "data-science",
+            "skills": [],
+        },
+        {
+            "name": "financial-analyst",
+            "model": "sonnet",
+            "description": "Financial modeling and valuation",
+            "category": "finance",
+            "skills": [],
+        },
+        {
+            "name": "risk-analyst",
+            "model": "opus",
+            "description": "Risk modeling and VaR",
+            "category": "finance",
+            "skills": [],
+        },
+        {
+            "name": "quant-developer",
+            "model": "opus",
+            "description": "Algorithmic trading and backtesting",
+            "category": "finance",
+            "skills": [],
+        },
+        {
+            "name": "compliance-officer",
+            "model": "sonnet",
+            "description": "Regulatory compliance and audit",
+            "category": "finance",
+            "skills": [],
+        },
+        {
+            "name": "accountant",
+            "model": "sonnet",
+            "description": "Bookkeeping and tax prep",
+            "category": "finance",
+            "skills": [],
+        },
+        {
+            "name": "content-strategist",
+            "model": "sonnet",
+            "description": "Content planning and brand voice",
+            "category": "marketing",
+            "skills": [],
+        },
+        {
+            "name": "seo-specialist",
+            "model": "sonnet",
+            "description": "SEO and keyword research",
+            "category": "marketing",
+            "skills": [],
+        },
+        {
+            "name": "growth-hacker",
+            "model": "opus",
+            "description": "Growth funnels and A/B testing",
+            "category": "marketing",
+            "skills": [],
+        },
     ],
 }
 
@@ -597,3 +660,218 @@ class TestRunTeam:
 
         assert "elapsed_s" in result
         assert isinstance(result["elapsed_s"], float)
+
+    @pytest.mark.asyncio
+    async def test_finance_dynamic_routing(self):
+        """run_team should route finance tasks to finance agents."""
+        plan_response = (
+            '[{"agent": "financial-analyst", "task": "Build DCF model"}, '
+            '{"agent": "risk-analyst", "task": "Assess portfolio risk"}]'
+        )
+        provider = MockProvider(
+            responses=[plan_response, "done", "done", '{"sufficient": true}', "Summary."]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Analyze portfolio risk and create DCF valuation",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert result["success"]
+        assert result["used_fallback"] is False
+        assert set(result["agents_selected"]) == {"financial-analyst", "risk-analyst"}
+
+    @pytest.mark.asyncio
+    async def test_finance_fallback_routing(self):
+        """Unparseable plan for finance task should fallback to finance agents."""
+        provider = MockProvider(
+            responses=[
+                "I think we should analyze this",  # Unparseable plan
+                "done",  # financial-analyst
+                "done",  # risk-analyst
+                '{"sufficient": true}',
+                "Summary.",
+            ]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Calculate VaR for an equity portfolio with stocks and bonds",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert result["success"]
+        assert result["used_fallback"] is True
+        assert set(result["agents_selected"]) == {"financial-analyst", "risk-analyst"}
+
+    @pytest.mark.asyncio
+    async def test_data_science_dynamic_routing(self):
+        """run_team should route data science tasks to data-science agents."""
+        plan_response = (
+            '[{"agent": "data-analyst", "task": "Perform EDA"}, '
+            '{"agent": "ml-engineer", "task": "Train classifier"}]'
+        )
+        provider = MockProvider(
+            responses=[plan_response, "done", "done", '{"sufficient": true}', "Summary."]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Perform EDA and train a classification model on the dataset",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert result["success"]
+        assert result["used_fallback"] is False
+        assert set(result["agents_selected"]) == {"data-analyst", "ml-engineer"}
+
+    @pytest.mark.asyncio
+    async def test_data_science_fallback_routing(self):
+        """Unparseable plan for data task should fallback to data-science agents."""
+        provider = MockProvider(
+            responses=[
+                "Let me look at the data",  # Unparseable
+                "done",
+                "done",
+                '{"sufficient": true}',
+                "Summary.",
+            ]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Build a prediction model with feature engineering on the dataset",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert result["success"]
+        assert result["used_fallback"] is True
+        assert set(result["agents_selected"]) == {"data-analyst", "ml-engineer"}
+
+    @pytest.mark.asyncio
+    async def test_marketing_dynamic_routing(self):
+        """run_team should route marketing tasks to marketing agents."""
+        plan_response = (
+            '[{"agent": "content-strategist", "task": "Plan content"}, '
+            '{"agent": "seo-specialist", "task": "Keyword research"}]'
+        )
+        provider = MockProvider(
+            responses=[plan_response, "done", "done", '{"sufficient": true}', "Summary."]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Create an SEO content marketing strategy for product launch",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert result["success"]
+        assert result["used_fallback"] is False
+        assert set(result["agents_selected"]) == {"content-strategist", "seo-specialist"}
+
+    @pytest.mark.asyncio
+    async def test_marketing_fallback_routing(self):
+        """Unparseable plan for marketing task should fallback to marketing agents."""
+        provider = MockProvider(
+            responses=[
+                "Let's think about this campaign",  # Unparseable
+                "done",
+                "done",
+                '{"sufficient": true}',
+                "Summary.",
+            ]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Plan an email marketing campaign with conversion funnel",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert result["success"]
+        assert result["used_fallback"] is True
+        assert set(result["agents_selected"]) == {"content-strategist", "seo-specialist"}
+
+    @pytest.mark.asyncio
+    async def test_finance_agents_get_correct_role_prompt(self):
+        """Finance agents should get analysis-focused role, not code-writing role."""
+        plan_response = '[{"agent": "financial-analyst", "task": "Analyze"}]'
+        provider = MockProvider(
+            responses=[plan_response, "done", '{"sufficient": true}', "Summary."]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Assess investment risk",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        # Check that the finance agent was selected (not software)
+        assert "financial-analyst" in result["agents_selected"]
+
+    @pytest.mark.asyncio
+    async def test_mixed_category_from_plan(self):
+        """run_team should allow team-lead to mix agents from different categories."""
+        plan_response = (
+            '[{"agent": "financial-analyst", "task": "Financial analysis"}, '
+            '{"agent": "quant-developer", "task": "Build trading strategy"}, '
+            '{"agent": "risk-analyst", "task": "Risk assessment"}]'
+        )
+        provider = MockProvider(
+            responses=[plan_response, "done", "done", "done", '{"sufficient": true}', "Summary."]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(
+                task_description="Design a trading strategy with risk controls",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert result["success"]
+        assert len(result["agents_selected"]) == 3
+        assert set(result["agents_selected"]) == {
+            "financial-analyst",
+            "quant-developer",
+            "risk-analyst",
+        }

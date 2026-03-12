@@ -1,4 +1,10 @@
-"""Tests for ConversationManager — thread-based message memory."""
+"""Tests for ConversationManager — thread-based message memory.
+
+Covers:
+- Core ConversationManager (thread memory, persistence, fork, clear)
+- Agent integration (multi-turn agent execution with conversation history)
+- Graph integration (multi-turn graph execution with conversation history)
+"""
 
 import pytest
 
@@ -7,6 +13,16 @@ from agent_orchestrator.core.conversation import (
     ConversationMessage,
 )
 from agent_orchestrator.core.checkpoint import InMemoryCheckpointer, SQLiteCheckpointer
+from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
+from agent_orchestrator.core.provider import (
+    Completion,
+    Message,
+    ModelCapabilities,
+    Provider,
+    Role,
+    Usage,
+)
+from agent_orchestrator.core.skill import SkillRegistry
 
 
 # --- Mock graph functions ---
@@ -322,3 +338,190 @@ class TestConversationManagerMetadata:
         user_msgs = [m for m in history if m.role == "user"]
         assert user_msgs[0].metadata == {"turn": 1}
         assert user_msgs[1].metadata == {"turn": 2}
+
+
+# --- Mock provider for agent tests ---
+
+
+class MockProvider(Provider):
+    """A mock LLM provider that records messages it receives."""
+
+    def __init__(self):
+        self.call_log: list[list[Message]] = []
+        self.response_text = "mock response"
+
+    @property
+    def model_id(self) -> str:
+        return "mock-model"
+
+    @property
+    def capabilities(self) -> ModelCapabilities:
+        return ModelCapabilities(max_context=4096, max_output_tokens=1024, supports_tools=False)
+
+    @property
+    def input_cost_per_million(self) -> float:
+        return 0.0
+
+    @property
+    def output_cost_per_million(self) -> float:
+        return 0.0
+
+    async def complete(self, messages, **kwargs) -> Completion:
+        self.call_log.append(list(messages))
+        return Completion(
+            content=self.response_text,
+            usage=Usage(input_tokens=10, output_tokens=5, cost_usd=0.0),
+            tool_calls=[],
+        )
+
+    async def stream(self, messages, **kwargs):
+        yield self.response_text
+
+
+class TestAgentConversationMemory:
+    """Test that Agent.execute() uses conversation_history for multi-turn context."""
+
+    @pytest.mark.asyncio
+    async def test_agent_without_history(self):
+        """Without history, agent sees only the current task."""
+        provider = MockProvider()
+        agent = Agent(
+            config=AgentConfig(name="test", role="helper", provider_key="mock"),
+            provider=provider,
+            skill_registry=SkillRegistry(),
+        )
+
+        result = await agent.execute(Task(description="do something"))
+        assert result.status == TaskStatus.COMPLETED
+        # Only one user message (the task)
+        assert len(provider.call_log[0]) == 1
+        assert provider.call_log[0][0].content == "do something"
+
+    @pytest.mark.asyncio
+    async def test_agent_with_history(self):
+        """With conversation_history, agent sees previous exchanges + current task."""
+        provider = MockProvider()
+        agent = Agent(
+            config=AgentConfig(name="test", role="helper", provider_key="mock"),
+            provider=provider,
+            skill_registry=SkillRegistry(),
+        )
+
+        history = [
+            Message(role=Role.USER, content="build an API"),
+            Message(role=Role.ASSISTANT, content="I built the API"),
+        ]
+
+        result = await agent.execute(
+            Task(description="now add auth"),
+            conversation_history=history,
+        )
+        assert result.status == TaskStatus.COMPLETED
+        # Agent should see: history (2 msgs) + current task (1 msg) = 3 msgs
+        messages_sent = provider.call_log[0]
+        assert len(messages_sent) == 3
+        assert messages_sent[0].content == "build an API"
+        assert messages_sent[1].content == "I built the API"
+        assert messages_sent[2].content == "now add auth"
+
+    @pytest.mark.asyncio
+    async def test_agent_with_history_and_context(self):
+        """History + task context both appear in messages."""
+        provider = MockProvider()
+        agent = Agent(
+            config=AgentConfig(name="test", role="helper", provider_key="mock"),
+            provider=provider,
+            skill_registry=SkillRegistry(),
+        )
+
+        history = [
+            Message(role=Role.USER, content="previous question"),
+            Message(role=Role.ASSISTANT, content="previous answer"),
+        ]
+
+        result = await agent.execute(
+            Task(
+                description="new question",
+                context={"spec": "REST API with auth"},
+            ),
+            conversation_history=history,
+        )
+        assert result.status == TaskStatus.COMPLETED
+        # history (2) + context (1) + task (1) = 4 messages
+        messages_sent = provider.call_log[0]
+        assert len(messages_sent) == 4
+        assert messages_sent[0].content == "previous question"
+        assert messages_sent[1].content == "previous answer"
+        assert "Available context" in messages_sent[2].content
+        assert messages_sent[3].content == "new question"
+
+    @pytest.mark.asyncio
+    async def test_agent_multi_turn_via_conversation_manager(self):
+        """Full integration: ConversationManager feeds history to Agent across calls."""
+        provider = MockProvider()
+        mgr = ConversationManager()
+
+        agent = Agent(
+            config=AgentConfig(name="test", role="helper", provider_key="mock"),
+            provider=provider,
+            skill_registry=SkillRegistry(),
+        )
+
+        # Turn 1
+        async def run_with_history_1(msgs):
+            history = [
+                Message(role=Role(m["role"]), content=m["content"])
+                for m in msgs[:-1]  # all except the last (current request)
+            ]
+            result = await agent.execute(
+                Task(description=msgs[-1]["content"]),
+                conversation_history=history if history else None,
+            )
+            return result.output
+
+        r1 = await mgr.send("t1", "build API", run_with_history_1)
+        assert r1.success
+        # First call: only 1 message (no history)
+        assert len(provider.call_log[0]) == 1
+
+        # Turn 2 — agent should see turn 1
+        r2 = await mgr.send("t1", "add auth", run_with_history_1)
+        assert r2.success
+        # Second call: 2 history msgs + 1 current = 3
+        assert len(provider.call_log[1]) == 3
+        assert provider.call_log[1][0].content == "build API"
+        assert provider.call_log[1][1].content == "mock response"
+        assert provider.call_log[1][2].content == "add auth"
+
+
+class TestGraphConversationMemory:
+    """Test that graph execution uses conversation memory."""
+
+    @pytest.mark.asyncio
+    async def test_graph_multi_turn_state(self):
+        """Verify ConversationManager stores graph outputs across turns."""
+        mgr = ConversationManager()
+
+        async def mock_graph_1(msgs):
+            return "graph output 1"
+
+        async def mock_graph_2(msgs):
+            # Should see previous exchange
+            user_msgs = [m["content"] for m in msgs if m["role"] == "user"]
+            return f"saw {len(user_msgs)} requests"
+
+        r1 = await mgr.send("graph-t1", "prompt 1", mock_graph_1)
+        assert r1.success
+        assert r1.response == "graph output 1"
+
+        r2 = await mgr.send("graph-t1", "prompt 2", mock_graph_2)
+        assert r2.success
+        assert "2 requests" in r2.response
+
+        # Verify full history
+        history = await mgr.get_history("graph-t1")
+        assert len(history) == 4  # 2 user + 2 assistant
+        assert history[0].content == "prompt 1"
+        assert history[1].content == "graph output 1"
+        assert history[2].content == "prompt 2"
+        assert "2 requests" in history[3].content

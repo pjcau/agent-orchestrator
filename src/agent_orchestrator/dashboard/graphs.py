@@ -189,6 +189,20 @@ async def run_graph(
     if event_bus is None:
         event_bus = EventBus.get()
 
+    # Prepend conversation history to the prompt
+    enriched_prompt = prompt
+    if conversation_id and conversation_manager:
+        history = await conversation_manager.get_history(conversation_id)
+        if history:
+            history_lines = []
+            for msg in history:
+                label = "User" if msg.role == "user" else "Assistant"
+                history_lines.append(f"{label}: {msg.content}")
+            history_context = "\n".join(history_lines)
+            enriched_prompt = (
+                f"Previous conversation:\n{history_context}\n\nCurrent request:\n{prompt}"
+            )
+
     builders = {
         "auto": _build_auto_graph,
         "review": _build_review_graph,
@@ -199,7 +213,7 @@ async def run_graph(
     }
 
     builder = builders.get(graph_type, _build_chat_graph)
-    graph, initial_state = builder(provider, prompt)
+    graph, initial_state = builder(provider, enriched_prompt)
 
     # Emit graph start event
     compiled = graph.compile()
@@ -240,6 +254,19 @@ async def run_graph(
 
     # Build step outputs for the response
     steps = _extract_steps(result)
+    output_text = steps[-1]["output"] if steps else ""
+
+    # Save to conversation memory
+    if conversation_id and conversation_manager:
+
+        async def _passthrough_graph(msgs):
+            return output_text
+
+        await conversation_manager.send(
+            conversation_id,
+            prompt,
+            _passthrough_graph,
+        )
 
     # Aggregate usage
     usage = _aggregate_usage(result, model)
@@ -255,7 +282,7 @@ async def run_graph(
     return {
         "success": True,
         "steps": steps,
-        "output": steps[-1]["output"] if steps else "",
+        "output": output_text,
         "usage": usage,
         "elapsed_s": round(elapsed, 2),
     }
