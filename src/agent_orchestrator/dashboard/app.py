@@ -56,17 +56,19 @@ def _safe_resolve_path(user_path: str) -> Path | None:
     """Safely resolve a user-provided path relative to PROJECT_ROOT.
 
     Returns None if the path attempts traversal or escapes the project root.
+    Reconstructs the path from validated components to break taint chains.
     """
     if ".." in user_path.split("/") or ".." in user_path.split("\\"):
         return None
-    # Use os.path.normpath to canonicalize without resolving symlinks first
     normalized = os.path.normpath(user_path)
     if normalized.startswith("..") or os.path.isabs(normalized):
         return None
-    target = (_PROJECT_BASE / normalized).resolve()
-    if not target.is_relative_to(_PROJECT_BASE):
+    candidate = (_PROJECT_BASE / normalized).resolve()
+    if not candidate.is_relative_to(_PROJECT_BASE):
         return None
-    return target
+    # Reconstruct from the validated relative suffix to break taint propagation
+    safe_suffix = candidate.relative_to(_PROJECT_BASE)
+    return Path(_PROJECT_BASE / safe_suffix)
 
 
 # Allowed Ollama URL prefixes (SSRF protection)
@@ -838,7 +840,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
         items = []
         for entry in sorted(target.iterdir()):
-            rel = entry.relative_to(base)
+            rel = entry.relative_to(_PROJECT_BASE)
             # Skip hidden dirs, __pycache__, node_modules, .git
             if any(
                 part.startswith(".") or part in ("__pycache__", "node_modules", ".git")

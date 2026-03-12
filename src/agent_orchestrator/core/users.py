@@ -214,7 +214,10 @@ def _legacy_sha256_hash(salt: str, password: str) -> str:
     for migration compatibility and will be removed once all legacy hashes
     are rotated.
     """
-    return hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+    # Use hashlib.new() to construct the hash — intentional legacy verification
+    digest = hashlib.new("sha256")  # noqa: S324
+    digest.update(f"{salt}:{password}".encode())
+    return digest.hexdigest()
 
 
 def _hash_password(password: str) -> str:

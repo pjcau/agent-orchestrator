@@ -11,8 +11,8 @@
   let streamWs = null;
   /** Safely set a property on an object, preventing prototype pollution. */
   function safeSet(obj, key, value) {
-    if (key === "__proto__" || key === "constructor" || key === "prototype") return;
-    obj[key] = value;
+    if (typeof key !== "string" || key === "__proto__" || key === "constructor" || key === "prototype") return;
+    Object.defineProperty(obj, key, { value: value, writable: true, enumerable: true, configurable: true });
   }
   /** Safely get a property from an object, preventing prototype pollution reads. */
   function safeGet(obj, key) {
@@ -1627,15 +1627,18 @@
   function esc(s) { if (!s) return ""; const d = document.createElement("div"); d.textContent = String(s); return d.innerHTML; }
   /** Sanitize HTML string — strips scripts and event handlers for safe innerHTML use. */
   function safeHTML(html) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
-    doc.querySelectorAll("script,iframe,object,embed,link[rel=import]").forEach(el => el.remove());
-    doc.querySelectorAll("*").forEach(el => {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    const content = tpl.content;
+    content.querySelectorAll("script,iframe,object,embed,link[rel=import]").forEach(el => el.remove());
+    content.querySelectorAll("*").forEach(el => {
       for (const attr of [...el.attributes]) {
         if (attr.name.startsWith("on") || attr.value.includes("javascript:")) el.removeAttribute(attr.name);
       }
     });
-    return doc.body.innerHTML;
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(content.cloneNode(true));
+    return wrapper.innerHTML;
   }
   function formatJson(obj) {
     return JSON.stringify(obj, null, 2).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"([^"]+)":/g, '<span class="detail-key">"$1"</span>:');

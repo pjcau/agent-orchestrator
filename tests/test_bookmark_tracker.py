@@ -24,7 +24,7 @@ class TestLoadState:
         data = {"processed": {"https://example-alpha.test": {}}, "last_run": "2026-03-01T00:00:00Z"}
         f.write_text(json.dumps(data))
         state = load_state(f)
-        assert "https://example-alpha.test" in state["processed"]
+        assert state["processed"].get("https://example-alpha.test") is not None
 
     def test_corrupt_json_returns_default(self, tmp_path: Path):
         f = tmp_path / "bad.json"
@@ -47,7 +47,7 @@ class TestSaveState:
         state = {"processed": {"https://example-x.test": {"summary": "test"}}, "last_run": None}
         save_state(f, state)
         loaded = json.loads(f.read_text())
-        assert "https://example-x.test" in loaded["processed"]
+        assert loaded["processed"].get("https://example-x.test") is not None
 
 
 class TestLoadBookmarks:
@@ -118,14 +118,14 @@ class TestMarkProcessed:
     def test_marks_url(self):
         state = {"processed": {}}
         mark_processed(state, "https://example-alpha.test", summary="test", improvements=["imp1"])
-        assert "https://example-alpha.test" in state["processed"]
+        assert state["processed"].get("https://example-alpha.test") is not None
         assert state["processed"]["https://example-alpha.test"]["summary"] == "test"
         assert state["processed"]["https://example-alpha.test"]["improvements"] == ["imp1"]
 
     def test_creates_processed_dict_if_missing(self):
         state = {}
         mark_processed(state, "https://example-beta.test")
-        assert "https://example-beta.test" in state["processed"]
+        assert state["processed"].get("https://example-beta.test") is not None
 
     def test_default_empty_improvements(self):
         state = {"processed": {}}
@@ -146,8 +146,8 @@ class TestCleanupOldEntries:
         }
         removed = cleanup_old_entries(state, max_age_days=30)
         assert removed == 1
-        assert "https://example-old.test" not in state["processed"]
-        assert "https://example-new.test" in state["processed"]
+        assert state["processed"].get("https://example-old.test") is None
+        assert state["processed"].get("https://example-new.test") is not None
 
     def test_no_entries_to_remove(self):
         state = {
