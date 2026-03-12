@@ -153,7 +153,20 @@ docker compose -f docker-compose.prod.yml ps
 
 ## Step 5: GitHub Actions (CI/CD)
 
-The deploy pipeline (`.github/workflows/deploy.yml`) auto-deploys on push to `main`.
+The deploy pipeline (`.github/workflows/deploy.yml`) auto-deploys on push to `main` (ignores `docs/`, `*.md`, `terraform/`).
+
+### Pipeline Steps
+
+1. **Test Suite** — Install deps (Python 3.12), run `pytest`, lint with `ruff`
+2. **Deploy to EC2** — rsync code, inject secrets into `.env.prod`, rebuild containers, health check
+
+### Deploy Strategy
+
+The deploy uses `docker compose down` (full teardown) instead of selective `rm` to prevent stale container name conflicts. An additional cleanup step force-removes any orphaned containers with the `agent-orchestrator` prefix before starting services fresh.
+
+```
+rsync code → inject secrets → build images → down (full stop) → rm stale containers → up -d → health check
+```
 
 ### Required GitHub Secrets
 
@@ -161,6 +174,14 @@ The deploy pipeline (`.github/workflows/deploy.yml`) auto-deploys on push to `ma
 |--------|-------|
 | `EC2_SSH_PRIVATE_KEY` | SSH private key for EC2 access |
 | `EC2_HOST` | Elastic IP or domain name |
+| `AWS_ACCESS_KEY_ID` | AWS credentials for cost exporter |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials for cost exporter |
+| `OPENROUTER_API_KEY` | OpenRouter API key for LLM providers |
+| `JWT_SECRET_KEY` | JWT signing key for dashboard auth |
+| `OAUTH_CLIENT_ID` | GitHub OAuth App client ID |
+| `OAUTH_CLIENT_SECRET` | GitHub OAuth App client secret |
+| `GRAFANA_SMTP_USER` | SMTP username for Grafana email alerts |
+| `GRAFANA_SMTP_PASSWORD` | SMTP password for Grafana email alerts |
 
 Set them in **repo → Settings → Secrets and variables → Actions**.
 
@@ -249,3 +270,17 @@ docker compose -f docker-compose.prod.yml exec postgres psql -U orchestrator
 ### WebSocket not connecting
 
 Check that the Security Group allows TCP 443 and that Nginx WebSocket config has long timeout (`proxy_read_timeout 86400`).
+
+### Deploy fails with container name conflict
+
+If deploy fails with `Error when allocating new name: Conflict. The container name ... is already in use`:
+
+```bash
+# SSH into EC2 and force-remove stale containers
+ssh ec2-user@<EC2_IP>
+docker ps -a --filter 'name=agent-orchestrator' --format '{{.ID}}' | xargs -r docker rm -f
+cd /opt/agent-orchestrator
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+This happens when Docker leaves containers with prefixed names (e.g. `21d9af4e7301_agent-orchestrator-*`) that `docker compose rm` doesn't clean up. The CI pipeline now handles this automatically with a forced cleanup step.

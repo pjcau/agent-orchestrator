@@ -103,9 +103,10 @@ jobs:
 
           # Build and restart services (stop old containers first to avoid name conflicts)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod rm -sf dashboard aws-cost-exporter"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans dashboard aws-cost-exporter"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans --timeout 30"
+          # Remove any stale containers with prefixed names that docker compose misses
+          $SSH_CMD "docker ps -a --filter 'name=agent-orchestrator' --format '{{.ID}}' | xargs -r docker rm -f" || true
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
 
           # Ensure postgres password matches .env.prod (fixes first-init mismatch)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T postgres psql -U orchestrator -c \"ALTER USER orchestrator WITH PASSWORD 'orchestrator-prod-2026';\"" 2>/dev/null || true

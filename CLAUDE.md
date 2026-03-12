@@ -364,6 +364,27 @@ Real-time monitoring UI for the orchestrator. Shows agent interactions, technica
 docker compose up dashboard    # https://localhost:5005
 ```
 
+### Multi-Category Agent Routing
+
+The dashboard routes tasks to the correct agent category based on keyword detection:
+
+| Category | Agents | Example keywords |
+|----------|--------|-----------------|
+| **software-engineering** | backend, frontend | code, api, database, docker |
+| **finance** | financial-analyst, risk-analyst | stock, portfolio, trading, valuation |
+| **data-science** | data-analyst, ml-engineer | dataset, machine learning, regression |
+| **marketing** | content-strategist, growth-hacker | seo, campaign, social media, funnel |
+
+Both `agent_runner.py` (team execution) and `graphs.py` (graph composition) use category-aware routing. Falls back to software-engineering if no keywords match.
+
+### Conversation Persistence
+
+Conversation memory persists across restarts and session reloads:
+
+- **PostgresCheckpointer** — used when `DATABASE_URL` is set (production). Falls back to `InMemoryCheckpointer` otherwise.
+- **Session restore** — `POST /api/jobs/{session_id}/restore` re-hydrates conversation context from job records when loading a historical session.
+- **Frontend integration** — `loadSessionIntoChat()` calls the restore endpoint automatically, preserving `conversation_id` for continuity.
+
 ### Session Explorer
 
 Built-in file browser for navigating agent-created artifacts per session. Access via the **Explorer** button in the header.
