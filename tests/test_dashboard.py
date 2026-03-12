@@ -1546,3 +1546,92 @@ class TestExplorerEndpoints:
         large_file = session_dir / "huge.txt"
         large_file.write_text("x" * 600_000)
         assert large_file.stat().st_size > 500_000
+
+
+class TestJobLoggerCleanup:
+    """Tests for lazy directory creation and empty session cleanup."""
+
+    def test_lazy_dir_creation(self, tmp_path):
+        """Session dir is not created until first log() or session_dir access."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        jl = JobLogger(jobs_dir=tmp_path)
+        # Dir should NOT exist yet (lazy)
+        sid = jl.session_id
+        session_path = tmp_path / f"job_{sid}"
+        assert not session_path.exists()
+
+    def test_dir_created_on_log(self, tmp_path):
+        """Session dir is created when log() is called."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        jl = JobLogger(jobs_dir=tmp_path)
+        jl.log("prompt", {"prompt": "hello"})
+        session_path = tmp_path / f"job_{jl.session_id}"
+        assert session_path.exists()
+        assert len(list(session_path.glob("*.json"))) == 1
+
+    def test_dir_created_on_session_dir_access(self, tmp_path):
+        """Accessing session_dir property creates the directory."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        jl = JobLogger(jobs_dir=tmp_path)
+        sdir = jl.session_dir
+        assert sdir.exists()
+
+    def test_cleanup_empty_sessions(self, tmp_path):
+        """Empty dirs older than threshold are cleaned up."""
+        import os
+
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        jl = JobLogger(jobs_dir=tmp_path, empty_cleanup_s=0)
+        # Create some empty dirs manually
+        empty1 = tmp_path / "job_old-empty-1"
+        empty1.mkdir()
+        empty2 = tmp_path / "job_old-empty-2"
+        empty2.mkdir()
+        # Create a non-empty dir
+        nonempty = tmp_path / "job_has-files"
+        nonempty.mkdir()
+        (nonempty / "data.json").write_text("{}")
+        # Set mtime to past
+        old_time = os.path.getmtime(str(empty1)) - 60
+        os.utime(str(empty1), (old_time, old_time))
+        os.utime(str(empty2), (old_time, old_time))
+
+        removed = jl.cleanup_empty_sessions()
+        assert removed == 2
+        assert not empty1.exists()
+        assert not empty2.exists()
+        assert nonempty.exists()
+
+    def test_list_sessions_excludes_empty(self, tmp_path):
+        """list_sessions() should not include empty directories."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        jl = JobLogger(jobs_dir=tmp_path)
+        # Create an empty session dir
+        (tmp_path / "job_empty-one").mkdir()
+        # Create a non-empty session dir
+        nonempty = tmp_path / "job_has-data"
+        nonempty.mkdir()
+        (nonempty / "0001_prompt.json").write_text('{"prompt": "test", "job_type": "prompt"}')
+
+        sessions = jl.list_sessions()
+        sids = [s["session_id"] for s in sessions]
+        assert "has-data" in sids
+        assert "empty-one" not in sids
+
+    def test_cleanup_on_new_session(self, tmp_path):
+        """Previous empty session dir is cleaned up when new session starts."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
+        jl = JobLogger(jobs_dir=tmp_path, inactivity_timeout_s=0)
+        # Access session_dir to create it
+        first_dir = jl.session_dir
+        assert first_dir.exists()
+        # Trigger new session (timeout=0)
+        jl.touch()
+        # Old empty dir should be removed
+        assert not first_dir.exists()
