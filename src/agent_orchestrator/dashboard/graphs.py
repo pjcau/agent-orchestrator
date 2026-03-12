@@ -6,6 +6,7 @@ Emits events to the EventBus so the dashboard shows real-time progress.
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from typing import Any, Callable
@@ -19,6 +20,8 @@ from ..core.provider import Provider
 from ..providers.local import LocalProvider
 from ..providers.openrouter import OpenRouterProvider
 from .events import Event, EventBus, EventType
+
+logger = logging.getLogger(__name__)
 
 
 async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
@@ -373,17 +376,18 @@ async def replay_node(
         }
     except Exception as e:
         elapsed = time.time() - start_time
+        logger.exception("Replay node failed")
         await event_bus.emit(
             Event(
                 event_type=EventType.GRAPH_END,
                 data={
                     "success": False,
                     "elapsed_s": round(elapsed, 2),
-                    "error": str(e),
+                    "error": type(e).__name__,
                 },
             )
         )
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Node replay failed"}
 
 
 def get_last_run_info() -> dict[str, Any]:

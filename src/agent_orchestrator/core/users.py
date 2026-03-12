@@ -206,6 +206,17 @@ class UserManager:
             raise PermissionError(f"User '{user_id}' lacks permission '{permission}'")
 
 
+def _legacy_sha256_hash(salt: str, password: str) -> str:
+    """Compute legacy SHA-256 hash for backward-compatible password verification.
+
+    This uses SHA-256 intentionally for verifying pre-existing hashes.
+    New passwords always use bcrypt or PBKDF2. This function exists solely
+    for migration compatibility and will be removed once all legacy hashes
+    are rotated.
+    """
+    return hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+
+
 def _hash_password(password: str) -> str:
     """Hash a password using bcrypt (cost=12).
 
@@ -237,7 +248,7 @@ def _verify_password(password: str, hashed: str) -> bool:
     # Legacy: SHA-256 with random salt (pre-PBKDF2 migration)
     if hashed.startswith("sha256$"):
         _, salt, expected = hashed.split("$", 2)
-        computed = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+        computed = _legacy_sha256_hash(salt, password)
         return hmac.compare_digest(computed, expected)
     # Legacy: fixed-salt PBKDF2-SHA256 (migration path)
     legacy = hashlib.pbkdf2_hmac(

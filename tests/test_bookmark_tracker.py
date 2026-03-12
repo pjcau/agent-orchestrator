@@ -21,10 +21,10 @@ class TestLoadState:
 
     def test_valid_state_file(self, tmp_path: Path):
         f = tmp_path / "state.json"
-        data = {"processed": {"https://a.com": {}}, "last_run": "2026-03-01T00:00:00Z"}
+        data = {"processed": {"https://example-alpha.test": {}}, "last_run": "2026-03-01T00:00:00Z"}
         f.write_text(json.dumps(data))
         state = load_state(f)
-        assert "https://a.com" in state["processed"]
+        assert "https://example-alpha.test" in state["processed"]
 
     def test_corrupt_json_returns_default(self, tmp_path: Path):
         f = tmp_path / "bad.json"
@@ -44,10 +44,10 @@ class TestSaveState:
 
     def test_preserves_processed_data(self, tmp_path: Path):
         f = tmp_path / "state.json"
-        state = {"processed": {"https://x.com": {"summary": "test"}}, "last_run": None}
+        state = {"processed": {"https://example-x.test": {"summary": "test"}}, "last_run": None}
         save_state(f, state)
         loaded = json.loads(f.read_text())
-        assert "https://x.com" in loaded["processed"]
+        assert "https://example-x.test" in loaded["processed"]
 
 
 class TestLoadBookmarks:
@@ -56,11 +56,11 @@ class TestLoadBookmarks:
 
     def test_valid_bookmarks(self, tmp_path: Path):
         f = tmp_path / "bm.json"
-        data = [{"url": "https://a.com", "added": "2026-03-08T00:00:00Z"}]
+        data = [{"url": "https://example-alpha.test", "added": "2026-03-08T00:00:00Z"}]
         f.write_text(json.dumps(data))
         bms = load_bookmarks(f)
         assert len(bms) == 1
-        assert bms[0]["url"] == "https://a.com"
+        assert bms[0]["url"] == "https://example-alpha.test"
 
     def test_non_list_returns_empty(self, tmp_path: Path):
         f = tmp_path / "bm.json"
@@ -76,24 +76,24 @@ class TestLoadBookmarks:
 class TestFilterUnprocessed:
     def test_filters_already_processed(self):
         bookmarks = [
-            {"url": "https://a.com", "added": datetime.now(timezone.utc).isoformat()},
-            {"url": "https://b.com", "added": datetime.now(timezone.utc).isoformat()},
+            {"url": "https://example-alpha.test", "added": datetime.now(timezone.utc).isoformat()},
+            {"url": "https://example-beta.test", "added": datetime.now(timezone.utc).isoformat()},
         ]
-        state = {"processed": {"https://a.com": {}}}
+        state = {"processed": {"https://example-alpha.test": {}}}
         result = filter_unprocessed(bookmarks, state)
         assert len(result) == 1
-        assert result[0]["url"] == "https://b.com"
+        assert result[0]["url"] == "https://example-beta.test"
 
     def test_filters_old_bookmarks(self):
         old_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
-        bookmarks = [{"url": "https://old.com", "added": old_date}]
+        bookmarks = [{"url": "https://example-old.test", "added": old_date}]
         state = {"processed": {}}
         result = filter_unprocessed(bookmarks, state, lookback_days=7)
         assert len(result) == 0
 
     def test_includes_recent_bookmarks(self):
         recent = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
-        bookmarks = [{"url": "https://new.com", "added": recent}]
+        bookmarks = [{"url": "https://example-new.test", "added": recent}]
         state = {"processed": {}}
         result = filter_unprocessed(bookmarks, state, lookback_days=7)
         assert len(result) == 1
@@ -104,12 +104,12 @@ class TestFilterUnprocessed:
         assert len(result) == 0
 
     def test_includes_bookmarks_without_date(self):
-        bookmarks = [{"url": "https://nodate.com"}]
+        bookmarks = [{"url": "https://example-nodate.test"}]
         result = filter_unprocessed(bookmarks, {"processed": {}})
         assert len(result) == 1
 
     def test_handles_unparseable_date(self):
-        bookmarks = [{"url": "https://x.com", "added": "not-a-date"}]
+        bookmarks = [{"url": "https://example-x.test", "added": "not-a-date"}]
         result = filter_unprocessed(bookmarks, {"processed": {}})
         assert len(result) == 1
 
@@ -117,20 +117,20 @@ class TestFilterUnprocessed:
 class TestMarkProcessed:
     def test_marks_url(self):
         state = {"processed": {}}
-        mark_processed(state, "https://a.com", summary="test", improvements=["imp1"])
-        assert "https://a.com" in state["processed"]
-        assert state["processed"]["https://a.com"]["summary"] == "test"
-        assert state["processed"]["https://a.com"]["improvements"] == ["imp1"]
+        mark_processed(state, "https://example-alpha.test", summary="test", improvements=["imp1"])
+        assert "https://example-alpha.test" in state["processed"]
+        assert state["processed"]["https://example-alpha.test"]["summary"] == "test"
+        assert state["processed"]["https://example-alpha.test"]["improvements"] == ["imp1"]
 
     def test_creates_processed_dict_if_missing(self):
         state = {}
-        mark_processed(state, "https://b.com")
-        assert "https://b.com" in state["processed"]
+        mark_processed(state, "https://example-beta.test")
+        assert "https://example-beta.test" in state["processed"]
 
     def test_default_empty_improvements(self):
         state = {"processed": {}}
-        mark_processed(state, "https://c.com")
-        assert state["processed"]["https://c.com"]["improvements"] == []
+        mark_processed(state, "https://example-gamma.test")
+        assert state["processed"]["https://example-gamma.test"]["improvements"] == []
 
 
 class TestCleanupOldEntries:
@@ -138,19 +138,23 @@ class TestCleanupOldEntries:
         old_date = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
         state = {
             "processed": {
-                "https://old.com": {"processed_at": old_date},
-                "https://new.com": {"processed_at": datetime.now(timezone.utc).isoformat()},
+                "https://example-old.test": {"processed_at": old_date},
+                "https://example-new.test": {
+                    "processed_at": datetime.now(timezone.utc).isoformat()
+                },
             }
         }
         removed = cleanup_old_entries(state, max_age_days=30)
         assert removed == 1
-        assert "https://old.com" not in state["processed"]
-        assert "https://new.com" in state["processed"]
+        assert "https://example-old.test" not in state["processed"]
+        assert "https://example-new.test" in state["processed"]
 
     def test_no_entries_to_remove(self):
         state = {
             "processed": {
-                "https://recent.com": {"processed_at": datetime.now(timezone.utc).isoformat()},
+                "https://example-recent.test": {
+                    "processed_at": datetime.now(timezone.utc).isoformat()
+                },
             }
         }
         removed = cleanup_old_entries(state, max_age_days=30)

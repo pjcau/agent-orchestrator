@@ -9,9 +9,19 @@
   // --- State ---
   let ws = null;
   let streamWs = null;
+  /** Safely set a property on an object, preventing prototype pollution. */
+  function safeSet(obj, key, value) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") return;
+    obj[key] = value;
+  }
+  /** Safely get a property from an object, preventing prototype pollution reads. */
+  function safeGet(obj, key) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") return undefined;
+    return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
+  }
   let snapshot = {
     orchestrator_status: "idle",
-    agents: {},
+    agents: Object.create(null),
     tasks: [],
     total_cost_usd: 0,
     total_tokens: 0,
@@ -23,7 +33,7 @@
   let events = [];
   let isRunning = false;
   let activeSkills = new Set();
-  let graphNodeStates = {};
+  let graphNodeStates = Object.create(null);
   let lastTokenSpeed = 0;
   let conversationId = null;
   let attachedFiles = [];
@@ -266,10 +276,10 @@
     const categories = agentRegistry.categories || {};
     // If no categories, fall back to flat list
     if (!Object.keys(categories).length) {
-      $agentBadges.innerHTML = agentRegistry.agents.map((a) => {
+      $agentBadges.innerHTML = safeHTML(agentRegistry.agents.map((a) => {
         const status = getAgentStatus(a.name);
-        return `<span class="agent-badge ${status}"><span class="agent-dot"></span>${esc(a.name)}</span>`;
-      }).join("");
+        return `<span class="agent-badge ${esc(status)}"><span class="agent-dot"></span>${esc(a.name)}</span>`;
+      }).join(""));
       return;
     }
     // Category order
@@ -296,7 +306,7 @@
       }
       html += `</div>`;
     }
-    $agentBadges.innerHTML = html;
+    $agentBadges.innerHTML = safeHTML(html);
   }
 
   async function loadAgents() {
@@ -356,15 +366,15 @@
       el.className = "interaction-item";
       el.dataset.from = i.from;
       el.dataset.to = i.to;
-      el.innerHTML = `
-        <span class="interaction-time">${ts}</span>
+      el.innerHTML = safeHTML(`
+        <span class="interaction-time">${esc(ts)}</span>
         <span class="interaction-agents">
           <span class="interaction-from">${esc(i.from)}</span>
           <span class="interaction-arrow-icon">${arrowSvg}</span>
           <span class="interaction-to">${esc(i.to)}</span>
         </span>
         <span class="interaction-desc">${esc(truncate(i.desc, 50))}</span>
-        <span class="interaction-status ${i.status}"></span>`;
+        <span class="interaction-status ${esc(i.status)}"></span>`);
       $interactionTimeline.appendChild(el);
     });
 
@@ -527,10 +537,10 @@
         const costStr = totalCost > 0 ? ` &middot; $${totalCost.toFixed(4)}` : "";
         html += `<div class="chat-usage">${outTok} tok &middot; ${speed} tok/s &middot; ${esc(model)} &middot; ${elapsed}s${costStr}</div>`;
       }
-      bubble.innerHTML = html;
+      bubble.innerHTML = safeHTML(html);
     } else if (role === "assistant") {
       const text = typeof content === "string" ? content : JSON.stringify(content);
-      bubble.innerHTML = `<div class="md-content">${renderMarkdown(text)}</div>`;
+      bubble.innerHTML = safeHTML(`<div class="md-content">${renderMarkdown(text)}</div>`);
     } else {
       bubble.textContent = typeof content === "string" ? content : JSON.stringify(content);
     }
@@ -649,7 +659,7 @@
     $promptInput.style.height = "auto";
 
     addChatBubble("user", text);
-    graphNodeStates = {};
+    graphNodeStates = Object.create(null);
 
     const fileCtx = getFileContextText();
 
@@ -925,7 +935,7 @@
     const nodeGap = 16;
 
     // Compute positions
-    const positions = {};
+    const positions = Object.create(null);
     const totalLayerH = layers.length * nodeH + (layers.length - 1) * layerGap;
     let startY = Math.max(10, (H - totalLayerH) / 2);
 
@@ -933,11 +943,11 @@
       const totalLayerW = layer.length * nodeW + (layer.length - 1) * nodeGap;
       let startX = Math.max(10, (W - totalLayerW) / 2);
       layer.forEach((name, ni) => {
-        positions[name] = {
+        safeSet(positions, name, {
           x: startX + ni * (nodeW + nodeGap),
           y: startY + li * (nodeH + layerGap),
           w: nodeW, h: nodeH,
-        };
+        });
       });
     });
     svgNodePositions = positions;
@@ -1145,22 +1155,22 @@
   }
 
   function computeLayers(nodes, edges) {
-    const inDeg = {};
-    const adj = {};
-    nodes.forEach((n) => { inDeg[n] = 0; adj[n] = []; });
+    const inDeg = Object.create(null);
+    const adj = Object.create(null);
+    nodes.forEach((n) => { safeSet(inDeg, n, 0); safeSet(adj, n, []); });
     edges.forEach((e) => {
       const targets = e.target ? [e.target] : e.routes || [];
-      targets.forEach((t) => { if (adj[e.source]) adj[e.source].push(t); if (inDeg[t] !== undefined) inDeg[t]++; });
+      targets.forEach((t) => { if (safeGet(adj, e.source)) safeGet(adj, e.source).push(t); if (safeGet(inDeg, t) !== undefined) safeSet(inDeg, t, safeGet(inDeg, t) + 1); });
     });
     const layers = [];
     const visited = new Set();
-    let queue = nodes.filter((n) => inDeg[n] === 0);
+    let queue = nodes.filter((n) => safeGet(inDeg, n) === 0);
     if (!queue.length && nodes.length) queue = [nodes[0]];
     while (queue.length && visited.size < nodes.length) {
       layers.push([...queue]);
       queue.forEach((n) => visited.add(n));
       const next = [];
-      queue.forEach((n) => (adj[n] || []).forEach((t) => { if (!visited.has(t)) { inDeg[t]--; if (inDeg[t] <= 0 && !next.includes(t)) next.push(t); } }));
+      queue.forEach((n) => (safeGet(adj, n) || []).forEach((t) => { if (!visited.has(t)) { safeSet(inDeg, t, (safeGet(inDeg, t) || 0) - 1); if ((safeGet(inDeg, t) || 0) <= 0 && !next.includes(t)) next.push(t); } }));
       queue = next;
     }
     const rem = nodes.filter((n) => !visited.has(n));
@@ -1187,21 +1197,21 @@
   window._replayNode = async function (name) {
     if (isRunning) return;
     isRunning = true;
-    graphNodeStates[name] = "active";
+    safeSet(graphNodeStates, name, "active");
     renderGraph();
     addSystemBubble(`Replaying node: ${name}...`);
 
     try {
       const resp = await fetch("/api/graph/replay", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ node: name }) });
       const data = await resp.json();
-      graphNodeStates[name] = "done";
+      safeSet(graphNodeStates, name, "done");
       renderGraph();
       if (data.success) {
         addChatBubble("assistant", { steps: [{ node: `${name} (replay)`, output: data.output }], elapsed_s: data.elapsed_s });
       } else {
         addChatBubble("assistant", `Replay error: ${data.error || "Unknown"}`);
       }
-    } catch (e) { graphNodeStates[name] = "done"; renderGraph(); addChatBubble("assistant", `Replay failed: ${e.message}`); }
+    } catch (e) { safeSet(graphNodeStates, name, "done"); renderGraph(); addChatBubble("assistant", `Replay failed: ${e.message}`); }
     setRunning(false);
   };
 
@@ -1209,9 +1219,9 @@
   async function resetGraph() {
     try {
       await fetch("/api/graph/reset", { method: "POST" });
-      snapshot.agents = {}; snapshot.tasks = []; snapshot.orchestrator_status = "idle";
+      snapshot.agents = Object.create(null); snapshot.tasks = []; snapshot.orchestrator_status = "idle";
       snapshot.graph = { nodes: [], edges: [] }; snapshot.total_tokens = 0; snapshot.total_cost_usd = 0;
-      graphNodeStates = {}; events = []; activityCount = 0; interactions = []; renderedInteractionCount = 0;
+      graphNodeStates = Object.create(null); events = []; activityCount = 0; interactions = []; renderedInteractionCount = 0;
       $timeline.innerHTML = "";
       $agentActivity.innerHTML = '<div class="empty-state">Waiting for agents...</div>';
       if ($interactionTimeline) $interactionTimeline.innerHTML = "";
@@ -1402,13 +1412,13 @@
 
     if (evt.event_type === "graph.start") {
       snapshot.graph = { nodes: evt.data.nodes || [], edges: evt.data.edges || [] };
-      graphNodeStates = {};
+      graphNodeStates = Object.create(null);
       renderGraph();
     } else if (evt.event_type === "graph.node.enter") {
-      graphNodeStates[evt.node_name || evt.data.node] = "active";
+      safeSet(graphNodeStates, evt.node_name || evt.data.node, "active");
       renderGraph();
     } else if (evt.event_type === "graph.node.exit") {
-      graphNodeStates[evt.node_name || evt.data.node] = "done";
+      safeSet(graphNodeStates, evt.node_name || evt.data.node, "done");
       renderGraph();
     } else if (evt.event_type === "graph.end") {
       Object.keys(graphNodeStates).forEach((k) => { if (graphNodeStates[k] === "active") graphNodeStates[k] = "done"; });
@@ -1449,15 +1459,16 @@
 
   function updateSnapshotFromEvent(evt) {
     const t = evt.event_type;
+    const agentName = evt.agent_name;
     snapshot.event_count = (snapshot.event_count || 0) + 1;
     if (t === "orchestrator.start") snapshot.orchestrator_status = "running";
     else if (t === "orchestrator.end") snapshot.orchestrator_status = evt.data.success ? "completed" : "failed";
     else if (t === "agent.spawn") {
-      snapshot.agents[evt.agent_name] = { name: evt.agent_name, status: "running", steps: 0, tokens: 0, cost_usd: 0, provider: evt.data.provider || "", role: evt.data.role || "", tools: evt.data.tools || [] };
-    } else if (t === "agent.step" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].steps += 1;
-    else if (t === "agent.complete" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].status = "completed";
-    else if (t === "agent.error" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].status = "error";
-    else if (t === "agent.stalled" && snapshot.agents[evt.agent_name]) snapshot.agents[evt.agent_name].status = "error";
+      safeSet(snapshot.agents, agentName, { name: agentName, status: "running", steps: 0, tokens: 0, cost_usd: 0, provider: evt.data.provider || "", role: evt.data.role || "", tools: evt.data.tools || [] });
+    } else if (t === "agent.step" && safeGet(snapshot.agents, agentName)) safeGet(snapshot.agents, agentName).steps += 1;
+    else if (t === "agent.complete" && safeGet(snapshot.agents, agentName)) safeGet(snapshot.agents, agentName).status = "completed";
+    else if (t === "agent.error" && safeGet(snapshot.agents, agentName)) safeGet(snapshot.agents, agentName).status = "error";
+    else if (t === "agent.stalled" && safeGet(snapshot.agents, agentName)) safeGet(snapshot.agents, agentName).status = "error";
     else if (t === "cooperation.task_assigned") {
       snapshot.tasks.push({ task_id: evt.data.task_id, from_agent: evt.data.from_agent, to_agent: evt.data.to_agent, description: evt.data.description || "", status: "pending", priority: evt.data.priority || "normal" });
     } else if (t === "cooperation.task_completed") {
@@ -1474,9 +1485,9 @@
     } else if (t === "metrics.cost_update") snapshot.total_cost_usd = evt.data.total_cost_usd || snapshot.total_cost_usd;
     else if (t === "metrics.token_update") {
       snapshot.total_tokens = evt.data.total_tokens || snapshot.total_tokens;
-      if (evt.agent_name && snapshot.agents[evt.agent_name]) {
-        snapshot.agents[evt.agent_name].tokens = evt.data.agent_tokens || 0;
-        snapshot.agents[evt.agent_name].cost_usd = evt.data.agent_cost_usd || 0;
+      if (agentName && safeGet(snapshot.agents, agentName)) {
+        safeGet(snapshot.agents, agentName).tokens = evt.data.agent_tokens || 0;
+        safeGet(snapshot.agents, agentName).cost_usd = evt.data.agent_cost_usd || 0;
       }
     }
   }
@@ -1614,6 +1625,18 @@
   }
   function truncate(s, max) { return !s ? "" : s.length > max ? s.slice(0, max) + "..." : s; }
   function esc(s) { if (!s) return ""; const d = document.createElement("div"); d.textContent = String(s); return d.innerHTML; }
+  /** Sanitize HTML string — strips scripts and event handlers for safe innerHTML use. */
+  function safeHTML(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    doc.querySelectorAll("script,iframe,object,embed,link[rel=import]").forEach(el => el.remove());
+    doc.querySelectorAll("*").forEach(el => {
+      for (const attr of [...el.attributes]) {
+        if (attr.name.startsWith("on") || attr.value.includes("javascript:")) el.removeAttribute(attr.name);
+      }
+    });
+    return doc.body.innerHTML;
+  }
   function formatJson(obj) {
     return JSON.stringify(obj, null, 2).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"([^"]+)":/g, '<span class="detail-key">"$1"</span>:');
   }

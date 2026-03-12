@@ -49,6 +49,25 @@ def _sanitize_log(value: str) -> str:
 
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+_PROJECT_BASE = PROJECT_ROOT.resolve()
+
+
+def _safe_resolve_path(user_path: str) -> Path | None:
+    """Safely resolve a user-provided path relative to PROJECT_ROOT.
+
+    Returns None if the path attempts traversal or escapes the project root.
+    """
+    if ".." in user_path.split("/") or ".." in user_path.split("\\"):
+        return None
+    # Use os.path.normpath to canonicalize without resolving symlinks first
+    normalized = os.path.normpath(user_path)
+    if normalized.startswith("..") or os.path.isabs(normalized):
+        return None
+    target = (_PROJECT_BASE / normalized).resolve()
+    if not target.is_relative_to(_PROJECT_BASE):
+        return None
+    return target
+
 
 # Allowed Ollama URL prefixes (SSRF protection)
 _OLLAMA_ALLOWED_PREFIXES = (
@@ -494,6 +513,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             )
             return JSONResponse(content=result)
         except Exception as exc:
+            logger.exception("Agent run failed")
             job_logger.log(
                 "agent_run",
                 {
@@ -505,7 +525,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 },
             )
             return JSONResponse(
-                content={"success": False, "error": str(exc)},
+                content={"success": False, "error": "Agent execution failed"},
                 status_code=500,
             )
 
@@ -576,6 +596,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 )
             return JSONResponse(content=result)
         except Exception as exc:
+            logger.exception("Team run failed")
             job_logger.log(
                 "team_run",
                 {
@@ -586,7 +607,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 },
             )
             return JSONResponse(
-                content={"success": False, "error": str(exc)},
+                content={"success": False, "error": "Team execution failed"},
                 status_code=500,
             )
 
@@ -808,15 +829,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/files")
     async def list_files(path: str = ""):
         """List files in the project directory."""
-        # Security: reject path traversal sequences before constructing path
-        if ".." in path.split("/") or ".." in path.split("\\"):
+        target = _safe_resolve_path(path)
+        if target is None:
             return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
-        base = PROJECT_ROOT.resolve()
-        target = (base / path).resolve()
-
-        # Security: prevent path traversal (defense in depth)
-        if not target.is_relative_to(base):
-            return JSONResponse(content={"error": "Path outside project"}, status_code=400)
 
         if not target.is_dir():
             return JSONResponse(content={"error": "Not a directory"}, status_code=404)
@@ -843,15 +858,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     @app.get("/api/file")
     async def read_file(path: str):
         """Read a file's content."""
-        # Security: reject path traversal sequences before constructing path
-        if ".." in path.split("/") or ".." in path.split("\\"):
+        target = _safe_resolve_path(path)
+        if target is None:
             return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
-        base = PROJECT_ROOT.resolve()
-        target = (base / path).resolve()
-
-        # Security: prevent path traversal (defense in depth)
-        if not target.is_relative_to(base):
-            return JSONResponse(content={"error": "Path outside project"}, status_code=400)
 
         if not target.is_file():
             return JSONResponse(content={"error": "Not a file"}, status_code=404)
