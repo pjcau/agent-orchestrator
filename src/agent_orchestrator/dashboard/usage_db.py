@@ -26,9 +26,13 @@ class UsageDB:
             "total_output_tokens": 0,
             "total_cost_usd": 0.0,
             "total_requests": 0,
+            "total_elapsed_s": 0.0,
         }
         self._per_model: dict[str, dict[str, Any]] = {}
         self._per_agent: dict[str, dict[str, Any]] = {}
+        # Session-level speed tracking (reset on container restart)
+        self._session_output_tokens: int = 0
+        self._session_elapsed_s: float = 0.0
 
     async def setup(self) -> None:
         """Initialize DB connection and create tables."""
@@ -116,7 +120,8 @@ class UsageDB:
                         COALESCE(SUM(output_tokens), 0) AS total_output,
                         COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
                         COALESCE(SUM(cost_usd), 0.0) AS total_cost,
-                        COUNT(*) AS total_requests
+                        COUNT(*) AS total_requests,
+                        COALESCE(SUM(elapsed_s), 0.0) AS total_elapsed
                     FROM usage_stats
                 """)
                 if row:
@@ -125,6 +130,7 @@ class UsageDB:
                     self._totals["total_tokens"] = row["total_tokens"]
                     self._totals["total_cost_usd"] = float(row["total_cost"])
                     self._totals["total_requests"] = row["total_requests"]
+                    self._totals["total_elapsed_s"] = float(row["total_elapsed"])
 
                 # Load per-model stats
                 rows = await conn.fetch("""
@@ -185,6 +191,10 @@ class UsageDB:
         self._totals["total_output_tokens"] += output_tokens
         self._totals["total_cost_usd"] += cost_usd
         self._totals["total_requests"] += 1
+        self._totals["total_elapsed_s"] += elapsed_s
+        # Session-level tracking
+        self._session_output_tokens += output_tokens
+        self._session_elapsed_s += elapsed_s
 
         # Update per-model
         if model:
@@ -249,8 +259,14 @@ class UsageDB:
 
     def get_summary(self) -> dict[str, Any]:
         """Full summary for the dashboard header."""
+        total_elapsed = self._totals["total_elapsed_s"]
+        total_out = self._totals["total_output_tokens"]
         return {
             **self._totals,
+            "avg_speed": round(total_out / total_elapsed, 1) if total_elapsed > 0 else 0,
+            "session_speed": round(self._session_output_tokens / self._session_elapsed_s, 1)
+            if self._session_elapsed_s > 0
+            else 0,
             "per_model": self.get_per_model(),
             "per_agent": self.get_per_agent(),
             "db_connected": self._available,

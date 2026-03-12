@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=058">
+    <link rel="stylesheet" href="/static/style.css?v=059">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
@@ -38,6 +38,10 @@
                 <div class="metric">
                     <span class="metric-label">Total Cost</span>
                     <span id="cumul-cost" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Avg Speed</span>
+                    <span id="cumul-speed" class="metric-value">- tok/s</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Requests</span>
@@ -385,6 +389,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=058"></script>
+    <script src="/static/app.js?v=059"></script>
 </body>
 </html>

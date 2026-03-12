@@ -94,6 +94,7 @@
   const $cumulTokens = $("cumul-tokens");
   const $cumulCost = $("cumul-cost");
   const $cumulRequests = $("cumul-requests");
+  const $cumulSpeed = $("cumul-speed");
   const $dbIndicator = $("db-indicator");
   const $cacheHitRate = $("cache-hit-rate");
   const $cacheHits = $("cache-hits");
@@ -1498,13 +1499,20 @@
       if ($cumulTokens) $cumulTokens.textContent = "-";
       if ($cumulCost) $cumulCost.textContent = "-";
       if ($cumulRequests) $cumulRequests.textContent = "-";
+      if ($cumulSpeed) $cumulSpeed.textContent = "- tok/s";
       if ($dbIndicator) $dbIndicator.className = "db-dot disconnected";
       return;
     }
     if ($cumulTokens) $cumulTokens.textContent = formatNumber(cumulativeUsage.total_tokens || 0);
     if ($cumulCost) $cumulCost.textContent = `$${(cumulativeUsage.total_cost_usd || 0).toFixed(3)}`;
     if ($cumulRequests) $cumulRequests.textContent = String(cumulativeUsage.total_requests || 0);
+    if ($cumulSpeed) $cumulSpeed.textContent = cumulativeUsage.avg_speed > 0 ? `${cumulativeUsage.avg_speed} tok/s` : "- tok/s";
     if ($dbIndicator) $dbIndicator.className = cumulativeUsage.db_connected ? "db-dot connected" : "db-dot disconnected";
+    // Update session speed from server (more accurate than client-side)
+    if (cumulativeUsage.session_speed > 0) {
+      lastTokenSpeed = cumulativeUsage.session_speed;
+      renderHeader();
+    }
   }
 
   // --- Rendering ---
