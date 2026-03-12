@@ -91,6 +91,7 @@ agent-orchestrator/
 │       │   ├── cache.py        # Task-level result caching (InMemory, TTL, cached_node)
 │       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer, Store)
 │       │   ├── store.py        # Cross-thread persistent store (namespace, filter, TTL)
+│       │   ├── conversation.py # Thread-based conversation memory (multi-turn, fork, persist)
 │       │   └── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
@@ -150,6 +151,7 @@ agent-orchestrator/
 - **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
 - **BaseStore** — Cross-thread persistent key-value store (namespace, filter, TTL). Separate from checkpoints.
 - **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout).
+- **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim.
 
 ## Agent Error Tracking
 

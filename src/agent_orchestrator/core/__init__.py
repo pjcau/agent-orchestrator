@@ -88,6 +88,7 @@ from .store import (
     SearchItem,
     run_store_conformance,
 )
+from .conversation import ConversationManager, ConversationMessage, ConversationResult
 from .skill import (
     SkillRequest,
     SkillMiddleware,
@@ -222,4 +223,8 @@ __all__ = [
     "logging_middleware",
     "retry_middleware",
     "timeout_middleware",
+    # v1.2 — Conversation Memory
+    "ConversationManager",
+    "ConversationMessage",
+    "ConversationResult",
 ]

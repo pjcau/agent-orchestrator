@@ -92,11 +92,10 @@ jobs:
             --body-file .claude/research-scout-findings.md \
             --label "research-scout"
 
-      - name: Update state on main (no findings)
-        if: steps.scout.outputs.has_findings != 'true'
+      - name: Update state on main
         run: |
           git config user.name "research-scout[bot]"
           git config user.email "research-scout[bot]@users.noreply.github.com"
+          git checkout main
           git add .claude/research-scout-state.json .claude/bookmarks.json
-          git diff --cached --quiet || git commit -m "research-scout: update state (no findings)"
-          git push
+          git diff --cached --quiet || { git commit -m "research-scout: update state" && git push; }

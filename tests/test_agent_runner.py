@@ -8,8 +8,10 @@ from agent_orchestrator.dashboard.agent_runner import (
     _build_agent_catalog,
     _build_evidence,
     _build_role_for_agent,
+    _detect_category,
     _parse_team_plan,
     _AGENT_ALIASES,
+    _CATEGORY_FALLBACK_AGENTS,
     run_team,
 )
 from agent_orchestrator.dashboard.events import EventBus, EventType
@@ -267,15 +269,37 @@ class TestBuildRoleForAgent:
         role = _build_role_for_agent(agent_info)
         assert "backend" in role
         assert "API and database" in role
-        assert "file_write" in role
 
     def test_fallback_for_missing_fields(self):
         role = _build_role_for_agent({})
         assert "agent" in role
 
-    def test_includes_code_writing_instruction(self):
-        role = _build_role_for_agent({"name": "frontend", "description": "UI"})
+    def test_software_engineering_includes_code_instruction(self):
+        role = _build_role_for_agent(
+            {"name": "frontend", "description": "UI", "category": "software-engineering"}
+        )
         assert "Write actual code" in role
+
+    def test_finance_category_role(self):
+        role = _build_role_for_agent(
+            {"name": "financial-analyst", "description": "Valuation", "category": "finance"}
+        )
+        assert "financial-analyst" in role
+        assert "financial analysis" in role
+
+    def test_data_science_category_role(self):
+        role = _build_role_for_agent(
+            {"name": "data-analyst", "description": "EDA", "category": "data-science"}
+        )
+        assert "data-analyst" in role
+        assert "data-driven" in role
+
+    def test_marketing_category_role(self):
+        role = _build_role_for_agent(
+            {"name": "content-strategist", "description": "Content", "category": "marketing"}
+        )
+        assert "content-strategist" in role
+        assert "marketing" in role
 
 
 # ===== _build_evidence =====
@@ -327,6 +351,69 @@ class TestAgentAliases:
 
     def test_ml_alias(self):
         assert _AGENT_ALIASES["ml-eng"] == "ml-engineer"
+
+    def test_finance_aliases(self):
+        assert _AGENT_ALIASES["finance-analyst"] == "financial-analyst"
+        assert _AGENT_ALIASES["risk"] == "risk-analyst"
+        assert _AGENT_ALIASES["quant"] == "quant-developer"
+        assert _AGENT_ALIASES["compliance"] == "compliance-officer"
+
+    def test_data_science_aliases(self):
+        assert _AGENT_ALIASES["data-science"] == "data-analyst"
+        assert _AGENT_ALIASES["nlp"] == "nlp-specialist"
+        assert _AGENT_ALIASES["bi"] == "bi-analyst"
+
+    def test_marketing_aliases(self):
+        assert _AGENT_ALIASES["content"] == "content-strategist"
+        assert _AGENT_ALIASES["seo"] == "seo-specialist"
+        assert _AGENT_ALIASES["growth"] == "growth-hacker"
+        assert _AGENT_ALIASES["social"] == "social-media-manager"
+        assert _AGENT_ALIASES["email"] == "email-marketer"
+
+
+# ===== _detect_category =====
+
+
+class TestDetectCategory:
+    def test_finance_keywords(self):
+        assert _detect_category("Build a DCF valuation model for portfolio analysis") == "finance"
+
+    def test_data_science_keywords(self):
+        assert _detect_category("Perform EDA and build a classification model") == "data-science"
+
+    def test_marketing_keywords(self):
+        assert _detect_category("Create an SEO content marketing strategy") == "marketing"
+
+    def test_software_default(self):
+        assert _detect_category("Build a REST API with authentication") == "software-engineering"
+
+    def test_no_keywords_defaults_to_software(self):
+        assert _detect_category("Do something") == "software-engineering"
+
+
+# ===== _CATEGORY_FALLBACK_AGENTS =====
+
+
+class TestCategoryFallbackAgents:
+    def test_all_categories_present(self):
+        assert "finance" in _CATEGORY_FALLBACK_AGENTS
+        assert "data-science" in _CATEGORY_FALLBACK_AGENTS
+        assert "marketing" in _CATEGORY_FALLBACK_AGENTS
+        assert "software-engineering" in _CATEGORY_FALLBACK_AGENTS
+
+    def test_each_category_has_agents(self):
+        for category, agents in _CATEGORY_FALLBACK_AGENTS.items():
+            assert len(agents) >= 2, f"{category} should have at least 2 fallback agents"
+            for a in agents:
+                assert "agent" in a
+                assert "task" in a
+
+    def test_task_templates_have_placeholder(self):
+        for category, agents in _CATEGORY_FALLBACK_AGENTS.items():
+            for a in agents:
+                assert "{task}" in a["task"], (
+                    f"{category}/{a['agent']} missing {{task}} placeholder"
+                )
 
 
 # ===== run_team (integration) =====

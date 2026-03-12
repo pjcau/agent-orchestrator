@@ -127,6 +127,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # Usage DB — persistent cumulative stats (Postgres)
     usage_db = UsageDB()
 
+    # Conversation memory — thread-based multi-turn for agents, graphs, prompts
+    conv_manager = ConversationManager(checkpointer=InMemoryCheckpointer())
+
     @app.on_event("startup")
     async def _startup():
         await usage_db.setup()
@@ -356,6 +359,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         provider_type = body.get("provider", "ollama")
         tools = body.get("tools")  # list[str] or None = all
         max_steps = body.get("max_steps", 10)
+        conv_id = body.get("conversation_id")
 
         if not agent_name or not task_desc:
             return JSONResponse(
@@ -394,6 +398,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 working_directory=str(job_logger.session_dir),
                 usage_db=usage_db,
                 session_id=job_logger.session_id,
+                conversation_id=conv_id,
+                conversation_manager=conv_manager if conv_id else None,
             )
             job_logger.log(
                 "agent_run",
@@ -439,6 +445,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         task_desc = body.get("task", "").strip()
         model = body.get("model", "")
         provider_type = body.get("provider", "openrouter")
+        conv_id_team = body.get("conversation_id")
 
         if not task_desc:
             return JSONResponse(
@@ -464,6 +471,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 working_directory=str(job_logger.session_dir),
                 usage_db=usage_db,
                 session_id=job_logger.session_id,
+                conversation_id=conv_id_team,
+                conversation_manager=conv_manager if conv_id_team else None,
             )
             job_logger.log(
                 "team_run",
@@ -873,21 +882,6 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         if file_context:
             full_prompt = f"{user_prompt}\n\n```\n{file_context}\n```"
 
-        # Add conversation history context
-        history_context = ""
-        if conv_id:
-            recent = await usage_db.get_recent_messages(conv_id, limit=6)
-            if recent:
-                history_context = "\n".join(
-                    f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'][:500]}"
-                    for m in recent
-                )
-
-        if history_context:
-            full_prompt = (
-                f"Previous conversation:\n{history_context}\n\nCurrent request:\n{full_prompt}"
-            )
-
         ollama_url = _get_ollama_url()
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
@@ -900,6 +894,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             ollama_url=ollama_url,
             openrouter_key=openrouter_key,
             event_bus=bus,
+            conversation_id=conv_id,
+            conversation_manager=conv_manager if conv_id else None,
         )
 
         job_logger.log(

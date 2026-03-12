@@ -219,6 +219,20 @@ Connect to the real world.
 
 ---
 
+## Phase 1 — Conversation Memory (v1.2)
+
+Multi-turn conversation memory for iterative multi-agent interactions.
+
+### Completed
+- [x] **Thread-based message history** (Solution 1): `ConversationManager` accumulates messages per thread, uses checkpointing for persistence. Supports multi-turn, thread isolation, fork, clear, max_history trim. Works with InMemory and SQLite checkpointers.
+
+### Planned
+- [ ] **Store-based semantic memory** (Solution 2): Use `BaseStore` to persist conversation summaries cross-thread. Before each graph run, query store for relevant prior context and inject into system prompt. Enables long-running project memory without context window overflow. Requires LLM summarization step.
+- [ ] **Dashboard integration**: Wire `ConversationManager` into dashboard `run_graph()` so UI sessions persist across page reloads.
+- [ ] **PostgreSQL conversation store**: `ConversationManager` backed by `PostgresCheckpointer` for production persistence.
+
+---
+
 ## Backlog (Ideas)
 
 - [ ] Voice interface (speak to agents via Whisper/STT — local via whisper.cpp)

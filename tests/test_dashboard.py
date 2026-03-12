@@ -13,6 +13,8 @@ from agent_orchestrator.dashboard.instrument import (
 from agent_orchestrator.dashboard.graphs import (
     _agent_node,
     _build_team_graph,
+    _detect_graph_category,
+    _TEAM_COMPOSITIONS,
     _last_run,
     get_last_run_info,
     list_openrouter_models,
@@ -591,8 +593,8 @@ class TestTeamGraph:
             assert result.success
             # Should have all output keys
             assert "plan" in result.state
-            assert "backend_output" in result.state
-            assert "frontend_output" in result.state
+            assert "agent_a_output" in result.state
+            assert "agent_b_output" in result.state
             assert "response" in result.state
 
             # Should have emitted agent events
@@ -1297,3 +1299,46 @@ class TestRepairJson:
 
         result = _repair_json('{"items": [1, 2, 3')
         assert isinstance(result, dict)
+
+
+# ===== Graph Category Detection =====
+
+
+class TestDetectGraphCategory:
+    def test_finance_prompt(self):
+        assert _detect_graph_category("Build a DCF valuation model") == "finance"
+
+    def test_data_science_prompt(self):
+        assert (
+            _detect_graph_category("Perform EDA and build a classification model") == "data-science"
+        )
+
+    def test_marketing_prompt(self):
+        assert _detect_graph_category("Create an SEO content marketing campaign") == "marketing"
+
+    def test_software_default(self):
+        assert _detect_graph_category("Build a REST API") == "software-engineering"
+
+    def test_no_keywords(self):
+        assert _detect_graph_category("Do something") == "software-engineering"
+
+
+class TestTeamCompositions:
+    def test_all_categories_present(self):
+        assert "finance" in _TEAM_COMPOSITIONS
+        assert "data-science" in _TEAM_COMPOSITIONS
+        assert "marketing" in _TEAM_COMPOSITIONS
+        assert "software-engineering" in _TEAM_COMPOSITIONS
+
+    def test_each_category_has_two_agents(self):
+        for category, team in _TEAM_COMPOSITIONS.items():
+            assert len(team) == 2, f"{category} should have exactly 2 agents"
+
+    def test_finance_team_graph_structure(self):
+        """Finance prompt should produce financial-analyst + risk-analyst nodes."""
+        provider = MockProvider()
+        graph, state = _build_team_graph(provider, "Analyze portfolio risk and valuation")
+        compiled = graph.compile()
+        info = compiled.get_graph_info()
+        assert "financial-analyst" in info["nodes"]
+        assert "risk-analyst" in info["nodes"]

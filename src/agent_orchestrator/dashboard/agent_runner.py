@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from ..core.agent import AgentConfig, Task, TaskResult, TaskStatus
+from ..core.conversation import ConversationManager
 from ..core.provider import Message, Provider, Role, ToolDefinition
 from ..core.skill import SkillRegistry
 from ..skills import FileReadSkill, FileWriteSkill, GlobSkill, ShellExecSkill
@@ -51,8 +52,16 @@ async def run_agent(
     working_directory: str | None = None,
     usage_db: Any | None = None,
     session_id: str = "",
+    conversation_id: str | None = None,
+    conversation_manager: ConversationManager | None = None,
 ) -> dict[str, Any]:
     """Run an agent on a task with real-time event emissions.
+
+    Args:
+        conversation_id: Optional thread ID for multi-turn conversation memory.
+        conversation_manager: Optional ConversationManager instance. If both
+            conversation_id and conversation_manager are provided, the agent
+            will see previous exchanges and the new exchange will be persisted.
 
     Returns a dict with success, output, steps, usage, etc.
     """
@@ -106,6 +115,13 @@ async def run_agent(
         )
     )
 
+    # Load conversation history for multi-turn context
+    conversation_history: list[Message] = []
+    if conversation_id and conversation_manager:
+        history = await conversation_manager.get_history(conversation_id)
+        for msg in history:
+            conversation_history.append(Message(role=Role(msg.role), content=msg.content))
+
     # Run the agent with instrumented execution
     start_time = time.time()
     result = await _instrumented_execute(
@@ -116,8 +132,21 @@ async def run_agent(
         event_bus=bus,
         usage_db=usage_db,
         session_id=session_id,
+        conversation_history=conversation_history or None,
     )
     elapsed = time.time() - start_time
+
+    # Save to conversation memory
+    if conversation_id and conversation_manager:
+
+        async def _passthrough(msgs):
+            return result.output
+
+        await conversation_manager.send(
+            conversation_id,
+            task_description,
+            _passthrough,
+        )
 
     # Emit agent complete/error
     if result.status == TaskStatus.COMPLETED:
@@ -187,11 +216,16 @@ async def _instrumented_execute(
     event_bus: EventBus,
     usage_db: Any | None = None,
     session_id: str = "",
+    conversation_history: list[Message] | None = None,
 ) -> TaskResult:
     """Execute agent loop with real-time event emissions for each step."""
-    messages: list[Message] = [
-        Message(role=Role.USER, content=task.description),
-    ]
+    messages: list[Message] = []
+
+    # Prepend conversation history for multi-turn context
+    if conversation_history:
+        messages.extend(conversation_history)
+
+    messages.append(Message(role=Role.USER, content=task.description))
 
     tool_defs = [
         ToolDefinition(
@@ -450,7 +484,138 @@ _AGENT_ALIASES: dict[str, str] = {
     "devops-engineer": "devops",
     "ml-eng": "ml-engineer",
     "data-eng": "data-engineer",
+    # finance
+    "finance-analyst": "financial-analyst",
+    "analyst": "financial-analyst",
+    "risk": "risk-analyst",
+    "quant": "quant-developer",
+    "compliance": "compliance-officer",
+    # data-science
+    "data-science": "data-analyst",
+    "nlp": "nlp-specialist",
+    "bi": "bi-analyst",
+    # marketing
+    "content": "content-strategist",
+    "seo": "seo-specialist",
+    "growth": "growth-hacker",
+    "social": "social-media-manager",
+    "email": "email-marketer",
 }
+
+# Category keyword detection for smart fallback when team-lead parsing fails
+_CATEGORY_KEYWORDS: dict[str, list[str]] = {
+    "finance": [
+        "finance",
+        "financial",
+        "stock",
+        "portfolio",
+        "trading",
+        "investment",
+        "risk",
+        "valuation",
+        "dcf",
+        "revenue",
+        "forecast",
+        "budget",
+        "cash flow",
+        "balance sheet",
+        "p&l",
+        "profit",
+        "loss",
+        "hedge",
+        "option",
+        "derivative",
+        "bond",
+        "equity",
+        "market",
+        "sharpe",
+        "var",
+        "compliance",
+        "audit",
+        "accounting",
+        "tax",
+        "gaap",
+        "ifrs",
+        "basel",
+        "roi",
+        "irr",
+        "npv",
+    ],
+    "data-science": [
+        "data",
+        "dataset",
+        "analysis",
+        "machine learning",
+        "ml",
+        "model",
+        "prediction",
+        "classification",
+        "regression",
+        "clustering",
+        "nlp",
+        "embeddings",
+        "eda",
+        "visualization",
+        "statistics",
+        "etl",
+        "pipeline",
+        "dashboard",
+        "kpi",
+        "metrics",
+        "bi",
+        "report",
+    ],
+    "marketing": [
+        "marketing",
+        "seo",
+        "content",
+        "social media",
+        "email",
+        "campaign",
+        "funnel",
+        "conversion",
+        "growth",
+        "brand",
+        "audience",
+        "keyword",
+        "engagement",
+        "newsletter",
+        "ad",
+        "advertising",
+        "copy",
+        "cro",
+    ],
+}
+
+# Default fallback agents per category
+_CATEGORY_FALLBACK_AGENTS: dict[str, list[dict[str, str]]] = {
+    "finance": [
+        {"agent": "financial-analyst", "task": "Analyze the financial aspects of: {task}"},
+        {"agent": "risk-analyst", "task": "Assess risks and compliance for: {task}"},
+    ],
+    "data-science": [
+        {"agent": "data-analyst", "task": "Perform data analysis for: {task}"},
+        {"agent": "ml-engineer", "task": "Handle ML/modeling aspects of: {task}"},
+    ],
+    "marketing": [
+        {"agent": "content-strategist", "task": "Develop content strategy for: {task}"},
+        {"agent": "seo-specialist", "task": "Handle SEO and discoverability for: {task}"},
+    ],
+    "software-engineering": [
+        {"agent": "backend", "task": "Implement the backend parts of: {task}"},
+        {"agent": "frontend", "task": "Implement the frontend parts of: {task}"},
+    ],
+}
+
+
+def _detect_category(task: str) -> str:
+    """Detect the most likely agent category from task text."""
+    task_lower = task.lower()
+    scores: dict[str, int] = {}
+    for category, keywords in _CATEGORY_KEYWORDS.items():
+        scores[category] = sum(1 for kw in keywords if kw in task_lower)
+    best = max(scores, key=scores.get) if scores else "software-engineering"
+    return best if scores.get(best, 0) > 0 else "software-engineering"
 
 
 def _parse_team_plan(plan_text: str, valid_names: set[str]) -> list[dict[str, str]] | None:
@@ -499,11 +664,33 @@ def _build_role_for_agent(agent_info: dict) -> str:
     """Build a role prompt for a sub-agent from its registry info."""
     name = agent_info.get("name", "agent")
     desc = agent_info.get("description", "")
-    return (
-        f"You are {name}: {desc}. "
-        "Write actual code files. Use file_write to create files. "
-        "Be practical, write working code."
-    )
+    category = agent_info.get("category", "software-engineering")
+
+    # Category-specific instructions
+    if category == "finance":
+        return (
+            f"You are {name}: {desc}. "
+            "Provide detailed financial analysis, calculations, and recommendations. "
+            "Be precise with numbers and cite assumptions."
+        )
+    elif category == "data-science":
+        return (
+            f"You are {name}: {desc}. "
+            "Provide data-driven analysis, statistical insights, and actionable recommendations. "
+            "Be precise and include methodology."
+        )
+    elif category == "marketing":
+        return (
+            f"You are {name}: {desc}. "
+            "Provide strategic marketing recommendations with measurable goals. "
+            "Be creative and data-informed."
+        )
+    else:
+        return (
+            f"You are {name}: {desc}. "
+            "Write actual code files. Use file_write to create files. "
+            "Be practical, write working code."
+        )
 
 
 async def run_team(
@@ -515,8 +702,14 @@ async def run_team(
     max_sub_agents: int = 5,
     usage_db: Any | None = None,
     session_id: str = "",
+    conversation_id: str | None = None,
+    conversation_manager: ConversationManager | None = None,
 ) -> dict[str, Any]:
     """Run a multi-agent team with dynamic routing.
+
+    Args:
+        conversation_id: Optional thread ID for multi-turn memory.
+        conversation_manager: Optional ConversationManager for persistence.
 
     Flow:
       1. team-lead analyzes the task and selects agents from the registry
@@ -541,6 +734,15 @@ async def run_team(
     agent_files: dict[str, list[str]] = {}
     agent_steps_log: dict[str, list[str]] = {}
 
+    # Load conversation history for team-lead context
+    team_history_msgs: list[Message] = []
+    if conversation_id and conversation_manager:
+        history = await conversation_manager.get_history(conversation_id)
+        for msg in history:
+            team_history_msgs.append(
+                Message(role=Role(msg.role), content=msg.content)
+            )
+
     # --- Step 1: Team-lead plans with agent registry ---
     await bus.emit(
         Event(
@@ -557,17 +759,25 @@ async def run_team(
         )
     )
 
+    plan_messages = list(team_history_msgs)
+    plan_messages.append(Message(role=Role.USER, content=task_description))
+
     plan_completion = await provider.complete(
-        messages=[Message(role=Role.USER, content=task_description)],
+        messages=plan_messages,
         system=(
             "You are a team lead. Analyze the task and select the best agents.\n\n"
             f"{agent_catalog}\n\n"
             "Respond with ONLY a JSON array of assignments (max 5). "
             'Each item must have "agent" (exact name from the list) and "task" (specific instructions).\n'
-            "Example:\n"
-            '[{"agent": "backend", "task": "Create REST API with FastAPI"}, '
-            '{"agent": "devops", "task": "Write Dockerfile and docker-compose.yml"}]\n\n'
-            "Select only agents relevant to this task. Be specific in task descriptions."
+            "Examples:\n"
+            'Software: [{"agent": "backend", "task": "Create REST API"}, '
+            '{"agent": "devops", "task": "Write Dockerfile"}]\n'
+            'Finance: [{"agent": "financial-analyst", "task": "Build DCF model"}, '
+            '{"agent": "risk-analyst", "task": "Assess portfolio risk"}]\n'
+            'Data: [{"agent": "data-analyst", "task": "Perform EDA"}, '
+            '{"agent": "ml-engineer", "task": "Train classifier"}]\n\n'
+            "IMPORTANT: Match agents to the task domain. Do NOT default to software agents "
+            "for non-software tasks. Select only agents relevant to this task."
         ),
     )
     if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
@@ -595,20 +805,29 @@ async def run_team(
         )
     )
 
-    # --- Parse assignments (with fallback) ---
+    # --- Parse assignments (with category-aware fallback) ---
     assignments = _parse_team_plan(plan, valid_names)
     used_fallback = False
     if assignments is None:
         used_fallback = True
+        detected_category = _detect_category(task_description)
+        fallback_templates = _CATEGORY_FALLBACK_AGENTS.get(
+            detected_category,
+            _CATEGORY_FALLBACK_AGENTS["software-engineering"],
+        )
         assignments = [
-            {"agent": "backend", "task": f"Implement the backend parts of: {task_description}"},
-            {"agent": "frontend", "task": f"Implement the frontend parts of: {task_description}"},
+            {"agent": t["agent"], "task": t["task"].format(task=task_description)}
+            for t in fallback_templates
         ]
         await bus.emit(
             Event(
                 event_type=EventType.AGENT_STEP,
                 agent_name="team-lead",
-                data={"step": "fallback", "reason": "Could not parse structured plan"},
+                data={
+                    "step": "fallback",
+                    "reason": "Could not parse structured plan",
+                    "detected_category": detected_category,
+                },
             )
         )
 
@@ -625,16 +844,27 @@ async def run_team(
         event_key = f"{agent_name}-{idx}" if assignments.count(assignment) > 1 else agent_name
 
         agent_info = agent_map.get(agent_name, {})
+        agent_category = agent_info.get("category", "software-engineering")
         role = (
             _build_role_for_agent(agent_info)
             if agent_info
-            else (f"You are {agent_name}. Write actual code files. Be practical.")
+            else (f"You are {agent_name}. Be practical and thorough.")
         )
+
+        # Category-specific action instructions
+        if agent_category in ("finance", "data-science", "marketing"):
+            action_instruction = (
+                "Execute your task. Provide detailed analysis, "
+                "calculations, and actionable recommendations."
+            )
+        else:
+            action_instruction = "Execute your task. Write all necessary files using file_write."
+
         prompt = (
             f"Team lead's plan:\n{plan}\n\n"
             f"Original request:\n{task_description}\n\n"
             f"Your specific task:\n{agent_task}\n\n"
-            "Execute your task. Write all necessary files using file_write."
+            f"{action_instruction}"
         )
 
         await bus.emit(
@@ -830,6 +1060,14 @@ async def run_team(
 
     elapsed = time.time() - start_time
     all_files = [f for files in agent_files.values() for f in files]
+
+    # Save to conversation memory
+    if conversation_id and conversation_manager:
+        async def _passthrough_team(msgs):
+            return summary
+        await conversation_manager.send(
+            conversation_id, task_description, _passthrough_team,
+        )
 
     return {
         "success": True,

@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 import httpx
 
+from ..core.conversation import ConversationManager
 from ..core.graph import END, START, StateGraph
 from ..core.llm_nodes import llm_node
 from ..core.provider import Provider
@@ -173,8 +174,17 @@ async def run_graph(
     ollama_url: str = "",
     openrouter_key: str = "",
     event_bus: EventBus | None = None,
+    conversation_id: str | None = None,
+    conversation_manager: ConversationManager | None = None,
 ) -> dict[str, Any]:
-    """Build and execute a graph, returning the result."""
+    """Build and execute a graph, returning the result.
+
+    Args:
+        conversation_id: Optional thread ID for multi-turn memory.
+        conversation_manager: If provided with conversation_id,
+            previous exchanges are prepended to the prompt and
+            the new exchange is persisted.
+    """
     provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
     if event_bus is None:
         event_bus = EventBus.get()
@@ -679,29 +689,201 @@ def _agent_node(
     return wrapper
 
 
+# --- Category detection for team graph ---
+
+_GRAPH_CATEGORY_KEYWORDS: dict[str, list[str]] = {
+    "finance": [
+        "finance",
+        "financial",
+        "stock",
+        "portfolio",
+        "trading",
+        "investment",
+        "risk",
+        "valuation",
+        "dcf",
+        "revenue",
+        "forecast",
+        "budget",
+        "cash flow",
+        "balance sheet",
+        "profit",
+        "loss",
+        "hedge",
+        "option",
+        "derivative",
+        "bond",
+        "equity",
+        "market",
+        "sharpe",
+        "var",
+        "compliance",
+        "audit",
+        "accounting",
+        "tax",
+        "roi",
+        "irr",
+        "npv",
+    ],
+    "data-science": [
+        "data",
+        "dataset",
+        "analysis",
+        "machine learning",
+        "ml",
+        "model",
+        "prediction",
+        "classification",
+        "regression",
+        "clustering",
+        "nlp",
+        "embeddings",
+        "eda",
+        "visualization",
+        "statistics",
+        "etl",
+        "pipeline",
+        "kpi",
+        "metrics",
+        "bi",
+    ],
+    "marketing": [
+        "marketing",
+        "seo",
+        "content",
+        "social media",
+        "email",
+        "campaign",
+        "funnel",
+        "conversion",
+        "growth",
+        "brand",
+        "audience",
+        "keyword",
+        "engagement",
+        "newsletter",
+        "ad",
+        "advertising",
+        "copy",
+        "cro",
+    ],
+}
+
+# Team compositions per category: (agent_name, system_prompt, output_key, role, task_desc)
+_TEAM_COMPOSITIONS: dict[str, list[tuple[str, str, str, str, str]]] = {
+    "finance": [
+        (
+            "financial-analyst",
+            "You are a financial analyst. Focus on financial modeling, valuation, "
+            "forecasting, and ratio analysis. Be precise with numbers.",
+            "agent_a_output",
+            "Financial Analyst",
+            "Handle financial analysis and modeling",
+        ),
+        (
+            "risk-analyst",
+            "You are a risk analyst. Focus on risk assessment, VaR, stress testing, "
+            "and regulatory compliance. Be thorough with risk scenarios.",
+            "agent_b_output",
+            "Risk Analyst",
+            "Handle risk assessment and compliance",
+        ),
+    ],
+    "data-science": [
+        (
+            "data-analyst",
+            "You are a data analyst. Focus on exploratory analysis, statistical testing, "
+            "and data visualization. Be data-driven.",
+            "agent_a_output",
+            "Data Analyst",
+            "Handle data analysis and insights",
+        ),
+        (
+            "ml-engineer",
+            "You are an ML engineer. Focus on model training, evaluation, "
+            "feature engineering, and MLOps. Be practical.",
+            "agent_b_output",
+            "ML Engineer",
+            "Handle ML modeling and evaluation",
+        ),
+    ],
+    "marketing": [
+        (
+            "content-strategist",
+            "You are a content strategist. Focus on content planning, brand voice, "
+            "editorial calendar, and SEO copy. Be creative.",
+            "agent_a_output",
+            "Content Strategist",
+            "Handle content strategy and planning",
+        ),
+        (
+            "growth-hacker",
+            "You are a growth hacker. Focus on acquisition funnels, A/B testing, "
+            "conversion optimization, and growth loops. Be data-informed.",
+            "agent_b_output",
+            "Growth Hacker",
+            "Handle growth experiments and optimization",
+        ),
+    ],
+    "software-engineering": [
+        (
+            "backend-dev",
+            "You are a backend developer. Focus on server-side logic, APIs, data models, "
+            "and infrastructure. Be concise and practical.",
+            "agent_a_output",
+            "Backend Developer",
+            "Handle backend/API aspects of the task",
+        ),
+        (
+            "frontend-dev",
+            "You are a frontend developer. Focus on UI/UX, client-side logic, "
+            "and user experience. Be concise and practical.",
+            "agent_b_output",
+            "Frontend Developer",
+            "Handle frontend/UI aspects of the task",
+        ),
+    ],
+}
+
+
+def _detect_graph_category(prompt: str) -> str:
+    """Detect the most likely category from the prompt text."""
+    prompt_lower = prompt.lower()
+    scores: dict[str, int] = {}
+    for category, keywords in _GRAPH_CATEGORY_KEYWORDS.items():
+        scores[category] = sum(1 for kw in keywords if kw in prompt_lower)
+    best = max(scores, key=scores.get) if scores else "software-engineering"
+    return best if scores.get(best, 0) > 0 else "software-engineering"
+
+
 # --- Team graph: multi-agent orchestration ---
 
 
 def _build_team_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict[str, Any]]:
-    """Team orchestration: team-lead classifies, delegates to sub-agents, summarizes.
+    """Team orchestration: team-lead classifies, delegates to category-appropriate sub-agents.
 
     Flow:
-      team-lead (classify) -> [backend-dev, frontend-dev] in parallel -> team-lead (summarize)
+      team-lead (classify) -> [agent_a, agent_b] in parallel -> team-lead (summarize)
 
-    Emits agent.spawn, cooperation.task_assigned, agent.complete, cooperation.task_completed
-    events so the dashboard shows real multi-agent interaction.
+    Dynamically selects agents based on task category (finance, data-science, marketing,
+    or software-engineering). Emits agent lifecycle and cooperation events.
     """
     bus = EventBus.get()
+    category = _detect_graph_category(prompt)
+    team = _TEAM_COMPOSITIONS.get(category, _TEAM_COMPOSITIONS["software-engineering"])
+    agent_a_name, agent_a_sys, _, agent_a_role, agent_a_task = team[0]
+    agent_b_name, agent_b_sys, _, agent_b_role, agent_b_task = team[1]
 
     # Team-lead: classify the task
     classify = _agent_node(
         agent_name="team-lead",
         provider=provider,
         system=(
-            "You are the team lead. Classify this task and decide which sub-agents should handle it.\n"
+            "You are the team lead. Classify this task and decide how to delegate.\n"
+            f"Your team for this task: {agent_a_role} and {agent_b_role}.\n"
             "Reply with a brief task breakdown (2-3 lines):\n"
-            "- What the backend-dev should do\n"
-            "- What the frontend-dev should do\n"
+            f"- What {agent_a_name} should do\n"
+            f"- What {agent_b_name} should do\n"
             "Be concise."
         ),
         prompt_key="input",
@@ -710,44 +892,38 @@ def _build_team_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         event_bus=bus,
     )
 
-    # Backend sub-agent
-    backend = _agent_node(
-        agent_name="backend-dev",
+    # Sub-agent A
+    agent_a = _agent_node(
+        agent_name=agent_a_name,
         provider=provider,
-        system=(
-            "You are a backend developer. Focus on server-side logic, APIs, data models, "
-            "and infrastructure. Be concise and practical."
-        ),
+        system=agent_a_sys,
         prompt_template=lambda s: (
             f"Team lead's plan:\n{s.get('plan', '')}\n\n"
             f"Original request:\n{s['input']}\n\n"
-            f"Provide your backend analysis/solution:"
+            f"Provide your analysis/solution:"
         ),
-        output_key="backend_output",
-        role="Backend Developer",
+        output_key="agent_a_output",
+        role=agent_a_role,
         event_bus=bus,
         parent_agent="team-lead",
-        task_description="Handle backend/API aspects of the task",
+        task_description=agent_a_task,
     )
 
-    # Frontend sub-agent
-    frontend = _agent_node(
-        agent_name="frontend-dev",
+    # Sub-agent B
+    agent_b = _agent_node(
+        agent_name=agent_b_name,
         provider=provider,
-        system=(
-            "You are a frontend developer. Focus on UI/UX, client-side logic, "
-            "and user experience. Be concise and practical."
-        ),
+        system=agent_b_sys,
         prompt_template=lambda s: (
             f"Team lead's plan:\n{s.get('plan', '')}\n\n"
             f"Original request:\n{s['input']}\n\n"
-            f"Provide your frontend analysis/solution:"
+            f"Provide your analysis/solution:"
         ),
-        output_key="frontend_output",
-        role="Frontend Developer",
+        output_key="agent_b_output",
+        role=agent_b_role,
         event_bus=bus,
         parent_agent="team-lead",
-        task_description="Handle frontend/UI aspects of the task",
+        task_description=agent_b_task,
     )
 
     # Team-lead: summarize results
@@ -755,13 +931,13 @@ def _build_team_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         agent_name="team-lead",
         provider=provider,
         system=(
-            "You are the team lead. Combine the backend and frontend outputs "
+            f"You are the team lead. Combine the {agent_a_role} and {agent_b_role} outputs "
             "into a coherent final answer. Be concise but complete."
         ),
         prompt_template=lambda s: (
             f"Original request:\n{s['input']}\n\n"
-            f"Backend developer:\n{s.get('backend_output', '')}\n\n"
-            f"Frontend developer:\n{s.get('frontend_output', '')}\n\n"
+            f"{agent_a_role}:\n{s.get('agent_a_output', '')}\n\n"
+            f"{agent_b_role}:\n{s.get('agent_b_output', '')}\n\n"
             f"Provide the final combined answer:"
         ),
         output_key="response",
@@ -771,15 +947,15 @@ def _build_team_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
 
     graph = StateGraph()
     graph.add_node("team-lead-plan", classify)
-    graph.add_node("backend-dev", backend)
-    graph.add_node("frontend-dev", frontend)
+    graph.add_node(agent_a_name, agent_a)
+    graph.add_node(agent_b_name, agent_b)
     graph.add_node("team-lead-summarize", summarize)
 
     graph.add_edge(START, "team-lead-plan")
-    graph.add_edge("team-lead-plan", "backend-dev")
-    graph.add_edge("team-lead-plan", "frontend-dev")
-    graph.add_edge("backend-dev", "team-lead-summarize")
-    graph.add_edge("frontend-dev", "team-lead-summarize")
+    graph.add_edge("team-lead-plan", agent_a_name)
+    graph.add_edge("team-lead-plan", agent_b_name)
+    graph.add_edge(agent_a_name, "team-lead-summarize")
+    graph.add_edge(agent_b_name, "team-lead-summarize")
     graph.add_edge("team-lead-summarize", END)
 
     return graph, {"input": prompt}
