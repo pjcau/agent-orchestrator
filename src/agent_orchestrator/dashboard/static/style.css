@@ -799,6 +799,13 @@ main {
     font-size: 11px; color: var(--text); display: block;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.btn-session-delete {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px; margin-left: auto;
+    opacity: 0; transition: all 0.15s; border-radius: 3px;
+}
+.history-session-item:hover .btn-session-delete { opacity: 0.6; }
+.btn-session-delete:hover { opacity: 1 !important; color: var(--red, #f85149); background: rgba(248,81,73,0.1); }
 .history-session-meta {
     font-size: 9px; color: var(--text-dim); margin-top: 2px;
     display: flex; gap: 8px;

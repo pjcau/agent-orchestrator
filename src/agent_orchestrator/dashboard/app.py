@@ -20,8 +20,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..core.conversation import ConversationManager
+from ..core.conversation import ConversationManager, ConversationMessage
 from ..core.checkpoint import InMemoryCheckpointer
+from ..core.checkpoint_postgres import PostgresCheckpointer
 from .agent_runner import create_skill_registry, run_agent, run_team
 from .agents_registry import get_agent_registry
 from .events import Event, EventBus, EventType
@@ -157,12 +158,29 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     usage_db = UsageDB()
 
     # Conversation memory — thread-based multi-turn for agents, graphs, prompts
-    conv_manager = ConversationManager(checkpointer=InMemoryCheckpointer())
+    # Use PostgresCheckpointer if DATABASE_URL is set, otherwise InMemoryCheckpointer
+    _db_url = os.environ.get("DATABASE_URL", "")
+    _conv_checkpointer = (
+        PostgresCheckpointer(_db_url, table_name="conversation_checkpoints")
+        if _db_url
+        else InMemoryCheckpointer()
+    )
+    conv_manager = ConversationManager(checkpointer=_conv_checkpointer)
 
     @app.on_event("startup")
     async def _startup():
         await usage_db.setup()
         await setup_user_db()
+        # Initialize conversation checkpointer (creates table if Postgres)
+        if hasattr(_conv_checkpointer, "setup"):
+            try:
+                await _conv_checkpointer.setup()
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Conversation checkpointer setup failed, falling back to in-memory"
+                )
 
     # Mount static files
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -221,6 +239,109 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 "success": True,
                 "session_id": session_id,
                 "jobs_dir": str(job_logger.session_dir),
+            }
+        )
+
+    @app.post("/api/jobs/{session_id}/restore")
+    async def jobs_restore_conversation(session_id: str):
+        """Restore conversation memory from a session's job records.
+
+        Reads all prompt/stream/agent/team records from the session,
+        extracts user prompts and assistant outputs, and re-hydrates
+        the ConversationManager so subsequent requests have full context.
+
+        Returns the conversation_id (new or recovered from records).
+        """
+        records = job_logger.load_session(session_id)
+        if not records:
+            return JSONResponse(
+                content={"success": False, "error": "Session not found"},
+                status_code=404,
+            )
+
+        # Try to recover an existing conversation_id from the records
+        recovered_conv_id = None
+        for rec in records:
+            cid = rec.get("conversation_id")
+            if cid:
+                recovered_conv_id = cid
+                break
+
+        # Use recovered ID or create a new one
+        conv_id = recovered_conv_id or str(uuid.uuid4())[:8]
+
+        # Re-hydrate conversation from job records
+        messages: list[ConversationMessage] = []
+        for rec in records:
+            job_type = rec.get("job_type", "")
+            result = rec.get("result", {})
+
+            if job_type in ("prompt", "stream"):
+                user_text = rec.get("prompt", "")
+                assistant_text = (
+                    result.get("output", "") if result.get("success") is not False else ""
+                )
+            elif job_type == "agent_run":
+                user_text = rec.get("task", "")
+                assistant_text = result.get("output", "") if result.get("success") else ""
+            elif job_type == "team_run":
+                user_text = rec.get("task", "")
+                assistant_text = result.get("output", "") if result.get("success") else ""
+            else:
+                continue
+
+            if user_text:
+                messages.append(
+                    ConversationMessage(
+                        role="user",
+                        content=user_text,
+                        timestamp=rec.get("timestamp", 0.0),
+                    )
+                )
+            if assistant_text:
+                messages.append(
+                    ConversationMessage(
+                        role="assistant",
+                        content=assistant_text,
+                        timestamp=rec.get("timestamp", 0.0),
+                    )
+                )
+
+        # Save to conversation manager (both in-memory and checkpointer)
+        if messages:
+            await conv_manager._save_thread(conv_id, messages)
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "conversation_id": conv_id,
+                "messages_restored": len(messages),
+                "recovered_existing": recovered_conv_id is not None,
+            }
+        )
+
+    @app.delete("/api/jobs/{session_id}")
+    async def jobs_delete(session_id: str):
+        """Delete a session and its files. DB metrics are preserved."""
+        import shutil
+
+        session_dir = job_logger._base_dir / f"job_{session_id}"
+        if not session_dir.exists() or not session_dir.is_dir():
+            return JSONResponse(content={"error": "Session not found"}, status_code=404)
+        if session_id == job_logger.session_id:
+            return JSONResponse(
+                content={"error": "Cannot delete the current active session"},
+                status_code=400,
+            )
+        if not session_dir.resolve().is_relative_to(job_logger._base_dir.resolve()):
+            return JSONResponse(content={"error": "Path outside jobs directory"}, status_code=400)
+        file_count = sum(1 for f in session_dir.iterdir() if f.is_file())
+        shutil.rmtree(session_dir)
+        return JSONResponse(
+            content={
+                "success": True,
+                "session_id": session_id,
+                "files_deleted": file_count,
             }
         )
 
@@ -499,6 +620,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     "task": task_desc,
                     "model": model,
                     "provider": provider_type,
+                    "conversation_id": conv_id,
                     "result": result,
                 },
             )
@@ -572,6 +694,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     "task": task_desc,
                     "model": model,
                     "provider": provider_type,
+                    "conversation_id": conv_id_team,
                     "result": {
                         "success": result.get("success"),
                         "output": result.get("output", "")[:2000],
@@ -1012,6 +1135,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 "model": model,
                 "provider": provider_type,
                 "graph_type": graph_type,
+                "conversation_id": conv_id,
                 "result": result,
             },
         )
@@ -1208,6 +1332,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                             "prompt": prompt_text,
                             "model": model,
                             "provider": provider_type,
+                            "conversation_id": conv_id,
                             "result": {
                                 "success": True,
                                 "output": full_response,

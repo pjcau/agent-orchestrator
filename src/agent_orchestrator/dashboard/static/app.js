@@ -1859,17 +1859,25 @@
       const label = s.first_prompt || "(no prompt)";
       const badge = s.is_current ? ' <span class="badge running">current</span>' : "";
       const ts = s.session_id.replace(/_/g, " ").slice(0, 15);
+      const delBtn = s.is_current ? "" : `<button class="btn-session-delete" data-sid="${esc(s.session_id)}" title="Delete session">&times;</button>`;
       return `<div class="history-session-item${s.is_current ? " active" : ""}" data-sid="${esc(s.session_id)}">
-        <div class="history-session-meta">${esc(ts)}${badge}</div>
+        <div class="history-session-meta">${esc(ts)}${badge}${delBtn}</div>
         <div class="history-session-prompt">${esc(label)}</div>
         <div class="history-session-stats">${s.records} records &middot; ${s.files} files</div>
       </div>`;
     }).join("");
     $historySessions.querySelectorAll(".history-session-item").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (e) => {
+        if (e.target.classList.contains("btn-session-delete")) return;
         $historySessions.querySelectorAll(".history-session-item").forEach((x) => x.classList.remove("selected"));
         el.classList.add("selected");
         loadSessionDetail(el.dataset.sid);
+      });
+    });
+    $historySessions.querySelectorAll(".btn-session-delete").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteSession(btn.dataset.sid);
       });
     });
   }
@@ -1930,6 +1938,18 @@
     snapshot.total_tokens = 0;
     snapshot.total_cost_usd = 0;
     try {
+      // Restore conversation memory on the backend so follow-up messages have context
+      const restoreResp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/restore`, { method: "POST" });
+      const restoreData = await restoreResp.json();
+      if (restoreData.success && restoreData.conversation_id) {
+        conversationId = restoreData.conversation_id;
+        addSystemBubble(
+          `Session restored (${restoreData.messages_restored} messages). Conversation memory active.`
+        );
+      } else {
+        conversationId = null;
+      }
+
       const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}`);
       const data = await resp.json();
       const records = data.records || [];
@@ -1993,6 +2013,22 @@
       await loadSessionIntoChat(sessionId);
     } catch (e) {
       alert("Error switching session: " + e.message);
+    }
+  }
+
+  async function deleteSession(sessionId) {
+    if (!confirm(`Delete session ${sessionId}?\nFiles will be removed but metrics are preserved.`)) return;
+    try {
+      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+      const data = await resp.json();
+      if (data.success) {
+        // Refresh the session list
+        openHistory();
+      } else {
+        alert("Failed to delete: " + (data.error || "Unknown error"));
+      }
+    } catch (e) {
+      alert("Error deleting session: " + e.message);
     }
   }
 
