@@ -98,7 +98,7 @@ jobs:
           _inject GRAFANA_SMTP_USER "$GF_SMTP_USER"
           _inject GRAFANA_SMTP_PASSWORD "$GF_SMTP_PASS"
           _inject POSTGRES_PASSWORD "orchestrator-prod-2026"
-          _inject BASE_URL "https://$HOST"
+          _inject BASE_URL "https://agents-orchestrator.com"
           _inject GITHUB_USERNAME "pjcau"
 
           # Build and restart services
