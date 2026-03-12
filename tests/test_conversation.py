@@ -525,3 +525,120 @@ class TestGraphConversationMemory:
         assert history[1].content == "graph output 1"
         assert history[2].content == "prompt 2"
         assert "2 requests" in history[3].content
+
+
+# ===== Session Restore Tests =====
+
+
+class TestSessionRestore:
+    """Test re-hydrating conversation from job records (session load from history)."""
+
+    @pytest.mark.asyncio
+    async def test_restore_from_records_creates_thread(self):
+        """Loading a session should create a conversation thread with full history."""
+        mgr = ConversationManager()
+
+        # Simulate what the /restore endpoint does
+        messages = [
+            ConversationMessage(role="user", content="Build an API"),
+            ConversationMessage(role="assistant", content="Here's your API..."),
+            ConversationMessage(role="user", content="Add authentication"),
+            ConversationMessage(role="assistant", content="Auth added..."),
+        ]
+        await mgr._save_thread("restored-1", messages)
+
+        # Now a follow-up request should see the full history
+        async def check_context(msgs):
+            user_msgs = [m["content"] for m in msgs if m["role"] == "user"]
+            return f"saw {len(user_msgs)} requests"
+
+        result = await mgr.send("restored-1", "Add tests", check_context)
+        assert result.success
+        assert "3 requests" in result.response  # 2 restored + 1 new
+
+    @pytest.mark.asyncio
+    async def test_restore_with_empty_records(self):
+        """Restoring with no records should create empty thread."""
+        mgr = ConversationManager()
+        await mgr._save_thread("empty-1", [])
+
+        history = await mgr.get_history("empty-1")
+        assert len(history) == 0
+
+    @pytest.mark.asyncio
+    async def test_restore_overwrites_stale_thread(self):
+        """Restoring should replace any existing stale thread data."""
+        mgr = ConversationManager()
+
+        # Create initial thread
+        await mgr.send("thread-x", "old message", echo_graph_func)
+        old_history = await mgr.get_history("thread-x")
+        assert len(old_history) == 2  # user + assistant
+
+        # Now restore with different data (simulating session load)
+        restored_messages = [
+            ConversationMessage(role="user", content="restored msg 1"),
+            ConversationMessage(role="assistant", content="restored resp 1"),
+            ConversationMessage(role="user", content="restored msg 2"),
+            ConversationMessage(role="assistant", content="restored resp 2"),
+        ]
+        await mgr._save_thread("thread-x", restored_messages)
+
+        new_history = await mgr.get_history("thread-x")
+        assert len(new_history) == 4
+        assert new_history[0].content == "restored msg 1"
+
+    @pytest.mark.asyncio
+    async def test_restored_thread_survives_checkpointer_reload(self):
+        """Restored thread should persist via checkpointer and survive cache clear."""
+        cp = InMemoryCheckpointer()
+        mgr = ConversationManager(checkpointer=cp)
+
+        messages = [
+            ConversationMessage(role="user", content="hello"),
+            ConversationMessage(role="assistant", content="hi"),
+        ]
+        await mgr._save_thread("persist-1", messages)
+
+        # Clear in-memory cache to simulate server restart
+        mgr._threads.clear()
+
+        # Should reload from checkpointer
+        history = await mgr.get_history("persist-1")
+        assert len(history) == 2
+        assert history[0].content == "hello"
+        assert history[1].content == "hi"
+
+    @pytest.mark.asyncio
+    async def test_sqlite_checkpointer_survives_manager_recreation(self):
+        """With SQLiteCheckpointer, data persists even with new manager instance."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            cp1 = SQLiteCheckpointer(db_path)
+
+            mgr1 = ConversationManager(checkpointer=cp1)
+            messages = [
+                ConversationMessage(role="user", content="question 1"),
+                ConversationMessage(role="assistant", content="answer 1"),
+            ]
+            await mgr1._save_thread("durable-1", messages)
+
+            # Create a completely new manager with same DB (simulates restart)
+            cp2 = SQLiteCheckpointer(db_path)
+            mgr2 = ConversationManager(checkpointer=cp2)
+
+            history = await mgr2.get_history("durable-1")
+            assert len(history) == 2
+            assert history[0].content == "question 1"
+
+            # Send follow-up — should see history
+            async def check(msgs):
+                user_msgs = [m["content"] for m in msgs if m["role"] == "user"]
+                return f"total: {len(user_msgs)}"
+
+            result = await mgr2.send("durable-1", "question 2", check)
+            assert result.success
+            assert "total: 2" in result.response
