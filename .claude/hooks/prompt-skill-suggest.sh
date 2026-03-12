@@ -60,6 +60,11 @@ if echo "$PROMPT" | grep -qE '(doc-sync|sync.*doc|documentation.*sync|update.*do
   SUGGESTIONS="$SUGGESTIONS /doc-sync"
 fi
 
+# Fix (bug fix with mandatory tests)
+if echo "$PROMPT" | grep -qE '(fix|bug|broken|error|crash|fail|fixa|correggi|rotto|errore)'; then
+  SUGGESTIONS="$SUGGESTIONS /fix"
+fi
+
 if [ -n "$SUGGESTIONS" ]; then
   echo "{\"systemMessage\": \"Relevant skills:$SUGGESTIONS\"}"
 fi

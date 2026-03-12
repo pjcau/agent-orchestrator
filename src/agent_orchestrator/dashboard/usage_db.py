@@ -7,9 +7,13 @@ Falls back gracefully if DB is unavailable.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class UsageDB:
@@ -33,6 +37,42 @@ class UsageDB:
         # Session-level speed tracking (reset on container restart)
         self._session_output_tokens: int = 0
         self._session_elapsed_s: float = 0.0
+
+    @asynccontextmanager
+    async def _acquire(self):
+        """Acquire a connection with auto-reconnect on stale pool."""
+        try:
+            async with self._pool.acquire() as conn:
+                yield conn
+        except Exception as exc:
+            exc_name = type(exc).__name__
+            if "ConnectionDoesNotExist" in exc_name or "InterfaceError" in exc_name:
+                logger.warning("DB connection lost (%s), reconnecting pool", exc_name)
+                await self._reconnect_pool()
+                async with self._pool.acquire() as conn:
+                    yield conn
+            else:
+                raise
+
+    async def _reconnect_pool(self) -> None:
+        """Close stale pool and create a fresh one."""
+        try:
+            if self._pool:
+                await self._pool.close()
+        except Exception:
+            pass
+        try:
+            import asyncpg
+
+            self._pool = await asyncpg.create_pool(
+                self._dsn,
+                min_size=1,
+                max_size=3,
+                command_timeout=10,
+            )
+            self._available = True
+        except Exception:
+            self._available = False
 
     async def setup(self) -> None:
         """Initialize DB connection and create tables."""
@@ -113,7 +153,7 @@ class UsageDB:
         if not self._available or not self._pool:
             return
         try:
-            async with self._pool.acquire() as conn:
+            async with self._acquire() as conn:
                 row = await conn.fetchrow("""
                     SELECT
                         COALESCE(SUM(input_tokens), 0) AS total_input,
@@ -227,7 +267,7 @@ class UsageDB:
         # Persist to DB
         if self._available and self._pool:
             try:
-                async with self._pool.acquire() as conn:
+                async with self._acquire() as conn:
                     await conn.execute(
                         """INSERT INTO usage_stats
                            (ts, model, agent, provider, input_tokens, output_tokens, cost_usd, elapsed_s, session_id)
@@ -290,7 +330,7 @@ class UsageDB:
         if not self._available or not self._pool:
             return
         try:
-            async with self._pool.acquire() as conn:
+            async with self._acquire() as conn:
                 await conn.execute(
                     """INSERT INTO agent_errors
                        (ts, session_id, agent, tool_name, error_type, error_message,
@@ -314,7 +354,7 @@ class UsageDB:
         if not self._available or not self._pool:
             return []
         try:
-            async with self._pool.acquire() as conn:
+            async with self._acquire() as conn:
                 rows = await conn.fetch(
                     """SELECT id, ts, session_id, agent, tool_name, error_type,
                               error_message, step_number, model, provider
@@ -330,7 +370,7 @@ class UsageDB:
         if not self._available or not self._pool:
             return {}
         try:
-            async with self._pool.acquire() as conn:
+            async with self._acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT agent, error_type, COUNT(*) AS count
                     FROM agent_errors
@@ -359,7 +399,7 @@ class UsageDB:
         if not self._available or not self._pool:
             return
         try:
-            async with self._pool.acquire() as conn:
+            async with self._acquire() as conn:
                 await conn.execute(
                     "INSERT INTO conversations (conv_id, role, content, ts) VALUES ($1, $2, $3, $4)",
                     conv_id,
@@ -375,7 +415,7 @@ class UsageDB:
         if not self._available or not self._pool:
             return []
         try:
-            async with self._pool.acquire() as conn:
+            async with self._acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT role, content FROM conversations WHERE conv_id = $1 ORDER BY id",
                     conv_id,
@@ -389,7 +429,7 @@ class UsageDB:
         if not self._available or not self._pool:
             return []
         try:
-            async with self._pool.acquire() as conn:
+            async with self._acquire() as conn:
                 rows = await conn.fetch(
                     """SELECT role, content FROM (
                         SELECT role, content, id FROM conversations

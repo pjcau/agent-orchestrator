@@ -11,12 +11,16 @@ the database is unavailable.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from ..core.users import ROLE_PERMISSIONS, UserRole
+
+logger = logging.getLogger(__name__)
 
 # JSON fallback paths (used when Postgres is unavailable)
 USERS_FILE = Path("dashboard-users.json")
@@ -32,6 +36,45 @@ _db_available = False
 # ---------------------------------------------------------------------------
 
 
+@asynccontextmanager
+async def _acquire():
+    """Acquire a DB connection with auto-reconnect on stale pool."""
+    global _pool, _db_available
+    try:
+        async with _pool.acquire() as conn:
+            yield conn
+    except Exception as exc:
+        exc_name = type(exc).__name__
+        if "ConnectionDoesNotExist" in exc_name or "InterfaceError" in exc_name:
+            logger.warning("User store DB connection lost (%s), reconnecting", exc_name)
+            await _reconnect_pool()
+            async with _pool.acquire() as conn:
+                yield conn
+        else:
+            raise
+
+
+async def _reconnect_pool() -> None:
+    """Close stale pool and create a fresh one."""
+    global _pool, _db_available
+    dsn = os.environ.get("DATABASE_URL", "")
+    if not dsn:
+        _db_available = False
+        return
+    try:
+        if _pool:
+            await _pool.close()
+    except Exception:
+        pass
+    try:
+        import asyncpg
+
+        _pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3, command_timeout=10)
+        _db_available = True
+    except Exception:
+        _db_available = False
+
+
 async def setup_db(dsn: str | None = None) -> bool:
     """Initialize DB connection pool and create tables.
 
@@ -44,8 +87,8 @@ async def setup_db(dsn: str | None = None) -> bool:
     try:
         import asyncpg
 
-        _pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3)
-        async with _pool.acquire() as conn:
+        _pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3, command_timeout=10)
+        async with _acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS dashboard_users (
                     github_login TEXT PRIMARY KEY,
@@ -82,7 +125,7 @@ async def _migrate_json_to_db() -> None:
     if USERS_FILE.exists():
         try:
             users = json.loads(USERS_FILE.read_text(encoding="utf-8"))
-            async with _pool.acquire() as conn:
+            async with _acquire() as conn:
                 for _key, u in users.items():
                     await conn.execute(
                         """INSERT INTO dashboard_users
@@ -104,7 +147,7 @@ async def _migrate_json_to_db() -> None:
     if PENDING_FILE.exists():
         try:
             pending = json.loads(PENDING_FILE.read_text(encoding="utf-8"))
-            async with _pool.acquire() as conn:
+            async with _acquire() as conn:
                 for _key, p in pending.items():
                     await conn.execute(
                         """INSERT INTO dashboard_pending
@@ -249,7 +292,7 @@ async def _get_or_create_user_db(github_login: str, email: str, name: str) -> di
     key = github_login.lower()
     admin_login = _get_admin_github()
 
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         # Admin auto-creation
         if key == admin_login:
             await conn.execute(
@@ -354,7 +397,7 @@ def list_users() -> list[dict[str, Any]]:
 
 
 async def _list_users_db() -> list[dict[str, Any]]:
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         rows = await conn.fetch("SELECT * FROM dashboard_users ORDER BY created_at")
         return [_row_to_user(r) for r in rows]
 
@@ -391,7 +434,7 @@ def approve_user(
 
 async def _approve_user_db(github_login: str, role: str, email: str, name: str) -> dict[str, Any]:
     key = github_login.lower()
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         await conn.execute(
             """INSERT INTO dashboard_users (github_login, email, name, role, active, created_at)
                VALUES ($1, $2, $3, $4, TRUE, $5)
@@ -459,7 +502,7 @@ def update_user_role(github_login: str, role: str) -> bool:
 
 async def _update_user_role_db(github_login: str, role: str) -> bool:
     key = github_login.lower()
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         result = await conn.execute(
             "UPDATE dashboard_users SET role = $2 WHERE github_login = $1", key, role
         )
@@ -499,7 +542,7 @@ def deactivate_user(github_login: str) -> bool:
 
 async def _deactivate_user_db(github_login: str) -> bool:
     key = github_login.lower()
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         result = await conn.execute(
             "UPDATE dashboard_users SET active = FALSE WHERE github_login = $1", key
         )
@@ -539,7 +582,7 @@ def delete_user(github_login: str) -> bool:
 
 async def _delete_user_db(github_login: str) -> bool:
     key = github_login.lower()
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         result = await conn.execute("DELETE FROM dashboard_users WHERE github_login = $1", key)
         return result != "DELETE 0"
 
@@ -595,7 +638,7 @@ def list_pending() -> list[dict[str, Any]]:
 
 
 async def _list_pending_db() -> list[dict[str, Any]]:
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         rows = await conn.fetch("SELECT * FROM dashboard_pending ORDER BY requested_at DESC")
         return [_row_to_pending(r) for r in rows]
 
@@ -622,7 +665,7 @@ def approve_pending(github_login: str, role: str = "developer") -> dict[str, Any
 
 async def _approve_pending_db(github_login: str, role: str) -> dict[str, Any] | None:
     key = github_login.lower()
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         row = await conn.fetchrow(
             "DELETE FROM dashboard_pending WHERE github_login = $1 RETURNING *", key
         )
@@ -674,6 +717,6 @@ def reject_pending(github_login: str) -> bool:
 
 async def _reject_pending_db(github_login: str) -> bool:
     key = github_login.lower()
-    async with _pool.acquire() as conn:
+    async with _acquire() as conn:
         result = await conn.execute("DELETE FROM dashboard_pending WHERE github_login = $1", key)
         return result != "DELETE 0"
