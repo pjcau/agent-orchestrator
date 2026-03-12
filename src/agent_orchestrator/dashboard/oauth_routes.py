@@ -92,6 +92,22 @@ def _denied_page_html(login: str) -> str:
 </div></body></html>"""
 
 
+@router.get("/auth/debug")
+async def auth_debug():
+    """Debug endpoint to verify OAuth configuration (no secrets exposed)."""
+    import os
+
+    client_id = os.environ.get("OAUTH_CLIENT_ID", "")
+    base_url = get_base_url()
+    return JSONResponse({
+        "base_url": base_url,
+        "redirect_uri": base_url + "/auth/github/callback",
+        "oauth_client_id_set": bool(client_id),
+        "oauth_client_id_prefix": client_id[:8] + "..." if len(client_id) > 8 else client_id,
+        "oauth_client_secret_set": bool(os.environ.get("OAUTH_CLIENT_SECRET", "")),
+    })
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page():
     """Render login page with OAuth provider buttons."""
