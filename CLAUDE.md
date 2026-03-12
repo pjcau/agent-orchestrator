@@ -105,7 +105,7 @@ agent-orchestrator/
 │       │   ├── agent_runner.py  # Agent/team execution with event emissions
 │       │   ├── agents_registry.py # Agent configuration registry (category-aware)
 │       │   ├── graphs.py        # Graph builders for dashboard prompt
-│       │   ├── job_logger.py    # Session-based job persistence
+│       │   ├── job_logger.py    # Session-based job persistence (lazy dirs, auto-cleanup)
 │       │   ├── auth.py          # OAuth2 + API key authentication middleware
 │       │   ├── oauth_routes.py  # GitHub OAuth2 login/callback + admin user API
 │       │   ├── user_store.py    # User store (PostgreSQL + JSON fallback)
@@ -154,7 +154,7 @@ agent-orchestrator/
 - **SessionStore** — Session-scoped wrapper on BaseStore. Auto-tracks written keys, deletes all session data on close(). Async context manager.
 - **StreamEvent / astream()** — Real-time graph execution streaming. `CompiledGraph.astream()` yields `StreamEvent` at each node start/end/error, with state deltas and timing.
 - **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout).
-- **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim.
+- **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim. Persists to PostgreSQL and survives container restarts. Sessions can be restored from job records via `POST /api/jobs/{session_id}/restore`.
 
 ## Agent Error Tracking
 
@@ -308,6 +308,20 @@ proposes concrete code improvements as PRs. Token-efficient: one repo, one LLM c
 
 GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_KEY` (secret, for LLM analysis), `GITHUB_TOKEN` (auto-provided).
 
+## Deploy Pipeline (CI/CD)
+
+Automated deploy to EC2 on every push to `main`. Config: `.github/workflows/deploy.yml`.
+
+- **Trigger**: push to main (ignores `docs/`, `*.md`, `terraform/`)
+- **Steps**: test → lint → rsync code → inject secrets → build → deploy → health check
+- **Secret injection**: all GitHub Secrets are injected into `.env.prod` on EC2 via `_inject()` helper (idempotent upsert)
+- **Secrets managed**: `AWS_*`, `OPENROUTER_API_KEY`, `JWT_SECRET_KEY`, `OAUTH_CLIENT_ID/SECRET`, `GRAFANA_SMTP_*`, `POSTGRES_PASSWORD`, `BASE_URL`, `GITHUB_USERNAME`
+- **Force-recreate**: only `dashboard` and `aws-cost-exporter` are force-recreated (not postgres/redis/nginx)
+- **Postgres password sync**: `ALTER USER` runs on every deploy to fix first-init password mismatch
+- **Nginx timeout**: 600s (10 min) for long team runs
+- **BASE_URL**: `https://agents-orchestrator.com` (domain, not IP — required for OAuth callbacks)
+- **Static cache busting**: bump `?v=NNN` in `index.html` on every frontend change
+
 ## Security Scanning (CI)
 
 Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC).
@@ -322,9 +336,11 @@ Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC).
 
 Dependabot opens PRs automatically for outdated/vulnerable dependencies. Results appear in GitHub's Security tab.
 
+**Security Autofix**: `.github/workflows/security-autofix.yml` runs daily, auto-fixes CodeQL alerts via Claude Code, and opens PRs.
+
 ## Job Log Archiving
 
-Session logs (`jobs/job_<session_id>/`) are archived to S3 and metadata stored in PostgreSQL.
+Session logs (`jobs/job_<session_id>/`) are created lazily (only on first file write) and empty dirs are auto-cleaned after 30s. Archived to S3 with metadata in PostgreSQL.
 
 - **Archiver script**: `scripts/archive_jobs.py` — scans for sessions older than N days, tarballs them, uploads to S3, records metadata in `job_archives` table, deletes local files
 - **Docker service**: `archiver` in `docker-compose.prod.yml` — runs every 7 days automatically
@@ -360,6 +376,23 @@ Built-in file browser for navigating agent-created artifacts per session. Access
   - `GET /api/jobs/{session_id}/files/{filename}` — read file content
   - `GET /api/jobs/{session_id}/download` — download session as ZIP
 - **Security**: path traversal protection, 500KB file size limit
+
+### Session Management
+
+- **Delete sessions**: hover over a session in History → click X → confirm. Files are removed but DB metrics (tokens, cost) are preserved.
+- **Lazy directory creation**: session directories are created only when the first file is written, not on session init.
+- **Auto-cleanup**: empty session directories are automatically removed after 30 seconds.
+- **API**: `DELETE /api/jobs/{session_id}` — cannot delete the current active session.
+
+### Usage Metrics
+
+The dashboard header shows two metric groups:
+
+- **Session metrics** (left): tokens, cost, and speed for the current server session
+- **Cumulative metrics** (right): all-time totals from PostgreSQL — tokens, cost, avg speed, requests
+- **Speed tracking**: `avg_speed` (total average output tok/s from DB), `session_speed` (current server session)
+- **DB indicator**: green dot = PostgreSQL connected, metrics persisted; red = in-memory only
+- **Debug**: `GET /auth/debug` — shows OAuth config (base_url, redirect_uri, client_id prefix)
 
 ## Development
 
