@@ -61,6 +61,12 @@ jobs:
           USER: ec2-user
           AWS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          JWT_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          OAUTH_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+          OAUTH_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          GF_SMTP_USER: ${{ secrets.GRAFANA_SMTP_USER }}
+          GF_SMTP_PASS: ${{ secrets.GRAFANA_SMTP_PASSWORD }}
         run: |
           SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
 
@@ -78,9 +84,22 @@ jobs:
             -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
             . $USER@$HOST:$APP_DIR/
 
-          # Ensure AWS credentials are in .env.prod (for aws-cost-exporter)
-          $SSH_CMD "cd $APP_DIR && grep -q '^AWS_ACCESS_KEY_ID=' .env.prod && sed -i 's|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=$AWS_KEY_ID|' .env.prod || echo 'AWS_ACCESS_KEY_ID=$AWS_KEY_ID' >> .env.prod"
-          $SSH_CMD "cd $APP_DIR && grep -q '^AWS_SECRET_ACCESS_KEY=' .env.prod && sed -i 's|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=$AWS_SECRET|' .env.prod || echo 'AWS_SECRET_ACCESS_KEY=$AWS_SECRET' >> .env.prod"
+          # Inject all secrets into .env.prod on EC2
+          _inject() {
+            local key="$1" val="$2"
+            $SSH_CMD "cd $APP_DIR && grep -q '^${key}=' .env.prod 2>/dev/null && sed -i 's|^${key}=.*|${key}=${val}|' .env.prod || echo '${key}=${val}' >> .env.prod"
+          }
+          _inject AWS_ACCESS_KEY_ID "$AWS_KEY_ID"
+          _inject AWS_SECRET_ACCESS_KEY "$AWS_SECRET"
+          _inject OPENROUTER_API_KEY "$OPENROUTER_KEY"
+          _inject JWT_SECRET_KEY "$JWT_KEY"
+          _inject OAUTH_CLIENT_ID "$OAUTH_ID"
+          _inject OAUTH_CLIENT_SECRET "$OAUTH_SECRET"
+          _inject GRAFANA_SMTP_USER "$GF_SMTP_USER"
+          _inject GRAFANA_SMTP_PASSWORD "$GF_SMTP_PASS"
+          _inject POSTGRES_PASSWORD "orchestrator-prod-2026"
+          _inject BASE_URL "https://$HOST"
+          _inject GITHUB_USERNAME "pjcau"
 
           # Build and restart services
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"

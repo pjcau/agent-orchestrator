@@ -689,6 +689,7 @@ def _build_role_for_agent(agent_info: dict) -> str:
         return (
             f"You are {name}: {desc}. "
             "Write actual code files. Use file_write to create files. "
+            "Combine related content into fewer files when possible. "
             "Be practical, write working code."
         )
 
@@ -699,6 +700,7 @@ async def run_team(
     event_bus: EventBus | None = None,
     working_directory: str | None = None,
     max_steps: int = 15,
+    max_sub_agent_steps: int = 30,
     max_sub_agents: int = 5,
     usage_db: Any | None = None,
     session_id: str = "",
@@ -708,6 +710,10 @@ async def run_team(
     """Run a multi-agent team with dynamic routing.
 
     Args:
+        max_steps: Max LLM calls for the team-lead orchestration steps.
+        max_sub_agent_steps: Max LLM calls per individual sub-agent (default 30).
+            Sub-agents typically need more steps than the team-lead because each
+            tool call (file_write, shell_exec, etc.) consumes one step.
         conversation_id: Optional thread ID for multi-turn memory.
         conversation_manager: Optional ConversationManager for persistence.
 
@@ -884,7 +890,7 @@ async def run_team(
                 task_description=prompt,
                 provider=provider,
                 role=role,
-                max_steps=max_steps,
+                max_steps=max_sub_agent_steps,
                 event_bus=bus,
                 working_directory=working_directory,
                 usage_db=usage_db,
