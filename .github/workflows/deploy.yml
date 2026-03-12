@@ -103,7 +103,7 @@ jobs:
 
           # Build and restart services
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --force-recreate"
 
           # Restart nginx to pick up new dashboard container IP (avoids 502)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx"
