@@ -751,6 +751,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
         provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
 
+        # Evict completed/failed jobs to prevent unbounded growth (keep last 20)
+        finished = [k for k, v in _active_jobs.items() if v["status"] != "running"]
+        for k in finished[:-20]:
+            _active_jobs.pop(k, None)
+
         _active_jobs[job_id] = {"status": "running", "task": task_desc, "result": None}
 
         async def _run_in_background():

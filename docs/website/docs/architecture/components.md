@@ -104,16 +104,17 @@ sequenceDiagram
     participant A as run_agent()
 
     rect rgb(230, 240, 255)
-        Note over B,A: Multi-Agent Mode
+        Note over B,A: Multi-Agent Mode (Async)
         B->>F: POST /api/team/run
-        F->>T: run_team()
+        F-->>B: {job_id, status: "started"}
+        F->>T: asyncio.create_task(run_team())
+        T-->>B: WebSocket: team.started
+        T-->>B: WebSocket: graph.start (plan → sub-agents → review)
         T->>T: team-lead plans (LLM)
-        T->>A: run_agent("backend-dev")
-        A-->>B: WebSocket: agent_spawn, tool_call, tool_result
-        T->>A: run_agent("frontend-dev")
-        A-->>B: WebSocket: agent_spawn, tool_call, tool_result
-        T->>T: team-lead summarizes
-        F-->>B: JSON response
+        T->>A: run_agent() (parallel sub-agents)
+        A-->>B: WebSocket: agent.spawn, agent.tool_call, agent.tool_result
+        T->>T: team-lead validates & summarizes
+        T-->>B: WebSocket: team.complete (full result)
     end
 
     rect rgb(240, 255, 240)

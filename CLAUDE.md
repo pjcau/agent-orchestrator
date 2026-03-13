@@ -409,6 +409,17 @@ Built-in file browser for navigating agent-created artifacts per session. Access
 - **Auto-cleanup**: empty session directories are automatically removed after 30 seconds.
 - **API**: `DELETE /api/jobs/{session_id}` — cannot delete the current active session.
 
+### Async Team Run
+
+Multi-agent team runs execute as background tasks to prevent HTTP timeouts:
+
+- **Non-blocking**: `POST /api/team/run` returns immediately with `{"job_id", "status": "started"}`
+- **Background execution**: `run_team()` runs as `asyncio.Task`, streams events via WebSocket
+- **Event lifecycle**: `team.started` → `agent.*` events → `team.complete` (with full result)
+- **Graph visualization**: `run_team()` emits `GRAPH_START`/`GRAPH_NODE_ENTER`/`GRAPH_NODE_EXIT`/`GRAPH_END` for 3-phase workflow (plan → sub-agents → review)
+- **Polling fallback**: `GET /api/team/status/{job_id}` returns current status and result
+- **Memory safety**: completed jobs are evicted (keeps last 20) to prevent unbounded growth
+
 ### Usage Metrics
 
 The dashboard header shows two metric groups:
