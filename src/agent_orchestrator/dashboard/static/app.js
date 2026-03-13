@@ -773,15 +773,30 @@
     // Show fallback log if any
     const fbLog = data.fallback_log || [];
     if (fbLog.length > 0) {
-      const fbHtml = fbLog.map(f => {
-        const icon = f.status === "ok" ? "&#10003;" : "&#10007;";
-        const cls = f.status === "ok" ? "fb-ok" : "fb-fail";
-        return `<span class="fb-entry ${cls}">${icon} ${esc(f.agent || "")} → ${esc(f.model)} [${f.status}] ${esc(f.detail || "")}</span>`;
-      }).join("");
       addSystemBubble("Fallback log:");
       const fbBubble = document.createElement("div");
       fbBubble.className = "chat-bubble system fallback-log";
-      fbBubble.innerHTML = fbHtml;
+      fbLog.forEach(f => {
+        const iconChar = f.status === "ok" ? "✔" : "✗";
+        const cls = f.status === "ok" ? "fb-ok" : "fb-fail";
+        const span = document.createElement("span");
+        span.className = `fb-entry ${cls}`;
+
+        const iconNode = document.createTextNode(iconChar + " ");
+        span.appendChild(iconNode);
+
+        const agentText = (f.agent || "") + " \u2192 " + (f.model || "") + " [";
+        span.appendChild(document.createTextNode(agentText));
+
+        span.appendChild(document.createTextNode(f.status || ""));
+        span.appendChild(document.createTextNode("] "));
+
+        if (f.detail) {
+          span.appendChild(document.createTextNode(f.detail));
+        }
+
+        fbBubble.appendChild(span);
+      });
       $chatMessages.appendChild(fbBubble);
     }
 
