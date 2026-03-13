@@ -117,62 +117,46 @@ jobs:
 
           if [ -n "$DASH_UID" ]; then
             echo "Found orchestrator dashboard: $DASH_UID"
-            $SSH_CMD "
-              DASH=\$(curl -s -u $GF_AUTH $GF/api/dashboards/uid/$DASH_UID)
-              echo \"\$DASH\" | python3 << 'PYEOF'
-          import sys, json
+            # Upload a Python script to EC2, then execute it
+            cat > /tmp/add_panel.py << 'PYEOF'
+          import json, sys, subprocess
 
-          dash = json.load(sys.stdin)
-          db = dash.get('dashboard', {})
-          panels = db.get('panels', [])
+          gf_auth = sys.argv[1]
+          gf_url = sys.argv[2]
+          dash_uid = sys.argv[3]
 
-          if any(p.get('title') == 'LLM Avg Latency (s)' for p in panels):
-              print('Panel already exists, skipping')
+          r = subprocess.run(["curl", "-s", "-u", gf_auth, f"{gf_url}/api/dashboards/uid/{dash_uid}"], capture_output=True, text=True)
+          dash = json.loads(r.stdout)
+          db = dash.get("dashboard", {})
+          panels = db.get("panels", [])
+
+          if any(p.get("title") == "LLM Avg Latency (s)" for p in panels):
+              print("Panel already exists, skipping")
               sys.exit(0)
 
-          max_id = max((p.get('id', 0) for p in panels), default=0)
+          max_id = max((p.get("id", 0) for p in panels), default=0)
           new_panel = {
-              'id': max_id + 1,
-              'title': 'LLM Avg Latency (s)',
-              'type': 'timeseries',
-              'datasource': {'type': 'prometheus', 'uid': 'prometheus'},
-              'gridPos': {'h': 8, 'w': 12, 'x': 0, 'y': 100},
-              'targets': [{
-                  'expr': 'orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count',
-                  'legendFormat': '{{provider}}',
-                  'refId': 'A'
-              }],
-              'fieldConfig': {
-                  'defaults': {
-                      'unit': 's',
-                      'thresholds': {
-                          'mode': 'absolute',
-                          'steps': [
-                              {'color': 'green', 'value': None},
-                              {'color': 'yellow', 'value': 10},
-                              {'color': 'red', 'value': 30}
-                          ]
-                      }
-                  },
-                  'overrides': []
-              }
+              "id": max_id + 1,
+              "title": "LLM Avg Latency (s)",
+              "type": "timeseries",
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "gridPos": {"h": 8, "w": 12, "x": 0, "y": 100},
+              "targets": [{"expr": "orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count", "legendFormat": "{{provider}}", "refId": "A"}],
+              "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "yellow", "value": 10}, {"color": "red", "value": 30}]}}, "overrides": []}
           }
           panels.append(new_panel)
-          db['panels'] = panels
-          db.pop('version', None)
-          db.pop('id', None)
-          print(json.dumps({'dashboard': db, 'overwrite': True}))
-          PYEOF
-            " > /tmp/dash_payload.json 2>/dev/null
+          db["panels"] = panels
+          db.pop("version", None)
+          db.pop("id", None)
+          payload = json.dumps({"dashboard": db, "overwrite": True})
 
-            if [ -s /tmp/dash_payload.json ] && grep -q panels /tmp/dash_payload.json; then
-              # Upload the updated dashboard
-              cat /tmp/dash_payload.json | $SSH_CMD "cat > /tmp/dash_update.json && curl -s -u $GF_AUTH -X POST $GF/api/dashboards/db -H 'Content-Type: application/json' -d @/tmp/dash_update.json && rm -f /tmp/dash_update.json"
-              rm -f /tmp/dash_payload.json
-            else
-              echo "  Skipped (panel exists or parse error)"
-              rm -f /tmp/dash_payload.json
-            fi
+          r2 = subprocess.run(["curl", "-s", "-u", gf_auth, "-X", "POST", f"{gf_url}/api/dashboards/db", "-H", "Content-Type: application/json", "-d", payload], capture_output=True, text=True)
+          result = json.loads(r2.stdout)
+          print(f"  Result: {result.get('status','?')}, URL: {result.get('url','?')}")
+          PYEOF
+            scp -i $SSH_KEY -o StrictHostKeyChecking=accept-new /tmp/add_panel.py $USER@$HOST:/tmp/add_panel.py
+            $SSH_CMD "python3 /tmp/add_panel.py '$GF_AUTH' '$GF' '$DASH_UID' && rm -f /tmp/add_panel.py" || echo "  Panel creation failed"
+            rm -f /tmp/add_panel.py
           else
             echo "Orchestrator dashboard not found — will use provisioned JSON instead"
           fi
