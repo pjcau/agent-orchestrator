@@ -1,0 +1,367 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "--- LLM Provider Performance ---",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "options": { "mode": "markdown", "content": "" }
+    },
+    {
+      "title": "LLM Avg Latency (s)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 2 },
+      "targets": [
+        { "expr": "orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count", "legendFormat": "{{ provider }}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 30 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "LLM Total Calls",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 2 },
+      "targets": [
+        { "expr": "sum(orchestrator_llm_call_duration_seconds_count)", "legendFormat": "Total" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Frontend JS Errors",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 2 },
+      "targets": [
+        { "expr": "orchestrator_frontend_errors_total", "legendFormat": "Errors" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Agent Stalls (total)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 2 },
+      "targets": [
+        { "expr": "sum(orchestrator_agent_stalls_total)", "legendFormat": "Stalls" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "LLM Latency Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count",
+          "legendFormat": "avg {{ provider }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 30 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "LLM Calls Rate (/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(orchestrator_llm_call_duration_seconds_count[5m]) * 60",
+          "legendFormat": "{{ provider }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cpm",
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars" }
+        }
+      }
+    },
+    {
+      "title": "LLM Latency by Provider",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count",
+          "legendFormat": "{{ provider }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 30 }
+            ]
+          }
+        }
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "LLM Calls per Provider",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "orchestrator_llm_call_duration_seconds_count",
+          "legendFormat": "{{ provider }}"
+        }
+      ]
+    },
+    {
+      "title": "--- Graph Node Execution ---",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 24 },
+      "options": { "mode": "markdown", "content": "" }
+    },
+    {
+      "title": "Graph Node Avg Duration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "targets": [
+        {
+          "expr": "orchestrator_graph_node_duration_seconds_sum / orchestrator_graph_node_duration_seconds_count",
+          "legendFormat": "{{ node }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Graph Node Executions Rate (/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "targets": [
+        {
+          "expr": "rate(orchestrator_graph_node_duration_seconds_count[5m]) * 60",
+          "legendFormat": "{{ node }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cpm",
+          "custom": { "fillOpacity": 20, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "title": "Slowest Graph Nodes (avg)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
+      "targets": [
+        {
+          "expr": "topk(10, orchestrator_graph_node_duration_seconds_sum / orchestrator_graph_node_duration_seconds_count)",
+          "legendFormat": "{{ node }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient" }
+    },
+    {
+      "title": "--- Agent Stalls & Frontend Errors ---",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 42 },
+      "options": { "mode": "markdown", "content": "" }
+    },
+    {
+      "title": "Agent Stalls by Category",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_stalls_total",
+          "legendFormat": "{{ category }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 30, "lineWidth": 2, "drawStyle": "bars" },
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "title": "Frontend Errors Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "targets": [
+        {
+          "expr": "orchestrator_frontend_errors_total",
+          "legendFormat": "JS Errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 20, "lineWidth": 2 },
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Stalls by Category (breakdown)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+      "targets": [
+        {
+          "expr": "orchestrator_agent_stalls_total",
+          "legendFormat": "{{ category }}"
+        }
+      ]
+    },
+    {
+      "title": "Error & Cache Summary",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+      "targets": [
+        { "expr": "orchestrator_errors_total", "legendFormat": "Agent Errors" },
+        { "expr": "orchestrator_cache_hits_total", "legendFormat": "Cache Hits" },
+        { "expr": "orchestrator_cache_misses_total", "legendFormat": "Cache Misses" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "area", "colorMode": "background" }
+    },
+    {
+      "title": "--- Prometheus Alert Status ---",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 60 },
+      "options": { "mode": "markdown", "content": "" }
+    },
+    {
+      "title": "Alert Rules Status",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 62 },
+      "targets": [
+        {
+          "expr": "ALERTS{alertname=~\"GraphNodeHung|LLMCallSlow|FrontendErrorSpike|ProviderDegraded|HighErrorRate|AgentStalled|HighCostSpike\"}",
+          "legendFormat": "{{ alertname }}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "alertstate" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "basic" }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "firing": { "color": "red", "text": "FIRING" } } },
+                  { "type": "value", "options": { "pending": { "color": "yellow", "text": "PENDING" } } }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["agent-orchestrator", "observability", "tracing"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Observability & Tracing",
+  "uid": "agent-orchestrator-observability"
+}
