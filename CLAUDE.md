@@ -277,7 +277,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
   → Not found: report to user, suggest custom agent/skill
 ```
 
-### Skills Map (14 total)
+### Skills Map (17 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -288,13 +288,15 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 | `/deploy` | devops | Container deployment via docker-compose |
 | `/scout` | scout | GitHub pattern discovery |
 | `/website-dev` | frontend | Documentation site development |
-| `/doc-sync` | all | Sync docs with code (CLAUDE.md, README, docs/, website) |
 | `/verify` | all | Pre-PR quality gate (tests, lint, format, security, diff review) |
 | `/cost-optimization` | ai-engineer | Review LLM API costs, routing, budget, retry efficiency |
 | `/ship` | all | Full pipeline: test, lint, docs sync, commit, push |
 | `/feature` | all | End-to-end feature dev: implement, user review loop, tests, SOLID review, docs, commit, push |
 | `/fix` | all | Bug fix with mandatory regression tests, lint, deploy |
 | `/doc` | all | Full docs review: audit all docs/ against codebase, fix stale/missing/inaccurate content |
+| `/fetch-star-repos` | scout | Fetch GitHub starred repos for research scout analysis |
+| `/research-scout` | research-scout | Analyze starred repos and propose code improvements |
+| `/web-research` | all | Search the internet for solutions, docs, and best practices |
 
 ### Research Scout & Nightly Workflow
 

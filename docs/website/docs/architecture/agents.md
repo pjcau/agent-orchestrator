@@ -32,7 +32,7 @@ graph TD
     style TL fill:#4a90d9,color:#fff
 ```
 
-### Software Engineering (6 agents)
+### Software Engineering (8 agents)
 
 ```mermaid
 graph TD
@@ -43,10 +43,14 @@ graph TD
     SE --> PE["platform-engineer (sonnet)<br/>system design, scalability"]
     SE --> AI["ai-engineer (opus)<br/>LLM integration, prompts"]
     SE --> SC["scout (opus)<br/>GitHub pattern discovery"]
+    SE --> RS["research-scout (opus)<br/>Starred repos analysis"]
+    SE --> SA["security-auditor (opus)<br/>Vulnerability scanning, OWASP"]
 
     style SE fill:#4a90d9,color:#fff
     style AI fill:#e6a23c,color:#fff
     style SC fill:#e6a23c,color:#fff
+    style RS fill:#e6a23c,color:#fff
+    style SA fill:#e6a23c,color:#fff
 ```
 
 ### Data Science (5 agents)
@@ -107,6 +111,7 @@ graph LR
     DO["DevOps"] <-->|"Docker, CI/CD, deployment"| BE & FE & PE & AI
     AI["AI-Eng"] <-->|"provider implementations"| BE
     SC["Scout"] -->|"discovers patterns, creates PRs"| BE & FE & DO & PE & AI
+    SA["Security"] -->|"audits code, deps, config"| BE & FE & DO & PE & AI
 ```
 
 ### Data Science

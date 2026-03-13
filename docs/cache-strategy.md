@@ -40,18 +40,15 @@
 - `CACHE_MISS` — emitted on cache miss
 - `CACHE_STATS` — emitted with full stats dict
 
-### The Problem
+### Current Integration (Implemented)
 
-**No code ever instantiates `InMemoryCache` or uses `cached_node`.**
+The cache is now fully wired into the execution pipeline:
 
-The cache module is complete but has zero integration points:
-
-- `llm_nodes.py` — creates `llm_node()`, `multi_provider_node()`, `chat_node()` — **no cache**
-- `graphs.py` — builds graph pipelines using `llm_node()` — **no cache**
-- `agent_runner.py` — runs agents with tool calls — **no cache on tool results**
-- `skill.py` — SkillRegistry with middleware chain — **no cache middleware**
-
-The instrumentation patches `InMemoryCache.get()` but since no `InMemoryCache` is ever created, no events are ever emitted.
+- `llm_nodes.py` — `llm_node()` accepts `cache_policy` parameter; shared `InMemoryCache` instance (`get_llm_cache()`). Skips cache when `temperature > 0`.
+- `graphs.py` — graph builders pass `cache_policy` (5 min TTL, 500 entries max) to `llm_node()`.
+- `agent_runner.py` — `create_skill_registry()` wires `cache_middleware()` for idempotent skills (`file_read`, `glob_search`). Shared `InMemoryCache` via `get_tool_cache()`. Auto-invalidates on `file_write`.
+- `skill.py` — `cache_middleware()` available as composable middleware on `SkillRegistry`.
+- Dashboard shows cache hits/misses/rate in real time via EventBus instrumentation.
 
 ---
 

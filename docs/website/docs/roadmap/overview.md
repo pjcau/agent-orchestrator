@@ -19,7 +19,7 @@ AWS infrastructure and monitoring come **first** — the product must be live an
 - Dashboard: streaming, multi-turn chat, presets, file context, agent execution, cost tracking
 - Checkpointing: InMemory, SQLite, PostgreSQL
 - Docker/OrbStack: dashboard, postgres, test, lint, format
-- 487+ tests
+- 939+ tests
 
 **What's missing for production:**
 - Cloud deployment (AWS)

@@ -13,11 +13,11 @@
 - LLM node factories (`llm_node`, `multi_provider_node`, `chat_node`)
 - Interactive dashboard (FastAPI + WebSocket, streaming, model selector, graph visualization)
 - Core abstractions: Provider, Agent, Skill, Orchestrator, Cooperation
-- 23 agents across 5 categories (software-engineering, data-science, finance, marketing, tooling)
+- 24 agents across 5 categories (software-engineering, data-science, finance, marketing, tooling) + team-lead
 - SkillKit scout agent for marketplace skill discovery (15,000+ skills)
 - Per-agent cost tracking, fallback chains, budget enforcement
 - OrbStack/Docker infrastructure (dashboard, postgres, test, lint, format)
-- 487+ tests, pre-commit hooks, CI pipeline
+- 939+ tests, pre-commit hooks, CI pipeline
 
 **What's missing for production:**
 - No cloud deployment (runs only locally)

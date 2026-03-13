@@ -84,11 +84,11 @@ Parallel execution, conditional routing, human-in-the-loop, checkpointing, sub-g
 
 ```bash
 pip install -e ".[dev]"
-pytest                              # 660+ tests
+pytest                              # 930+ tests
 ruff check src/ tests/              # lint
 docker compose up docs -d           # docs site at http://localhost:3000
 ```
 
 ## Status
 
-v1.1.0 — 5 providers, StateGraph engine, 24 agents, real-time dashboard, fail-closed auth, 660+ tests.
+v1.1.0 — 5 providers, StateGraph engine, 24 agents, real-time dashboard, fail-closed auth, 930+ tests.

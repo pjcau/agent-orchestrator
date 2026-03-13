@@ -89,11 +89,12 @@ class Skill(Protocol):
 ```
 
 Skills map directly to "tools" in LLM APIs but are defined once and work across all providers. Examples:
-- `FileRead`, `FileWrite`, `FileSearch` — filesystem operations
-- `ShellExec` — run shell commands
-- `HttpRequest` — make HTTP calls
-- `TestRunner` — run project tests
-- `Linter` — run code linting
+- `file_read`, `file_write`, `glob_search` — filesystem operations
+- `shell_exec` — run shell commands (sandboxed allowlist)
+- `web_read` — fetch and extract web page content
+- `github` — GitHub integration via gh CLI
+- `webhook_send` — outgoing webhook notifications
+- `doc_sync` — documentation sync checker
 
 ### 4. Orchestrator
 
@@ -127,7 +128,7 @@ How agents communicate when tasks span multiple domains.
 ```mermaid
 sequenceDiagram
     participant TL as Team Lead
-    participant SE as Software Eng (6)
+    participant SE as Software Eng (8)
     participant DS as Data Science (5)
     participant FIN as Finance (5)
     participant MKT as Marketing (5)

@@ -164,10 +164,10 @@ Update documentation to reflect the new feature:
 
 1. **Code comments**: Add docstrings to new public functions/classes (only if logic isn't self-evident)
 2. **CLAUDE.md**: Update if the feature adds new modules, abstractions, skills, or changes architecture
-3. **docs/**: Update relevant doc files if the feature affects deployment, security, API, or user-facing behavior
+3. **docs/**: **ALWAYS evaluate** which doc files under `docs/` need updating. Review each file in `docs/` and update any that are affected by the feature (architecture, deployment, security, API, cost, migration, infrastructure). This step is mandatory — never skip it.
 4. **README.md**: Update if the feature changes setup, usage, or project overview
 
-Only update docs that are actually affected. Do NOT touch docs for unrelated sections.
+Only update docs that are actually affected. Do NOT touch docs for unrelated sections. But you MUST review `docs/` every time.
 
 ---
 

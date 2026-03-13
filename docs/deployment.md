@@ -182,6 +182,13 @@ rsync code → inject secrets → build images → down (full stop) → rm stale
 | `OAUTH_CLIENT_SECRET` | GitHub OAuth App client secret |
 | `GRAFANA_SMTP_USER` | SMTP username for Grafana email alerts |
 | `GRAFANA_SMTP_PASSWORD` | SMTP password for Grafana email alerts |
+| `POSTGRES_PASSWORD` | PostgreSQL password (synced on every deploy) |
+
+**Repository Variables** (Settings → Secrets and variables → Actions → Variables):
+
+| Variable | Value |
+|----------|-------|
+| `GITHUB_USERNAME` | Admin GitHub login (for OAuth auto-admin) |
 
 Set them in **repo → Settings → Secrets and variables → Actions**.
 
