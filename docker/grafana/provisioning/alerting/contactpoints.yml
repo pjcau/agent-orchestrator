@@ -9,3 +9,11 @@ contactPoints:
         settings:
           addresses: pjonny@gmail.com
           singleEmail: true
+  - orgId: 1
+    name: webhook-alerts
+    receivers:
+      - uid: webhook-alert-1
+        type: webhook
+        settings:
+          url: https://localhost:5005/api/alerts/webhook
+          httpMethod: POST

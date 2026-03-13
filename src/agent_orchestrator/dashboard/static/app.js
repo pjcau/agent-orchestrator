@@ -6,6 +6,39 @@
 (function () {
   "use strict";
 
+  // --- Frontend error reporting to server ---
+  window.addEventListener('error', function(e) {
+    try {
+      fetch('/api/errors/client', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          component: 'ui',
+          message: e.message || String(e),
+          source: e.filename || '',
+          line: e.lineno || 0,
+          session_id: ''
+        })
+      }).catch(function() {});
+    } catch(_) {}
+  });
+
+  window.addEventListener('unhandledrejection', function(e) {
+    try {
+      fetch('/api/errors/client', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          component: 'ui-promise',
+          message: e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled rejection',
+          source: '',
+          line: 0,
+          session_id: ''
+        })
+      }).catch(function() {});
+    } catch(_) {}
+  });
+
   // --- State ---
   let ws = null;
   let streamWs = null;

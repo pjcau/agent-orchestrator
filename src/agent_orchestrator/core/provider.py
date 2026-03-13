@@ -126,3 +126,46 @@ class Provider(ABC):
             input_tokens * self.input_cost_per_million / 1_000_000
             + output_tokens * self.output_cost_per_million / 1_000_000
         )
+
+    async def traced_complete(
+        self,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
+        system: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+    ) -> Completion:
+        """Wrapper around complete() that records an OTel span per LLM call.
+
+        Subclasses inherit this method automatically.  When OTel is not
+        installed, the span is a no-op and zero overhead is added.
+        """
+        from .tracing import get_tracer
+
+        tracer = get_tracer()
+        span = tracer.start_span("llm.call")
+        span.set_attribute(
+            "gen_ai.system",
+            type(self).__name__.lower().replace("provider", ""),
+        )
+        span.set_attribute("gen_ai.request.model", self.model_id)
+        span.set_attribute("gen_ai.request.max_tokens", max_tokens)
+        span.set_attribute("gen_ai.operation.name", "chat")
+        try:
+            result = await self.complete(
+                messages,
+                tools=tools,
+                system=system,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            span.set_attribute("gen_ai.usage.input_tokens", result.usage.input_tokens)
+            span.set_attribute("gen_ai.usage.output_tokens", result.usage.output_tokens)
+            span.set_attribute("gen_ai.usage.cost_usd", result.usage.cost_usd)
+            return result
+        except Exception as e:
+            span.record_exception(e)
+            span.set_status("ERROR", str(e))
+            raise
+        finally:
+            span.end()

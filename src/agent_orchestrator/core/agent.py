@@ -119,6 +119,14 @@ class Agent:
         conversation_history: list[Message] | None = None,
     ) -> TaskResult:
         """Run the agent loop with a specific provider."""
+        from .tracing import get_tracer
+
+        tracer = get_tracer()
+        span = tracer.start_span("agent.run")
+        span.set_attribute("agent.name", self.config.name)
+        span.set_attribute("agent.provider", provider.model_id)
+        span.set_attribute("agent.max_steps", self.config.max_steps)
+
         self._messages: list[Message] = []
 
         # Prepend conversation history for multi-turn context
@@ -150,7 +158,7 @@ class Agent:
             # Timeout check
             elapsed = time.monotonic() - start_time
             if elapsed > self.config.timeout_seconds:
-                return TaskResult(
+                result = TaskResult(
                     status=TaskStatus.STALLED,
                     output="Agent timed out",
                     steps_taken=steps,
@@ -159,8 +167,14 @@ class Agent:
                     error=f"Timeout after {elapsed:.0f}s",
                     provider_used=provider.model_id,
                 )
+                span.set_attribute("agent.steps_taken", steps)
+                span.set_attribute("agent.total_tokens", total_tokens)
+                span.set_attribute("agent.total_cost_usd", total_cost)
+                span.set_attribute("agent.status", result.status.value)
+                span.end()
+                return result
 
-            completion = await provider.complete(
+            completion = await provider.traced_complete(
                 messages=self._messages,
                 tools=tool_defs if tool_defs else None,
                 system=self.config.role,
@@ -172,7 +186,7 @@ class Agent:
 
             # No tool calls — agent is done
             if not completion.tool_calls:
-                return TaskResult(
+                result = TaskResult(
                     status=TaskStatus.COMPLETED,
                     output=completion.content,
                     steps_taken=steps,
@@ -180,6 +194,12 @@ class Agent:
                     total_cost_usd=total_cost,
                     provider_used=provider.model_id,
                 )
+                span.set_attribute("agent.steps_taken", steps)
+                span.set_attribute("agent.total_tokens", total_tokens)
+                span.set_attribute("agent.total_cost_usd", total_cost)
+                span.set_attribute("agent.status", result.status.value)
+                span.end()
+                return result
 
             # Process tool calls
             self._messages.append(
@@ -196,7 +216,7 @@ class Agent:
                 retry_counts[approach_key] = retry_counts.get(approach_key, 0) + 1
 
                 if retry_counts[approach_key] > self.config.max_retries_per_approach:
-                    return TaskResult(
+                    result = TaskResult(
                         status=TaskStatus.STALLED,
                         output=f"Stalled: too many retries on {tool_call.name}",
                         steps_taken=steps,
@@ -205,17 +225,23 @@ class Agent:
                         error=f"Max retries exceeded for approach: {approach_key}",
                         provider_used=provider.model_id,
                     )
+                    span.set_attribute("agent.steps_taken", steps)
+                    span.set_attribute("agent.total_tokens", total_tokens)
+                    span.set_attribute("agent.total_cost_usd", total_cost)
+                    span.set_attribute("agent.status", result.status.value)
+                    span.end()
+                    return result
 
-                result = await self.skills.execute(tool_call.name, tool_call.arguments)
+                skill_result = await self.skills.execute(tool_call.name, tool_call.arguments)
                 self._messages.append(
                     Message(
                         role=Role.TOOL,
-                        content=str(result),
+                        content=str(skill_result),
                         tool_call_id=tool_call.id,
                     )
                 )
 
-        return TaskResult(
+        result = TaskResult(
             status=TaskStatus.STALLED,
             output="Agent reached max steps without completing",
             steps_taken=steps,
@@ -224,6 +250,12 @@ class Agent:
             error=f"Max steps ({self.config.max_steps}) reached",
             provider_used=provider.model_id,
         )
+        span.set_attribute("agent.steps_taken", steps)
+        span.set_attribute("agent.total_tokens", total_tokens)
+        span.set_attribute("agent.total_cost_usd", total_cost)
+        span.set_attribute("agent.status", result.status.value)
+        span.end()
+        return result
 
     def _get_tool_definitions(self) -> list[ToolDefinition]:
         """Get tool definitions for allowed skills only."""

@@ -39,8 +39,12 @@ from .auth import APIKeyMiddleware, check_ws_auth
 from .oauth_routes import router as oauth_router
 from .user_store import setup_db as setup_user_db
 from .usage_db import UsageDB
+from .alert_webhook import AlertHandler
 
 logger = logging.getLogger(__name__)
+
+# Module-level counter for frontend JS errors (incremented by /api/errors/client).
+_frontend_error_count: list[int] = [0]
 
 
 def _sanitize_log(value: str) -> str:
@@ -157,6 +161,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Usage DB — persistent cumulative stats (Postgres)
     usage_db = UsageDB()
+
+    # Alert handler — receives Grafana webhook payloads and creates GitHub issues
+    alert_handler = AlertHandler(usage_db=usage_db)
 
     # Conversation memory — thread-based multi-turn for agents, graphs, prompts
     # Use PostgresCheckpointer if DATABASE_URL is set, otherwise InMemoryCheckpointer
@@ -450,6 +457,42 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         summary = await usage_db.get_error_summary()
         return JSONResponse(content={"recent": recent, "summary": summary})
 
+    @app.post("/api/alerts/webhook")
+    async def receive_alert_webhook(body: dict):
+        """Receive Grafana alert webhook and create GitHub issue for analysis."""
+        result = await alert_handler.handle_alert(body)
+        return JSONResponse(content=result)
+
+    @app.get("/api/alerts/recent")
+    async def recent_alerts():
+        """Return recent alert records."""
+        return JSONResponse(content=alert_handler.get_recent_alerts())
+
+    @app.post("/api/errors/client")
+    async def report_client_error(body: dict):
+        """Receive and store frontend JavaScript errors."""
+        component = str(body.get("component", "unknown"))[:100]
+        message = str(body.get("message", ""))[:2000]
+        source = str(body.get("source", ""))[:500]
+        line = int(body.get("line", 0)) if isinstance(body.get("line"), (int, float)) else 0
+        session_id = str(body.get("session_id", ""))[:100]
+
+        await usage_db.record_error(
+            session_id=session_id,
+            agent="frontend",
+            tool_name=component,
+            error_type="frontend_error",
+            error_message=f"{message} (at {source}:{line})",
+            step_number=0,
+            model="",
+            provider="",
+        )
+
+        # Increment frontend error counter for Prometheus
+        _frontend_error_count[0] += 1
+
+        return JSONResponse(content={"status": "recorded"})
+
     @app.get("/metrics")
     async def prometheus_metrics():
         """Expose metrics in Prometheus text exposition format."""
@@ -554,6 +597,45 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         lines.append(f'orchestrator_tasks_total{{status="completed"}} {completed_tasks}')
         lines.append(f'orchestrator_tasks_total{{status="failed"}} {failed_tasks}')
         lines.append(f'orchestrator_tasks_total{{status="pending"}} {pending_tasks}')
+
+        # --- Frontend errors ---
+        lines.append("# HELP orchestrator_frontend_errors_total Frontend JS errors reported")
+        lines.append("# TYPE orchestrator_frontend_errors_total counter")
+        lines.append(f"orchestrator_frontend_errors_total {_frontend_error_count[0]}")
+
+        # --- LLM call duration histogram (from tracing) ---
+        from .tracing_metrics import get_tracing_metrics
+
+        tm = get_tracing_metrics()
+        lines.append("# HELP orchestrator_llm_call_duration_seconds LLM call latency")
+        lines.append("# TYPE orchestrator_llm_call_duration_seconds histogram")
+        for provider, buckets in tm.get("llm_durations", {}).items():
+            p = provider.replace('"', '\\"')
+            lines.append(
+                f'orchestrator_llm_call_duration_seconds_count{{provider="{p}"}} {buckets["count"]}'
+            )
+            lines.append(
+                f'orchestrator_llm_call_duration_seconds_sum{{provider="{p}"}} {buckets["sum"]:.3f}'
+            )
+
+        # --- Graph node duration histogram ---
+        lines.append("# HELP orchestrator_graph_node_duration_seconds Graph node execution latency")
+        lines.append("# TYPE orchestrator_graph_node_duration_seconds histogram")
+        for node, buckets in tm.get("node_durations", {}).items():
+            n = node.replace('"', '\\"')
+            lines.append(
+                f'orchestrator_graph_node_duration_seconds_count{{node="{n}"}} {buckets["count"]}'
+            )
+            lines.append(
+                f'orchestrator_graph_node_duration_seconds_sum{{node="{n}"}} {buckets["sum"]:.3f}'
+            )
+
+        # --- Agent stall counter by category ---
+        lines.append("# HELP orchestrator_agent_stalls_total Agent stall count by category")
+        lines.append("# TYPE orchestrator_agent_stalls_total counter")
+        for cat, count in tm.get("stalls_by_category", {}).items():
+            c = cat.replace('"', '\\"')
+            lines.append(f'orchestrator_agent_stalls_total{{category="{c}"}} {count}')
 
         from starlette.responses import Response
 

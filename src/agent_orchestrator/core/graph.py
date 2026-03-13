@@ -599,6 +599,13 @@ class CompiledGraph:
         thread_id: str,
     ) -> GraphResult:
         """Execute a single node."""
+        from .tracing import get_tracer
+
+        tracer = get_tracer()
+        node_span = tracer.start_span("graph.node")
+        node_span.set_attribute("graph.node.name", node_name)
+        node_span.set_attribute("graph.step", step_index)
+
         node = self._nodes[node_name]
         state_before = dict(state)
 
@@ -608,6 +615,7 @@ class CompiledGraph:
                 timeout=self._config.timeout_seconds,
             )
         except GraphInterrupt as gi:
+            node_span.end()
             # Human-in-the-loop: save checkpoint and return interrupt
             if self._checkpointer:
                 next_nodes = [node_name]  # Re-execute this node on resume
@@ -628,6 +636,11 @@ class CompiledGraph:
                 interrupted=gi.interrupt,
             )
         except asyncio.TimeoutError:
+            node_span.record_exception(
+                Exception(f"Node '{node_name}' timed out after {self._config.timeout_seconds}s")
+            )
+            node_span.set_status("ERROR", f"timeout after {self._config.timeout_seconds}s")
+            node_span.end()
             return GraphResult(
                 state=state,
                 steps=steps,
@@ -635,6 +648,9 @@ class CompiledGraph:
                 error=f"Node '{node_name}' timed out after {self._config.timeout_seconds}s",
             )
         except Exception as e:
+            node_span.record_exception(e)
+            node_span.set_status("ERROR", str(e))
+            node_span.end()
             return GraphResult(
                 state=state,
                 steps=steps,
@@ -667,6 +683,7 @@ class CompiledGraph:
                 )
             )
 
+        node_span.end()
         return GraphResult(state=state, steps=steps, success=True)
 
     async def _execute_parallel(
@@ -678,19 +695,30 @@ class CompiledGraph:
         thread_id: str,
     ) -> GraphResult:
         """Execute multiple nodes in parallel, then merge their updates."""
+        from .tracing import get_tracer
+
         state_before = dict(state)
 
         async def run_node(name: str) -> tuple[str, State | None, Exception | None]:
+            tracer = get_tracer()
+            node_span = tracer.start_span("graph.node")
+            node_span.set_attribute("graph.node.name", name)
+            node_span.set_attribute("graph.step", step_index)
             node = self._nodes[name]
             try:
                 update = await asyncio.wait_for(
                     node.func(dict(state)),  # Each node gets a copy
                     timeout=self._config.timeout_seconds,
                 )
+                node_span.end()
                 return (name, update, None)
             except GraphInterrupt as gi:
+                node_span.end()
                 return (name, None, gi)
             except Exception as e:
+                node_span.record_exception(e)
+                node_span.set_status("ERROR", str(e))
+                node_span.end()
                 return (name, None, e)
 
         results = await asyncio.gather(*[run_node(n) for n in node_names])

@@ -1,0 +1,75 @@
+name: Alert Analysis
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  analyze:
+    if: contains(github.event.issue.labels.*.name, 'alert')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract alert details
+        id: extract
+        run: |
+          echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+          echo "issue_title=${{ github.event.issue.title }}" >> $GITHUB_OUTPUT
+
+      - name: Run root-cause analysis
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get issue body for context
+          ISSUE_BODY=$(gh issue view ${{ github.event.issue.number }} --json body -q '.body')
+
+          # Prepare analysis prompt
+          cat > /tmp/analysis_prompt.txt << 'PROMPT_EOF'
+          You are a site reliability engineer analyzing an alert from the Agent Orchestrator system.
+
+          Given the alert details and diagnostic data below, provide:
+          1. **Root Cause Analysis**: What likely caused this alert
+          2. **Severity Assessment**: How critical is this (P1-P4)
+          3. **Recommended Actions**: Concrete steps to resolve
+          4. **Prevention**: How to prevent recurrence
+
+          Keep your analysis concise and actionable.
+          PROMPT_EOF
+
+          # Call LLM for analysis via OpenRouter
+          ANALYSIS=$(curl -s https://openrouter.ai/api/v1/chat/completions \
+            -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg system "$(cat /tmp/analysis_prompt.txt)" \
+              --arg user "$ISSUE_BODY" \
+              '{
+                model: "qwen/qwen3-235b-a22b",
+                messages: [
+                  {role: "system", content: $system},
+                  {role: "user", content: $user}
+                ],
+                max_tokens: 2000,
+                temperature: 0.3
+              }')" \
+            | jq -r '.choices[0].message.content // "Analysis failed — no response from LLM"')
+
+          # Post analysis as comment
+          gh issue comment ${{ github.event.issue.number }} --body "## Automated Root-Cause Analysis
+
+          $ANALYSIS
+
+          ---
+          _Analysis performed by alert-analysis workflow using qwen3-235b via OpenRouter._"
+
+      - name: Add triage label
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit ${{ github.event.issue.number }} --add-label "needs-triage"

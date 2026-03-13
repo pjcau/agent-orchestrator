@@ -39,14 +39,15 @@ agent-orchestrator/
 │   ├── nginx/nginx.conf         # Reverse proxy (TLS, rate limiting, WebSocket)
 │   ├── aws-cost-exporter/       # Custom Prometheus exporter for AWS billing
 │   ├── prometheus/              # prometheus.yml + alerts.yml
-│   └── grafana/                 # Provisioning (datasources, dashboards, alerts)
+│   ├── grafana/                 # Provisioning (datasources, dashboards, alerts)
+│   └── tempo/tempo.yaml         # Grafana Tempo trace backend config
 ├── scripts/
 │   ├── archive_jobs.py          # S3 job archiver (tarball + PG metadata)
 │   ├── fetch_github_stars.py    # Fetch starred repos for research scout
 │   ├── run_research_scout.py    # LLM analysis of starred repos
 │   └── simulate_finance_team.py # Multi-agent finance simulation (OpenRouter)
 ├── docker-compose.yml           # Dev services (postgres, dashboard, docs)
-├── docker-compose.prod.yml      # Production (nginx, redis, prometheus, grafana, archiver)
+├── docker-compose.prod.yml      # Production (nginx, redis, prometheus, grafana, archiver, tempo)
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
@@ -71,6 +72,7 @@ agent-orchestrator/
 │       │   ├── task_queue.py    # Priority task queue with retries
 │       │   ├── metrics.py       # Prometheus-compatible metrics
 │       │   ├── alerts.py        # Spend alert rules & manager
+│       │   ├── tracing.py       # OpenTelemetry tracing setup (opt-in, no-op fallback)
 │       │   ├── graph.py         # StateGraph engine (nodes, edges, parallel, HITL)
 │       │   ├── llm_nodes.py     # LLM node factories (llm_node, multi_provider, chat)
 │       │   ├── checkpoint.py    # InMemory + SQLite checkpointers
@@ -112,6 +114,8 @@ agent-orchestrator/
 │       │   ├── events.py        # EventBus, Event types
 │       │   ├── instrument.py    # Monkey-patches core classes to emit events
 │       │   ├── usage_db.py      # Persistent usage stats + agent error tracking (PostgreSQL + in-memory)
+│       │   ├── tracing_metrics.py # Lightweight metrics collector for OTel spans
+│       │   ├── alert_webhook.py # Grafana alert → GitHub issue pipeline
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
 │       │   └── static/          # HTML/CSS/JS dashboard UI
 │       └── skills/
@@ -157,6 +161,8 @@ agent-orchestrator/
 - **LLM Cache** — Shared `InMemoryCache` for LLM node responses. Activated via `cache_policy` param on `llm_node()`. Skips cache when `temperature > 0`. Dashboard shows hits/misses/rate in real time.
 - **Tool Cache** — `cache_middleware()` on `SkillRegistry` caches idempotent skills (`file_read`, `glob_search`). Auto-invalidates on `file_write`.
 - **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim. Persists to PostgreSQL and survives container restarts. Sessions can be restored from job records via `POST /api/jobs/{session_id}/restore`.
+- **Tracing** — Optional OpenTelemetry integration. Spans on `Provider.complete()`, `Agent.execute()`, graph nodes, and inter-agent messages. Graceful no-op when OTel packages not installed. Exports via OTLP HTTP to Tempo.
+- **AlertHandler** — Receives Grafana webhook alerts, collects diagnostics (recent errors, usage, metrics), creates GitHub issues with `gh` CLI. Triggers automated root-cause analysis via `.github/workflows/alert-analysis.yml`.
 
 ## Agent Error Tracking
 
@@ -309,7 +315,7 @@ proposes concrete code improvements as PRs. Token-efficient: one repo, one LLM c
 - **Analysis**: LLM compares repo's patterns against our codebase, proposes 1-3 improvements with code
 - **State tracking**: `.claude/research-scout-state.json` (tracks processed URLs)
 - **Findings file**: `.claude/research-scout-findings.md` (ephemeral, gitignored — used only as PR body, never committed)
-- **GitHub Action**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC)
+- **GitHub Actions**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC), `.github/workflows/alert-analysis.yml` (automated root-cause analysis on alert issues)
 - **Scripts**: `scripts/fetch_github_stars.py`, `scripts/run_research_scout.py`
 - **PR creation**: Handled by the CI workflow (`nightly-research.yml`). When findings exist, the workflow creates a branch `research-scout/YYYY-MM-DD-HHMM`, commits state files, pushes, and opens a PR with findings as body. State is always pushed to main.
 
@@ -323,7 +329,9 @@ Automated deploy to EC2 on every push to `main`. Config: `.github/workflows/depl
 - **Steps**: test → lint → rsync code → inject secrets → build → deploy → health check
 - **Secret injection**: all GitHub Secrets are injected into `.env.prod` on EC2 via `_inject()` helper (idempotent upsert)
 - **Secrets managed**: `AWS_*`, `OPENROUTER_API_KEY`, `JWT_SECRET_KEY`, `OAUTH_CLIENT_ID/SECRET`, `GRAFANA_SMTP_*`, `POSTGRES_PASSWORD`, `BASE_URL`, `GITHUB_USERNAME`
-- **Force-recreate**: only `dashboard` and `aws-cost-exporter` are force-recreated (not postgres/redis/nginx)
+- **Force-recreate**: only `dashboard` and `aws-cost-exporter` are force-recreated (not postgres/redis/nginx/tempo)
+- **Tempo**: trace backend container (ports 3200 Tempo API, 4318 OTLP HTTP, 7-day retention). Defined in `docker-compose.prod.yml`.
+- **OTEL_EXPORTER_OTLP_ENDPOINT**: set on the `dashboard` container (e.g. `http://tempo:4318`) to enable trace export. Omit to disable tracing (graceful no-op).
 - **Postgres password sync**: `ALTER USER` runs on every deploy to fix first-init password mismatch
 - **Nginx timeout**: 600s (10 min) for long team runs
 - **BASE_URL**: `https://agents-orchestrator.com` (domain, not IP — required for OAuth callbacks)
@@ -344,6 +352,18 @@ Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC).
 Dependabot opens PRs automatically for outdated/vulnerable dependencies. Results appear in GitHub's Security tab.
 
 **Security Autofix**: `.github/workflows/security-autofix.yml` runs daily, auto-fixes CodeQL alerts via Claude Code, and opens PRs.
+
+## Alert Pipeline (automated root-cause analysis)
+
+When Grafana alerts fire (severity warning or critical):
+
+1. **Webhook**: Grafana → `POST /api/alerts/webhook` on dashboard
+2. **Diagnostics**: `AlertHandler` collects recent errors, error summary, and usage snapshot from PostgreSQL
+3. **GitHub Issue**: Creates issue with structured diagnostic report using `gh` CLI (labels: `alert`, `automated`)
+4. **Analysis**: `.github/workflows/alert-analysis.yml` triggers on new alert issues, runs LLM analysis via OpenRouter (qwen3-235b), posts root-cause analysis as comment
+5. **Triage**: Adds `needs-triage` label for human review
+
+New Prometheus alerts added with this feature: `GraphNodeHung`, `LLMCallSlow`, `FrontendErrorSpike`, `ProviderDegraded`.
 
 ## Job Log Archiving
 
@@ -450,6 +470,9 @@ The dashboard header shows two metric groups:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev,dashboard]"
+
+# Install with OpenTelemetry support
+pip install -e ".[dev,dashboard,otel]"
 
 # Tests & linting (local venv)
 pytest

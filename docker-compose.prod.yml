@@ -42,6 +42,7 @@ services:
       - ENVIRONMENT=production
       - CORS_ALLOWED_ORIGINS=${BASE_URL}
       - GITHUB_USERNAME=${GITHUB_USERNAME}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
     volumes:
       - ./jobs:/workspace/jobs
     depends_on:
@@ -184,6 +185,18 @@ services:
     command: ["--jobs-dir", "/workspace/jobs", "--days", "7"]
     restart: unless-stopped
 
+  # --- Grafana Tempo (distributed tracing backend) ---
+  tempo:
+    image: grafana/tempo:2.6
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./docker/tempo/tempo.yaml:/etc/tempo.yaml
+      - tempodata:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:4318:4318"
+    restart: unless-stopped
+
   # --- Certbot (auto-renew Let's Encrypt) ---
   certbot:
     image: certbot/certbot
@@ -198,4 +211,5 @@ volumes:
   redisdata:
   promdata:
   grafanadata:
+  tempodata:
   certbot-webroot:

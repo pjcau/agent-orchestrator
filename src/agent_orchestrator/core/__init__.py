@@ -92,6 +92,7 @@ from .store import (
     run_store_conformance,
 )
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
+from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
 from .skill import (
     SkillRequest,
     SkillMiddleware,
@@ -236,4 +237,9 @@ __all__ = [
     "ConversationManager",
     "ConversationMessage",
     "ConversationResult",
+    # v1.3 — OpenTelemetry Tracing
+    "setup_tracing",
+    "instrument_fastapi",
+    "get_tracer",
+    "traced",
 ]

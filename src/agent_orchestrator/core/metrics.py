@@ -56,21 +56,37 @@ class Gauge:
 
 
 class Histogram:
-    """Tracks distribution of observed values."""
+    """Tracks distribution of observed values with a bounded rolling window.
 
-    def __init__(self, name: str, description: str = "", labels: dict | None = None) -> None:
+    Keeps at most ``max_observations`` recent values to prevent unbounded
+    memory growth.  The ``_sum`` and ``_count`` accumulators are always
+    accurate (monotonically increasing) regardless of the window size.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        description: str = "",
+        labels: dict | None = None,
+        max_observations: int = 10_000,
+    ) -> None:
         self.name = name
         self.description = description
         self.labels = labels or {}
+        self._max_observations = max_observations
         self._observations: list[float] = []
         self._sum: float = 0.0
+        self._count: int = 0
 
     def observe(self, value: float) -> None:
+        if len(self._observations) >= self._max_observations:
+            self._observations.pop(0)
         self._observations.append(value)
         self._sum += value
+        self._count += 1
 
     def get_count(self) -> int:
-        return len(self._observations)
+        return self._count
 
     def get_sum(self) -> float:
         return self._sum

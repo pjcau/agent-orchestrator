@@ -137,6 +137,17 @@ class SharedContextStore:
     # --- Agent Messages ---
 
     def send_message(self, message: AgentMessage) -> None:
+        from .tracing import get_tracer
+
+        tracer = get_tracer()
+        span = tracer.start_span("agent.message")
+        span.set_attribute("agent.from", message.from_agent)
+        span.set_attribute("agent.to", message.to_agent or "broadcast")
+        span.set_attribute("agent.message.type", message.message_type)
+        if message.related_task_id:
+            span.set_attribute("agent.task_id", message.related_task_id)
+        span.end()
+
         self._messages.append(message)
         for queue in self._message_subscribers:
             try:

@@ -1893,3 +1893,121 @@ class TestAsyncTeamRun:
         assert d["event_type"] == "team.complete"
         assert d["data"]["success"] is True
         assert d["data"]["agent_outputs"]["backend"] == "code written"
+
+
+# ===== Frontend error endpoint & tracing metrics =====
+
+
+class TestClientErrorEndpoint:
+    """Tests for POST /api/errors/client and tracing_metrics module."""
+
+    @pytest.mark.asyncio
+    async def test_client_error_returns_recorded(self, monkeypatch):
+        """POST /api/errors/client responds with {status: recorded}."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app, _frontend_error_count
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            initial = _frontend_error_count[0]
+            resp = await client.post(
+                "/api/errors/client",
+                json={
+                    "component": "ui",
+                    "message": "TypeError: cannot read property",
+                    "source": "app.js",
+                    "line": 42,
+                    "session_id": "sess-abc",
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "recorded"}
+        assert _frontend_error_count[0] == initial + 1
+
+    @pytest.mark.asyncio
+    async def test_client_error_increments_prometheus_counter(self, monkeypatch):
+        """Frontend error counter appears in /metrics output."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            # Post an error to increment the counter.
+            await client.post(
+                "/api/errors/client",
+                json={"component": "ui", "message": "boom", "source": "", "line": 0},
+            )
+            metrics_resp = await client.get("/metrics")
+
+        assert metrics_resp.status_code == 200
+        body = metrics_resp.text
+        assert "orchestrator_frontend_errors_total" in body
+
+    @pytest.mark.asyncio
+    async def test_client_error_sanitizes_oversized_fields(self, monkeypatch):
+        """Oversized fields are truncated and the endpoint still succeeds."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/errors/client",
+                json={
+                    "component": "x" * 200,
+                    "message": "y" * 3000,
+                    "source": "z" * 600,
+                    "line": 99,
+                    "session_id": "s" * 200,
+                },
+            )
+        assert resp.status_code == 200
+
+    def test_tracing_metrics_record_and_get(self):
+        """tracing_metrics records durations and stalls correctly."""
+        import importlib
+        import agent_orchestrator.dashboard.tracing_metrics as tm_mod
+
+        # Reload to get a clean module state for this test.
+        importlib.reload(tm_mod)
+
+        tm_mod.record_llm_duration("anthropic", 1.5)
+        tm_mod.record_llm_duration("anthropic", 0.5)
+        tm_mod.record_llm_duration("openai", 2.0)
+        tm_mod.record_node_duration("plan", 0.3)
+        tm_mod.record_stall("software-engineering")
+        tm_mod.record_stall("software-engineering")
+
+        result = tm_mod.get_tracing_metrics()
+
+        assert result["llm_durations"]["anthropic"]["count"] == 2
+        assert abs(result["llm_durations"]["anthropic"]["sum"] - 2.0) < 1e-9
+        assert result["llm_durations"]["openai"]["count"] == 1
+        assert result["node_durations"]["plan"]["count"] == 1
+        assert result["stalls_by_category"]["software-engineering"] == 2
+
+    @pytest.mark.asyncio
+    async def test_metrics_includes_otel_histogram_sections(self, monkeypatch):
+        """Prometheus /metrics output contains histogram and stall sections."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+        import agent_orchestrator.dashboard.tracing_metrics as tm_mod
+        import importlib
+
+        importlib.reload(tm_mod)
+        tm_mod.record_llm_duration("openrouter", 0.8)
+        tm_mod.record_node_duration("review", 1.2)
+        tm_mod.record_stall("finance")
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/metrics")
+
+        body = resp.text
+        assert "orchestrator_llm_call_duration_seconds" in body
+        assert "orchestrator_graph_node_duration_seconds" in body
+        assert "orchestrator_agent_stalls_total" in body
