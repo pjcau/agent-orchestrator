@@ -1,0 +1,66 @@
+name: Dead Code Audit
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"  # Every Monday at 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  audit:
+    name: Find unused code
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev,dashboard]"
+          pip install vulture
+
+      - name: Run dead code analysis
+        run: python scripts/dead_code_report.py > /dev/null 2>&1 || true
+
+      - name: Check for findings
+        id: check
+        run: |
+          if [ -f dead-code-report.md ]; then
+            COUNT=$(grep -c "^- " dead-code-report.md || echo "0")
+            echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+            echo "Found $COUNT dead code items"
+          else
+            echo "count=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR with report
+        if: steps.check.outputs.count > 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="dead-code-audit/$(date +%Y-%m-%d)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          mv dead-code-report.md docs/dead-code-report.md
+          git add docs/dead-code-report.md
+          git commit -m "chore: dead code audit report $(date +%Y-%m-%d)"
+          git push origin "$BRANCH"
+
+          BODY=$(cat docs/dead-code-report.md)
+
+          gh pr create \
+            --title "Dead Code Audit — $(date +%Y-%m-%d)" \
+            --body "$BODY" \
+            --label "tech-debt" \
+            --base main \
+            --head "$BRANCH"
