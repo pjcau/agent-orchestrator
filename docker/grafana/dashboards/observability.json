@@ -37,7 +37,7 @@
       "type": "stat",
       "gridPos": { "h": 6, "w": 6, "x": 6, "y": 2 },
       "targets": [
-        { "expr": "sum(orchestrator_llm_call_duration_seconds_count{provider!=\"none\"})", "legendFormat": "Total" }
+        { "expr": "sum(orchestrator_llm_call_duration_seconds_count{provider!=\"none\"}) or vector(0)", "legendFormat": "Total" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -75,7 +75,7 @@
       "type": "stat",
       "gridPos": { "h": 6, "w": 6, "x": 18, "y": 2 },
       "targets": [
-        { "expr": "sum(orchestrator_agent_stalls_total{category!=\"none\"})", "legendFormat": "Stalls" }
+        { "expr": "sum(orchestrator_agent_stalls_total{category!=\"none\"}) or vector(0)", "legendFormat": "Stalls" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -96,13 +96,14 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "orchestrator_llm_call_duration_seconds_sum{provider!=\"none\"} / orchestrator_llm_call_duration_seconds_count{provider!=\"none\"}",
+          "expr": "orchestrator_llm_call_duration_seconds_sum{provider!=\"none\"} / orchestrator_llm_call_duration_seconds_count{provider!=\"none\"} or vector(0)",
           "legendFormat": "avg {{ provider }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "0",
           "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line" },
           "thresholds": {
             "mode": "absolute",
@@ -121,13 +122,14 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "targets": [
         {
-          "expr": "rate(orchestrator_llm_call_duration_seconds_count{provider!=\"none\"}[5m]) * 60",
+          "expr": "rate(orchestrator_llm_call_duration_seconds_count{provider!=\"none\"}[5m]) * 60 or vector(0)",
           "legendFormat": "{{ provider }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "cpm",
+          "noValue": "0",
           "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars" }
         }
       }
@@ -138,13 +140,14 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "targets": [
         {
-          "expr": "orchestrator_llm_call_duration_seconds_sum{provider!=\"none\"} / orchestrator_llm_call_duration_seconds_count{provider!=\"none\"}",
+          "expr": "orchestrator_llm_call_duration_seconds_sum{provider!=\"none\"} / orchestrator_llm_call_duration_seconds_count{provider!=\"none\"} or vector(0)",
           "legendFormat": "{{ provider }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "0",
           "thresholds": {
             "steps": [
               { "color": "green", "value": null },
@@ -162,10 +165,15 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "targets": [
         {
-          "expr": "orchestrator_llm_call_duration_seconds_count{provider!=\"none\"}",
+          "expr": "orchestrator_llm_call_duration_seconds_count{provider!=\"none\"} or vector(0)",
           "legendFormat": "{{ provider }}"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        }
+      }
     },
     {
       "title": "--- Graph Node Execution ---",
@@ -179,13 +187,14 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
       "targets": [
         {
-          "expr": "orchestrator_graph_node_duration_seconds_sum{node!=\"none\"} / orchestrator_graph_node_duration_seconds_count{node!=\"none\"}",
+          "expr": "orchestrator_graph_node_duration_seconds_sum{node!=\"none\"} / orchestrator_graph_node_duration_seconds_count{node!=\"none\"} or vector(0)",
           "legendFormat": "{{ node }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "0",
           "custom": { "fillOpacity": 10, "lineWidth": 2 },
           "thresholds": {
             "mode": "absolute",
@@ -204,13 +213,14 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
       "targets": [
         {
-          "expr": "rate(orchestrator_graph_node_duration_seconds_count{node!=\"none\"}[5m]) * 60",
+          "expr": "rate(orchestrator_graph_node_duration_seconds_count{node!=\"none\"}[5m]) * 60 or vector(0)",
           "legendFormat": "{{ node }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "cpm",
+          "noValue": "0",
           "custom": { "fillOpacity": 20, "lineWidth": 2 }
         }
       }
@@ -221,13 +231,14 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
       "targets": [
         {
-          "expr": "topk(10, orchestrator_graph_node_duration_seconds_sum{node!=\"none\"} / orchestrator_graph_node_duration_seconds_count{node!=\"none\"})",
+          "expr": "topk(10, orchestrator_graph_node_duration_seconds_sum{node!=\"none\"} / orchestrator_graph_node_duration_seconds_count{node!=\"none\"}) or vector(0)",
           "legendFormat": "{{ node }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "noValue": "0",
           "thresholds": {
             "steps": [
               { "color": "green", "value": null },
@@ -251,12 +262,13 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
       "targets": [
         {
-          "expr": "orchestrator_agent_stalls_total{category!=\"none\"}",
+          "expr": "orchestrator_agent_stalls_total{category!=\"none\"} or vector(0)",
           "legendFormat": "{{ category }}"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "noValue": "0",
           "custom": { "fillOpacity": 30, "lineWidth": 2, "drawStyle": "bars" },
           "color": { "mode": "palette-classic" }
         }
@@ -268,12 +280,13 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
       "targets": [
         {
-          "expr": "orchestrator_frontend_errors_total",
+          "expr": "orchestrator_frontend_errors_total or vector(0)",
           "legendFormat": "JS Errors"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "noValue": "0",
           "custom": { "fillOpacity": 20, "lineWidth": 2 },
           "color": { "mode": "fixed", "fixedColor": "red" },
           "thresholds": {
@@ -292,19 +305,24 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
       "targets": [
         {
-          "expr": "orchestrator_agent_stalls_total{category!=\"none\"}",
+          "expr": "orchestrator_agent_stalls_total{category!=\"none\"} or vector(0)",
           "legendFormat": "{{ category }}"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        }
+      }
     },
     {
       "title": "Error & Cache Summary",
       "type": "stat",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
       "targets": [
-        { "expr": "orchestrator_errors_total", "legendFormat": "Agent Errors" },
-        { "expr": "orchestrator_cache_hits_total", "legendFormat": "Cache Hits" },
-        { "expr": "orchestrator_cache_misses_total", "legendFormat": "Cache Misses" }
+        { "expr": "orchestrator_errors_total or vector(0)", "legendFormat": "Agent Errors" },
+        { "expr": "orchestrator_cache_hits_total or vector(0)", "legendFormat": "Cache Hits" },
+        { "expr": "orchestrator_cache_misses_total or vector(0)", "legendFormat": "Cache Misses" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -336,10 +354,10 @@
           "instant": true
         }
       ],
-      "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
-      ],
       "fieldConfig": {
+        "defaults": {
+          "noValue": "No alerts firing"
+        },
         "overrides": [
           {
             "matcher": { "id": "byName", "options": "alertstate" },
