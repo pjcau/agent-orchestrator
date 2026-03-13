@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Dead code report — find unused definitions under src/.
 
-Uses vulture for static analysis, then cross-references with grep to reduce
-false positives (FastAPI routes, enum values, dataclass fields, etc.).
+Two-view comparison:
+  A) Definitions in src/ NOT used anywhere in src/ (truly dead production code)
+  B) Definitions in src/ NOT used in src/ BUT used in tests/ (test-only — scaffolding never wired up)
 
-Output: Markdown report grouped by category, suitable for PR body or local review.
+Uses vulture for static analysis, then cross-references with grep.
 """
 
 from __future__ import annotations
@@ -50,20 +51,13 @@ FALSE_POSITIVE_RE = re.compile("|".join(FALSE_POSITIVE_PATTERNS))
 class Finding:
     file: str
     line: int
-    kind: str  # function, class, method, variable, attribute, import
+    kind: str  # function, class, method, variable, attribute, import, unreachable
     name: str
     confidence: int
     raw: str
 
     @property
-    def module(self) -> str:
-        """Extract module path from file path."""
-        p = self.file.replace("src/", "").replace("/", ".").replace(".py", "")
-        return p
-
-    @property
     def category(self) -> str:
-        """Categorise by directory."""
         if "dashboard" in self.file:
             return "Dashboard"
         if "providers" in self.file:
@@ -82,7 +76,6 @@ def run_vulture(src_dir: str = "src/", min_confidence: int = 60) -> list[Finding
         capture_output=True,
         text=True,
     )
-    # vulture exits 3 when it finds dead code, 0 when clean
     output = result.stdout + result.stderr
     findings = []
     pattern = re.compile(
@@ -98,7 +91,6 @@ def run_vulture(src_dir: str = "src/", min_confidence: int = 60) -> list[Finding
         name = m.group(4) or m.group(5) or ""
         confidence = int(m.group(6))
 
-        # Determine kind
         kind = "unknown"
         for k in ("function", "class", "method", "variable", "attribute", "import"):
             if k in desc:
@@ -122,95 +114,104 @@ def run_vulture(src_dir: str = "src/", min_confidence: int = 60) -> list[Finding
 
 def filter_false_positives(findings: list[Finding]) -> list[Finding]:
     """Remove known false positives."""
-    filtered = []
-    for f in findings:
-        if FALSE_POSITIVE_RE.search(f.raw):
+    return [f for f in findings if not FALSE_POSITIVE_RE.search(f.raw)]
+
+
+def _count_usages(name: str, search_dir: str, exclude_file: str, exclude_line: int) -> int:
+    """Count how many times `name` appears in `search_dir`, excluding the definition."""
+    if not Path(search_dir).exists():
+        return 0
+    result = subprocess.run(
+        ["grep", "-rn", "--include=*.py", f"\\b{re.escape(name)}\\b", search_dir],
+        capture_output=True,
+        text=True,
+    )
+    count = 0
+    for line in result.stdout.strip().splitlines():
+        if f"{exclude_file}:{exclude_line}:" in line:
             continue
-        filtered.append(f)
-    return filtered
+        count += 1
+    return count
 
 
-def cross_reference_usage(
-    findings: list[Finding], search_dirs: list[str] | None = None
-) -> list[Finding]:
-    """Check if a finding is actually used somewhere via grep.
+def classify_findings(
+    findings: list[Finding],
+) -> tuple[list[Finding], list[Finding]]:
+    """Split findings into two groups:
 
-    Searches src/, tests/, examples/, and scripts/ to catch usages in tests
-    and example code — not just production source.
+    Returns:
+        (dead_in_src, test_only)
+        - dead_in_src: not used anywhere in src/ (truly dead)
+        - test_only: not used in src/ but IS used in tests/ (scaffolding)
     """
-    if search_dirs is None:
-        search_dirs = ["src/", "tests/", "examples/", "scripts/"]
+    dead_in_src = []
+    test_only = []
 
-    confirmed = []
+    extra_dirs = ["tests/", "examples/", "scripts/"]
+
     for f in findings:
         if f.kind == "unreachable":
-            confirmed.append(f)
+            dead_in_src.append(f)
             continue
 
         name = f.name
         if not name:
-            confirmed.append(f)
+            dead_in_src.append(f)
             continue
 
-        # Search across all directories for usage
-        usages = 0
-        for search_dir in search_dirs:
-            if not Path(search_dir).exists():
-                continue
-            result = subprocess.run(
-                ["grep", "-rn", "--include=*.py", f"\\b{re.escape(name)}\\b", search_dir],
-                capture_output=True,
-                text=True,
-            )
-            for line in result.stdout.strip().splitlines():
-                # Skip the definition itself
-                if f"{f.file}:{f.line}:" in line:
-                    continue
-                usages += 1
+        # Check usage in src/ (excluding definition)
+        src_usages = _count_usages(name, "src/", f.file, f.line)
 
-        if usages <= 1:
-            # 0 = truly unused, 1 = might be just one import with no call
-            confirmed.append(f)
-    return confirmed
+        if src_usages > 1:
+            # Used in src/ — not dead (vulture false positive)
+            continue
+
+        # Check usage in tests/, examples/, scripts/
+        other_usages = 0
+        for d in extra_dirs:
+            other_usages += _count_usages(name, d, f.file, f.line)
+
+        if other_usages > 0:
+            test_only.append(f)
+        else:
+            dead_in_src.append(f)
+
+    return dead_in_src, test_only
 
 
-def generate_report(findings: list[Finding]) -> str:
-    """Generate markdown report."""
+def _render_section(title: str, description: str, findings: list[Finding]) -> list[str]:
+    """Render a findings section as markdown lines."""
+    lines = [f"# {title}", "", description, ""]
+
+    if not findings:
+        lines.append("*No findings.*")
+        lines.append("")
+        return lines
+
     by_category: dict[str, list[Finding]] = defaultdict(list)
     for f in findings:
         by_category[f.category].append(f)
 
-    lines = [
-        "# Dead Code Report",
-        "",
-        f"**Total findings:** {len(findings)}",
-        "",
-        "Definitions in `src/` that appear unused. Review each before removing —",
-        "some may be used dynamically, via reflection, or by external consumers.",
-        "",
-    ]
-
     # Summary table
-    lines.append("## Summary")
+    lines.append(f"**Total: {len(findings)}**")
     lines.append("")
     lines.append("| Category | Count | Breakdown |")
     lines.append("|----------|-------|-----------|")
     for cat in sorted(by_category.keys()):
         items = by_category[cat]
-        kinds = defaultdict(int)
+        kinds: dict[str, int] = defaultdict(int)
         for f in items:
             kinds[f.kind] += 1
         breakdown = ", ".join(f"{v} {k}{'s' if v > 1 else ''}" for k, v in sorted(kinds.items()))
         lines.append(f"| {cat} | {len(items)} | {breakdown} |")
     lines.append("")
 
-    # Detailed findings by category
+    # Detailed findings grouped by category → file
     for cat in sorted(by_category.keys()):
         items = by_category[cat]
         lines.append(f"## {cat}")
         lines.append("")
 
-        # Group by file
         by_file: dict[str, list[Finding]] = defaultdict(list)
         for f in items:
             by_file[f.file].append(f)
@@ -220,25 +221,58 @@ def generate_report(findings: list[Finding]) -> str:
             lines.append(f"### `{filepath}`")
             lines.append("")
             for f in sorted(file_items, key=lambda x: x.line):
-                confidence_badge = (
-                    "🔴" if f.confidence >= 90 else "🟡" if f.confidence >= 70 else "⚪"
-                )
+                badge = "🔴" if f.confidence >= 90 else "🟡" if f.confidence >= 70 else "⚪"
                 lines.append(
-                    f"- {confidence_badge} **L{f.line}** — "
-                    f"unused {f.kind} `{f.name}` ({f.confidence}%)"
+                    f"- {badge} **L{f.line}** — unused {f.kind} `{f.name}` ({f.confidence}%)"
                 )
             lines.append("")
 
-    # Action items
-    lines.append("## Recommended Actions")
-    lines.append("")
-    lines.append("1. **🔴 High confidence (90%+):** Likely safe to remove")
-    lines.append("2. **🟡 Medium confidence (70-89%):** Check if used dynamically or in tests")
-    lines.append(
-        "3. **⚪ Lower confidence (60-69%):** May be used via reflection, config, or external API"
+    return lines
+
+
+def generate_report(dead_in_src: list[Finding], test_only: list[Finding]) -> str:
+    """Generate dual-view markdown report."""
+    lines = [
+        "# Dead Code Report — Dual View",
+        "",
+        "Two comparisons of definitions in `src/`:",
+        "",
+        f"- **Section A — Dead in production** ({len(dead_in_src)}): "
+        "not used anywhere in `src/`. Candidates for removal.",
+        f"- **Section B — Test-only** ({len(test_only)}): "
+        "not used in `src/` but used in `tests/`. "
+        "Scaffolding written but never wired into production code.",
+        "",
+        "---",
+        "",
+    ]
+
+    lines.extend(
+        _render_section(
+            "A — Dead in Production (not used in src/)",
+            "These definitions exist in `src/` but are **never referenced by any other "
+            "production code**. Safe candidates for removal or implementation.",
+            dead_in_src,
+        )
     )
-    lines.append("")
+
     lines.append("---")
+    lines.append("")
+
+    lines.extend(
+        _render_section(
+            "B — Test-Only (used in tests/ but not in src/)",
+            "These definitions exist in `src/` and have **test coverage**, but are "
+            "**never called from production code**. They are scaffolding — features "
+            "written and tested but never integrated. Wire them up or remove them.",
+            test_only,
+        )
+    )
+
+    lines.append("---")
+    lines.append("")
+    lines.append("**Legend:** 🔴 ≥90% confidence · 🟡 70-89% · ⚪ 60-69%")
+    lines.append("")
     lines.append("*Generated by `scripts/dead_code_report.py` using vulture*")
 
     return "\n".join(lines)
@@ -252,22 +286,21 @@ def main() -> int:
     filtered = filter_false_positives(raw)
     print(f"  After false-positive filter: {len(filtered)}", file=sys.stderr)
 
-    search_dirs = ["src/", "tests/", "examples/", "scripts/"]
-    print(f"  Cross-referencing against: {', '.join(search_dirs)}", file=sys.stderr)
-    confirmed = cross_reference_usage(filtered, search_dirs)
-    print(f"  After cross-reference: {len(confirmed)}", file=sys.stderr)
+    print("  Classifying: src/-only vs test-only...", file=sys.stderr)
+    dead_in_src, test_only = classify_findings(filtered)
+    print(f"  Dead in production (not in src/): {len(dead_in_src)}", file=sys.stderr)
+    print(f"  Test-only (in tests/ but not src/): {len(test_only)}", file=sys.stderr)
 
-    report = generate_report(confirmed)
+    report = generate_report(dead_in_src, test_only)
 
-    # Write report
-    report_path = Path("dead-code-report.md")
+    report_path = Path("docs/dead-code-report.md")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report, encoding="utf-8")
     print(f"\nReport written to {report_path}", file=sys.stderr)
 
-    # Also print to stdout for CI
     print(report)
 
-    return 1 if confirmed else 0
+    return 1 if (dead_in_src or test_only) else 0
 
 
 if __name__ == "__main__":
