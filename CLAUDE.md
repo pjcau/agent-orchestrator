@@ -277,7 +277,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
   → Not found: report to user, suggest custom agent/skill
 ```
 
-### Skills Map (13 total)
+### Skills Map (14 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -294,6 +294,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 | `/ship` | all | Full pipeline: test, lint, docs sync, commit, push |
 | `/feature` | all | End-to-end feature dev: implement, user review loop, tests, SOLID review, docs, commit, push |
 | `/fix` | all | Bug fix with mandatory regression tests, lint, deploy |
+| `/doc` | all | Full docs review: audit all docs/ against codebase, fix stale/missing/inaccurate content |
 
 ### Research Scout & Nightly Workflow
 
