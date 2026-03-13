@@ -183,7 +183,9 @@ class TestServerTracingInit:
         import ast
         from pathlib import Path
 
-        server_path = Path(__file__).parent.parent / "src" / "agent_orchestrator" / "dashboard" / "server.py"
+        server_path = (
+            Path(__file__).parent.parent / "src" / "agent_orchestrator" / "dashboard" / "server.py"
+        )
         source = server_path.read_text()
         # Verify setup_tracing and instrument_fastapi are referenced
         assert "setup_tracing" in source
