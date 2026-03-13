@@ -130,8 +130,17 @@ def filter_false_positives(findings: list[Finding]) -> list[Finding]:
     return filtered
 
 
-def cross_reference_usage(findings: list[Finding], src_dir: str = "src/") -> list[Finding]:
-    """Check if a finding is actually used somewhere via grep."""
+def cross_reference_usage(
+    findings: list[Finding], search_dirs: list[str] | None = None
+) -> list[Finding]:
+    """Check if a finding is actually used somewhere via grep.
+
+    Searches src/, tests/, examples/, and scripts/ to catch usages in tests
+    and example code — not just production source.
+    """
+    if search_dirs is None:
+        search_dirs = ["src/", "tests/", "examples/", "scripts/"]
+
     confirmed = []
     for f in findings:
         if f.kind == "unreachable":
@@ -143,20 +152,21 @@ def cross_reference_usage(findings: list[Finding], src_dir: str = "src/") -> lis
             confirmed.append(f)
             continue
 
-        # Search for usage of this name in the entire src tree (excluding the definition line)
-        result = subprocess.run(
-            ["grep", "-rn", "--include=*.py", f"\\b{re.escape(name)}\\b", src_dir],
-            capture_output=True,
-            text=True,
-        )
-        # Count occurrences excluding the definition file:line
+        # Search across all directories for usage
         usages = 0
-        for line in result.stdout.strip().splitlines():
-            # Skip the definition itself
-            if f"{f.file}:{f.line}:" in line:
+        for search_dir in search_dirs:
+            if not Path(search_dir).exists():
                 continue
-            # Skip imports of this name (they count as usage only if used after)
-            usages += 1
+            result = subprocess.run(
+                ["grep", "-rn", "--include=*.py", f"\\b{re.escape(name)}\\b", search_dir],
+                capture_output=True,
+                text=True,
+            )
+            for line in result.stdout.strip().splitlines():
+                # Skip the definition itself
+                if f"{f.file}:{f.line}:" in line:
+                    continue
+                usages += 1
 
         if usages <= 1:
             # 0 = truly unused, 1 = might be just one import with no call
@@ -242,7 +252,9 @@ def main() -> int:
     filtered = filter_false_positives(raw)
     print(f"  After false-positive filter: {len(filtered)}", file=sys.stderr)
 
-    confirmed = cross_reference_usage(filtered, "src/")
+    search_dirs = ["src/", "tests/", "examples/", "scripts/"]
+    print(f"  Cross-referencing against: {', '.join(search_dirs)}", file=sys.stderr)
+    confirmed = cross_reference_usage(filtered, search_dirs)
     print(f"  After cross-reference: {len(confirmed)}", file=sys.stderr)
 
     report = generate_report(confirmed)
