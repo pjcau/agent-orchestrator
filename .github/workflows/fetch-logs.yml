@@ -1,0 +1,64 @@
+name: Fetch EC2 Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      tail_lines:
+        description: "Number of log lines per service (default 500)"
+        required: false
+        default: "500"
+      services:
+        description: "Comma-separated services (default: all)"
+        required: false
+        default: "dashboard,nginx,postgres,prometheus,grafana,redis,aws-cost-exporter"
+
+jobs:
+  fetch-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Fetch logs from EC2
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ec2-user
+          TAIL: ${{ github.event.inputs.tail_lines }}
+          SERVICES: ${{ github.event.inputs.services }}
+        run: |
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
+          APP_DIR="/home/ec2-user/agent-orchestrator"
+          mkdir -p logs
+
+          # System info
+          echo "=== Fetch time: $(date -u) ===" > logs/system-info.txt
+          $SSH_CMD "uptime; echo '---'; free -h; echo '---'; df -h /; echo '---'; docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" >> logs/system-info.txt 2>&1
+
+          # Docker compose logs per service
+          IFS=',' read -ra SVC_LIST <<< "$SERVICES"
+          for svc in "${SVC_LIST[@]}"; do
+            svc=$(echo "$svc" | xargs)  # trim whitespace
+            echo "Fetching logs for: $svc"
+            $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml logs --tail=$TAIL --no-color $svc" > "logs/${svc}.log" 2>&1 || echo "Failed to fetch $svc logs" > "logs/${svc}.log"
+          done
+
+          # Recent job logs (last 5 sessions)
+          $SSH_CMD "cd $APP_DIR && ls -dt jobs/job_* 2>/dev/null | head -5 | while read d; do echo \"=== \$d ===\"; find \$d -name '*.json' -exec echo '--- {} ---' \; -exec head -100 {} \; ; done" > logs/recent-jobs.log 2>&1 || echo "No job logs found" > logs/recent-jobs.log
+
+          # Docker events (last 1h)
+          $SSH_CMD "docker events --since 1h --until 0s --format '{{.Time}} {{.Type}} {{.Action}} {{.Actor.Attributes.name}}'" > logs/docker-events.log 2>&1 || true
+
+          echo "=== Done ==="
+          ls -la logs/
+
+      - name: Upload logs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ec2-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 7
