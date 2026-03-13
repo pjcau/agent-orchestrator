@@ -187,7 +187,7 @@ services:
 
   # --- Grafana Tempo (distributed tracing backend) ---
   tempo:
-    image: grafana/tempo:2.6
+    image: grafana/tempo:2.6.1
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./docker/tempo/tempo.yaml:/etc/tempo.yaml
