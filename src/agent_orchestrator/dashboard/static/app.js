@@ -106,6 +106,7 @@
   const $cumulRequests = $("cumul-requests");
   const $cumulSpeed = $("cumul-speed");
   const $dbIndicator = $("db-indicator");
+  const $mcpToolCount = $("mcp-tool-count");
   const $cacheHitRate = $("cache-hit-rate");
   const $cacheHits = $("cache-hits");
   const $cacheMisses = $("cache-misses");
@@ -773,15 +774,16 @@
     // Show fallback log if any
     const fbLog = data.fallback_log || [];
     if (fbLog.length > 0) {
-      const fbHtml = fbLog.map(f => {
-        const icon = f.status === "ok" ? "&#10003;" : "&#10007;";
-        const cls = f.status === "ok" ? "fb-ok" : "fb-fail";
-        return `<span class="fb-entry ${cls}">${icon} ${esc(f.agent || "")} → ${esc(f.model)} [${f.status}] ${esc(f.detail || "")}</span>`;
-      }).join("");
       addSystemBubble("Fallback log:");
       const fbBubble = document.createElement("div");
       fbBubble.className = "chat-bubble system fallback-log";
-      fbBubble.innerHTML = fbHtml;
+      fbLog.forEach(f => {
+        const span = document.createElement("span");
+        span.className = "fb-entry " + (f.status === "ok" ? "fb-ok" : "fb-fail");
+        span.appendChild(document.createTextNode((f.status === "ok" ? "\u2713 " : "\u2717 ")));
+        span.appendChild(document.createTextNode((f.agent || "") + " \u2192 " + (f.model || "") + " [" + (f.status || "") + "] " + (f.detail || "")));
+        fbBubble.appendChild(span);
+      });
       $chatMessages.appendChild(fbBubble);
     }
 
@@ -1517,6 +1519,17 @@
         safeGet(snapshot.agents, agentName).tokens = evt.data.agent_tokens || 0;
         safeGet(snapshot.agents, agentName).cost_usd = evt.data.agent_cost_usd || 0;
       }
+    }
+  }
+
+  // --- MCP tool count ---
+  async function fetchMcpTools() {
+    try {
+      const resp = await fetch("/api/mcp/tools");
+      const data = await resp.json();
+      if ($mcpToolCount) $mcpToolCount.textContent = String(data.count || 0);
+    } catch (e) {
+      if ($mcpToolCount) $mcpToolCount.textContent = "-";
     }
   }
 
@@ -2551,6 +2564,7 @@
       fetchCurrentUser(),
       loadPresets(),
       fetchUsageStats(),
+      fetchMcpTools(),
       startNewConversation(),
     ]);
 

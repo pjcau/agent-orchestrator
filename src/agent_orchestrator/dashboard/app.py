@@ -918,6 +918,160 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             }
         )
 
+    # ------------------------------------------------------------------
+    # MCP — Model Context Protocol endpoints
+    # ------------------------------------------------------------------
+
+    from ..core.mcp_server import MCPServerRegistry
+
+    _mcp_registry = MCPServerRegistry()
+
+    def _ensure_mcp_registry() -> MCPServerRegistry:
+        """Lazily populate the MCP registry from the agent/skill registries."""
+        if _mcp_registry.list_tools():
+            return _mcp_registry
+        # Register agents as MCP tools
+        agent_reg = get_agent_registry()
+        agent_configs = {}
+        for agent in agent_reg.get("agents", []):
+            agent_configs[agent["name"]] = {
+                "role": agent.get("description", ""),
+            }
+        _mcp_registry.register_agent_tools(agent_configs)
+        # Register skills as MCP tools
+        skill_reg = create_skill_registry(allowed_commands=[])
+        _mcp_registry.register_skill_tools(skill_reg.list_skills(), skill_reg)
+        return _mcp_registry
+
+    @app.get("/api/mcp/manifest")
+    async def mcp_manifest():
+        """Export MCP server manifest for client discovery."""
+        registry = _ensure_mcp_registry()
+        return JSONResponse(content=registry.export_manifest())
+
+    @app.get("/api/mcp/tools")
+    async def mcp_tools():
+        """List all MCP tools (agents + skills)."""
+        registry = _ensure_mcp_registry()
+        tools = registry.list_tools()
+        return JSONResponse(
+            content={
+                "count": len(tools),
+                "tools": [
+                    {
+                        "name": t.name,
+                        "description": t.description,
+                        "input_schema": t.input_schema,
+                    }
+                    for t in tools
+                ],
+            }
+        )
+
+    @app.post("/api/mcp/tools/{tool_name}/invoke")
+    async def mcp_invoke_tool(tool_name: str, body: dict):
+        """Invoke an MCP tool by name.
+
+        For skill-backed tools, executes the skill directly.
+        For agent-backed tools, runs the agent with the given task.
+        """
+        registry = _ensure_mcp_registry()
+        tool = registry.get_tool(tool_name)
+        if not tool:
+            return JSONResponse(
+                content={"error": f"MCP tool '{tool_name}' not found"},
+                status_code=404,
+            )
+
+        params = body.get("params", body.get("arguments", {}))
+
+        # Skill-backed tool: skill_{name}
+        if tool_name.startswith("skill_"):
+            skill_name = tool_name[len("skill_") :]
+            skill_reg = create_skill_registry(
+                allowed_commands=[
+                    "ls",
+                    "cat",
+                    "head",
+                    "tail",
+                    "wc",
+                    "grep",
+                    "find",
+                    "python",
+                    "python3",
+                    "pytest",
+                    "ruff",
+                    "git",
+                ]
+            )
+            result = await skill_reg.execute(skill_name, params)
+            await bus.emit(
+                Event(
+                    event_type=EventType.AGENT_TOOL_CALL,
+                    agent_name="mcp",
+                    data={"tool_name": tool_name, "arguments": params},
+                )
+            )
+            return JSONResponse(
+                content={
+                    "tool": tool_name,
+                    "success": result.success,
+                    "output": str(result.output)[:5000] if result.output else "",
+                    "error": result.error,
+                }
+            )
+
+        # Agent-backed tool: agent_run_{name}
+        if tool_name.startswith("agent_run_"):
+            task_text = params.get("task", "")
+            model = params.get("model", "")
+            provider_type = params.get("provider", "ollama")
+            if not task_text:
+                return JSONResponse(
+                    content={"error": "'task' parameter required"},
+                    status_code=400,
+                )
+            if not model:
+                return JSONResponse(
+                    content={"error": "'model' parameter required"},
+                    status_code=400,
+                )
+            agent_name = tool_name[len("agent_run_") :]
+            ollama_url = _get_ollama_url()
+            openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+            provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
+
+            registry = get_agent_registry()
+            agent_info = next(
+                (a for a in registry.get("agents", []) if a["name"] == agent_name),
+                None,
+            )
+            role = agent_info.get("description", "") if agent_info else ""
+
+            job_logger.touch()
+            result = await run_agent(
+                agent_name=agent_name,
+                task_description=task_text,
+                provider=provider,
+                role=role,
+                event_bus=bus,
+                working_directory=str(job_logger.session_dir),
+                usage_db=usage_db,
+                session_id=job_logger.session_id,
+            )
+            return JSONResponse(
+                content={
+                    "tool": tool_name,
+                    "success": result.get("success", False),
+                    "output": result.get("output", "")[:5000],
+                }
+            )
+
+        return JSONResponse(
+            content={"error": f"Cannot invoke tool '{tool_name}': unknown handler type"},
+            status_code=400,
+        )
+
     @app.post("/api/cost/preview")
     async def cost_preview(body: dict):
         """Estimate cost for running an agent task."""

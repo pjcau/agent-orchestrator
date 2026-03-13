@@ -142,7 +142,7 @@ agent-orchestrator/
 - **SubGraphNode** — Wrap compiled graphs as callable nodes with I/O mapping.
 - **PluginLoader** — Register/load plugin manifests (skills, providers) at runtime.
 - **WebhookRegistry** — Inbound webhooks with HMAC-SHA256 signature validation.
-- **MCPServerRegistry** — Expose agents/skills as MCP tools and resources.
+- **MCPServerRegistry** — Expose agents/skills as MCP tools and resources. `Orchestrator.register_mcp_tools()` bridges all agents and skills into the registry in one call.
 - **OfflineManager** — Filter to local-only providers when offline.
 - **ConfigManager** — Load/save/validate orchestrator configuration with rollback history.
 - **ProjectManager** — Multi-project support with archive/unarchive and current project.
@@ -389,6 +389,16 @@ Conversation memory persists across restarts and session reloads:
 - **PostgresCheckpointer** — used when `DATABASE_URL` is set (production). Falls back to `InMemoryCheckpointer` otherwise.
 - **Session restore** — `POST /api/jobs/{session_id}/restore` re-hydrates conversation context from job records when loading a historical session.
 - **Frontend integration** — `loadSessionIntoChat()` calls the restore endpoint automatically, preserving `conversation_id` for continuity.
+
+### MCP Integration
+
+The dashboard exposes all agents and skills as MCP (Model Context Protocol) tools, enabling external AI tools to discover and invoke them.
+
+- **Manifest**: `GET /api/mcp/manifest` — full MCP server manifest for client discovery
+- **Tool list**: `GET /api/mcp/tools` — all registered tools with input schemas
+- **Invoke**: `POST /api/mcp/tools/{name}/invoke` — execute a tool (skill or agent)
+- **Orchestrator bridge**: `Orchestrator.register_mcp_tools()` populates an `MCPServerRegistry` from all configured agents and skills
+- **UI**: MCP tool count shown in dashboard header
 
 ### Session Explorer
 

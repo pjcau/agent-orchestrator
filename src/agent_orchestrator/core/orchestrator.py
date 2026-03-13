@@ -16,6 +16,7 @@ from .cooperation import (
     TaskAssignment,
     TaskReport,
 )
+from .mcp_server import MCPResource, MCPServerRegistry
 from .provider import Provider
 from .skill import SkillRegistry
 
@@ -393,6 +394,46 @@ class Orchestrator:
             skill_registry=self.skills,
             escalation_provider=escalation_provider,
         )
+
+    # ------------------------------------------------------------------
+    # MCP integration
+    # ------------------------------------------------------------------
+
+    def register_mcp_tools(
+        self,
+        server: MCPServerRegistry | None = None,
+    ) -> MCPServerRegistry:
+        """Register all agents and skills as MCP tools on *server*.
+
+        If *server* is ``None`` a fresh ``MCPServerRegistry`` is created.
+        The registry is also stored on ``self.mcp`` for later access.
+
+        Returns the populated ``MCPServerRegistry``.
+        """
+        if server is None:
+            server = MCPServerRegistry()
+
+        # Register agents as MCP tools
+        agent_configs: dict[str, Any] = {}
+        for name, cfg in self.agent_configs.items():
+            agent_configs[name] = {"role": cfg.role} if isinstance(cfg, AgentConfig) else cfg
+        server.register_agent_tools(agent_configs)
+
+        # Register skills as MCP tools
+        skill_names = self.skills.list_skills()
+        server.register_skill_tools(skill_names, self.skills)
+
+        # Expose orchestrator itself as a resource
+        server.register_resource(
+            MCPResource(
+                uri="orchestrator://status",
+                name="orchestrator_status",
+                description="Current orchestrator configuration and agent list",
+            )
+        )
+
+        self.mcp = server
+        return server
 
     def _summarize_results(self, results: dict[str, TaskResult]) -> str:
         lines = []

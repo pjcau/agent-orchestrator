@@ -265,6 +265,151 @@ class TestMCPServerRegistry:
         assert tools[0].name == "skill_webhook_send"
 
 
+# --- Orchestrator MCP Bridge ---
+
+
+class TestOrchestratorMCPBridge:
+    """Tests for Orchestrator.register_mcp_tools()."""
+
+    def test_register_mcp_tools_creates_registry(self):
+        from agent_orchestrator.core.orchestrator import (
+            Orchestrator,
+            OrchestratorConfig,
+        )
+        from agent_orchestrator.core.agent import AgentConfig
+
+        orch = Orchestrator(
+            config=OrchestratorConfig(),
+            agents={
+                "backend": AgentConfig(
+                    name="backend",
+                    role="Backend developer",
+                    provider_key="test",
+                ),
+            },
+            providers={},
+            skill_registry=SkillRegistry(),
+        )
+        server = orch.register_mcp_tools()
+        assert server is not None
+        assert orch.mcp is server
+
+    def test_register_mcp_tools_registers_agents(self):
+        from agent_orchestrator.core.orchestrator import (
+            Orchestrator,
+            OrchestratorConfig,
+        )
+        from agent_orchestrator.core.agent import AgentConfig
+
+        orch = Orchestrator(
+            config=OrchestratorConfig(),
+            agents={
+                "backend": AgentConfig(
+                    name="backend",
+                    role="Backend dev",
+                    provider_key="test",
+                ),
+                "frontend": AgentConfig(
+                    name="frontend",
+                    role="Frontend dev",
+                    provider_key="test",
+                ),
+            },
+            providers={},
+            skill_registry=SkillRegistry(),
+        )
+        server = orch.register_mcp_tools()
+        tool_names = {t.name for t in server.list_tools()}
+        assert "agent_run_backend" in tool_names
+        assert "agent_run_frontend" in tool_names
+
+    def test_register_mcp_tools_registers_skills(self):
+        from agent_orchestrator.core.orchestrator import (
+            Orchestrator,
+            OrchestratorConfig,
+        )
+        from agent_orchestrator.core.agent import AgentConfig
+        from agent_orchestrator.skills.webhook_skill import WebhookSkill
+
+        skill_reg = SkillRegistry()
+        skill_reg.register(WebhookSkill())
+
+        orch = Orchestrator(
+            config=OrchestratorConfig(),
+            agents={
+                "backend": AgentConfig(
+                    name="backend",
+                    role="Backend dev",
+                    provider_key="test",
+                ),
+            },
+            providers={},
+            skill_registry=skill_reg,
+        )
+        server = orch.register_mcp_tools()
+        tool_names = {t.name for t in server.list_tools()}
+        assert "skill_webhook_send" in tool_names
+
+    def test_register_mcp_tools_creates_status_resource(self):
+        from agent_orchestrator.core.orchestrator import (
+            Orchestrator,
+            OrchestratorConfig,
+        )
+
+        orch = Orchestrator(
+            config=OrchestratorConfig(),
+            agents={},
+            providers={},
+            skill_registry=SkillRegistry(),
+        )
+        server = orch.register_mcp_tools()
+        resource = server.get_resource("orchestrator://status")
+        assert resource is not None
+        assert resource.name == "orchestrator_status"
+
+    def test_register_mcp_tools_uses_existing_registry(self):
+        from agent_orchestrator.core.orchestrator import (
+            Orchestrator,
+            OrchestratorConfig,
+        )
+
+        orch = Orchestrator(
+            config=OrchestratorConfig(),
+            agents={},
+            providers={},
+            skill_registry=SkillRegistry(),
+        )
+        existing = MCPServerRegistry(server_name="custom", version="2.0")
+        result = orch.register_mcp_tools(server=existing)
+        assert result is existing
+        assert result.server_name == "custom"
+
+    def test_register_mcp_tools_manifest_export(self):
+        from agent_orchestrator.core.orchestrator import (
+            Orchestrator,
+            OrchestratorConfig,
+        )
+        from agent_orchestrator.core.agent import AgentConfig
+
+        orch = Orchestrator(
+            config=OrchestratorConfig(),
+            agents={
+                "ai": AgentConfig(
+                    name="ai",
+                    role="AI engineer",
+                    provider_key="test",
+                ),
+            },
+            providers={},
+            skill_registry=SkillRegistry(),
+        )
+        server = orch.register_mcp_tools()
+        manifest = server.export_manifest()
+        assert manifest["name"] == "agent-orchestrator"
+        assert len(manifest["tools"]) >= 1
+        assert len(manifest["resources"]) >= 1
+
+
 # --- OfflineManager ---
 
 
