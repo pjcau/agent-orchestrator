@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=061">
+    <link rel="stylesheet" href="/static/style.css?v=063">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" integrity="sha256-gZkRS+wguLadkfp9Ci2xON9gtBRxMDqil/PQKJNXhSk=" crossorigin="anonymous">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha256-g3pvpbDHNrUrveKythkPMF2j/J7UFoHbUyFQcFe1yEY=" crossorigin="anonymous"></script>
 </head>
@@ -312,13 +312,15 @@
                     <button id="btn-close-explorer" class="btn-close">&times;</button>
                 </div>
             </div>
-            <div class="explorer-layout">
+            <div class="explorer-layout" id="explorer-layout">
                 <div class="explorer-sessions" id="explorer-sessions">
                     <div class="empty-state">Loading...</div>
                 </div>
+                <div class="explorer-resize-handle" data-panel="sessions"></div>
                 <div class="explorer-files" id="explorer-files">
                     <div class="empty-state">Select a session</div>
                 </div>
+                <div class="explorer-resize-handle" data-panel="files"></div>
                 <div class="explorer-preview" id="explorer-preview">
                     <div class="empty-state">Select a file</div>
                 </div>
@@ -394,6 +396,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=061"></script>
+    <script src="/static/app.js?v=063"></script>
 </body>
 </html>

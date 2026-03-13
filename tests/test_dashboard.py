@@ -1547,6 +1547,107 @@ class TestExplorerEndpoints:
         large_file.write_text("x" * 600_000)
         assert large_file.stat().st_size > 500_000
 
+    def test_jobs_files_tree_with_subdirectories(self, tmp_path):
+        """GET /api/jobs/{session_id}/files returns tree with folders and files."""
+        from pathlib import Path
+
+        session_dir = tmp_path / "job_tree-test"
+        session_dir.mkdir()
+        (session_dir / "root.txt").write_text("root file")
+        sub = session_dir / "subdir"
+        sub.mkdir()
+        (sub / "nested.py").write_text("print('nested')")
+        deep = sub / "deep"
+        deep.mkdir()
+        (deep / "deep_file.json").write_text('{"deep": true}')
+
+        def _build_tree(directory: Path) -> list[dict]:
+            entries: list[dict] = []
+            for entry in sorted(directory.iterdir(), key=lambda e: (e.is_file(), e.name.lower())):
+                if entry.is_dir():
+                    children = _build_tree(entry)
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "type": "directory",
+                            "path": str(entry.relative_to(session_dir)),
+                            "children": children,
+                        }
+                    )
+                elif entry.is_file():
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "type": "file",
+                            "path": str(entry.relative_to(session_dir)),
+                            "size": entry.stat().st_size,
+                        }
+                    )
+            return entries
+
+        tree = _build_tree(session_dir)
+        # Directories come first (sorted by is_file() ascending)
+        assert tree[0]["type"] == "directory"
+        assert tree[0]["name"] == "subdir"
+        assert tree[0]["children"][0]["type"] == "directory"
+        assert tree[0]["children"][0]["name"] == "deep"
+        assert tree[0]["children"][0]["children"][0]["name"] == "deep_file.json"
+        assert tree[0]["children"][0]["children"][0]["path"] == "subdir/deep/deep_file.json"
+        # File at root level comes after directories
+        assert tree[1]["type"] == "file"
+        assert tree[1]["name"] == "root.txt"
+
+    def test_jobs_files_flat_list_includes_nested(self, tmp_path):
+        """Flat file list includes files from subdirectories with relative paths."""
+        session_dir = tmp_path / "job_flat-nested"
+        session_dir.mkdir()
+        (session_dir / "top.txt").write_text("top")
+        sub = session_dir / "folder"
+        sub.mkdir()
+        (sub / "inner.py").write_text("x = 1")
+
+        flat = []
+        for f in sorted(session_dir.rglob("*")):
+            if f.is_file():
+                flat.append(
+                    {
+                        "name": f.name,
+                        "path": str(f.relative_to(session_dir)),
+                        "size": f.stat().st_size,
+                    }
+                )
+
+        paths = [f["path"] for f in flat]
+        assert "folder/inner.py" in paths
+        assert "top.txt" in paths
+
+    def test_tree_empty_subdirectory(self, tmp_path):
+        """Empty subdirectories appear in tree with no children."""
+        from pathlib import Path
+
+        session_dir = tmp_path / "job_empty-sub"
+        session_dir.mkdir()
+        (session_dir / "empty_dir").mkdir()
+        (session_dir / "file.txt").write_text("content")
+
+        def _build_tree(directory: Path) -> list[dict]:
+            entries: list[dict] = []
+            for entry in sorted(directory.iterdir(), key=lambda e: (e.is_file(), e.name.lower())):
+                if entry.is_dir():
+                    entries.append(
+                        {"name": entry.name, "type": "directory", "children": _build_tree(entry)}
+                    )
+                elif entry.is_file():
+                    entries.append({"name": entry.name, "type": "file"})
+            return entries
+
+        tree = _build_tree(session_dir)
+        assert tree[0]["type"] == "directory"
+        assert tree[0]["name"] == "empty_dir"
+        assert tree[0]["children"] == []
+        assert tree[1]["type"] == "file"
+        assert tree[1]["name"] == "file.txt"
+
 
 class TestJobLoggerCleanup:
     """Tests for lazy directory creation and empty session cleanup."""
@@ -1678,3 +1779,117 @@ class TestSessionDelete:
         assert not delete_dir.exists()
         assert keep_dir.exists()
         assert (keep_dir / "data.json").exists()
+
+
+# ===== Async Team Run =====
+
+
+class TestAsyncTeamRun:
+    """Tests for the async team run (non-blocking POST + WS events)."""
+
+    def test_team_event_types_exist(self):
+        assert EventType.TEAM_STARTED.value == "team.started"
+        assert EventType.TEAM_STEP.value == "team.step"
+        assert EventType.TEAM_COMPLETE.value == "team.complete"
+
+    @pytest.mark.asyncio
+    async def test_team_started_event(self, bus):
+        queue = bus.subscribe()
+        await bus.emit(
+            Event(
+                event_type=EventType.TEAM_STARTED,
+                data={"job_id": "abc123", "task": "test task", "model": "mock-1"},
+            )
+        )
+        event = queue.get_nowait()
+        assert event.event_type == EventType.TEAM_STARTED
+        assert event.data["job_id"] == "abc123"
+
+    @pytest.mark.asyncio
+    async def test_team_complete_event(self, bus):
+        queue = bus.subscribe()
+        await bus.emit(
+            Event(
+                event_type=EventType.TEAM_COMPLETE,
+                data={
+                    "job_id": "abc123",
+                    "success": True,
+                    "output": "done",
+                    "total_tokens": 100,
+                },
+            )
+        )
+        event = queue.get_nowait()
+        assert event.event_type == EventType.TEAM_COMPLETE
+        assert event.data["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_graph_events_in_snapshot(self, bus):
+        """GRAPH_START emitted by run_team populates snapshot graph."""
+        await bus.emit(
+            Event(
+                event_type=EventType.GRAPH_START,
+                data={
+                    "nodes": ["team-lead (plan)", "sub-agents", "team-lead (review)"],
+                    "edges": [
+                        {"from": "team-lead (plan)", "to": "sub-agents"},
+                        {"from": "sub-agents", "to": "team-lead (review)"},
+                    ],
+                },
+            )
+        )
+        snap = bus.get_snapshot()
+        assert len(snap["graph"]["nodes"]) == 3
+        assert len(snap["graph"]["edges"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_graph_node_enter_exit_sequence(self, bus):
+        """Verify the full node lifecycle: enter → exit for each phase."""
+        queue = bus.subscribe()
+        phases = ["team-lead (plan)", "sub-agents", "team-lead (review)"]
+        for i, phase in enumerate(phases):
+            await bus.emit(
+                Event(
+                    event_type=EventType.GRAPH_NODE_ENTER,
+                    node_name=phase,
+                    data={"step_index": i},
+                )
+            )
+            await bus.emit(
+                Event(
+                    event_type=EventType.GRAPH_NODE_EXIT,
+                    node_name=phase,
+                    data={"success": True, "step_index": i},
+                )
+            )
+        # 3 enters + 3 exits = 6 events
+        collected = []
+        while not queue.empty():
+            collected.append(queue.get_nowait())
+        assert len(collected) == 6
+        assert collected[0].event_type == EventType.GRAPH_NODE_ENTER
+        assert collected[0].node_name == "team-lead (plan)"
+        assert collected[-1].event_type == EventType.GRAPH_NODE_EXIT
+        assert collected[-1].node_name == "team-lead (review)"
+
+    @pytest.mark.asyncio
+    async def test_team_complete_serializes(self, bus):
+        """team.complete event serializes properly for WS transport."""
+        event = Event(
+            event_type=EventType.TEAM_COMPLETE,
+            data={
+                "job_id": "x1",
+                "success": True,
+                "output": "summary",
+                "plan": "do things",
+                "agent_outputs": {"backend": "code written"},
+                "agent_costs": {"backend": {"tokens": 50, "cost_usd": 0.01}},
+                "total_tokens": 50,
+                "total_cost_usd": 0.01,
+                "elapsed_s": 5.0,
+            },
+        )
+        d = event.to_dict()
+        assert d["event_type"] == "team.complete"
+        assert d["data"]["success"] is True
+        assert d["data"]["agent_outputs"]["backend"] == "code written"

@@ -46,6 +46,11 @@ class EventType(str, Enum):
     CACHE_MISS = "cache.miss"
     CACHE_STATS = "cache.stats"
 
+    # Team lifecycle (async)
+    TEAM_STARTED = "team.started"
+    TEAM_STEP = "team.step"
+    TEAM_COMPLETE = "team.complete"
+
     # Cost / metrics
     COST_UPDATE = "metrics.cost_update"
     TOKEN_UPDATE = "metrics.token_update"

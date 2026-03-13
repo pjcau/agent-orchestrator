@@ -765,6 +765,20 @@ async def run_team(
     agent_files: dict[str, list[str]] = {}
     agent_steps_log: dict[str, list[str]] = {}
 
+    # Emit graph start so dashboard shows the team workflow
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_START,
+            data={
+                "nodes": ["team-lead (plan)", "sub-agents", "team-lead (review)"],
+                "edges": [
+                    {"from": "team-lead (plan)", "to": "sub-agents"},
+                    {"from": "sub-agents", "to": "team-lead (review)"},
+                ],
+            },
+        )
+    )
+
     # Load conversation history for team-lead context
     team_history_msgs: list[Message] = []
     if conversation_id and conversation_manager:
@@ -773,6 +787,13 @@ async def run_team(
             team_history_msgs.append(Message(role=Role(msg.role), content=msg.content))
 
     # --- Step 1: Team-lead plans with agent registry ---
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_NODE_ENTER,
+            node_name="team-lead (plan)",
+            data={"step_index": 0},
+        )
+    )
     await bus.emit(
         Event(
             event_type=EventType.AGENT_SPAWN,
@@ -863,7 +884,23 @@ async def run_team(
     # Cap sub-agents
     assignments = assignments[:max_sub_agents]
 
+    # Mark plan phase as done
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_NODE_EXIT,
+            node_name="team-lead (plan)",
+            data={"success": True, "step_index": 0},
+        )
+    )
+
     # --- Step 2: Execute sub-agents in parallel (max 3 concurrent) ---
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_NODE_ENTER,
+            node_name="sub-agents",
+            data={"step_index": 1, "agents": [a["agent"] for a in assignments]},
+        )
+    )
     sem = asyncio.Semaphore(3)
 
     async def _run_sub_agent(assignment: dict, idx: int) -> tuple[str, dict[str, Any]]:
@@ -962,7 +999,23 @@ async def run_team(
         for fb in result.get("fallback_log", []):
             all_fallback_logs.append({"agent": event_key, **fb})
 
+    # Mark sub-agents phase as done
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_NODE_EXIT,
+            node_name="sub-agents",
+            data={"success": True, "step_index": 1},
+        )
+    )
+
     # --- Step 3: Team-lead validates outputs ---
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_NODE_ENTER,
+            node_name="team-lead (review)",
+            data={"step_index": 2},
+        )
+    )
     evidence_parts = _build_evidence(agent_outputs, agent_files, agent_steps_log)
 
     await bus.emit(
@@ -1087,6 +1140,15 @@ async def run_team(
         )
     )
 
+    # Mark review/summary phase as done
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_NODE_EXIT,
+            node_name="team-lead (review)",
+            data={"success": True, "step_index": 2},
+        )
+    )
+
     elapsed = time.time() - start_time
     all_files = [f for files in agent_files.values() for f in files]
 
@@ -1101,6 +1163,14 @@ async def run_team(
             task_description,
             _passthrough_team,
         )
+
+    # Emit graph end so dashboard completes the visualization
+    await bus.emit(
+        Event(
+            event_type=EventType.GRAPH_END,
+            data={"success": True, "elapsed_s": round(elapsed, 2)},
+        )
+    )
 
     return {
         "success": True,

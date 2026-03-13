@@ -127,6 +127,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # Track active WebSocket connections — close old ones when new arrive
     # Only one connection per endpoint path is allowed at a time
     _active_ws: dict[str, WebSocket] = {}  # key: "/ws" or "/ws/stream"
+    _active_jobs: dict[str, dict] = {}  # job_id -> {task, status, result}
 
     # Starlette session middleware (required for authlib OAuth2 state)
     try:
@@ -347,24 +348,54 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     @app.get("/api/jobs/{session_id}/files")
     async def jobs_files(session_id: str):
-        """List all files in a session directory."""
+        """List all files in a session directory (recursive tree)."""
         session_dir = job_logger._base_dir / f"job_{session_id}"
         if not session_dir.exists() or not session_dir.is_dir():
             return JSONResponse(content={"error": "Session not found"}, status_code=404)
-        items = []
-        for f in sorted(session_dir.iterdir()):
-            if not f.is_file():
-                continue
-            stat = f.stat()
-            items.append(
-                {
-                    "name": f.name,
-                    "size": stat.st_size,
-                    "modified": stat.st_mtime,
-                    "is_json": f.suffix == ".json",
-                }
-            )
-        return JSONResponse(content={"session_id": session_id, "files": items})
+
+        def _build_tree(directory: Path) -> list[dict]:
+            entries: list[dict] = []
+            for entry in sorted(directory.iterdir(), key=lambda e: (e.is_file(), e.name.lower())):
+                if entry.is_dir():
+                    children = _build_tree(entry)
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "type": "directory",
+                            "path": str(entry.relative_to(session_dir)),
+                            "children": children,
+                        }
+                    )
+                elif entry.is_file():
+                    stat = entry.stat()
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "type": "file",
+                            "path": str(entry.relative_to(session_dir)),
+                            "size": stat.st_size,
+                            "modified": stat.st_mtime,
+                            "is_json": entry.suffix == ".json",
+                        }
+                    )
+            return entries
+
+        tree = _build_tree(session_dir)
+        # Also provide flat list for backwards compatibility
+        flat = []
+        for f in sorted(session_dir.rglob("*")):
+            if f.is_file():
+                stat = f.stat()
+                flat.append(
+                    {
+                        "name": f.name,
+                        "path": str(f.relative_to(session_dir)),
+                        "size": stat.st_size,
+                        "modified": stat.st_mtime,
+                        "is_json": f.suffix == ".json",
+                    }
+                )
+        return JSONResponse(content={"session_id": session_id, "files": flat, "tree": tree})
 
     @app.get("/api/jobs/{session_id}/files/{filename:path}")
     async def jobs_file_content(session_id: str, filename: str):
@@ -694,7 +725,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     @app.post("/api/team/run")
     async def team_run(body: dict):
-        """Run a multi-agent team on a task (team-lead + sub-agents with tools)."""
+        """Start a multi-agent team run as a background task.
+
+        Returns immediately with a job_id. Results stream via WebSocket
+        as team.started, team.step, and team.complete events.
+        """
         task_desc = body.get("task", "").strip()
         model = body.get("model", "")
         provider_type = body.get("provider", "openrouter")
@@ -711,69 +746,111 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 status_code=400,
             )
 
+        job_id = str(uuid.uuid4())[:8]
         ollama_url = _get_ollama_url()
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
         provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
 
-        try:
-            job_logger.touch()
-            result = await run_team(
-                task_description=task_desc,
-                provider=provider,
-                event_bus=bus,
-                working_directory=str(job_logger.session_dir),
-                usage_db=usage_db,
-                session_id=job_logger.session_id,
-                conversation_id=conv_id_team,
-                conversation_manager=conv_manager if conv_id_team else None,
-            )
-            job_logger.log(
-                "team_run",
-                {
-                    "task": task_desc,
-                    "model": model,
-                    "provider": provider_type,
-                    "conversation_id": conv_id_team,
-                    "result": {
-                        "success": result.get("success"),
-                        "output": result.get("output", "")[:2000],
-                        "plan": result.get("plan", "")[:1000],
-                        "agent_costs": result.get("agent_costs", {}),
-                        "total_tokens": result.get("total_tokens"),
-                        "total_cost_usd": result.get("total_cost_usd"),
-                        "elapsed_s": result.get("elapsed_s"),
-                    },
-                },
-            )
+        _active_jobs[job_id] = {"status": "running", "task": task_desc, "result": None}
 
-            # Record per-agent costs
-            for ag_name, ag_cost in (result.get("agent_costs") or {}).items():
-                await usage_db.record(
-                    model=model,
-                    agent=ag_name,
-                    provider=provider_type,
-                    input_tokens=ag_cost.get("input_tokens", 0),
-                    output_tokens=ag_cost.get("tokens", 0),
-                    cost_usd=ag_cost.get("cost_usd", 0.0),
-                    elapsed_s=result.get("elapsed_s", 0.0),
-                    session_id=job_logger.session_id,
+        async def _run_in_background():
+            try:
+                job_logger.touch()
+
+                await bus.emit(
+                    Event(
+                        event_type=EventType.TEAM_STARTED,
+                        data={"job_id": job_id, "task": task_desc[:500], "model": model},
+                    )
                 )
-            return JSONResponse(content=result)
-        except Exception as exc:
-            logger.exception("Team run failed")
-            job_logger.log(
-                "team_run",
-                {
+
+                result = await run_team(
+                    task_description=task_desc,
+                    provider=provider,
+                    event_bus=bus,
+                    working_directory=str(job_logger.session_dir),
+                    usage_db=usage_db,
+                    session_id=job_logger.session_id,
+                    conversation_id=conv_id_team,
+                    conversation_manager=conv_manager if conv_id_team else None,
+                )
+
+                job_logger.log(
+                    "team_run",
+                    {
+                        "task": task_desc,
+                        "model": model,
+                        "provider": provider_type,
+                        "conversation_id": conv_id_team,
+                        "result": {
+                            "success": result.get("success"),
+                            "output": result.get("output", "")[:2000],
+                            "plan": result.get("plan", "")[:1000],
+                            "agent_costs": result.get("agent_costs", {}),
+                            "total_tokens": result.get("total_tokens"),
+                            "total_cost_usd": result.get("total_cost_usd"),
+                            "elapsed_s": result.get("elapsed_s"),
+                        },
+                    },
+                )
+
+                # Record per-agent costs
+                for ag_name, ag_cost in (result.get("agent_costs") or {}).items():
+                    await usage_db.record(
+                        model=model,
+                        agent=ag_name,
+                        provider=provider_type,
+                        input_tokens=ag_cost.get("input_tokens", 0),
+                        output_tokens=ag_cost.get("tokens", 0),
+                        cost_usd=ag_cost.get("cost_usd", 0.0),
+                        elapsed_s=result.get("elapsed_s", 0.0),
+                        session_id=job_logger.session_id,
+                    )
+
+                _active_jobs[job_id] = {"status": "completed", "task": task_desc, "result": result}
+
+                await bus.emit(
+                    Event(
+                        event_type=EventType.TEAM_COMPLETE,
+                        data={"job_id": job_id, **result},
+                    )
+                )
+
+            except Exception as exc:
+                logger.exception("Team run failed (job_id=%s)", job_id)
+                error_result = {"success": False, "error": str(exc)}
+                _active_jobs[job_id] = {
+                    "status": "failed",
                     "task": task_desc,
-                    "model": model,
-                    "provider": provider_type,
-                    "result": {"success": False, "error": str(exc)},
-                },
-            )
-            return JSONResponse(
-                content={"success": False, "error": "Team execution failed"},
-                status_code=500,
-            )
+                    "result": error_result,
+                }
+                job_logger.log(
+                    "team_run",
+                    {
+                        "task": task_desc,
+                        "model": model,
+                        "provider": provider_type,
+                        "result": error_result,
+                    },
+                )
+                await bus.emit(
+                    Event(
+                        event_type=EventType.TEAM_COMPLETE,
+                        data={"job_id": job_id, **error_result},
+                    )
+                )
+
+        asyncio.create_task(_run_in_background())
+
+        return JSONResponse(content={"job_id": job_id, "status": "started"})
+
+    @app.get("/api/team/status/{job_id}")
+    async def team_status(job_id: str):
+        """Poll the status of a background team run."""
+        job = _active_jobs.get(job_id)
+        if not job:
+            return JSONResponse(content={"error": "Job not found"}, status_code=404)
+        return JSONResponse(content={"job_id": job_id, **job})
 
     @app.post("/api/skill/invoke")
     async def skill_invoke(body: dict):

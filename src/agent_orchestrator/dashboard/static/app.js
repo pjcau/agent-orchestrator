@@ -730,8 +730,11 @@
     setRunning(false);
   }
 
+  // Track the active team job so we can render the result from WS events
+  let _pendingTeamJob = null;
+
   async function runTeam(text, model, provider) {
-    addSystemBubble("Running multi-agent team (team-lead → backend-dev + frontend-dev)...");
+    addSystemBubble("Running multi-agent team...");
 
     try {
       const resp = await fetch("/api/team/run", {
@@ -742,56 +745,70 @@
       const contentType = resp.headers.get("content-type") || "";
       if (!resp.ok || !contentType.includes("application/json")) {
         const errText = await resp.text();
-        throw new Error(resp.status === 502 || resp.status === 504
-          ? `Gateway timeout (${resp.status}) — the team run took too long. Try a simpler task or fewer agents.`
-          : `Server error ${resp.status}: ${errText.slice(0, 200)}`);
+        throw new Error(`Server error ${resp.status}: ${errText.slice(0, 200)}`);
       }
       const data = await resp.json();
-
-      // Show fallback log if any
-      const fbLog = data.fallback_log || [];
-      if (fbLog.length > 0) {
-        const fbHtml = fbLog.map(f => {
-          const icon = f.status === "ok" ? "&#10003;" : "&#10007;";
-          const cls = f.status === "ok" ? "fb-ok" : "fb-fail";
-          return `<span class="fb-entry ${cls}">${icon} ${esc(f.agent || "")} → ${esc(f.model)} [${f.status}] ${esc(f.detail || "")}</span>`;
-        }).join("");
-        addSystemBubble("Fallback log:");
-        const fbBubble = document.createElement("div");
-        fbBubble.className = "chat-bubble system fallback-log";
-        fbBubble.innerHTML = fbHtml;
-        $chatMessages.appendChild(fbBubble);
+      if (!data.job_id) {
+        throw new Error(data.error || "No job_id returned");
       }
 
-      if (data.success) {
-        // Build steps from team outputs
-        const steps = [];
-        if (data.plan) {
-          steps.push({ node: "team-lead (plan)", output: data.plan });
-          // Create interactions for the plan delegation
-          const outputs = data.agent_outputs || {};
-          for (const agent of Object.keys(outputs)) {
-            addInteraction("team-lead", agent, "delegated task", "completed");
-          }
-        }
-        const outputs = data.agent_outputs || {};
-        for (const [agent, output] of Object.entries(outputs)) {
-          steps.push({ node: agent, output: output });
-          addInteraction(agent, "team-lead", "task result", "completed");
-        }
-        steps.push({ node: "team-lead (summary)", output: data.output });
+      // Store job context — the team.complete WS event will finish rendering
+      _pendingTeamJob = { jobId: data.job_id, model };
+      addSystemBubble(`Team started (job ${data.job_id}). Streaming results...`);
 
-        addChatBubble("assistant", {
-          steps,
-          agent_costs: data.agent_costs || {},
-          usage: { output_tokens: data.total_tokens, model },
-          elapsed_s: data.elapsed_s,
-        });
-      } else {
-        addChatBubble("assistant", `Team error: ${data.error || "Unknown error"}`);
-      }
+      // Don't call setRunning(false) here — the WS team.complete handler will do it
+
     } catch (e) {
       addChatBubble("assistant", `Team run failed: ${e.message}`);
+      setRunning(false);
+    }
+  }
+
+  function _handleTeamComplete(evt) {
+    if (!_pendingTeamJob) return;
+    const data = evt.data || {};
+    const model = _pendingTeamJob.model;
+    _pendingTeamJob = null;
+
+    // Show fallback log if any
+    const fbLog = data.fallback_log || [];
+    if (fbLog.length > 0) {
+      const fbHtml = fbLog.map(f => {
+        const icon = f.status === "ok" ? "&#10003;" : "&#10007;";
+        const cls = f.status === "ok" ? "fb-ok" : "fb-fail";
+        return `<span class="fb-entry ${cls}">${icon} ${esc(f.agent || "")} → ${esc(f.model)} [${f.status}] ${esc(f.detail || "")}</span>`;
+      }).join("");
+      addSystemBubble("Fallback log:");
+      const fbBubble = document.createElement("div");
+      fbBubble.className = "chat-bubble system fallback-log";
+      fbBubble.innerHTML = fbHtml;
+      $chatMessages.appendChild(fbBubble);
+    }
+
+    if (data.success) {
+      const steps = [];
+      if (data.plan) {
+        steps.push({ node: "team-lead (plan)", output: data.plan });
+        const outputs = data.agent_outputs || {};
+        for (const agent of Object.keys(outputs)) {
+          addInteraction("team-lead", agent, "delegated task", "completed");
+        }
+      }
+      const outputs = data.agent_outputs || {};
+      for (const [agent, output] of Object.entries(outputs)) {
+        steps.push({ node: agent, output: output });
+        addInteraction(agent, "team-lead", "task result", "completed");
+      }
+      steps.push({ node: "team-lead (summary)", output: data.output });
+
+      addChatBubble("assistant", {
+        steps,
+        agent_costs: data.agent_costs || {},
+        usage: { output_tokens: data.total_tokens, model },
+        elapsed_s: data.elapsed_s,
+      });
+    } else {
+      addChatBubble("assistant", `Team error: ${data.error || "Unknown error"}`);
     }
 
     setRunning(false);
@@ -1449,6 +1466,14 @@
         $chatMessages.scrollTop = $chatMessages.scrollHeight;
       }
     }
+    // Team lifecycle events
+    if (evt.event_type === "team.started" && _pendingTeamJob) {
+      addSystemBubble(`Agents planning: ${esc(evt.data.task || "").slice(0, 100)}...`);
+    }
+    if (evt.event_type === "team.complete") {
+      _handleTeamComplete(evt);
+    }
+
     // Cache events
     if (evt.event_type === "cache.hit" || evt.event_type === "cache.miss") {
       renderCachePanel();
@@ -2076,6 +2101,40 @@
     }
   });
 
+  // --- Explorer resize handles ---
+  (function initExplorerResize() {
+    const layout = $("explorer-layout");
+    if (!layout) return;
+    const handles = layout.querySelectorAll(".explorer-resize-handle");
+    handles.forEach((handle) => {
+      let startX = 0, startWidth = 0, target = null;
+      handle.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const panelId = handle.dataset.panel;
+        target = panelId === "sessions" ? $explorerSessions : $explorerFiles;
+        startX = e.clientX;
+        startWidth = target.getBoundingClientRect().width;
+        handle.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+        const onMove = (ev) => {
+          const dx = ev.clientX - startX;
+          const newW = Math.max(100, Math.min(600, startWidth + dx));
+          target.style.width = newW + "px";
+        };
+        const onUp = () => {
+          handle.classList.remove("dragging");
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      });
+    });
+  })();
+
   async function openExplorer() {
     $explorerModal.classList.remove("hidden");
     $explorerSessions.innerHTML = '<div class="empty-state">Loading...</div>';
@@ -2122,7 +2181,11 @@
     try {
       const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/files`);
       const data = await resp.json();
-      renderExplorerFiles(sessionId, data.files || []);
+      if (data.tree && data.tree.length > 0) {
+        renderExplorerTree(sessionId, data.tree);
+      } else {
+        renderExplorerFlatFiles(sessionId, data.files || []);
+      }
     } catch (e) {
       $explorerFiles.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
     }
@@ -2146,15 +2209,60 @@
     return map[ext] || "plaintext";
   }
 
-  function renderExplorerFiles(sessionId, files) {
+  function renderExplorerTree(sessionId, tree) {
+    if (!tree.length) {
+      $explorerFiles.innerHTML = '<div class="empty-state">Empty session</div>';
+      return;
+    }
+
+    function buildNode(node) {
+      if (node.type === "directory") {
+        const childrenHtml = (node.children || []).map(buildNode).join("");
+        return `<div class="explorer-tree-folder">
+          <div class="explorer-tree-label" data-type="folder">
+            <span class="explorer-tree-arrow">\u25bc</span>
+            <span class="explorer-tree-icon">\ud83d\udcc1</span>
+            <span class="explorer-tree-name">${esc(node.name)}</span>
+          </div>
+          <div class="explorer-tree-children">${childrenHtml}</div>
+        </div>`;
+      }
+      return `<div class="explorer-file-item" data-path="${esc(node.path)}">
+        <span class="explorer-file-icon">${fileIcon(node.name)}</span>
+        <span class="explorer-file-name" title="${esc(node.path)}">${esc(node.name)}</span>
+        <span class="explorer-file-size">${formatBytes(node.size || 0)}</span>
+      </div>`;
+    }
+
+    $explorerFiles.innerHTML = tree.map(buildNode).join("");
+
+    // Toggle folder collapse
+    $explorerFiles.querySelectorAll(".explorer-tree-label").forEach((label) => {
+      label.addEventListener("click", () => {
+        label.parentElement.classList.toggle("collapsed");
+      });
+    });
+
+    // File click -> load preview
+    $explorerFiles.querySelectorAll(".explorer-file-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        $explorerFiles.querySelectorAll(".explorer-file-item").forEach((x) => x.classList.remove("active"));
+        el.classList.add("active");
+        loadExplorerPreview(sessionId, el.dataset.path);
+      });
+    });
+  }
+
+  function renderExplorerFlatFiles(sessionId, files) {
     if (!files.length) {
       $explorerFiles.innerHTML = '<div class="empty-state">Empty session</div>';
       return;
     }
     $explorerFiles.innerHTML = files.map((f) => {
-      return `<div class="explorer-file-item" data-name="${esc(f.name)}">
+      const path = f.path || f.name;
+      return `<div class="explorer-file-item" data-path="${esc(path)}">
         <span class="explorer-file-icon">${fileIcon(f.name)}</span>
-        <span class="explorer-file-name" title="${esc(f.name)}">${esc(f.name)}</span>
+        <span class="explorer-file-name" title="${esc(path)}">${esc(f.name)}</span>
         <span class="explorer-file-size">${formatBytes(f.size)}</span>
       </div>`;
     }).join("");
@@ -2162,32 +2270,32 @@
       el.addEventListener("click", () => {
         $explorerFiles.querySelectorAll(".explorer-file-item").forEach((x) => x.classList.remove("active"));
         el.classList.add("active");
-        loadExplorerPreview(sessionId, el.dataset.name);
+        loadExplorerPreview(sessionId, el.dataset.path);
       });
     });
   }
 
-  async function loadExplorerPreview(sessionId, filename) {
+  async function loadExplorerPreview(sessionId, filePath) {
     $explorerPreview.innerHTML = '<div class="empty-state">Loading...</div>';
     try {
-      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(filename)}`);
+      const resp = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(filePath)}`);
       const data = await resp.json();
       if (data.error) {
         $explorerPreview.innerHTML = `<div class="empty-state">${esc(data.error)}</div>`;
         return;
       }
+      const filename = filePath.split("/").pop();
       const lang = detectLanguage(filename);
-      const downloadUrl = `/api/jobs/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(filename)}`;
       $explorerPreview.innerHTML = `<div class="explorer-preview-header">
-        <span class="explorer-preview-filename">${esc(filename)}</span>
+        <span class="explorer-preview-filename">${esc(filePath)}</span>
         <span class="explorer-preview-size">${formatBytes(data.size)}</span>
-        <button class="btn-explorer-download-file" data-url="${esc(downloadUrl)}">Download</button>
+        <button class="btn-explorer-download-file">Download</button>
       </div><pre><code class="${esc(lang)}">${esc(data.content)}</code></pre>`;
       // Apply syntax highlighting
       const codeEl = $explorerPreview.querySelector("code");
       if (codeEl && window.hljs) window.hljs.highlightElement(codeEl);
       // Wire download button
-      $explorerPreview.querySelector(".btn-explorer-download-file")?.addEventListener("click", (e) => {
+      $explorerPreview.querySelector(".btn-explorer-download-file")?.addEventListener("click", () => {
         const blob = new Blob([data.content], { type: "text/plain" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);

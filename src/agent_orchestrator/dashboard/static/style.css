@@ -874,7 +874,7 @@ main {
 .history-record-cost { margin-left: 8px; color: var(--green); }
 
 /* === Explorer Modal === */
-.modal-explorer { width: 950px; max-height: 85vh; }
+.modal-explorer { width: 95vw; max-width: 1400px; max-height: 90vh; display: flex; flex-direction: column; }
 .explorer-header-actions { display: flex; align-items: center; gap: 8px; }
 .btn-explorer-action {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
@@ -884,25 +884,37 @@ main {
 .btn-explorer-action:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn-explorer-action:disabled { opacity: 0.4; cursor: default; }
 .explorer-layout {
-    display: flex; flex: 1; overflow: hidden; min-height: 0; height: 60vh;
+    display: flex; flex: 1; overflow: hidden; min-height: 0; height: 75vh;
 }
 .explorer-sessions {
-    width: 220px; flex-shrink: 0; border-right: 1px solid var(--border);
+    width: 220px; min-width: 140px; flex-shrink: 0;
     overflow-y: auto; padding: 8px;
 }
 .explorer-files {
-    width: 240px; flex-shrink: 0; border-right: 1px solid var(--border);
+    width: 280px; min-width: 160px; flex-shrink: 0;
     overflow-y: auto; padding: 8px;
 }
 .explorer-preview {
-    flex: 1; overflow: auto; padding: 0; min-width: 0; background: var(--bg-card);
+    flex: 1; overflow: auto; padding: 0; min-width: 200px; background: var(--bg-card);
+    display: flex; flex-direction: column;
 }
 .explorer-preview pre {
     margin: 0; padding: 12px; font-size: 12px; line-height: 1.5;
-    white-space: pre-wrap; word-break: break-word; overflow-x: auto;
+    white-space: pre; overflow: auto; flex: 1; min-height: 0;
+    tab-size: 4;
 }
 .explorer-preview code.hljs {
     background: transparent; padding: 0;
+}
+/* Drag resize handles between panels */
+.explorer-resize-handle {
+    width: 5px; flex-shrink: 0; cursor: col-resize;
+    background: var(--border); transition: background 0.15s;
+    position: relative;
+}
+.explorer-resize-handle:hover,
+.explorer-resize-handle.dragging {
+    background: var(--accent);
 }
 .explorer-session-item {
     padding: 8px 10px; border-radius: 6px; cursor: pointer;
@@ -919,16 +931,47 @@ main {
 .explorer-session-meta {
     font-size: 9px; color: var(--text-dim); margin-top: 2px;
 }
+/* Tree view styles */
+.explorer-tree-folder {
+    user-select: none;
+}
+.explorer-tree-label {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 6px; border-radius: 4px; cursor: pointer;
+    font-size: 12px; color: var(--text); transition: background 0.1s;
+}
+.explorer-tree-label:hover { background: var(--bg-hover); }
+.explorer-tree-arrow {
+    font-size: 10px; width: 14px; text-align: center; flex-shrink: 0;
+    color: var(--text-dim); transition: transform 0.15s;
+    display: inline-block;
+}
+.explorer-tree-folder.collapsed > .explorer-tree-label > .explorer-tree-arrow {
+    transform: rotate(-90deg);
+}
+.explorer-tree-folder.collapsed > .explorer-tree-children {
+    display: none;
+}
+.explorer-tree-children {
+    padding-left: 16px;
+}
+.explorer-tree-icon {
+    font-size: 13px; flex-shrink: 0;
+}
+.explorer-tree-name {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .explorer-file-item {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 8px; border-radius: 5px; cursor: pointer;
-    border: 1px solid transparent; margin-bottom: 2px; transition: all 0.15s;
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 6px; border-radius: 4px; cursor: pointer;
+    border: 1px solid transparent; margin-bottom: 1px; transition: all 0.15s;
+    font-size: 12px;
 }
 .explorer-file-item:hover { background: var(--bg-hover); }
 .explorer-file-item.active {
     background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3);
 }
-.explorer-file-icon { font-size: 14px; flex-shrink: 0; }
+.explorer-file-icon { font-size: 13px; flex-shrink: 0; }
 .explorer-file-name {
     font-size: 12px; color: var(--text); flex: 1; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -940,6 +983,7 @@ main {
     display: flex; align-items: center; justify-content: space-between;
     padding: 8px 12px; border-bottom: 1px solid var(--border);
     background: var(--bg); position: sticky; top: 0; z-index: 1;
+    flex-shrink: 0;
 }
 .explorer-preview-filename {
     font-family: var(--font-mono); font-size: 11px; color: var(--accent);
