@@ -81,24 +81,24 @@ groups:
           summary: "S3 bucket {{ $labels.bucket }} exceeds 10 GB"
           description: "Bucket size is {{ $value | humanize1024 }}."
 
-      # Graph node hung > 60s
+      # Graph node hung > 30s
       - alert: GraphNodeHung
-        expr: orchestrator_graph_node_duration_seconds_sum / orchestrator_graph_node_duration_seconds_count > 60
+        expr: orchestrator_graph_node_duration_seconds_sum / orchestrator_graph_node_duration_seconds_count > 30
         for: 1m
         labels:
           severity: warning
         annotations:
-          summary: "Graph node average duration > 60s"
+          summary: "Graph node average duration > 30s"
           description: "Node {{ $labels.node }} avg duration is {{ $value }}s."
 
-      # LLM call slow > 30s average
+      # LLM call slow > 15s average
       - alert: LLMCallSlow
-        expr: orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count > 30
+        expr: orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count > 15
         for: 2m
         labels:
           severity: warning
         annotations:
-          summary: "LLM call average latency > 30s"
+          summary: "LLM call average latency > 15s"
           description: "Provider {{ $labels.provider }} avg latency is {{ $value }}s."
 
       # Frontend error spike
@@ -113,8 +113,8 @@ groups:
 
       # Provider degradation
       - alert: ProviderDegraded
-        expr: orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count > 45
-        for: 5m
+        expr: orchestrator_llm_call_duration_seconds_sum / orchestrator_llm_call_duration_seconds_count > 25
+        for: 3m
         labels:
           severity: critical
         annotations:

@@ -255,23 +255,23 @@ Or in Grafana: histogram panel on `llm_call_duration_seconds` with provider/mode
 ## 6. New Alerts (24h granularity)
 
 ```yaml
-# Graph node hung > 60s (catches stuck nodes before the 300s overall timeout)
+# Graph node hung > 30s (catches stuck nodes before the 300s overall timeout)
 - alert: GraphNodeHung
-  expr: histogram_quantile(0.99, graph_node_duration_seconds_bucket) > 60
+  expr: histogram_quantile(0.99, graph_node_duration_seconds_bucket) > 30
   for: 1m
   labels:
     severity: warning
   annotations:
-    summary: "Graph node p99 latency > 60s"
+    summary: "Graph node p99 latency > 30s"
 
-# LLM call without response > 30s
+# LLM call without response > 15s
 - alert: LLMCallSlow
-  expr: histogram_quantile(0.95, llm_call_duration_seconds_bucket) > 30
+  expr: histogram_quantile(0.95, llm_call_duration_seconds_bucket) > 15
   for: 2m
   labels:
     severity: warning
   annotations:
-    summary: "LLM call p95 latency > 30s (provider: {{ $labels.provider }})"
+    summary: "LLM call p95 latency > 15s (provider: {{ $labels.provider }})"
 
 # Frontend error spike
 - alert: FrontendErrorSpike
@@ -294,7 +294,7 @@ Or in Grafana: histogram panel on `llm_call_duration_seconds` with provider/mode
 # Provider degradation (error rate spike in 1h window)
 - alert: ProviderDegraded
   expr: rate(llm_call_errors_total[1h]) / rate(llm_call_total[1h]) > 0.2
-  for: 5m
+  for: 3m
   labels:
     severity: critical
   annotations:
