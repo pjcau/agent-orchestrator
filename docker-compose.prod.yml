@@ -163,8 +163,8 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafanadata:/var/lib/grafana
-    expose:
-      - "3000"
+    ports:
+      - "127.0.0.1:3000:3000"  # localhost only — access via SSH tunnel
     depends_on:
       - prometheus
     restart: unless-stopped

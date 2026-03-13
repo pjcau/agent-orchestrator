@@ -28,34 +28,32 @@ jobs:
           echo "========================================="
           echo "1. Docker containers status"
           echo "========================================="
-          $SSH_CMD "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'tempo|grafana|prometheus|dashboard'"
+          $SSH_CMD "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'tempo|grafana|prometheus|dashboard'" || true
 
           echo ""
           echo "========================================="
           echo "2. Tempo health check"
           echo "========================================="
           $SSH_CMD "curl -s http://localhost:3200/ready && echo ' (Tempo ready)' || echo 'Tempo NOT ready'"
-          $SSH_CMD "curl -s http://localhost:3200/status/buildinfo | head -5 || echo 'Cannot reach Tempo'"
+          $SSH_CMD "curl -s http://localhost:3200/status/buildinfo | head -5" || echo "Cannot reach Tempo"
 
           echo ""
           echo "========================================="
-          echo "3. Grafana health"
+          echo "3. Grafana health (port 3000 localhost-only)"
           echo "========================================="
-          $SSH_CMD "curl -s -u $GF_AUTH $GF/api/health"
-          echo ""
+          $SSH_CMD "curl -sf -u $GF_AUTH $GF/api/health && echo '' || echo 'Grafana NOT reachable — check port mapping'"
 
           echo ""
           echo "========================================="
           echo "4. Grafana datasources"
           echo "========================================="
-          $SSH_CMD "curl -s -u $GF_AUTH $GF/api/datasources | python3 -m json.tool"
+          $SSH_CMD "curl -s -u $GF_AUTH $GF/api/datasources | python3 -m json.tool" || echo "Could not fetch datasources"
 
           echo ""
           echo "========================================="
           echo "5. Test Tempo datasource"
           echo "========================================="
-          # Get Tempo datasource ID
-          TEMPO_UID=$($SSH_CMD "curl -s -u $GF_AUTH $GF/api/datasources | python3 -c \"import sys,json; ds=json.load(sys.stdin); print(next((d['uid'] for d in ds if d['type']=='tempo'),''))\"")
+          TEMPO_UID=$($SSH_CMD "curl -s -u $GF_AUTH $GF/api/datasources | python3 -c \"import sys,json; ds=json.load(sys.stdin); print(next((d['uid'] for d in ds if d['type']=='tempo'),''))\"" 2>/dev/null) || true
           if [ -n "$TEMPO_UID" ]; then
             echo "Tempo datasource UID: $TEMPO_UID"
             $SSH_CMD "curl -s -u $GF_AUTH $GF/api/datasources/uid/$TEMPO_UID/health" || echo "Health endpoint not available"
@@ -63,14 +61,14 @@ jobs:
             echo "WARNING: Tempo datasource not found! Restarting Grafana..."
             $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml restart grafana"
             sleep 10
-            $SSH_CMD "curl -s -u $GF_AUTH $GF/api/datasources | python3 -c \"import sys,json; [print(f'  - {d[\"name\"]} ({d[\"type\"]})') for d in json.load(sys.stdin)]\""
+            $SSH_CMD "curl -s -u $GF_AUTH $GF/api/datasources | python3 -c \"import sys,json; [print(f'  - {d[\\\"name\\\"]} ({d[\\\"type\\\"]})') for d in json.load(sys.stdin)]\"" || echo "Still cannot fetch datasources"
           fi
 
           echo ""
           echo "========================================="
           echo "6. Dashboard /metrics (new OTel metrics)"
           echo "========================================="
-          $SSH_CMD "curl -sk https://localhost:5005/metrics 2>/dev/null | grep -E 'orchestrator_(frontend_errors|llm_call|graph_node|agent_stalls)'"
+          $SSH_CMD "curl -sk https://localhost:5005/metrics 2>/dev/null | grep -E 'orchestrator_(frontend_errors|llm_call|graph_node|agent_stalls)'" || echo "No OTel metrics found yet"
 
           echo ""
           echo "========================================="
@@ -83,8 +81,8 @@ jobs:
               for folder, groups in data.items():
                   for group in groups:
                       for rule in group.get('rules', []):
-                          print(f'  [{folder}] {rule.get(\"grafana_alert\", {}).get(\"title\", \"?\")}')
-          except: print('  Could not parse alert rules')
+                          print(f'  [{folder}] {rule.get(\\\"grafana_alert\\\", {}).get(\\\"title\\\", \\\"?\\\")}')
+          except: print('  No alert rules found')
           \"" || echo "Could not fetch alert rules"
 
           echo ""
@@ -94,41 +92,39 @@ jobs:
           $SSH_CMD "curl -s http://localhost:9090/api/v1/rules 2>/dev/null | python3 -c \"
           import sys, json
           data = json.load(sys.stdin)
+          found = False
           for g in data.get('data', {}).get('groups', []):
               for r in g.get('rules', []):
                   name = r.get('name', '?')
                   state = r.get('state', '?')
                   if name in ('GraphNodeHung', 'LLMCallSlow', 'FrontendErrorSpike', 'ProviderDegraded'):
                       print(f'  {name}: {state}')
+                      found = True
+          if not found: print('  No matching alert rules found')
           \"" || echo "Could not fetch Prometheus rules"
 
           echo ""
           echo "========================================="
           echo "9. Create LLM Latency panel in Orchestrator dashboard"
           echo "========================================="
-          # Check if orchestrator dashboard exists
-          DASH_UID=$($SSH_CMD "curl -s -u $GF_AUTH '$GF/api/search?query=orchestrator&type=dash-db' | python3 -c \"import sys,json; ds=json.load(sys.stdin); print(ds[0]['uid'] if ds else '')\"" 2>/dev/null)
+          DASH_UID=$($SSH_CMD "curl -s -u $GF_AUTH '$GF/api/search?query=orchestrator&type=dash-db' | python3 -c \"import sys,json; ds=json.load(sys.stdin); print(ds[0]['uid'] if ds else '')\"" 2>/dev/null) || true
 
           if [ -n "$DASH_UID" ]; then
             echo "Found orchestrator dashboard: $DASH_UID"
-            # Fetch current dashboard, add panel, save
             $SSH_CMD "
               DASH=\$(curl -s -u $GF_AUTH $GF/api/dashboards/uid/$DASH_UID)
-              python3 -c \"
+              echo \"\$DASH\" | python3 << 'PYEOF'
           import sys, json
 
-          dash = json.loads(''''\$(echo \$DASH | sed \"s/'/'\\\\\\''/g\")'''')
+          dash = json.load(sys.stdin)
           db = dash.get('dashboard', {})
           panels = db.get('panels', [])
 
-          # Check if panel already exists
           if any(p.get('title') == 'LLM Avg Latency (s)' for p in panels):
               print('Panel already exists, skipping')
               sys.exit(0)
 
-          # Find max panel id
           max_id = max((p.get('id', 0) for p in panels), default=0)
-
           new_panel = {
               'id': max_id + 1,
               'title': 'LLM Avg Latency (s)',
@@ -159,19 +155,18 @@ jobs:
           db['panels'] = panels
           db.pop('version', None)
           db.pop('id', None)
-          payload = json.dumps({'dashboard': db, 'overwrite': True})
-          print(payload)
-          \" > /tmp/dash_update.json 2>/dev/null
+          print(json.dumps({'dashboard': db, 'overwrite': True}))
+          PYEOF
+            " > /tmp/dash_payload.json 2>/dev/null
 
-              if [ -s /tmp/dash_update.json ] && grep -q 'panels' /tmp/dash_update.json; then
-                curl -s -u $GF_AUTH -X POST $GF/api/dashboards/db \
-                  -H 'Content-Type: application/json' \
-                  -d @/tmp/dash_update.json | python3 -c 'import sys,json; r=json.load(sys.stdin); print(f\"  Result: {r.get(\"status\",\"?\")}, URL: {r.get(\"url\",\"?\")}\")'
-                rm -f /tmp/dash_update.json
-              else
-                echo '  Skipped (panel exists or parse error)'
-              fi
-            "
+            if [ -s /tmp/dash_payload.json ] && grep -q panels /tmp/dash_payload.json; then
+              # Upload the updated dashboard
+              cat /tmp/dash_payload.json | $SSH_CMD "cat > /tmp/dash_update.json && curl -s -u $GF_AUTH -X POST $GF/api/dashboards/db -H 'Content-Type: application/json' -d @/tmp/dash_update.json && rm -f /tmp/dash_update.json"
+              rm -f /tmp/dash_payload.json
+            else
+              echo "  Skipped (panel exists or parse error)"
+              rm -f /tmp/dash_payload.json
+            fi
           else
             echo "Orchestrator dashboard not found — will use provisioned JSON instead"
           fi
@@ -185,9 +180,9 @@ jobs:
           try:
               cps = json.load(sys.stdin)
               for cp in cps:
-                  print(f'  {cp.get(\"name\", \"?\")} ({cp.get(\"type\", \"?\")}) — uid: {cp.get(\"uid\", \"?\")}')
+                  print(f'  {cp.get(\\\"name\\\", \\\"?\\\")} ({cp.get(\\\"type\\\", \\\"?\\\")}) — uid: {cp.get(\\\"uid\\\", \\\"?\\\")}')
           except: print('  Could not parse contact points')
-          \""
+          \"" || echo "Could not fetch contact points"
 
           echo ""
           echo "========================================="
