@@ -32,7 +32,7 @@ jobs:
           SERVICES: ${{ github.event.inputs.services }}
         run: |
           SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
-          APP_DIR="/home/ec2-user/agent-orchestrator"
+          APP_DIR="/opt/agent-orchestrator"
           mkdir -p logs
 
           # System info
@@ -44,7 +44,7 @@ jobs:
           for svc in "${SVC_LIST[@]}"; do
             svc=$(echo "$svc" | xargs)  # trim whitespace
             echo "Fetching logs for: $svc"
-            $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml logs --tail=$TAIL --no-color $svc" > "logs/${svc}.log" 2>&1 || echo "Failed to fetch $svc logs" > "logs/${svc}.log"
+            $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=$TAIL --no-color $svc" > "logs/${svc}.log" 2>&1 || echo "Failed to fetch $svc logs" > "logs/${svc}.log"
           done
 
           # Recent job logs (last 5 sessions)
