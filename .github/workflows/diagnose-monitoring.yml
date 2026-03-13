@@ -1,0 +1,68 @@
+name: Diagnose Monitoring
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Diagnose monitoring stack
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ec2-user
+        run: |
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
+          APP_DIR="/opt/agent-orchestrator"
+          mkdir -p diag
+
+          echo "=== 1. Container status ==="
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod ps" > diag/containers.txt 2>&1
+
+          echo "=== 2. Prometheus targets (scrape health) ==="
+          $SSH_CMD "docker exec \$(docker ps -q -f name=prometheus) wget -qO- http://localhost:9090/api/v1/targets 2>/dev/null | python3 -m json.tool" > diag/prometheus-targets.json 2>&1
+
+          echo "=== 3. Dashboard /metrics endpoint (from inside Docker network) ==="
+          $SSH_CMD "docker exec \$(docker ps -q -f name=prometheus) wget -qO- --no-check-certificate https://dashboard:5005/metrics 2>/dev/null | head -80" > diag/metrics-sample.txt 2>&1
+
+          echo "=== 4. Prometheus query: orchestrator_requests_total ==="
+          $SSH_CMD "docker exec \$(docker ps -q -f name=prometheus) wget -qO- 'http://localhost:9090/api/v1/query?query=orchestrator_requests_total' 2>/dev/null" > diag/prom-query-requests.json 2>&1
+
+          echo "=== 5. Prometheus query: orchestrator_llm_call_duration_seconds_count ==="
+          $SSH_CMD "docker exec \$(docker ps -q -f name=prometheus) wget -qO- 'http://localhost:9090/api/v1/query?query=orchestrator_llm_call_duration_seconds_count' 2>/dev/null" > diag/prom-query-llm.json 2>&1
+
+          echo "=== 6. Prometheus query: up (all targets) ==="
+          $SSH_CMD "docker exec \$(docker ps -q -f name=prometheus) wget -qO- 'http://localhost:9090/api/v1/query?query=up' 2>/dev/null" > diag/prom-query-up.json 2>&1
+
+          echo "=== 7. Tempo ready check ==="
+          $SSH_CMD "docker exec \$(docker ps -q -f name=tempo) wget -qO- http://localhost:3200/ready 2>/dev/null" > diag/tempo-ready.txt 2>&1
+
+          echo "=== 8. Grafana datasources ==="
+          $SSH_CMD "docker exec \$(docker ps -q -f name=grafana) wget -qO- http://localhost:3000/api/datasources 2>/dev/null" > diag/grafana-datasources.json 2>&1
+
+          echo "=== 9. Prometheus logs (last 50 lines) ==="
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=50 --no-color prometheus" > diag/prometheus-logs.txt 2>&1
+
+          echo "=== 10. Dashboard logs (last 50 lines) ==="
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=50 --no-color dashboard" > diag/dashboard-logs.txt 2>&1
+
+          echo "=== 11. Tempo logs (last 30 lines) ==="
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=30 --no-color tempo" > diag/tempo-logs.txt 2>&1
+
+          echo "=== Done ==="
+          ls -la diag/
+
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-diag-${{ github.run_id }}
+          path: diag/
+          retention-days: 7

@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import functools
+import time
 from typing import Any
 
 from ..core.agent import Agent, Task, TaskResult, TaskStatus
@@ -16,16 +17,18 @@ from ..core.orchestrator import Orchestrator, OrchestratorResult
 from ..core.cooperation import CooperationProtocol, TaskAssignment, TaskReport
 from ..core.cache import InMemoryCache
 from .events import Event, EventBus, EventType
+from .tracing_metrics import record_llm_duration, record_node_duration, record_stall
 
 
 def instrument_all(bus: EventBus | None = None) -> None:
-    """Instrument all core classes to emit dashboard events."""
+    """Instrument all core classes to emit dashboard events and tracing metrics."""
     bus = bus or EventBus.get()
     _instrument_agent(bus)
     _instrument_orchestrator(bus)
     _instrument_graph(bus)
     _instrument_cooperation(bus)
     _instrument_cache(bus)
+    _instrument_provider_metrics()
 
 
 def _instrument_agent(bus: EventBus) -> None:
@@ -52,6 +55,7 @@ def _instrument_agent(bus: EventBus) -> None:
             event_type = EventType.AGENT_COMPLETE
         elif result.status == TaskStatus.STALLED:
             event_type = EventType.AGENT_STALLED
+            record_stall(self.config.provider_key)
         else:
             event_type = EventType.AGENT_ERROR
 
@@ -144,7 +148,9 @@ def _instrument_graph(bus: EventBus) -> None:
             )
         )
 
+        t0 = time.monotonic()
         result = await original_single(self, node_name, state, steps, step_index, thread_id)
+        record_node_duration(node_name, time.monotonic() - t0)
 
         if result.interrupted:
             await bus.emit(
@@ -274,3 +280,20 @@ def _instrument_cache(bus: EventBus) -> None:
         return result
 
     InMemoryCache.get = patched_get
+
+
+def _instrument_provider_metrics() -> None:
+    """Monkey-patch Provider.traced_complete to record LLM call durations."""
+    from ..core.provider import Provider
+
+    original_traced_complete = Provider.traced_complete
+
+    @functools.wraps(original_traced_complete)
+    async def patched_traced_complete(self, *args, **kwargs):
+        t0 = time.monotonic()
+        result = await original_traced_complete(self, *args, **kwargs)
+        provider_name = type(self).__name__.lower().replace("provider", "")
+        record_llm_duration(provider_name, time.monotonic() - t0)
+        return result
+
+    Provider.traced_complete = patched_traced_complete

@@ -1,6 +1,6 @@
 # Observability Upgrade — OpenTelemetry + Fine-Grained Monitoring
 
-> **Status: Implemented.** Phases 1 and 2 (distributed tracing, metrics bridge, alert pipeline) are live in production. See section 11 for the alert-to-PR pipeline added after initial implementation.
+> **Status: Implemented.** Phases 1 and 2 (distributed tracing, metrics bridge, alert pipeline) are live in production. Tracing is initialized in `server.py` at startup (`setup_tracing()` + `instrument_fastapi()`). The `instrument.py` monkey-patches feed `tracing_metrics` collectors (LLM durations, graph node durations, agent stalls) which are exported via `/metrics` for Prometheus. Tempo receives OTel spans via OTLP HTTP. See section 11 for the alert-to-PR pipeline added after initial implementation.
 
 ## 1. Executive Summary
 

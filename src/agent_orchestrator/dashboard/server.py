@@ -75,6 +75,16 @@ def main() -> None:
 
     app = create_dashboard_app(bus)
 
+    # Initialize OpenTelemetry tracing (no-op if otel packages not installed)
+    try:
+        from ..core.tracing import instrument_fastapi, setup_tracing
+
+        setup_tracing()
+        instrument_fastapi(app)
+        logger.info("OpenTelemetry tracing initialized")
+    except Exception:
+        pass  # Tracing is optional
+
     # HTTPS always — auto-generate self-signed certs if missing
     cert_dir = Path("certs")
     _ensure_certs(cert_dir)
