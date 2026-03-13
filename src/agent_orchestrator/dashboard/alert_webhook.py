@@ -20,6 +20,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_log(value: str, max_len: int = 200) -> str:
+    """Sanitize a string for safe log output (no newlines, no control chars)."""
+    return value.replace("\n", " ").replace("\r", " ")[:max_len]
+
+
 class AlertHandler:
     """Processes Grafana webhook alerts and creates GitHub issues."""
 
@@ -56,7 +61,7 @@ class AlertHandler:
 
         # Only create issues for firing alerts, not resolved ones
         if status == "resolved":
-            logger.info("Alert resolved: %s", alert_name)
+            logger.info("Alert resolved: %s", _sanitize_log(alert_name))
             return {"status": "resolved", "alert": alert_name}
 
         # Collect diagnostic context
@@ -185,10 +190,10 @@ class AlertHandler:
             )
             if result.returncode == 0:
                 issue_url = result.stdout.strip()
-                logger.info("Created alert issue: %s", issue_url)
+                logger.info("Created alert issue: %s", _sanitize_log(issue_url))
                 return issue_url
             else:
-                logger.warning("gh issue create failed: %s", result.stderr[:500])
+                logger.warning("gh issue create failed: %s", _sanitize_log(result.stderr, 500))
                 return None
         except Exception as e:
             logger.warning("Failed to create GitHub issue: %s", e)

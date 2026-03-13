@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent_orchestrator.dashboard.alert_webhook import AlertHandler, _find_gh_cli
+from agent_orchestrator.dashboard.alert_webhook import AlertHandler, _find_gh_cli, _sanitize_log
 
 
 # ---------------------------------------------------------------------------
@@ -289,3 +289,44 @@ async def test_alert_recent_endpoint_after_webhook(monkeypatch):
     alerts = resp.json()
     assert len(alerts) == 1
     assert alerts[0]["alert_name"] == "LowDisk"
+
+
+# ---------------------------------------------------------------------------
+# _sanitize_log — Log Injection prevention (CWE-117)
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_log_strips_newlines():
+    """Newlines in untrusted input must be replaced to prevent log injection."""
+    malicious = "Normal alert\nINFO:fake.logger:Injected log line\rMore injection"
+    result = _sanitize_log(malicious)
+    assert "\n" not in result
+    assert "\r" not in result
+    assert result == "Normal alert INFO:fake.logger:Injected log line More injection"
+
+
+def test_sanitize_log_truncates_long_input():
+    result = _sanitize_log("x" * 500)
+    assert len(result) == 200
+
+
+def test_sanitize_log_custom_max_len():
+    result = _sanitize_log("abcdef", max_len=3)
+    assert result == "abc"
+
+
+def test_sanitize_log_preserves_safe_strings():
+    safe = "HighCPU — critical"
+    assert _sanitize_log(safe) == safe
+
+
+@pytest.mark.asyncio
+async def test_handle_alert_resolved_sanitizes_log(caplog):
+    """Resolved alert with newlines in title must not inject log lines."""
+    handler = AlertHandler()
+    malicious_title = "FakeAlert\nWARNING:root:injected"
+    with caplog.at_level("INFO"):
+        await handler.handle_alert({"title": malicious_title, "status": "resolved"})
+    for record in caplog.records:
+        assert "\n" not in record.getMessage()
+        assert "injected" in record.getMessage()  # content preserved, just sanitized
