@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Dead code report — find unused definitions under src/.
+"""Dead code & usage report — dual-view analysis of src/ definitions.
 
-Two-view comparison:
-  A) Definitions in src/ NOT used anywhere in src/ (truly dead production code)
-  B) Definitions in src/ NOT used in src/ BUT used in tests/ (test-only — scaffolding never wired up)
+Three views:
+  A) Definitions in src/ used within src/ but NOT in tests/ (needs test coverage)
+  B) Definitions in src/ used in BOTH src/ AND tests/ (production + tested)
+  C) Definitions in src/ NOT used in src/ at all (dead / scaffolding)
 
-Uses vulture for static analysis, then cross-references with grep.
+Uses vulture for dead code detection and grep for cross-referencing.
 """
 
 from __future__ import annotations
@@ -17,44 +18,71 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-# Patterns that indicate false positives — skip these
-FALSE_POSITIVE_PATTERNS = [
-    # FastAPI/Starlette route handlers (decorated with @app.get, @router.post, etc.)
-    r"unused function '(login_page|login_github|callback_github|auth_me|auth_logout|"
-    r"auth_debug|admin_\w+|health|websocket_endpoint|stream_endpoint|"
-    r"prometheus_metrics|snapshot|usage_stats|agent_errors|cache_clear|"
-    r"agent_config|agent_run|team_run|skill_invoke|cost_preview|"
-    r"openrouter_pricing|ollama_pull|ollama_delete|list_files|read_file|"
-    r"new_conversation|clear_conversation|fork_conversation|list_conversations|"
-    r"presets|graph_reset|graph_replay|graph_last_run|download_zip|"
-    r"dispatch|list_jobs|job_detail|session_history|events_endpoint|agents_endpoint|"
-    r"models_endpoint|_startup|jobs_list|jobs_detail|jobs_switch|"
-    r"jobs_restore_conversation|jobs_delete|jobs_files|jobs_file_content|"
-    r"jobs_download_zip)'",
-    # Starlette middleware dispatch
-    r"unused method 'dispatch'",
-    # __aexit__ parameters
-    r"unused variable '(exc_type|exc_val|exc_tb)'",
-    # Enum members (used via string matching or serialisation)
-    r"unused variable '(PENDING|RUNNING|ESCALATED|PERIOD_TASK|PERIOD_SESSION|PERIOD_DAY|"
-    r"EVENT_\w+|GRAPH_EDGE|ARTIFACT_PUBLISHED|PATCH)'",
-    # Dataclass fields (accessed dynamically or serialised)
-    r"unused variable '(parent_task_id|rule_name|triggered_at|threshold|permissions|hit_count)'",
-    # Attributes set in __init__ (used externally)
-    r"unused attribute '(_cache|_cache_policy|_updated|hit_count)'",
-]
+# FastAPI route handlers and other known false positives for "unused" detection
+FALSE_POSITIVE_NAMES = {
+    "login_page",
+    "login_github",
+    "callback_github",
+    "auth_me",
+    "auth_logout",
+    "auth_debug",
+    "health",
+    "websocket_endpoint",
+    "stream_endpoint",
+    "prometheus_metrics",
+    "snapshot",
+    "usage_stats",
+    "agent_errors",
+    "cache_clear",
+    "agent_config",
+    "agent_run",
+    "team_run",
+    "skill_invoke",
+    "cost_preview",
+    "openrouter_pricing",
+    "ollama_pull",
+    "ollama_delete",
+    "list_files",
+    "read_file",
+    "new_conversation",
+    "clear_conversation",
+    "fork_conversation",
+    "list_conversations",
+    "presets",
+    "graph_reset",
+    "graph_replay",
+    "graph_last_run",
+    "download_zip",
+    "dispatch",
+    "list_jobs",
+    "job_detail",
+    "session_history",
+    "events_endpoint",
+    "agents_endpoint",
+    "models_endpoint",
+    "_startup",
+    "jobs_list",
+    "jobs_detail",
+    "jobs_switch",
+    "jobs_restore_conversation",
+    "jobs_delete",
+    "jobs_files",
+    "jobs_file_content",
+    "jobs_download_zip",
+}
 
-FALSE_POSITIVE_RE = re.compile("|".join(FALSE_POSITIVE_PATTERNS))
+# Skip private/dunder methods and short names that cause false grep matches
+SKIP_PATTERN = re.compile(r"^(__.*__|_[a-z]|[a-z]$)")
 
 
 @dataclass
-class Finding:
+class Definition:
     file: str
     line: int
-    kind: str  # function, class, method, variable, attribute, import, unreachable
+    kind: str  # "class", "function", "method"
     name: str
-    confidence: int
-    raw: str
+    src_usages: int = 0  # references in src/ (excluding definition)
+    test_usages: int = 0  # references in tests/
 
     @property
     def category(self) -> str:
@@ -68,57 +96,55 @@ class Finding:
             return "Core"
         return "Other"
 
+    @property
+    def short_file(self) -> str:
+        return self.file.replace("src/agent_orchestrator/", "")
 
-def run_vulture(src_dir: str = "src/", min_confidence: int = 60) -> list[Finding]:
-    """Run vulture and parse output."""
-    result = subprocess.run(
-        ["vulture", src_dir, f"--min-confidence={min_confidence}"],
-        capture_output=True,
-        text=True,
-    )
-    output = result.stdout + result.stderr
-    findings = []
-    pattern = re.compile(
-        r"^(.+?):(\d+): (unused \w+ '(.+?)'|unreachable code after '(.+?)') \((\d+)% confidence\)$"
-    )
-    for line in output.strip().splitlines():
-        m = pattern.match(line.strip())
-        if not m:
+
+def extract_definitions(src_dir: str = "src/") -> list[Definition]:
+    """Extract all class and function/method definitions from Python files."""
+    defs = []
+    src_path = Path(src_dir)
+
+    # Match: class Foo, def bar, async def baz
+    pattern = re.compile(r"^(\s*)(async\s+)?def\s+(\w+)|^(\s*)class\s+(\w+)")
+
+    for py_file in sorted(src_path.rglob("*.py")):
+        rel = str(py_file.relative_to("."))
+        try:
+            lines = py_file.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
             continue
-        file_path = m.group(1)
-        line_no = int(m.group(2))
-        desc = m.group(3)
-        name = m.group(4) or m.group(5) or ""
-        confidence = int(m.group(6))
 
-        kind = "unknown"
-        for k in ("function", "class", "method", "variable", "attribute", "import"):
-            if k in desc:
-                kind = k
-                break
-        if "unreachable" in desc:
-            kind = "unreachable"
+        for i, line in enumerate(lines, 1):
+            m = pattern.match(line)
+            if not m:
+                continue
 
-        findings.append(
-            Finding(
-                file=file_path,
-                line=line_no,
-                kind=kind,
-                name=name,
-                confidence=confidence,
-                raw=line.strip(),
-            )
-        )
-    return findings
+            indent = m.group(1) or m.group(4) or ""
+            if m.group(5):  # class
+                name = m.group(5)
+                kind = "class"
+            else:  # def/async def
+                name = m.group(3)
+                indent_level = len(indent)
+                kind = "method" if indent_level >= 4 else "function"
 
+            # Skip private, dunder, too-short names, and known false positives
+            if SKIP_PATTERN.match(name):
+                continue
+            if name in FALSE_POSITIVE_NAMES:
+                continue
+            if len(name) <= 2:
+                continue
 
-def filter_false_positives(findings: list[Finding]) -> list[Finding]:
-    """Remove known false positives."""
-    return [f for f in findings if not FALSE_POSITIVE_RE.search(f.raw)]
+            defs.append(Definition(file=rel, line=i, kind=kind, name=name))
+
+    return defs
 
 
-def _count_usages(name: str, search_dir: str, exclude_file: str, exclude_line: int) -> int:
-    """Count how many times `name` appears in `search_dir`, excluding the definition."""
+def count_usages(name: str, search_dir: str, exclude_file: str, exclude_line: int) -> int:
+    """Count references to `name` in `search_dir`, excluding the definition itself."""
     if not Path(search_dir).exists():
         return 0
     result = subprocess.run(
@@ -128,120 +154,95 @@ def _count_usages(name: str, search_dir: str, exclude_file: str, exclude_line: i
     )
     count = 0
     for line in result.stdout.strip().splitlines():
+        # Skip the definition line itself
         if f"{exclude_file}:{exclude_line}:" in line:
             continue
         count += 1
     return count
 
 
-def classify_findings(
-    findings: list[Finding],
-) -> tuple[list[Finding], list[Finding]]:
-    """Split findings into two groups:
-
-    Returns:
-        (dead_in_src, test_only)
-        - dead_in_src: not used anywhere in src/ (truly dead)
-        - test_only: not used in src/ but IS used in tests/ (scaffolding)
-    """
-    dead_in_src = []
-    test_only = []
-
-    extra_dirs = ["tests/", "examples/", "scripts/"]
-
-    for f in findings:
-        if f.kind == "unreachable":
-            dead_in_src.append(f)
-            continue
-
-        name = f.name
-        if not name:
-            dead_in_src.append(f)
-            continue
-
-        # Check usage in src/ (excluding definition)
-        src_usages = _count_usages(name, "src/", f.file, f.line)
-
-        if src_usages > 1:
-            # Used in src/ — not dead (vulture false positive)
-            continue
-
-        # Check usage in tests/, examples/, scripts/
-        other_usages = 0
-        for d in extra_dirs:
-            other_usages += _count_usages(name, d, f.file, f.line)
-
-        if other_usages > 0:
-            test_only.append(f)
-        else:
-            dead_in_src.append(f)
-
-    return dead_in_src, test_only
+def classify_definitions(defs: list[Definition]) -> None:
+    """Count src/ and tests/ usages for each definition (in-place)."""
+    total = len(defs)
+    for i, d in enumerate(defs):
+        if (i + 1) % 50 == 0:
+            print(f"  Scanning {i + 1}/{total}...", file=sys.stderr)
+        d.src_usages = count_usages(d.name, "src/", d.file, d.line)
+        d.test_usages = count_usages(d.name, "tests/", d.file, d.line)
 
 
-def _render_section(title: str, description: str, findings: list[Finding]) -> list[str]:
-    """Render a findings section as markdown lines."""
+def _render_section(
+    title: str, description: str, items: list[Definition], show_usages: bool = False
+) -> list[str]:
+    """Render a list of definitions as markdown."""
     lines = [f"# {title}", "", description, ""]
 
-    if not findings:
+    if not items:
         lines.append("*No findings.*")
         lines.append("")
         return lines
 
-    by_category: dict[str, list[Finding]] = defaultdict(list)
-    for f in findings:
-        by_category[f.category].append(f)
+    by_category: dict[str, list[Definition]] = defaultdict(list)
+    for d in items:
+        by_category[d.category].append(d)
 
-    # Summary table
-    lines.append(f"**Total: {len(findings)}**")
+    # Summary
+    lines.append(f"**Total: {len(items)}**")
     lines.append("")
     lines.append("| Category | Count | Breakdown |")
     lines.append("|----------|-------|-----------|")
     for cat in sorted(by_category.keys()):
-        items = by_category[cat]
+        cat_items = by_category[cat]
         kinds: dict[str, int] = defaultdict(int)
-        for f in items:
-            kinds[f.kind] += 1
-        breakdown = ", ".join(f"{v} {k}{'s' if v > 1 else ''}" for k, v in sorted(kinds.items()))
-        lines.append(f"| {cat} | {len(items)} | {breakdown} |")
+        for d in cat_items:
+            kinds[d.kind] += 1
+        breakdown = ", ".join(
+            f"{v} {k}{'es' if k == 'class' else 's'}" for k, v in sorted(kinds.items())
+        )
+        lines.append(f"| {cat} | {len(cat_items)} | {breakdown} |")
     lines.append("")
 
-    # Detailed findings grouped by category → file
+    # Detail by category → file
     for cat in sorted(by_category.keys()):
-        items = by_category[cat]
+        cat_items = by_category[cat]
         lines.append(f"## {cat}")
         lines.append("")
 
-        by_file: dict[str, list[Finding]] = defaultdict(list)
-        for f in items:
-            by_file[f.file].append(f)
+        by_file: dict[str, list[Definition]] = defaultdict(list)
+        for d in cat_items:
+            by_file[d.file].append(d)
 
         for filepath in sorted(by_file.keys()):
             file_items = by_file[filepath]
             lines.append(f"### `{filepath}`")
             lines.append("")
-            for f in sorted(file_items, key=lambda x: x.line):
-                badge = "🔴" if f.confidence >= 90 else "🟡" if f.confidence >= 70 else "⚪"
-                lines.append(
-                    f"- {badge} **L{f.line}** — unused {f.kind} `{f.name}` ({f.confidence}%)"
-                )
+            for d in sorted(file_items, key=lambda x: x.line):
+                usage_info = ""
+                if show_usages:
+                    usage_info = f" (src: {d.src_usages}, tests: {d.test_usages})"
+                lines.append(f"- **L{d.line}** — {d.kind} `{d.name}`{usage_info}")
             lines.append("")
 
     return lines
 
 
-def generate_report(dead_in_src: list[Finding], test_only: list[Finding]) -> str:
-    """Generate dual-view markdown report."""
+def generate_report(
+    src_only: list[Definition],
+    src_and_tests: list[Definition],
+    dead: list[Definition],
+) -> str:
+    """Generate the dual-view report."""
     lines = [
-        "# Dead Code Report — Dual View",
+        "# Code Usage Report — Dual View",
         "",
-        "Two comparisons of definitions in `src/`:",
+        f"Analysis of all public definitions in `src/` ({len(src_only) + len(src_and_tests) + len(dead)} total):",
         "",
-        f"- **Section A — Dead in production** ({len(dead_in_src)}): "
-        "not used anywhere in `src/`. Candidates for removal.",
-        f"- **Section B — Test-only** ({len(test_only)}): "
-        "not used in `src/` but used in `tests/`. "
-        "Scaffolding written but never wired into production code.",
+        f"- **Section A — Used in src/ only** ({len(src_only)}): "
+        "production code WITHOUT test coverage — needs tests.",
+        f"- **Section B — Used in src/ AND tests/** ({len(src_and_tests)}): "
+        "production code WITH test coverage — healthy.",
+        f"- **Section C — Not used in src/** ({len(dead)}): "
+        "dead code or scaffolding (may be used only in tests).",
         "",
         "---",
         "",
@@ -249,10 +250,11 @@ def generate_report(dead_in_src: list[Finding], test_only: list[Finding]) -> str
 
     lines.extend(
         _render_section(
-            "A — Dead in Production (not used in src/)",
-            "These definitions exist in `src/` but are **never referenced by any other "
-            "production code**. Safe candidates for removal or implementation.",
-            dead_in_src,
+            "A — Used in src/ only (no test coverage)",
+            "These definitions are used in production code but have **no references in tests/**. "
+            "Priority candidates for adding test coverage.",
+            src_only,
+            show_usages=True,
         )
     )
 
@@ -261,37 +263,65 @@ def generate_report(dead_in_src: list[Finding], test_only: list[Finding]) -> str
 
     lines.extend(
         _render_section(
-            "B — Test-Only (used in tests/ but not in src/)",
-            "These definitions exist in `src/` and have **test coverage**, but are "
-            "**never called from production code**. They are scaffolding — features "
-            "written and tested but never integrated. Wire them up or remove them.",
-            test_only,
+            "B — Used in src/ AND tests/ (covered)",
+            "These definitions are used in production AND have test coverage. "
+            "This is the healthy, well-connected code.",
+            src_and_tests,
+            show_usages=True,
         )
     )
 
     lines.append("---")
     lines.append("")
-    lines.append("**Legend:** 🔴 ≥90% confidence · 🟡 70-89% · ⚪ 60-69%")
-    lines.append("")
-    lines.append("*Generated by `scripts/dead_code_report.py` using vulture*")
+
+    lines.extend(
+        _render_section(
+            "C — Not used in src/ (dead / scaffolding)",
+            "These definitions exist in `src/` but are **never referenced by production code**. "
+            "Some may be used only in tests (scaffolding). Candidates for wiring up or removal.",
+            dead,
+            show_usages=True,
+        )
+    )
+
+    lines.append("---")
+    lines.append(
+        f"*Generated by `scripts/dead_code_report.py` — "
+        f"{len(src_and_tests)} covered, "
+        f"{len(src_only)} need tests, "
+        f"{len(dead)} dead*"
+    )
 
     return "\n".join(lines)
 
 
 def main() -> int:
-    print("Running vulture analysis on src/...", file=sys.stderr)
-    raw = run_vulture("src/", min_confidence=60)
-    print(f"  Raw findings: {len(raw)}", file=sys.stderr)
+    print("Extracting definitions from src/...", file=sys.stderr)
+    defs = extract_definitions("src/")
+    print(f"  Found {len(defs)} public definitions", file=sys.stderr)
 
-    filtered = filter_false_positives(raw)
-    print(f"  After false-positive filter: {len(filtered)}", file=sys.stderr)
+    print("Counting usages in src/ and tests/...", file=sys.stderr)
+    classify_definitions(defs)
 
-    print("  Classifying: src/-only vs test-only...", file=sys.stderr)
-    dead_in_src, test_only = classify_findings(filtered)
-    print(f"  Dead in production (not in src/): {len(dead_in_src)}", file=sys.stderr)
-    print(f"  Test-only (in tests/ but not src/): {len(test_only)}", file=sys.stderr)
+    # Classify into three buckets
+    src_only = []  # used in src/, not in tests/
+    src_and_tests = []  # used in both
+    dead = []  # not used in src/
 
-    report = generate_report(dead_in_src, test_only)
+    for d in defs:
+        if d.src_usages > 1:  # >1 because definition itself may match
+            if d.test_usages > 0:
+                src_and_tests.append(d)
+            else:
+                src_only.append(d)
+        else:
+            dead.append(d)
+
+    print(f"\n  A — Used in src/ only (no tests): {len(src_only)}", file=sys.stderr)
+    print(f"  B — Used in src/ AND tests/:      {len(src_and_tests)}", file=sys.stderr)
+    print(f"  C — Not used in src/ (dead):       {len(dead)}", file=sys.stderr)
+
+    report = generate_report(src_only, src_and_tests, dead)
 
     report_path = Path("docs/dead-code-report.md")
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -299,8 +329,7 @@ def main() -> int:
     print(f"\nReport written to {report_path}", file=sys.stderr)
 
     print(report)
-
-    return 1 if (dead_in_src or test_only) else 0
+    return 0
 
 
 if __name__ == "__main__":
