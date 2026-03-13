@@ -64,12 +64,13 @@ class TestDockerComposeProd:
         for p in ports:
             assert p.startswith("127.0.0.1:"), f"Prometheus port {p} is not localhost-only"
 
-    def test_grafana_not_exposed_directly(self):
-        """Grafana must not expose ports directly (accessed via Nginx reverse proxy)."""
+    def test_grafana_localhost_only(self):
+        """Grafana port must be localhost-only (SSH tunnel access, external via Nginx)."""
         config = self._load()
-        assert "ports" not in config["services"]["grafana"], "Grafana should use expose, not ports"
-        expose = config["services"]["grafana"].get("expose", [])
-        assert "3000" in [str(p) for p in expose]
+        ports = config["services"]["grafana"].get("ports", [])
+        assert len(ports) > 0, "Grafana should have localhost port mapping"
+        for p in ports:
+            assert p.startswith("127.0.0.1:"), f"Grafana port {p} is not localhost-only"
 
     def test_nginx_exposes_port_80(self):
         config = self._load()
