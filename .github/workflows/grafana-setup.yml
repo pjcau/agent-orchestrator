@@ -23,7 +23,13 @@ jobs:
           SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
           APP_DIR="/opt/agent-orchestrator"
           GF="http://localhost:3000"
-          GF_AUTH="admin:admin"
+          # Read Grafana password from .env.prod on EC2, fall back to admin
+          GF_PASS=$($SSH_CMD "grep '^GRAFANA_PASSWORD=' $APP_DIR/.env.prod 2>/dev/null | cut -d= -f2" || echo "admin")
+          GF_PASS="${GF_PASS:-admin}"
+          GF_AUTH="admin:$GF_PASS"
+
+          # Reset Grafana admin password to ensure API access
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T grafana grafana cli --homepath /usr/share/grafana admin reset-admin-password $GF_PASS" 2>/dev/null || true
 
           echo "========================================="
           echo "1. Docker containers status"
