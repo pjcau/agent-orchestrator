@@ -609,33 +609,48 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         tm = get_tracing_metrics()
         lines.append("# HELP orchestrator_llm_call_duration_seconds LLM call latency")
         lines.append("# TYPE orchestrator_llm_call_duration_seconds histogram")
-        for provider, buckets in tm.get("llm_durations", {}).items():
-            p = provider.replace('"', '\\"')
-            lines.append(
-                f'orchestrator_llm_call_duration_seconds_count{{provider="{p}"}} {buckets["count"]}'
-            )
-            lines.append(
-                f'orchestrator_llm_call_duration_seconds_sum{{provider="{p}"}} {buckets["sum"]:.3f}'
-            )
+        llm_durations = tm.get("llm_durations", {})
+        if llm_durations:
+            for provider, buckets in llm_durations.items():
+                p = provider.replace('"', '\\"')
+                lines.append(
+                    f'orchestrator_llm_call_duration_seconds_count{{provider="{p}"}} {buckets["count"]}'
+                )
+                lines.append(
+                    f'orchestrator_llm_call_duration_seconds_sum{{provider="{p}"}} {buckets["sum"]:.3f}'
+                )
+        else:
+            # Emit zero-value defaults so Prometheus always sees the metric
+            lines.append('orchestrator_llm_call_duration_seconds_count{provider="none"} 0')
+            lines.append('orchestrator_llm_call_duration_seconds_sum{provider="none"} 0')
 
         # --- Graph node duration histogram ---
         lines.append("# HELP orchestrator_graph_node_duration_seconds Graph node execution latency")
         lines.append("# TYPE orchestrator_graph_node_duration_seconds histogram")
-        for node, buckets in tm.get("node_durations", {}).items():
-            n = node.replace('"', '\\"')
-            lines.append(
-                f'orchestrator_graph_node_duration_seconds_count{{node="{n}"}} {buckets["count"]}'
-            )
-            lines.append(
-                f'orchestrator_graph_node_duration_seconds_sum{{node="{n}"}} {buckets["sum"]:.3f}'
-            )
+        node_durations = tm.get("node_durations", {})
+        if node_durations:
+            for node, buckets in node_durations.items():
+                n = node.replace('"', '\\"')
+                lines.append(
+                    f'orchestrator_graph_node_duration_seconds_count{{node="{n}"}} {buckets["count"]}'
+                )
+                lines.append(
+                    f'orchestrator_graph_node_duration_seconds_sum{{node="{n}"}} {buckets["sum"]:.3f}'
+                )
+        else:
+            lines.append('orchestrator_graph_node_duration_seconds_count{node="none"} 0')
+            lines.append('orchestrator_graph_node_duration_seconds_sum{node="none"} 0')
 
         # --- Agent stall counter by category ---
         lines.append("# HELP orchestrator_agent_stalls_total Agent stall count by category")
         lines.append("# TYPE orchestrator_agent_stalls_total counter")
-        for cat, count in tm.get("stalls_by_category", {}).items():
-            c = cat.replace('"', '\\"')
-            lines.append(f'orchestrator_agent_stalls_total{{category="{c}"}} {count}')
+        stalls = tm.get("stalls_by_category", {})
+        if stalls:
+            for cat, count in stalls.items():
+                c = cat.replace('"', '\\"')
+                lines.append(f'orchestrator_agent_stalls_total{{category="{c}"}} {count}')
+        else:
+            lines.append('orchestrator_agent_stalls_total{category="none"} 0')
 
         from starlette.responses import Response
 

@@ -176,6 +176,37 @@ class TestAgentStallMetricsInstrumentation:
         assert m["stalls_by_category"]["openrouter"] == 1
 
 
+class TestMetricsEndpointDefaults:
+    """Test that /metrics emits zero-value defaults when no data is recorded."""
+
+    @pytest.mark.asyncio
+    async def test_metrics_emits_placeholder_when_empty(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        import importlib
+
+        import agent_orchestrator.dashboard.tracing_metrics as tm_mod
+
+        importlib.reload(tm_mod)
+        # Ensure all collectors are empty
+        tm_mod._llm_durations.clear()
+        tm_mod._node_durations.clear()
+        tm_mod._stalls_by_category.clear()
+
+        from httpx import ASGITransport, AsyncClient
+
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/metrics")
+
+        body = resp.text
+        # Should emit placeholder values with provider="none"
+        assert 'orchestrator_llm_call_duration_seconds_count{provider="none"} 0' in body
+        assert 'orchestrator_graph_node_duration_seconds_count{node="none"} 0' in body
+        assert 'orchestrator_agent_stalls_total{category="none"} 0' in body
+
+
 class TestServerTracingInit:
     """Test that server.py initializes tracing on startup."""
 
