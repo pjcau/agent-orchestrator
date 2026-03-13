@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import httpx
 
+from ..core.cache import CachePolicy
 from ..core.conversation import ConversationManager
 from ..core.graph import END, START, StateGraph
 from ..core.llm_nodes import llm_node
@@ -20,6 +21,9 @@ from ..core.provider import Provider
 from ..providers.local import LocalProvider
 from ..providers.openrouter import OpenRouterProvider
 from .events import Event, EventBus, EventType
+
+# Default cache policy for graph LLM nodes (5 min TTL)
+_GRAPH_CACHE_POLICY = CachePolicy(ttl_seconds=300, max_entries=500)
 
 logger = logging.getLogger(__name__)
 
@@ -458,6 +462,7 @@ def _build_chat_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         system="You are a helpful AI assistant. Be concise and direct.",
         prompt_key="input",
         output_key="response",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     graph = StateGraph()
@@ -475,6 +480,7 @@ def _build_review_graph(provider: Provider, prompt: str) -> tuple[StateGraph, di
         system="You are a senior code reviewer. Analyze the code for bugs, security issues, and quality. Be concise, max 5 bullet points.",
         prompt_key="code",
         output_key="review",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     graph = StateGraph()
@@ -492,6 +498,7 @@ def _build_chain_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dic
         system="Analyze the code and list issues. Be concise, max 3 bullet points.",
         prompt_key="code",
         output_key="analysis",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     fix = llm_node(
@@ -501,6 +508,7 @@ def _build_chain_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dic
             f"Analysis:\n{s['analysis']}\n\nOriginal code:\n{s['code']}\n\nFix it:"
         ),
         output_key="fixed_code",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     graph = StateGraph()
@@ -520,6 +528,7 @@ def _build_parallel_graph(provider: Provider, prompt: str) -> tuple[StateGraph, 
         system="You are a security auditor. Find security issues. Max 3 bullet points.",
         prompt_key="code",
         output_key="security",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     performance = llm_node(
@@ -527,6 +536,7 @@ def _build_parallel_graph(provider: Provider, prompt: str) -> tuple[StateGraph, 
         system="You are a performance expert. Find performance issues. Max 3 bullet points.",
         prompt_key="code",
         output_key="performance",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     summarize = llm_node(
@@ -536,6 +546,7 @@ def _build_parallel_graph(provider: Provider, prompt: str) -> tuple[StateGraph, 
             f"Security:\n{s.get('security', '')}\n\nPerformance:\n{s.get('performance', '')}\n\nSummarize:"
         ),
         output_key="summary",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     graph = StateGraph()
@@ -562,6 +573,7 @@ def _build_auto_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         ),
         prompt_key="input",
         output_key="classification",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     handle_review = llm_node(
@@ -569,6 +581,7 @@ def _build_auto_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         system="You are a code reviewer. Analyze the code for issues. Be concise.",
         prompt_key="input",
         output_key="response",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     handle_bug = llm_node(
@@ -576,6 +589,7 @@ def _build_auto_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         system="You are a debugging expert. Identify the bug and suggest a fix. Be concise.",
         prompt_key="input",
         output_key="response",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     handle_question = llm_node(
@@ -583,6 +597,7 @@ def _build_auto_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         system="You are a helpful assistant. Answer the question concisely and accurately.",
         prompt_key="input",
         output_key="response",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     handle_task = llm_node(
@@ -590,6 +605,7 @@ def _build_auto_graph(provider: Provider, prompt: str) -> tuple[StateGraph, dict
         system="You are a task executor. Break down and address the task step by step. Be concise.",
         prompt_key="input",
         output_key="response",
+        cache_policy=_GRAPH_CACHE_POLICY,
     )
 
     def route(state):

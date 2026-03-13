@@ -535,6 +535,45 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     async def snapshot():
         return JSONResponse(content=bus.get_snapshot())
 
+    @app.get("/api/cache/stats")
+    async def cache_stats():
+        from .agent_runner import get_tool_cache
+        from ..core.llm_nodes import get_llm_cache
+
+        llm = get_llm_cache()
+        tool = get_tool_cache()
+        llm_stats = llm.get_stats().to_dict()
+        tool_stats = tool.get_stats().to_dict()
+        return JSONResponse(
+            content={
+                "llm": {**llm_stats, "entries": llm.size()},
+                "tool": {**tool_stats, "entries": tool.size()},
+                "combined": {
+                    "hits": llm_stats["hits"] + tool_stats["hits"],
+                    "misses": llm_stats["misses"] + tool_stats["misses"],
+                    "evictions": llm_stats["evictions"] + tool_stats["evictions"],
+                    "entries": llm.size() + tool.size(),
+                    "total_saved_tokens": llm_stats["total_saved_tokens"]
+                    + tool_stats["total_saved_tokens"],
+                },
+            }
+        )
+
+    @app.post("/api/cache/clear")
+    async def cache_clear():
+        from .agent_runner import get_tool_cache
+        from ..core.llm_nodes import get_llm_cache
+
+        llm_cleared = get_llm_cache().clear()
+        tool_cleared = get_tool_cache().clear()
+        return JSONResponse(
+            content={
+                "cleared": llm_cleared + tool_cleared,
+                "llm_cleared": llm_cleared,
+                "tool_cleared": tool_cleared,
+            }
+        )
+
     @app.get("/api/events")
     async def events(limit: int = 100):
         history = bus.get_history()

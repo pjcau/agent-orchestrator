@@ -153,7 +153,9 @@ agent-orchestrator/
 - **BaseStore** — Cross-thread persistent key-value store (namespace, filter, TTL). Separate from checkpoints.
 - **SessionStore** — Session-scoped wrapper on BaseStore. Auto-tracks written keys, deletes all session data on close(). Async context manager.
 - **StreamEvent / astream()** — Real-time graph execution streaming. `CompiledGraph.astream()` yields `StreamEvent` at each node start/end/error, with state deltas and timing.
-- **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout).
+- **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout, cache).
+- **LLM Cache** — Shared `InMemoryCache` for LLM node responses. Activated via `cache_policy` param on `llm_node()`. Skips cache when `temperature > 0`. Dashboard shows hits/misses/rate in real time.
+- **Tool Cache** — `cache_middleware()` on `SkillRegistry` caches idempotent skills (`file_read`, `glob_search`). Auto-invalidates on `file_write`.
 - **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim. Persists to PostgreSQL and survives container restarts. Sessions can be restored from job records via `POST /api/jobs/{session_id}/restore`.
 
 ## Agent Error Tracking
@@ -275,7 +277,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
   → Not found: report to user, suggest custom agent/skill
 ```
 
-### Skills Map (12 total)
+### Skills Map (13 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -290,6 +292,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 | `/verify` | all | Pre-PR quality gate (tests, lint, format, security, diff review) |
 | `/cost-optimization` | ai-engineer | Review LLM API costs, routing, budget, retry efficiency |
 | `/ship` | all | Full pipeline: test, lint, docs sync, commit, push |
+| `/feature` | all | End-to-end feature dev: implement, user review loop, tests, SOLID review, docs, commit, push |
 | `/fix` | all | Bug fix with mandatory regression tests, lint, deploy |
 
 ### Research Scout & Nightly Workflow

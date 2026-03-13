@@ -16,18 +16,31 @@ import time
 from typing import Any
 
 from ..core.agent import AgentConfig, Task, TaskResult, TaskStatus
+from ..core.cache import InMemoryCache
 from ..core.conversation import ConversationManager
 from ..core.provider import Message, Provider, Role, ToolDefinition
-from ..core.skill import SkillRegistry
+from ..core.skill import SkillRegistry, cache_middleware
 from ..skills import FileReadSkill, FileWriteSkill, GlobSkill, ShellExecSkill
 from .events import Event, EventBus, EventType
+
+# Module-level shared tool cache for all agent runs
+_tool_cache = InMemoryCache(max_entries=200)
+
+
+def get_tool_cache() -> InMemoryCache:
+    """Return the shared tool cache instance (for stats/clearing)."""
+    return _tool_cache
 
 
 def create_skill_registry(
     allowed_commands: list[str] | None = None,
     working_directory: str | None = None,
 ) -> SkillRegistry:
-    """Create a skill registry with all built-in skills."""
+    """Create a skill registry with all built-in skills.
+
+    Includes cache middleware for idempotent tools (file_read, glob_search).
+    file_write invalidates file_read cache for the written path.
+    """
     registry = SkillRegistry()
     registry.register(FileReadSkill(working_directory=working_directory))
     registry.register(FileWriteSkill(working_directory=working_directory))
@@ -38,6 +51,18 @@ def create_skill_registry(
             working_directory=working_directory,
         )
     )
+
+    # Add cache middleware: cache file_read and glob_search results,
+    # invalidate file_read cache when file_write succeeds
+    registry.use(
+        cache_middleware(
+            cache=_tool_cache,
+            cacheable_skills={"file_read", "glob_search"},
+            ttl_seconds=60,
+            invalidate_on={"file_write": "file_path"},
+        )
+    )
+
     return registry
 
 

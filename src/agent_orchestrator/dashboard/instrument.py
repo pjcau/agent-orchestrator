@@ -259,11 +259,13 @@ def _instrument_cache(bus: EventBus) -> None:
                     )
                 )
             )
+            stats_dict = stats.to_dict()
+            stats_dict["entries"] = self.size()
             loop.create_task(
                 bus.emit(
                     Event(
                         event_type=EventType.CACHE_STATS,
-                        data={"cache_stats": stats.to_dict()},
+                        data={"cache_stats": stats_dict},
                     )
                 )
             )

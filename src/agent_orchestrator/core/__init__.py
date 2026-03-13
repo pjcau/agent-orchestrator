@@ -26,7 +26,7 @@ from .graph import (
 )
 from .checkpoint import Checkpointer, InMemoryCheckpointer, SQLiteCheckpointer
 from .reducers import append_reducer, add_reducer, merge_dict_reducer
-from .llm_nodes import llm_node, multi_provider_node, chat_node
+from .llm_nodes import llm_node, multi_provider_node, chat_node, get_llm_cache
 from .graph_patterns import (
     SubGraphNode,
     retry_node,
@@ -98,6 +98,7 @@ from .skill import (
     logging_middleware,
     retry_middleware,
     timeout_middleware,
+    cache_middleware,
 )
 
 __all__ = [
@@ -132,6 +133,8 @@ __all__ = [
     "llm_node",
     "multi_provider_node",
     "chat_node",
+    "get_llm_cache",
+    "cache_middleware",
     # v0.5.0 — Smart Routing & Cost Optimization
     "TaskRouter",
     "TaskComplexityClassifier",

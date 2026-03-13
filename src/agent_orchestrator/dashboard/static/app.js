@@ -113,6 +113,9 @@
   const $cacheRate = $("cache-rate");
   const $cacheBarFill = $("cache-bar-fill");
   const $cacheLog = $("cache-log");
+  const $cacheEntries = $("cache-entries");
+  const $cacheSavedTokens = $("cache-saved-tokens");
+  const $btnClearCache = $("btn-clear-cache");
   const $btnHistory = $("btn-history");
   const $historyModal = $("history-modal");
   const $historySessions = $("history-sessions");
@@ -1555,6 +1558,11 @@
       const total = (c.hits || 0) + (c.misses || 0);
       $cacheHitRate.textContent = total > 0 ? rate + "%" : "-";
     }
+    if ($cacheEntries) $cacheEntries.textContent = (c.entries || 0) + " entries";
+    if ($cacheSavedTokens) {
+      const saved = c.total_saved_tokens || 0;
+      $cacheSavedTokens.textContent = saved > 0 ? formatNumber(saved) + " tokens saved" : "0 tokens saved";
+    }
   }
 
   function appendCacheLog(evt) {
@@ -1667,6 +1675,20 @@
   $btnCompare.addEventListener("click", runComparison);
   $btnResetGraph.addEventListener("click", resetGraph);
   $btnToggleSidebar.addEventListener("click", toggleSidebar);
+
+  // Cache clear button
+  if ($btnClearCache) {
+    $btnClearCache.addEventListener("click", async () => {
+      try {
+        const resp = await fetch("/api/cache/clear", { method: "POST", headers: authHeaders() });
+        if (resp.ok) {
+          snapshot.cache = { hits: 0, misses: 0, hit_rate: 0, evictions: 0, entries: 0, total_saved_tokens: 0 };
+          renderCachePanel();
+          if ($cacheLog) $cacheLog.innerHTML = "";
+        }
+      } catch (e) { /* ignore */ }
+    });
+  }
   window.addEventListener("resize", () => renderGraph());
 
   // --- OpenRouter Pricing ---

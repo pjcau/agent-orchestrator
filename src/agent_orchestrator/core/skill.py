@@ -212,3 +212,55 @@ def timeout_middleware(timeout_seconds: float = 30.0) -> SkillMiddleware:
             )
 
     return middleware
+
+
+def cache_middleware(
+    cache: Any,
+    cacheable_skills: set[str] | None = None,
+    ttl_seconds: int = 120,
+    invalidate_on: dict[str, str] | None = None,
+) -> SkillMiddleware:
+    """Cache results of idempotent skills.
+
+    Args:
+        cache: A BaseCache instance (e.g. InMemoryCache).
+        cacheable_skills: Set of skill names to cache. If None, caches all skills.
+        ttl_seconds: Time-to-live for cached entries.
+        invalidate_on: Map of {skill_name: param_key} — when this skill runs
+            successfully, invalidate the cache for the param value as a file_read key.
+            Example: {"file_write": "file_path"} invalidates file_read cache for that path.
+    """
+    from .cache import make_cache_key
+
+    _invalidate_on = invalidate_on or {}
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        # Check if this skill triggers cache invalidation
+        if request.skill_name in _invalidate_on:
+            result = await next_fn(request)
+            if result.success:
+                param_key = _invalidate_on[request.skill_name]
+                param_val = request.params.get(param_key, "")
+                if param_val:
+                    inv_key = make_cache_key("file_read", {"file_path": param_val})
+                    cache.invalidate(inv_key)
+            return result
+
+        # Only cache specified skills
+        if cacheable_skills and request.skill_name not in cacheable_skills:
+            return await next_fn(request)
+
+        key = make_cache_key(request.skill_name, request.params)
+        entry = cache.get(key)
+        if entry is not None:
+            return entry.value
+
+        result = await next_fn(request)
+        if result.success:
+            cache.put(key, result, ttl_seconds=ttl_seconds, node_name=request.skill_name)
+        return result
+
+    return middleware

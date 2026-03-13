@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=060">
+    <link rel="stylesheet" href="/static/style.css?v=061">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" integrity="sha256-gZkRS+wguLadkfp9Ci2xON9gtBRxMDqil/PQKJNXhSk=" crossorigin="anonymous">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha256-g3pvpbDHNrUrveKythkPMF2j/J7UFoHbUyFQcFe1yEY=" crossorigin="anonymous"></script>
 </head>
@@ -212,6 +212,7 @@
                         <button class="btn-collapse" data-target="section-cache" title="Toggle section">&#9660;</button>
                         <h2>Cache</h2>
                     </div>
+                    <button id="btn-clear-cache" class="btn-graph-ctrl" title="Clear all caches">Clear</button>
                 </div>
                 <div class="section-body" id="body-cache">
                     <div id="cache-panel" class="cache-panel">
@@ -235,6 +236,10 @@
                         </div>
                         <div class="cache-bar-container">
                             <div class="cache-bar-fill" id="cache-bar-fill" style="width:0%"></div>
+                        </div>
+                        <div class="cache-entries-info">
+                            <span id="cache-entries">0 entries</span>
+                            <span id="cache-saved-tokens" class="cache-saved" title="Estimated tokens saved by cache hits">0 tokens saved</span>
                         </div>
                         <div id="cache-log" class="cache-log"></div>
                     </div>
@@ -389,6 +394,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=060"></script>
+    <script src="/static/app.js?v=061"></script>
 </body>
 </html>
