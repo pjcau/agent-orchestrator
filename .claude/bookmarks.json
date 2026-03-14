@@ -106,5 +106,95 @@
     "added": "2026-03-08T15:16:18Z",
     "source": "github-star",
     "notes": "📚 A curated list of awesome articles, videos, and other resources to learn and practice software architecture, patterns, and principles. | Language: C# | Topics: architectural-patterns, architectural-styles, architecture, awesome-list, clean-architecture"
+  },
+  {
+    "url": "https://github.com/Nicolepcx/ai-agents-the-definitive-guide",
+    "added": "2026-03-12T14:28:12Z",
+    "source": "github-star",
+    "notes": "Repo for AI Agents The Definitive Guide | Language: Jupyter Notebook | Topics: ai-agents, benchmarks, deployment, langchain, langgraph"
+  },
+  {
+    "url": "https://github.com/stepfun-ai/Step-3.5-Flash",
+    "added": "2026-03-12T06:25:55Z",
+    "source": "github-star",
+    "notes": "Fast, Sharp & Reliable Agentic Intelligence | Language: C++"
+  },
+  {
+    "url": "https://github.com/BAI-LAB/Survey-on-AI-Memory",
+    "added": "2026-03-11T22:47:53Z",
+    "source": "github-star",
+    "notes": "Official repository for \"Survey on AI Memory: Theories, Taxonomies, Evaluations, and Emerging Trends\". "
+  },
+  {
+    "url": "https://github.com/TinyAGI/fractals",
+    "added": "2026-03-11T19:45:46Z",
+    "source": "github-star",
+    "notes": "Fractals is a recursive task orchestrator for agent swarm | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/huytieu/COG-second-brain",
+    "added": "2026-03-11T17:01:13Z",
+    "source": "github-star",
+    "notes": "The Easiest Second Brain Setup That Actually Self-Evolves using Claude code - Obsidian - Github | Language: Shell"
+  },
+  {
+    "url": "https://github.com/google/A2UI",
+    "added": "2026-03-11T15:30:00Z",
+    "source": "github-star",
+    "notes": " | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/langflow-ai/openrag",
+    "added": "2026-03-11T15:05:52Z",
+    "source": "github-star",
+    "notes": "OpenRAG is a comprehensive, single package Retrieval-Augmented Generation platform built on Langflow, Docling, and Opensearch.  | Language: Python"
+  },
+  {
+    "url": "https://github.com/kapi2800/qwen3-tts-apple-silicon",
+    "added": "2026-03-11T13:35:53Z",
+    "source": "github-star",
+    "notes": "Run Qwen3-TTS text-to-speech locally on Mac (M1/M2/M3/M4). Voice cloning, voice design, custom voices. 100% offline using MLX. | Language: Python | Topics: apple-silicon, m1, m2, m3, m4"
+  },
+  {
+    "url": "https://github.com/arcanite24/gb-recompiled",
+    "added": "2026-03-11T09:26:18Z",
+    "source": "github-star",
+    "notes": " | Language: C++"
+  },
+  {
+    "url": "https://github.com/trevin-creator/Tiny-Lab",
+    "added": "2026-03-11T09:24:24Z",
+    "source": "github-star",
+    "notes": "Tiny Lab is a small Apple Silicon ML research tool with a real control plane, one shipped MLX training path, and checkpoint evaluation built in. | Language: Python"
+  },
+  {
+    "url": "https://github.com/jundot/omlx",
+    "added": "2026-03-10T22:27:11Z",
+    "source": "github-star",
+    "notes": "LLM inference server with continuous batching & SSD caching for Apple Silicon — managed from the macOS menu bar | Language: Python | Topics: apple-silicon, inference-server, llm, macos, mlx"
+  },
+  {
+    "url": "https://github.com/Circuit-Digest/ESP-Drone",
+    "added": "2026-03-10T12:15:23Z",
+    "source": "github-star",
+    "notes": " | Language: C"
+  },
+  {
+    "url": "https://github.com/CodeGraphContext/CodeGraphContext",
+    "added": "2026-03-10T10:13:59Z",
+    "source": "github-star",
+    "notes": "An MCP server plus a CLI tool that indexes local code into a graph database to provide context to AI assistants. | Language: Python | Topics: hacktoberfest2025, social-winter-of-code"
+  },
+  {
+    "url": "https://github.com/zjunlp/SkillNet",
+    "added": "2026-03-10T09:31:22Z",
+    "source": "github-star",
+    "notes": "Create, Evaluate, and Connect AI Skills | Language: Python | Topics: ai-agents, ai-skills, artificial-intelligence, knowledge-graph, large-language-models"
+  },
+  {
+    "url": "https://github.com/twwch/JadeAI",
+    "added": "2026-03-09T21:38:22Z",
+    "source": "github-star",
+    "notes": "AI-Powered Smart Resume Builder — 50+ professional templates, PDF/image parsing, AI optimization, JD match analysis, multi-format export. Open source & free, one-click Docker deployment. | Language: TypeScript | Topics: ai, ai-writing, awesome-ai-tools, awesome-cv, awesome-resumes"
   }
 ]
