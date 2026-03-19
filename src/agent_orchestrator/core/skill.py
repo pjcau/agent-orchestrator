@@ -143,7 +143,8 @@ class SkillRegistry:
         metadata: dict[str, Any] = {}
         if tool_description:
             metadata["tool_description"] = tool_description
-            logger.info("Tool %s: %s", name, tool_description)
+            safe_desc = str(tool_description).replace("\n", " ").replace("\r", " ")
+            logger.info("Tool %s: %s", name, safe_desc)
 
         request = SkillRequest(skill_name=name, params=clean_params, metadata=metadata)
 

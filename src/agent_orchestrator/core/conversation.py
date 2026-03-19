@@ -403,11 +403,14 @@ def _recover_raw_messages(
             if tc_id and tc_id not in responded_ids:
                 import logging
 
+                def _sanitize(s: object) -> str:
+                    return str(s).replace("\n", " ").replace("\r", " ")
+
                 logging.getLogger(__name__).warning(
                     "Dangling tool call recovered on thread load: thread=%s tool=%s call_id=%s",
-                    thread_id,
-                    tc_name,
-                    tc_id,
+                    _sanitize(thread_id),
+                    _sanitize(tc_name),
+                    _sanitize(tc_id),
                 )
                 result.append(
                     {

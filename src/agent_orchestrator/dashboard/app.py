@@ -508,16 +508,16 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                     "row_count": result.row_count,
                 }
             )
-        except UnsupportedFormatError as exc:
-            return JSONResponse(content={"error": str(exc)}, status_code=400)
-        except FileTooLargeError as exc:
-            return JSONResponse(content={"error": str(exc)}, status_code=413)
-        except ContentLimitError as exc:
-            return JSONResponse(content={"error": str(exc)}, status_code=413)
-        except DependencyMissingError as exc:
-            return JSONResponse(content={"error": str(exc)}, status_code=501)
-        except DocumentConversionError as exc:
-            return JSONResponse(content={"error": str(exc)}, status_code=500)
+        except UnsupportedFormatError:
+            return JSONResponse(content={"error": "Unsupported file format"}, status_code=400)
+        except FileTooLargeError:
+            return JSONResponse(content={"error": "File too large"}, status_code=413)
+        except ContentLimitError:
+            return JSONResponse(content={"error": "Content exceeds processing limits"}, status_code=413)
+        except DependencyMissingError:
+            return JSONResponse(content={"error": "Required dependency not available"}, status_code=501)
+        except DocumentConversionError:
+            return JSONResponse(content={"error": "Document conversion failed"}, status_code=500)
 
     @app.get("/api/usage")
     async def usage_stats():
