@@ -275,6 +275,12 @@ def default_metrics(registry: MetricsRegistry | None = None) -> MetricsRegistry:
                 labels={"provider": provider, "error_type": error_type},
             )
 
+    # Progressive skill loading metrics
+    reg.counter(
+        "skill_loads_total",
+        "Total number of on-demand skill instruction loads",
+    )
+
     return reg
 
 

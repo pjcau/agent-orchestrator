@@ -76,7 +76,7 @@ agent-orchestrator/
 │       ├── core/
 │       │   ├── provider.py      # LLM provider abstraction (interface)
 │       │   ├── agent.py         # Agent base class
-│       │   ├── skill.py         # Skill registry & execution
+│       │   ├── skill.py         # Skill registry & execution (+ SkillSummary for progressive loading)
 │       │   ├── orchestrator.py  # Main orchestrator (coordination)
 │       │   ├── cooperation.py   # Inter-agent communication protocols
 │       │   ├── router.py        # Smart task routing (6 strategies)
@@ -140,7 +140,8 @@ agent-orchestrator/
 │           ├── doc_sync.py      # Documentation sync checker
 │           ├── github_skill.py  # GitHub integration via gh CLI
 │           ├── webhook_skill.py # Outgoing webhook skill
-│           └── web_reader.py   # Web content fetcher & HTML text extractor
+│           ├── web_reader.py   # Web content fetcher & HTML text extractor
+│           └── skill_loader.py # Meta-skill: on-demand full skill instruction loading
 ├── tests/
 ├── pyproject.toml
 └── README.md
@@ -179,6 +180,7 @@ agent-orchestrator/
 - **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim. Persists to PostgreSQL and survives container restarts. Sessions can be restored from job records via `POST /api/jobs/{session_id}/restore`.
 - **Tracing** — Optional OpenTelemetry integration. Initialized in `server.py` at startup via `setup_tracing()` + `instrument_fastapi()`. Spans on `Provider.traced_complete()`, `Agent._execute_with_provider()`, graph nodes. `instrument.py` also feeds `tracing_metrics` collectors (LLM durations, node durations, stall counts) which are exported at `/metrics` for Prometheus. Graceful no-op when OTel packages not installed. Exports via OTLP HTTP to Tempo.
 - **AlertHandler** — Receives Grafana webhook alerts, collects diagnostics (recent errors, usage, metrics), creates GitHub issues with `gh` CLI. Triggers automated root-cause analysis via `.github/workflows/alert-analysis.yml`.
+- **Progressive Skill Loading** — System prompts include only compact `SkillSummary` (name + description + category) instead of full instructions. Agents invoke `load_skill` to fetch detailed instructions on demand, reducing base prompt token usage. `skill_loads_total` counter tracks load frequency.
 
 ## Agent Error Tracking
 

@@ -15,6 +15,19 @@ from typing import Any, Callable, Awaitable
 
 
 @dataclass
+class SkillSummary:
+    """Compact skill summary for inclusion in system prompts.
+
+    Contains only name, description, and category to minimize token usage.
+    Full instructions are loaded on demand via SkillLoaderSkill.
+    """
+
+    name: str
+    description: str
+    category: str = "general"
+
+
+@dataclass
 class SkillResult:
     success: bool
     output: Any
@@ -70,6 +83,21 @@ class Skill(ABC):
         """JSON Schema for the skill's parameters."""
         ...
 
+    @property
+    def category(self) -> str:
+        """Optional category for grouping skills. Defaults to 'general'."""
+        return "general"
+
+    @property
+    def full_instructions(self) -> str | None:
+        """Optional detailed instructions loaded on demand.
+
+        Return None if the skill has no extended instructions beyond its
+        description.  Subclasses override this to provide rich documentation
+        that is only loaded when an agent invokes ``load_skill``.
+        """
+        return None
+
     @abstractmethod
     async def execute(self, params: dict) -> SkillResult: ...
 
@@ -120,6 +148,31 @@ class SkillRegistry:
             chain = _wrap_middleware(mw, chain)
 
         return await chain(request)
+
+    def get_summaries(self) -> list[SkillSummary]:
+        """Return compact summaries of all registered skills.
+
+        Intended for embedding in system prompts to minimise token usage.
+        Agents can then call ``load_skill`` for full instructions on demand.
+        """
+        return [
+            SkillSummary(
+                name=s.name,
+                description=s.description,
+                category=s.category,
+            )
+            for s in self._skills.values()
+        ]
+
+    def get_full_instructions(self, skill_name: str) -> str | None:
+        """Return full instructions for a skill, or None if not found.
+
+        This is the on-demand counterpart to ``get_summaries()``.
+        """
+        skill = self._skills.get(skill_name)
+        if skill is None:
+            return None
+        return skill.full_instructions
 
     def list_skills(self) -> list[str]:
         return list(self._skills.keys())
