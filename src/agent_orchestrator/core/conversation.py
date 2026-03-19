@@ -20,9 +20,58 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Awaitable, Callable
 
 from .checkpoint import Checkpoint, Checkpointer, InMemoryCheckpointer
+
+
+# ---------------------------------------------------------------------------
+# Token estimation
+# ---------------------------------------------------------------------------
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token for English."""
+    return len(text) // 4
+
+
+# ---------------------------------------------------------------------------
+# Summarization configuration
+# ---------------------------------------------------------------------------
+
+
+class SummarizationTrigger(Enum):
+    """Determines when context summarization fires."""
+
+    TOKEN_COUNT = "token_count"
+    MESSAGE_COUNT = "message_count"
+    FRACTION = "fraction"
+
+
+@dataclass
+class SummarizationConfig:
+    """Configuration for automatic context summarization.
+
+    Args:
+        trigger: Which metric triggers summarization.
+        threshold: The threshold value for the trigger.
+            - TOKEN_COUNT: total estimated tokens across all messages.
+            - MESSAGE_COUNT: total number of messages in the thread.
+            - FRACTION: fraction (0.0-1.0) of max_history that triggers
+              summarization (requires max_history > 0 on the manager).
+        retain_last: Number of most-recent messages to keep verbatim.
+        summary_model: Optional model identifier (informational; the actual
+            summarization is performed by the ``summarize_func`` passed to
+            the manager).
+        enabled: Set to False to disable summarization entirely.
+    """
+
+    trigger: SummarizationTrigger = SummarizationTrigger.MESSAGE_COUNT
+    threshold: int | float = 20
+    retain_last: int = 4
+    summary_model: str | None = None
+    enabled: bool = True
 
 
 @dataclass
@@ -76,16 +125,28 @@ class ConversationManager:
         checkpointer: Persistence backend. Defaults to InMemoryCheckpointer.
         max_history: Maximum number of messages to keep per thread.
                      0 means unlimited.
+        summarization_config: Optional config for automatic context
+            summarization when threads grow too large.
+        summarize_func: Async callable that receives a list of message
+            dicts and returns a summary string.  Required when
+            ``summarization_config`` is provided and enabled.
     """
 
     def __init__(
         self,
         checkpointer: Checkpointer | None = None,
         max_history: int = 0,
+        summarization_config: SummarizationConfig | None = None,
+        summarize_func: Callable[[list[dict[str, Any]]], Awaitable[str]] | None = None,
     ):
         self._checkpointer = checkpointer or InMemoryCheckpointer()
         self._max_history = max_history
         self._threads: dict[str, list[ConversationMessage]] = {}
+        self._summarization_config = summarization_config
+        self._summarize_func = summarize_func
+        # Track summarization statistics
+        self.summarization_count: int = 0
+        self.tokens_saved: int = 0
 
     async def send(
         self,
@@ -116,6 +177,10 @@ class ConversationManager:
         # Trim history if limit is set
         if self._max_history > 0 and len(messages) > self._max_history:
             messages = messages[-self._max_history :]
+
+        # Summarize older messages if trigger fires
+        if self._should_summarize(messages):
+            messages = await self.summarize_thread(messages)
 
         try:
             msg_dicts = [m.to_dict() for m in messages]
@@ -193,6 +258,65 @@ class ConversationManager:
         self._threads[new_id] = forked
         await self._save_thread(new_id, forked)
         return new_id
+
+    def _should_summarize(self, messages: list[ConversationMessage]) -> bool:
+        """Check whether the summarization trigger condition is met."""
+        cfg = self._summarization_config
+        if cfg is None or not cfg.enabled or self._summarize_func is None:
+            return False
+        if len(messages) <= cfg.retain_last:
+            return False
+
+        if cfg.trigger == SummarizationTrigger.MESSAGE_COUNT:
+            return len(messages) >= int(cfg.threshold)
+        elif cfg.trigger == SummarizationTrigger.TOKEN_COUNT:
+            total = sum(estimate_tokens(m.content) for m in messages)
+            return total >= int(cfg.threshold)
+        elif cfg.trigger == SummarizationTrigger.FRACTION:
+            if self._max_history <= 0:
+                return False
+            return len(messages) >= int(self._max_history * float(cfg.threshold))
+        return False
+
+    async def summarize_thread(
+        self, messages: list[ConversationMessage]
+    ) -> list[ConversationMessage]:
+        """Summarize older messages and retain the most recent ones.
+
+        1. Split messages into *old* (to summarize) and *recent* (to keep).
+        2. Send the old messages to the summarize_func.
+        3. Replace old messages with a single system summary message.
+        4. Return [summary] + recent.
+        """
+        cfg = self._summarization_config
+        if cfg is None or self._summarize_func is None:
+            return messages
+
+        retain = cfg.retain_last
+        if len(messages) <= retain:
+            return messages
+
+        old_messages = messages[:-retain]
+        recent_messages = messages[-retain:]
+
+        # Estimate tokens before summarization
+        tokens_before = sum(estimate_tokens(m.content) for m in old_messages)
+
+        old_dicts = [m.to_dict() for m in old_messages]
+        summary_text = await self._summarize_func(old_dicts)
+
+        tokens_after = estimate_tokens(summary_text)
+        saved = max(0, tokens_before - tokens_after)
+        self.tokens_saved += saved
+        self.summarization_count += 1
+
+        summary_msg = ConversationMessage(
+            role="system",
+            content=summary_text,
+            metadata={"summarized_messages": len(old_messages)},
+        )
+
+        return [summary_msg] + recent_messages
 
     async def _load_thread(self, thread_id: str) -> list[ConversationMessage]:
         """Load thread from in-memory cache or checkpoint."""

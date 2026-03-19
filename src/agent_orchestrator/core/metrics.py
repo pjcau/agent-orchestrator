@@ -281,6 +281,16 @@ def default_metrics(registry: MetricsRegistry | None = None) -> MetricsRegistry:
         "Total number of on-demand skill instruction loads",
     )
 
+    # Conversation summarization metrics
+    reg.counter(
+        "conversation_summarization_total",
+        "Total number of context summarizations performed",
+    )
+    reg.gauge(
+        "conversation_tokens_saved",
+        "Estimated tokens saved by context summarization",
+    )
+
     return reg
 
 
