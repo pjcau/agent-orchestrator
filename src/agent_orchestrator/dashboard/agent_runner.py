@@ -400,16 +400,22 @@ async def _instrumented_execute(
                     },
                 )
 
+            # Extract _description for event/audit display (before skill strips it)
+            tool_description = tool_call.arguments.get("_description")
+
             # Emit tool call event
+            tool_call_data: dict[str, Any] = {
+                "tool_name": tool_call.name,
+                "tool_call_id": tool_call.id,
+                "arguments": _safe_truncate(tool_call.arguments),
+            }
+            if tool_description:
+                tool_call_data["tool_description"] = tool_description
             await event_bus.emit(
                 Event(
                     event_type=EventType.AGENT_TOOL_CALL,
                     agent_name=config.name,
-                    data={
-                        "tool_name": tool_call.name,
-                        "tool_call_id": tool_call.id,
-                        "arguments": _safe_truncate(tool_call.arguments),
-                    },
+                    data=tool_call_data,
                 )
             )
 
@@ -427,16 +433,19 @@ async def _instrumented_execute(
                 step_log.append(f"{tool_call.name}: ok")
 
             # Emit tool result event
+            tool_result_data: dict[str, Any] = {
+                "tool_name": tool_call.name,
+                "tool_call_id": tool_call.id,
+                "success": result.success,
+                "output": str(result)[:500],
+            }
+            if tool_description:
+                tool_result_data["tool_description"] = tool_description
             await event_bus.emit(
                 Event(
                     event_type=EventType.AGENT_TOOL_RESULT,
                     agent_name=config.name,
-                    data={
-                        "tool_name": tool_call.name,
-                        "tool_call_id": tool_call.id,
-                        "success": result.success,
-                        "output": str(result)[:500],
-                    },
+                    data=tool_result_data,
                 )
             )
 

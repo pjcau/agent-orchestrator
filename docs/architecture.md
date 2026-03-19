@@ -88,7 +88,16 @@ class Skill(Protocol):
     async def execute(self, params: dict) -> SkillResult: ...
 ```
 
-Skills map directly to "tools" in LLM APIs but are defined once and work across all providers. Examples:
+Skills map directly to "tools" in LLM APIs but are defined once and work across all providers.
+
+Every tool call may include an optional `_description` parameter.  The registry
+extracts it before forwarding params to the skill, logs it, and propagates it
+through middleware metadata (`SkillRequest.metadata["tool_description"]`).  The
+field also appears on `AuditEntry.tool_description` and in dashboard tool-call
+events.  `to_tool_definitions()` injects `_description` into every schema so
+LLMs can explain *why* they invoke a tool.
+
+Examples:
 - `file_read`, `file_write`, `glob_search` — filesystem operations
 - `shell_exec` — run shell commands (sandboxed allowlist)
 - `web_read` — fetch and extract web page content

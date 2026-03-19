@@ -3,15 +3,23 @@
 Includes a middleware pattern (SkillMiddleware) for composable interceptors:
 retry, caching, logging, authorization, rate limiting.
 
+Supports an optional ``_description`` parameter on every tool call.  When the
+LLM (or caller) includes ``_description`` in the params dict, it is extracted
+before execution, logged, and propagated through the middleware chain via
+``SkillRequest.metadata["tool_description"]``.
+
 Inspired by LangGraph's ToolCallWrapper (analysis/langgraph/18-tool-node.md).
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -128,7 +136,16 @@ class SkillRegistry:
         if skill is None:
             return SkillResult(success=False, output=None, error=f"Unknown skill: {name}")
 
-        request = SkillRequest(skill_name=name, params=params)
+        # Extract optional _description before forwarding params to the skill
+        clean_params = dict(params)
+        tool_description = clean_params.pop("_description", None)
+
+        metadata: dict[str, Any] = {}
+        if tool_description:
+            metadata["tool_description"] = tool_description
+            logger.info("Tool %s: %s", name, tool_description)
+
+        request = SkillRequest(skill_name=name, params=clean_params, metadata=metadata)
 
         # Build the middleware chain (innermost = actual skill execution)
         async def core_executor(req: SkillRequest) -> SkillResult:
@@ -178,15 +195,32 @@ class SkillRegistry:
         return list(self._skills.keys())
 
     def to_tool_definitions(self) -> list[dict]:
-        """Export all skills as tool definitions (for LLM APIs)."""
-        return [
-            {
-                "name": s.name,
-                "description": s.description,
-                "parameters": s.parameters,
-            }
-            for s in self._skills.values()
-        ]
+        """Export all skills as tool definitions (for LLM APIs).
+
+        Every tool schema includes an optional ``_description`` parameter so the
+        LLM can explain *why* it is invoking the tool.  The description is
+        extracted before execution and never forwarded to the skill itself.
+        """
+        defs: list[dict] = []
+        for s in self._skills.values():
+            params = dict(s.parameters)
+            # Inject _description into the properties if it looks like a JSON Schema object
+            props = params.get("properties")
+            if isinstance(props, dict):
+                props = dict(props)
+                props["_description"] = {
+                    "type": "string",
+                    "description": ("Optional short description of why this tool is being called."),
+                }
+                params = dict(params, properties=props)
+            defs.append(
+                {
+                    "name": s.name,
+                    "description": s.description,
+                    "parameters": params,
+                }
+            )
+        return defs
 
 
 def _wrap_middleware(

@@ -35,6 +35,7 @@ class AuditEntry:
     task_id: str | None = None
     cost_usd: float = 0.0
     tokens: int = 0
+    tool_description: str | None = None
 
 
 class AuditLog:
@@ -62,6 +63,7 @@ class AuditLog:
         task_id: str | None = None,
         cost_usd: float = 0.0,
         tokens: int = 0,
+        tool_description: str | None = None,
     ) -> AuditEntry:
         """Create an AuditEntry from keyword args and record it.
 
@@ -77,6 +79,7 @@ class AuditLog:
             task_id=task_id,
             cost_usd=cost_usd,
             tokens=tokens,
+            tool_description=tool_description,
         )
         self.log(entry)
         return entry
@@ -133,6 +136,7 @@ class AuditLog:
                 "task_id": e.task_id,
                 "cost_usd": e.cost_usd,
                 "tokens": e.tokens,
+                "tool_description": e.tool_description,
             }
             for e in self._entries
         ]
