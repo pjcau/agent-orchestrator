@@ -111,6 +111,7 @@ agent-orchestrator/
 │       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer, Store)
 │       │   ├── store.py        # Cross-thread persistent store (namespace, filter, TTL)
 │       │   ├── conversation.py # Thread-based conversation memory (multi-turn, fork, persist)
+│       │   ├── sandbox.py        # Docker sandbox for isolated code execution
 │       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
 │       │   ├── tool_recovery.py    # Dangling tool call detection & placeholder injection
 │       │   ├── document_converter.py # File upload & document-to-Markdown conversion
@@ -150,6 +151,7 @@ agent-orchestrator/
 │           ├── shell.py         # Shell command execution
 │           ├── doc_sync.py      # Documentation sync checker
 │           ├── github_skill.py  # GitHub integration via gh CLI
+│           ├── sandboxed_shell.py # Sandboxed shell execution (Docker/local)
 │           ├── webhook_skill.py # Outgoing webhook skill
 │           ├── web_reader.py   # Web content fetcher & HTML text extractor
 │           ├── skill_loader.py # Meta-skill: on-demand full skill instruction loading
@@ -204,6 +206,7 @@ agent-orchestrator/
 - **LoopDetector** — Per-session sliding window loop detection for agent tool calls. Hashes tool_name+params (MD5), tracks in a `deque(maxlen=20)`. Warns at 3 repeats, hard stops at 5. LRU eviction at 500 sessions. Integrated into `Agent.execute()` via optional `loop_detector` + `session_id` params. Emits `loop.warning` / `loop.hard_stop` events; increments `loop_warnings_total` / `loop_hard_stops_total` counters.
 - **DocumentConverter** — Converts uploaded files (PDF, Excel, CSV, Word, PowerPoint, HTML, text) to Markdown for LLM consumption. Graceful fallback when optional deps missing. Limits: 10 MB file size, 50 PDF pages, 10,000 spreadsheet rows. Upload via `POST /api/upload` (multipart/form-data).
 - **ClarificationManager** — Structured agent-human clarification. 5 typed request categories (missing_info, ambiguous, approach, risk, suggestion). Blocking mode pauses agent until response or 5-minute timeout. Non-blocking mode emits event and continues. Events: `clarification.request`, `clarification.response`, `clarification.timeout`.
+- **Sandbox** — Isolated execution environment (Docker or local). `SandboxConfig` controls image, timeout, memory/CPU limits, network, writable paths. Virtual path mapping with traversal protection. `SandboxedShellSkill` wraps sandbox as a drop-in Skill for agent use.
 
 ## Agent Error Tracking
 
