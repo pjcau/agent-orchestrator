@@ -162,6 +162,27 @@ sequenceDiagram
 - **Dependency ordering** — orchestrator ensures backend runs before frontend when needed
 - **Conflict resolution** — when two agents modify the same file, team-lead resolves
 
+### 6. Sandbox
+
+Isolated execution environment for agent-generated code. Prevents untrusted code from affecting the host system.
+
+```python
+class Sandbox:
+    """Docker or local subprocess sandbox with resource limits."""
+    async def start(self) -> None: ...
+    async def execute(self, command: str, timeout: int | None = None) -> SandboxResult: ...
+    async def write_file(self, path: str, content: str) -> None: ...
+    async def read_file(self, path: str) -> str: ...
+    async def stop(self) -> None: ...
+```
+
+**Key features**:
+- **Docker mode** — runs commands in an isolated container with memory/CPU limits and optional network isolation
+- **Local mode** — subprocess fallback for testing (no isolation)
+- **Path traversal protection** — validates all file paths against allowed roots, blocks `..` escapes
+- **Virtual path mapping** — translates host paths to container paths
+- **SandboxedShellSkill** — drop-in Skill wrapper for agent use via SkillRegistry
+
 ## Mapping from Claude Code Concepts
 
 | Claude Code | This Framework | Notes |

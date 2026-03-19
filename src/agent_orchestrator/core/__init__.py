@@ -103,6 +103,7 @@ from .store import (
 )
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
 from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
+from .sandbox import Sandbox, SandboxConfig, SandboxResult, SandboxType, SandboxError
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
 from .loop_detection import LoopDetector, LoopDetectedError, LoopStatus
 from .document_converter import (
@@ -262,6 +263,12 @@ __all__ = [
     "MemoryFilter",
     "SESSION_FILE_PATTERNS",
     "PLACEHOLDER",
+    # v1.5 — Docker Sandbox
+    "Sandbox",
+    "SandboxConfig",
+    "SandboxResult",
+    "SandboxType",
+    "SandboxError",
     # v1.3 — OpenTelemetry Tracing
     "setup_tracing",
     "instrument_fastapi",

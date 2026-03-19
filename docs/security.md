@@ -353,6 +353,24 @@ Supported fix categories:
 
 Password hashing uses bcrypt (cost=12) by default, with PBKDF2-SHA256 fallback when bcrypt is not installed. Legacy SHA-256 hashes are still verified for migration but new hashes always use the stronger algorithm.
 
+## Code Execution Sandbox
+
+Agent-generated code runs inside isolated Docker containers (`core/sandbox.py`).
+
+**Isolation controls**:
+- **Memory limit** — configurable (default: 512m)
+- **CPU limit** — configurable (default: 1.0 core)
+- **Network** — disabled by default (`--network=none`)
+- **Filesystem** — writable paths use tmpfs mounts; all others read-only
+- **Timeout** — hard kill after configurable seconds (default: 60s)
+
+**Path traversal protection**:
+- All file operations validate paths against allowed roots
+- `..` components are rejected before any filesystem access
+- Virtual path mapping translates host paths to container paths
+
+**Usage**: `SandboxedShellSkill` in `SkillRegistry` wraps the sandbox as a standard agent skill. The `agent_runner.py` accepts an optional `sandbox` parameter to enable sandboxed execution.
+
 ## Future Improvements
 
 - **Rate limiting** — Add `slowapi` middleware for per-IP rate limiting on auth endpoints

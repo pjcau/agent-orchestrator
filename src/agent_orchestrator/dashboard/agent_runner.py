@@ -19,8 +19,10 @@ from ..core.agent import AgentConfig, Task, TaskResult, TaskStatus
 from ..core.cache import InMemoryCache
 from ..core.conversation import ConversationManager
 from ..core.provider import Message, Provider, Role, ToolDefinition
+from ..core.sandbox import Sandbox
 from ..core.skill import SkillRegistry, cache_middleware
 from ..skills import FileReadSkill, FileWriteSkill, GlobSkill, ShellExecSkill
+from ..skills.sandboxed_shell import SandboxedShellSkill
 from .events import Event, EventBus, EventType
 
 # Module-level shared tool cache for all agent runs
@@ -35,11 +37,15 @@ def get_tool_cache() -> InMemoryCache:
 def create_skill_registry(
     allowed_commands: list[str] | None = None,
     working_directory: str | None = None,
+    sandbox: Sandbox | None = None,
 ) -> SkillRegistry:
     """Create a skill registry with all built-in skills.
 
     Includes cache middleware for idempotent tools (file_read, glob_search).
     file_write invalidates file_read cache for the written path.
+
+    If a Sandbox instance is provided, a SandboxedShellSkill is registered
+    alongside the regular ShellExecSkill for isolated code execution.
     """
     registry = SkillRegistry()
     registry.register(FileReadSkill(working_directory=working_directory))
@@ -51,6 +57,15 @@ def create_skill_registry(
             working_directory=working_directory,
         )
     )
+
+    # Register sandboxed shell if a sandbox is provided
+    if sandbox is not None:
+        registry.register(
+            SandboxedShellSkill(
+                sandbox=sandbox,
+                allowed_commands=allowed_commands,
+            )
+        )
 
     # Add cache middleware: cache file_read and glob_search results,
     # invalidate file_read cache when file_write succeeds
