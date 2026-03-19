@@ -467,8 +467,9 @@ class TestErrorHandling:
         """When a provider raises, the agent handles it gracefully."""
 
         class FailingProvider(MockProvider):
-            async def complete(self, messages, tools=None, system=None,
-                               max_tokens=4096, temperature=0.0):
+            async def complete(
+                self, messages, tools=None, system=None, max_tokens=4096, temperature=0.0
+            ):
                 raise RuntimeError("LLM is down")
 
         c = OrchestratorClient(

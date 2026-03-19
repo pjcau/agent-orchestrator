@@ -31,9 +31,7 @@ class LoopDetectedError(Exception):
         self.tool_name = tool_name
         self.count = count
         self.session_id = session_id
-        super().__init__(
-            f"Loop detected: {tool_name} called {count} times in session {session_id}"
-        )
+        super().__init__(f"Loop detected: {tool_name} called {count} times in session {session_id}")
 
 
 def _hash_tool_call(tool_name: str, params: dict[str, Any]) -> str:

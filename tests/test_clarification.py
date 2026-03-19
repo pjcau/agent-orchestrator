@@ -37,7 +37,6 @@ from agent_orchestrator.core.provider import (
     Usage,
 )
 from agent_orchestrator.skills.clarification_skill import ClarificationSkill
-from agent_orchestrator.dashboard.events import EventType
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────

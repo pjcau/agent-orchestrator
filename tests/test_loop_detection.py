@@ -293,7 +293,9 @@ class _FakeProvider(Provider):
             return Completion(
                 content="calling tool",
                 tool_calls=[
-                    ToolCall(id=f"tc{self._call_num}", name="read_file", arguments={"path": "/same.txt"})
+                    ToolCall(
+                        id=f"tc{self._call_num}", name="read_file", arguments={"path": "/same.txt"}
+                    )
                 ],
                 usage=Usage(input_tokens=10, output_tokens=5, cost_usd=0.001),
             )

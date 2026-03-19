@@ -201,7 +201,7 @@ class InMemoryStore(BaseStore):
                        the value dict are filtered on put.
     """
 
-    def __init__(self, memory_filter: "MemoryFilter | None" = None) -> None:
+    def __init__(self, memory_filter: "MemoryFilter | None" = None) -> None:  # noqa: F821
         from .memory_filter import MemoryFilter as _MF
 
         self._data: dict[tuple[Namespace, str], Item] = {}

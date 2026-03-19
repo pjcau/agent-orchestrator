@@ -1,16 +1,13 @@
 """Tests for memory_filter — session-scoped file path sanitization."""
 
 import pytest
-import asyncio
 
 from agent_orchestrator.core.memory_filter import (
     MemoryFilter,
-    SESSION_FILE_PATTERNS,
     PLACEHOLDER,
 )
 from agent_orchestrator.core.conversation import (
     ConversationManager,
-    ConversationMessage,
 )
 from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 from agent_orchestrator.core.store import InMemoryStore
