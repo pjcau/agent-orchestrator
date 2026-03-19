@@ -31,9 +31,11 @@ class ClarificationSkill(Skill):
         self,
         manager: ClarificationManager | None = None,
         event_bus: object | None = None,
+        emit_callback: object | None = None,
     ) -> None:
         self._manager = manager or ClarificationManager()
         self._event_bus = event_bus  # EventBus instance (optional)
+        self._emit_callback = emit_callback  # async callable(event_type: str, data: dict)
 
     @property
     def name(self) -> str:
@@ -166,37 +168,30 @@ class ClarificationSkill(Skill):
         )
 
     async def _emit_request_event(self, request: ClarificationRequest) -> None:
-        """Emit a clarification.request event via EventBus."""
-        if self._event_bus is None:
+        """Emit a clarification.request event via callback."""
+        callback = self._emit_callback
+        if callback is None:
             return
 
         try:
-            from ..dashboard.events import Event, EventType
-
-            event = Event(
-                event_type=EventType.CLARIFICATION_REQUEST,
-                data=request.to_dict(),
-            )
-            await self._event_bus.emit(event)
+            await callback("clarification.request", request.to_dict())
         except Exception:
             logger.debug("Could not emit clarification request event", exc_info=True)
 
     async def _emit_timeout_event(self, request: ClarificationRequest) -> None:
-        """Emit a clarification.timeout event via EventBus."""
-        if self._event_bus is None:
+        """Emit a clarification.timeout event via callback."""
+        callback = self._emit_callback
+        if callback is None:
             return
 
         try:
-            from ..dashboard.events import Event, EventType
-
-            event = Event(
-                event_type=EventType.CLARIFICATION_TIMEOUT,
-                data={
+            await callback(
+                "clarification.timeout",
+                {
                     "request_id": request.request_id,
                     "question": request.question,
                     "timeout_seconds": request.timeout_seconds,
                 },
             )
-            await self._event_bus.emit(event)
         except Exception:
             logger.debug("Could not emit clarification timeout event", exc_info=True)

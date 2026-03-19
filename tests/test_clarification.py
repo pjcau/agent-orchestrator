@@ -110,6 +110,17 @@ class StubEventBus:
     async def emit(self, event):
         self.events.append(event)
 
+    async def emit_callback(self, event_type: str, data: dict):
+        """Callback-compatible emit for ClarificationSkill."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _Event:
+            event_type: str
+            data: dict
+
+        self.events.append(_Event(event_type=event_type, data=data))
+
 
 # ─── ClarificationRequest creation tests ────────────────────────────
 
@@ -240,7 +251,7 @@ class TestClarificationSkill:
     async def test_emits_event_on_request(self):
         """Test ask_clarification tool emits event."""
         bus = StubEventBus()
-        skill = ClarificationSkill(event_bus=bus)
+        skill = ClarificationSkill(event_bus=bus, emit_callback=bus.emit_callback)
 
         # Non-blocking so it returns immediately
         result = await skill.execute(
@@ -254,7 +265,7 @@ class TestClarificationSkill:
         assert result.success is True
         assert result.output["status"] == "emitted"
         assert len(bus.events) == 1
-        assert bus.events[0].event_type == EventType.CLARIFICATION_REQUEST
+        assert bus.events[0].event_type == "clarification.request"
 
     @pytest.mark.asyncio
     async def test_nonblocking_returns_immediately(self):
@@ -322,7 +333,7 @@ class TestClarificationSkill:
         """Test that skill execute returns timeout status with short timeout."""
         bus = StubEventBus()
         manager = ClarificationManager()
-        skill = ClarificationSkill(manager=manager, event_bus=bus)
+        skill = ClarificationSkill(manager=manager, event_bus=bus, emit_callback=bus.emit_callback)
 
         result = await skill.execute(
             {
@@ -338,7 +349,7 @@ class TestClarificationSkill:
         assert "timed out" in result.output["message"].lower()
 
         # Check timeout event was emitted
-        timeout_events = [e for e in bus.events if e.event_type == EventType.CLARIFICATION_TIMEOUT]
+        timeout_events = [e for e in bus.events if e.event_type == "clarification.timeout"]
         assert len(timeout_events) == 1
 
     @pytest.mark.asyncio
