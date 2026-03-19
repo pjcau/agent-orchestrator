@@ -135,6 +135,29 @@ class ConfigManager:
         """Import configuration from JSON string. Does NOT auto-apply; call update() to apply."""
         return _config_from_dict(json.loads(json_str))
 
+    def import_yaml(self, yaml_path: str) -> OrchestratorConfiguration:
+        """Import configuration from a YAML file.
+
+        Uses :class:`~agent_orchestrator.core.yaml_config.YAMLConfigLoader` to
+        parse the file, then returns the base ``OrchestratorConfiguration``.
+        Call ``update()`` to apply.
+        """
+        from .yaml_config import YAMLConfigLoader
+
+        loader = YAMLConfigLoader(path=yaml_path)
+        parsed = loader.load(resolve_classes=False)
+        return parsed.base_config
+
+    def export_yaml(self, path: str) -> None:
+        """Export the current configuration to a YAML file."""
+        from .yaml_config import OrchestratorConfig, YAMLConfigLoader, BudgetConfig
+
+        oc = OrchestratorConfig(base_config=self._config)
+        if self._config.budget_limit_usd is not None:
+            oc.budgets = BudgetConfig(daily_limit_usd=self._config.budget_limit_usd)
+        loader = YAMLConfigLoader()
+        loader.save(oc, path=path)
+
     def add_agent(self, agent: AgentConfigEntry) -> None:
         """Add an agent to the current configuration."""
         self._history.append(_clone_config(self._config))

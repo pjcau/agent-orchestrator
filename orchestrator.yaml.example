@@ -1,0 +1,62 @@
+# Agent Orchestrator — YAML Configuration Example
+#
+# Copy to orchestrator.yaml and customise.
+# Environment variables can be referenced with ${VAR_NAME} syntax.
+
+config_version: 1
+
+# ---------------------------------------------------------------------------
+# Providers — LLM backends available to agents
+# ---------------------------------------------------------------------------
+providers:
+  local:
+    use: agent_orchestrator.providers.local:LocalProvider
+    params:
+      base_url: "http://localhost:11434"
+
+  openrouter:
+    use: agent_orchestrator.providers.openrouter:OpenRouterProvider
+    params:
+      api_key: "${OPENROUTER_API_KEY}"
+
+  anthropic:
+    use: agent_orchestrator.providers.anthropic:AnthropicProvider
+    params:
+      api_key: "${ANTHROPIC_API_KEY}"
+
+# ---------------------------------------------------------------------------
+# Agents — autonomous units with roles and tools
+# ---------------------------------------------------------------------------
+agents:
+  backend:
+    provider: local
+    model: qwen2.5-coder
+    max_steps: 10
+    skills: [file_read, file_write, shell_exec]
+
+  frontend:
+    provider: local
+    model: qwen2.5-coder
+    max_steps: 8
+    skills: [file_read, file_write]
+
+  ai-engineer:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    max_steps: 15
+    skills: [file_read, file_write, shell_exec, web_reader]
+
+# ---------------------------------------------------------------------------
+# Routing — how tasks are assigned to providers
+# ---------------------------------------------------------------------------
+routing:
+  strategy: complexity_based
+  fallback_chain: [local, openrouter]
+
+# ---------------------------------------------------------------------------
+# Budgets — cost guardrails
+# ---------------------------------------------------------------------------
+budgets:
+  daily_limit_usd: 5.00
+  per_task_limit_usd: 0.50
+  alert_threshold_pct: 80

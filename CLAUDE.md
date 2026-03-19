@@ -112,7 +112,8 @@ agent-orchestrator/
 │       │   ├── store.py        # Cross-thread persistent store (namespace, filter, TTL)
 │       │   ├── conversation.py # Thread-based conversation memory (multi-turn, fork, persist)
 │       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
-│       │   └── tool_recovery.py    # Dangling tool call detection & placeholder injection
+│       │   ├── tool_recovery.py    # Dangling tool call detection & placeholder injection
+│       │   └── yaml_config.py     # YAML config loader (reflection, env vars, versioning)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -147,6 +148,7 @@ agent-orchestrator/
 │           ├── web_reader.py   # Web content fetcher & HTML text extractor
 │           └── skill_loader.py # Meta-skill: on-demand full skill instruction loading
 ├── tests/
+├── orchestrator.yaml.example    # Example YAML configuration for the orchestrator
 ├── pyproject.toml
 └── README.md
 ```
@@ -169,7 +171,8 @@ agent-orchestrator/
 - **WebhookRegistry** — Inbound webhooks with HMAC-SHA256 signature validation.
 - **MCPServerRegistry** — Expose agents/skills as MCP tools and resources. `Orchestrator.register_mcp_tools()` bridges all agents and skills into the registry in one call.
 - **OfflineManager** — Filter to local-only providers when offline.
-- **ConfigManager** — Load/save/validate orchestrator configuration with rollback history.
+- **ConfigManager** — Load/save/validate orchestrator configuration with rollback history. Supports YAML import/export via `import_yaml()`/`export_yaml()`.
+- **YAMLConfigLoader** — YAML-based configuration with reflection class loading (`module:Class`), `${ENV_VAR}` substitution, config versioning with auto-upgrade, and validation. See `orchestrator.yaml.example`.
 - **ProjectManager** — Multi-project support with archive/unarchive and current project.
 - **UserManager** — Multi-user RBAC: admin, developer, viewer roles with API key auth.
 - **ProviderPresetManager** — One-click presets: local_only, cloud_only, hybrid, high_quality.

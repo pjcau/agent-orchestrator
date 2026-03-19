@@ -7,7 +7,7 @@ name = "agent-orchestrator"
 version = "1.0.0"
 description = "Provider-agnostic AI agent orchestration framework"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
 # --- Harness layer (publishable library: core/, providers/, skills/) ---

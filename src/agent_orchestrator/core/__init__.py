@@ -51,6 +51,16 @@ from .config_manager import (
     AgentConfigEntry,
     ProviderConfigEntry,
 )
+from .yaml_config import (
+    YAMLConfigLoader,
+    OrchestratorConfig,
+    YAMLConfigError,
+    load_class,
+    substitute_env_vars,
+    validate_raw_config,
+    CURRENT_CONFIG_VERSION,
+)
+from .yaml_config import BudgetConfig as YAMLBudgetConfig  # noqa: F811 — avoids clash with usage.BudgetConfig
 from .project import ProjectManager, ProjectConfig
 from .users import UserManager, User, UserRole
 from .provider_presets import ProviderPresetManager, ProviderPreset
@@ -242,4 +252,14 @@ __all__ = [
     "instrument_fastapi",
     "get_tracer",
     "traced",
+    # v1.4 — YAML Configuration
+    "YAMLConfigLoader",
+    "OrchestratorConfig",
+    "BudgetConfig",
+    "YAMLConfigError",
+    "YAMLBudgetConfig",
+    "load_class",
+    "substitute_env_vars",
+    "validate_raw_config",
+    "CURRENT_CONFIG_VERSION",
 ]
