@@ -319,13 +319,25 @@ class ConversationManager:
         return [summary_msg] + recent_messages
 
     async def _load_thread(self, thread_id: str) -> list[ConversationMessage]:
-        """Load thread from in-memory cache or checkpoint."""
+        """Load thread from in-memory cache or checkpoint.
+
+        When loading from a checkpoint, dangling tool calls are recovered
+        before conversion to ConversationMessage objects.  This handles
+        the case where an agent was interrupted mid-tool-call and the
+        thread was persisted in that broken state.
+        """
         if thread_id in self._threads:
             return list(self._threads[thread_id])
 
         checkpoint = await self._checkpointer.get_latest(f"conv:{thread_id}")
         if checkpoint:
             msg_dicts = checkpoint.state.get("messages", [])
+
+            # Recover dangling tool calls from raw checkpoint data.
+            # Convert dicts that have tool_calls to Message objects,
+            # run recovery, then convert back to ConversationMessage.
+            msg_dicts = _recover_raw_messages(msg_dicts, thread_id)
+
             messages = [ConversationMessage.from_dict(d) for d in msg_dicts]
             self._threads[thread_id] = messages
             return list(messages)
@@ -345,3 +357,55 @@ class ConversationManager:
                 step_index=turn_count,
             )
         )
+
+
+def _recover_raw_messages(
+    msg_dicts: list[dict[str, Any]],
+    thread_id: str,
+) -> list[dict[str, Any]]:
+    """Recover dangling tool calls from raw message dicts.
+
+    Scans for assistant messages with ``tool_calls`` in their metadata
+    that have no matching tool response, and injects placeholder dicts.
+    Returns a new list (does not mutate the input).
+    """
+    from .tool_recovery import PLACEHOLDER_CONTENT
+
+    # Collect all tool_call_ids that already have a response.
+    responded_ids: set[str] = set()
+    for d in msg_dicts:
+        if d.get("role") == "tool":
+            tcid = d.get("metadata", {}).get("tool_call_id") or d.get("tool_call_id")
+            if tcid:
+                responded_ids.add(tcid)
+
+    result: list[dict[str, Any]] = []
+    for d in msg_dicts:
+        result.append(d)
+
+        if d.get("role") != "assistant":
+            continue
+
+        tool_calls = d.get("metadata", {}).get("tool_calls", [])
+        for tc in tool_calls:
+            tc_id = tc.get("id", "")
+            tc_name = tc.get("name", "unknown")
+            if tc_id and tc_id not in responded_ids:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Dangling tool call recovered on thread load: thread=%s tool=%s call_id=%s",
+                    thread_id,
+                    tc_name,
+                    tc_id,
+                )
+                result.append(
+                    {
+                        "role": "tool",
+                        "content": PLACEHOLDER_CONTENT,
+                        "timestamp": 0.0,
+                        "metadata": {"tool_call_id": tc_id, "recovered": True},
+                    }
+                )
+
+    return result

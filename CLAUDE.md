@@ -111,7 +111,8 @@ agent-orchestrator/
 │       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer, Store)
 │       │   ├── store.py        # Cross-thread persistent store (namespace, filter, TTL)
 │       │   ├── conversation.py # Thread-based conversation memory (multi-turn, fork, persist)
-│       │   └── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
+│       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
+│       │   └── tool_recovery.py    # Dangling tool call detection & placeholder injection
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -181,6 +182,7 @@ agent-orchestrator/
 - **Tracing** — Optional OpenTelemetry integration. Initialized in `server.py` at startup via `setup_tracing()` + `instrument_fastapi()`. Spans on `Provider.traced_complete()`, `Agent._execute_with_provider()`, graph nodes. `instrument.py` also feeds `tracing_metrics` collectors (LLM durations, node durations, stall counts) which are exported at `/metrics` for Prometheus. Graceful no-op when OTel packages not installed. Exports via OTLP HTTP to Tempo.
 - **AlertHandler** — Receives Grafana webhook alerts, collects diagnostics (recent errors, usage, metrics), creates GitHub issues with `gh` CLI. Triggers automated root-cause analysis via `.github/workflows/alert-analysis.yml`.
 - **Progressive Skill Loading** — System prompts include only compact `SkillSummary` (name + description + category) instead of full instructions. Agents invoke `load_skill` to fetch detailed instructions on demand, reducing base prompt token usage. `skill_loads_total` counter tracks load frequency.
+- **ToolRecovery** — Detects dangling tool calls (assistant messages with `tool_calls` that have no matching `ToolMessage` response) and injects placeholder responses. Called automatically in `Agent.execute()` before each LLM call and in `ConversationManager._load_thread()` when restoring persisted threads.
 
 ## Agent Error Tracking
 

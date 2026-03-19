@@ -10,6 +10,7 @@ from typing import Any
 
 from .provider import Message, Provider, Role, ToolDefinition
 from .skill import SkillRegistry
+from .tool_recovery import recover_dangling_tool_calls
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,12 @@ class Agent:
                 span.set_attribute("agent.status", result.status.value)
                 span.end()
                 return result
+
+            # Recover any dangling tool calls before sending to LLM
+            self._messages = recover_dangling_tool_calls(
+                self._messages,
+                session_id=self.config.name,
+            )
 
             completion = await provider.traced_complete(
                 messages=self._messages,
