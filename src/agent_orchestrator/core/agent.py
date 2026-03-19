@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .clarification import ClarificationManager
 from .provider import Message, Provider, Role, ToolDefinition
 from .skill import SkillRegistry
 
@@ -21,6 +22,7 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
     STALLED = "stalled"
     ESCALATED = "escalated"
+    WAITING_FOR_CLARIFICATION = "waiting_for_clarification"
 
 
 @dataclass
@@ -64,12 +66,15 @@ class Agent:
         provider: Provider,
         skill_registry: SkillRegistry,
         escalation_provider: Provider | None = None,
+        clarification_manager: ClarificationManager | None = None,
     ):
         self.config = config
         self.provider = provider
         self.skills = skill_registry
         self.escalation_provider = escalation_provider
+        self.clarification_manager = clarification_manager
         self._messages: list[Message] = []
+        self._status: TaskStatus = TaskStatus.PENDING
 
     async def execute(
         self,
@@ -128,6 +133,7 @@ class Agent:
         span.set_attribute("agent.max_steps", self.config.max_steps)
 
         self._messages: list[Message] = []
+        self._status = TaskStatus.RUNNING
 
         # Prepend conversation history for multi-turn context
         if conversation_history:
@@ -232,7 +238,15 @@ class Agent:
                     span.end()
                     return result
 
+                # Track clarification status for pause/resume
+                if tool_call.name == "ask_clarification":
+                    self._status = TaskStatus.WAITING_FOR_CLARIFICATION
+
                 skill_result = await self.skills.execute(tool_call.name, tool_call.arguments)
+
+                if tool_call.name == "ask_clarification":
+                    self._status = TaskStatus.RUNNING
+
                 self._messages.append(
                     Message(
                         role=Role.TOOL,

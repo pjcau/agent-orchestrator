@@ -91,6 +91,12 @@ from .store import (
     SearchItem,
     run_store_conformance,
 )
+from .clarification import (
+    ClarificationManager,
+    ClarificationRequest,
+    ClarificationResponse,
+    ClarificationType,
+)
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
 from .skill import (
@@ -242,4 +248,9 @@ __all__ = [
     "instrument_fastapi",
     "get_tracer",
     "traced",
+    # v1.4 — Structured Clarification
+    "ClarificationManager",
+    "ClarificationRequest",
+    "ClarificationResponse",
+    "ClarificationType",
 ]

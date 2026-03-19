@@ -51,6 +51,11 @@ class EventType(str, Enum):
     TEAM_STEP = "team.step"
     TEAM_COMPLETE = "team.complete"
 
+    # Clarification events
+    CLARIFICATION_REQUEST = "clarification.request"
+    CLARIFICATION_RESPONSE = "clarification.response"
+    CLARIFICATION_TIMEOUT = "clarification.timeout"
+
     # Cost / metrics
     COST_UPDATE = "metrics.cost_update"
     TOKEN_UPDATE = "metrics.token_update"

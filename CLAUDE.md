@@ -95,7 +95,8 @@ agent-orchestrator/
 │       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer, Store)
 │       │   ├── store.py        # Cross-thread persistent store (namespace, filter, TTL)
 │       │   ├── conversation.py # Thread-based conversation memory (multi-turn, fork, persist)
-│       │   └── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
+│       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
+│       │   └── clarification.py # Structured clarification system (typed requests, timeout, manager)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -124,7 +125,8 @@ agent-orchestrator/
 │           ├── doc_sync.py      # Documentation sync checker
 │           ├── github_skill.py  # GitHub integration via gh CLI
 │           ├── webhook_skill.py # Outgoing webhook skill
-│           └── web_reader.py   # Web content fetcher & HTML text extractor
+│           ├── web_reader.py   # Web content fetcher & HTML text extractor
+│           └── clarification_skill.py # Agent-human clarification skill (blocking/non-blocking)
 ├── tests/
 ├── pyproject.toml
 └── README.md
@@ -163,6 +165,7 @@ agent-orchestrator/
 - **ConversationManager** — Thread-based multi-turn memory. Accumulates messages across invocations via checkpointing. Supports fork, clear, max_history trim. Persists to PostgreSQL and survives container restarts. Sessions can be restored from job records via `POST /api/jobs/{session_id}/restore`.
 - **Tracing** — Optional OpenTelemetry integration. Initialized in `server.py` at startup via `setup_tracing()` + `instrument_fastapi()`. Spans on `Provider.traced_complete()`, `Agent._execute_with_provider()`, graph nodes. `instrument.py` also feeds `tracing_metrics` collectors (LLM durations, node durations, stall counts) which are exported at `/metrics` for Prometheus. Graceful no-op when OTel packages not installed. Exports via OTLP HTTP to Tempo.
 - **AlertHandler** — Receives Grafana webhook alerts, collects diagnostics (recent errors, usage, metrics), creates GitHub issues with `gh` CLI. Triggers automated root-cause analysis via `.github/workflows/alert-analysis.yml`.
+- **ClarificationManager** — Structured agent-human clarification. 5 typed request categories (missing_info, ambiguous, approach, risk, suggestion). Blocking mode pauses agent until response or 5-minute timeout. Non-blocking mode emits event and continues. Events: `clarification.request`, `clarification.response`, `clarification.timeout`.
 
 ## Agent Error Tracking
 
