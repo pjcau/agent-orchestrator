@@ -135,6 +135,9 @@ agent-orchestrator/
 │       │   ├── alert_webhook.py # Grafana alert → GitHub issue pipeline
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
 │       │   └── static/          # HTML/CSS/JS dashboard UI
+│       ├── integrations/
+│       │   ├── __init__.py      # Integration exports (TelegramBot)
+│       │   └── telegram_bot.py  # Telegram bot (long-polling, auth, chunking)
 │       └── skills/
 │           ├── filesystem.py    # File read/write/search
 │           ├── shell.py         # Shell command execution
@@ -183,6 +186,7 @@ agent-orchestrator/
 - **AlertHandler** — Receives Grafana webhook alerts, collects diagnostics (recent errors, usage, metrics), creates GitHub issues with `gh` CLI. Triggers automated root-cause analysis via `.github/workflows/alert-analysis.yml`.
 - **Progressive Skill Loading** — System prompts include only compact `SkillSummary` (name + description + category) instead of full instructions. Agents invoke `load_skill` to fetch detailed instructions on demand, reducing base prompt token usage. `skill_loads_total` counter tracks load frequency.
 - **ToolRecovery** — Detects dangling tool calls (assistant messages with `tool_calls` that have no matching `ToolMessage` response) and injects placeholder responses. Called automatically in `Agent.execute()` before each LLM call and in `ConversationManager._load_thread()` when restoring persisted threads.
+- **TelegramBot** — Telegram integration using long-polling (no public IP required). Maps Telegram chats to conversation_ids and routes free-text to agents. Commands: `/start`, `/new`, `/status`, `/agents`, `/help`. Auth via `allowed_user_ids`. Install: `pip install agent-orchestrator[telegram]`.
 
 ## Agent Error Tracking
 
