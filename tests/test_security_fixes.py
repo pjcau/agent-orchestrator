@@ -64,6 +64,28 @@ class TestLogInjectionSkillRegistry:
             assert "\r" not in record.getMessage(), "Log message contains carriage return (log injection)"
 
     @pytest.mark.asyncio
+    async def test_skill_name_newlines_sanitized(self, caplog):
+        """Newlines in the skill name param must not appear in log output."""
+        registry = SkillRegistry()
+        registry.register(EchoSkill())
+
+        # Execute with a known skill but pass malicious name indirectly
+        # The name "echo" is safe, but we test that sanitization runs
+        # by registering a skill whose name contains newlines
+        class BadNameSkill(EchoSkill):
+            @property
+            def name(self) -> str:
+                return "bad\nskill"
+
+        registry.register(BadNameSkill())
+        with caplog.at_level(logging.INFO):
+            await registry.execute("bad\nskill", {"_description": "test", "key": "val"})
+
+        for record in caplog.records:
+            assert "\n" not in record.getMessage(), "Log injection via skill name"
+            assert "\r" not in record.getMessage(), "Log injection via skill name"
+
+    @pytest.mark.asyncio
     async def test_tool_description_without_newlines_works(self, caplog):
         """Normal descriptions still appear in logs."""
         registry = SkillRegistry()

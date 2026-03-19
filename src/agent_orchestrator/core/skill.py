@@ -144,7 +144,8 @@ class SkillRegistry:
         if tool_description:
             metadata["tool_description"] = tool_description
             safe_desc = str(tool_description).replace("\n", " ").replace("\r", " ")
-            logger.info("Tool %s: %s", name, safe_desc)
+            safe_name = str(name).replace("\n", " ").replace("\r", " ")
+            logger.info("Tool %s: %s", safe_name, safe_desc)
 
         request = SkillRequest(skill_name=name, params=clean_params, metadata=metadata)
 
