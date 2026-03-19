@@ -114,6 +114,7 @@ agent-orchestrator/
 │       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
 │       │   ├── tool_recovery.py    # Dangling tool call detection & placeholder injection
 │       │   └── yaml_config.py     # YAML config loader (reflection, env vars, versioning)
+│       ├── client.py              # Embedded Python client (no HTTP/server required)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
@@ -190,6 +191,7 @@ agent-orchestrator/
 - **Progressive Skill Loading** — System prompts include only compact `SkillSummary` (name + description + category) instead of full instructions. Agents invoke `load_skill` to fetch detailed instructions on demand, reducing base prompt token usage. `skill_loads_total` counter tracks load frequency.
 - **ToolRecovery** — Detects dangling tool calls (assistant messages with `tool_calls` that have no matching `ToolMessage` response) and injects placeholder responses. Called automatically in `Agent.execute()` before each LLM call and in `ConversationManager._load_thread()` when restoring persisted threads.
 - **TelegramBot** — Telegram integration using long-polling (no public IP required). Maps Telegram chats to conversation_ids and routes free-text to agents. Commands: `/start`, `/new`, `/status`, `/agents`, `/help`. Auth via `allowed_user_ids`. Install: `pip install agent-orchestrator[telegram]`.
+- **OrchestratorClient** — Embedded Python client (`client.py`). Wraps Orchestrator, Agent, SkillRegistry, and StateGraph into a single API. Supports `run_agent()`, `run_team()`, `run_graph()`, `list_agents()`, `list_skills()`, plus sync wrappers. No HTTP server required.
 
 ## Agent Error Tracking
 
