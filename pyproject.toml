@@ -10,10 +10,19 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+# --- Harness layer (publishable library: core/, providers/, skills/) ---
 anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.50"]
 google = ["google-generativeai>=0.8"]
 postgres = ["asyncpg>=0.29"]
+harness = [
+    "anthropic>=0.40",
+    "openai>=1.50",
+    "google-generativeai>=0.8",
+    "asyncpg>=0.29",
+]
+
+# --- App layer (dashboard/, integrations/ — NOT part of library) ---
 dashboard = ["fastapi>=0.115", "uvicorn[standard]>=0.32", "websockets>=13.0", "httpx>=0.27", "authlib>=1.3", "PyJWT>=2.8", "itsdangerous>=2.1", "bcrypt>=4.0"]
 otel = [
     "opentelemetry-api>=1.27",
@@ -23,6 +32,8 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.27",
     "opentelemetry-semantic-conventions>=0.49b0",
 ]
+
+# --- Combined extras ---
 all = ["anthropic>=0.40", "openai>=1.50", "google-generativeai>=0.8", "asyncpg>=0.29", "fastapi>=0.115", "uvicorn[standard]>=0.32", "websockets>=13.0", "httpx>=0.27", "authlib>=1.3", "PyJWT>=2.8", "itsdangerous>=2.1", "bcrypt>=4.0", "opentelemetry-api>=1.27", "opentelemetry-sdk>=1.27", "opentelemetry-instrumentation-fastapi>=0.48b0", "opentelemetry-instrumentation-httpx>=0.48b0", "opentelemetry-exporter-otlp-proto-http>=1.27", "opentelemetry-semantic-conventions>=0.49b0"]
 dev = [
     "pytest>=8.0",

@@ -13,6 +13,22 @@ Every code change (new feature, bug fix, refactor) **MUST** include:
 
 Do NOT skip these steps. They are required for every modification.
 
+## Import Boundary (Harness / App)
+
+The codebase is split into two layers to support library distribution:
+
+| Layer | Directories | Purpose |
+|-------|-------------|---------|
+| **HARNESS** (library) | `core/`, `providers/`, `skills/`, `client.py` | Publishable pip package — no dashboard deps |
+| **APP** (application) | `dashboard/`, `integrations/` | FastAPI app, UI, external integrations |
+
+**Rule**: Files in `core/`, `providers/`, `skills/`, `client.py` MUST NEVER import from `dashboard/` or `integrations/`.
+
+This boundary is enforced by `tests/test_import_boundary.py` (AST-based, runs in CI). Use events or dependency injection to communicate from harness to app layer.
+
+Install only the library: `pip install agent-orchestrator[harness]`
+Install everything: `pip install agent-orchestrator[all]`
+
 ## Overview
 
 Provider-agnostic AI agent orchestration framework. Abstracts the concepts of skill, agent, subagent, and inter-agent cooperation away from any single LLM vendor (Claude, GPT, Gemini, Llama, Mistral, etc.).
