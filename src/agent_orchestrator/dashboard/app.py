@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -444,6 +444,80 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="session_{session_id}.zip"'},
         )
+
+    @app.post("/api/upload")
+    async def upload_document(request: Request):
+        """Upload a document and convert it to Markdown for LLM consumption.
+
+        Accepts multipart/form-data with a 'file' field.
+        Returns the converted Markdown content and metadata.
+
+        Size limits: 10 MB file size, 50 pages PDF, 10,000 rows CSV/Excel.
+        """
+        from ..core.document_converter import (
+            ContentLimitError,
+            DependencyMissingError,
+            DocumentConversionError,
+            DocumentConverter,
+            FileTooLargeError,
+            MAX_FILE_SIZE_BYTES,
+            UnsupportedFormatError,
+        )
+
+        content_type = request.headers.get("content-type", "")
+        if "multipart/form-data" not in content_type:
+            return JSONResponse(
+                content={"error": "Content-Type must be multipart/form-data"},
+                status_code=400,
+            )
+
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None:
+            return JSONResponse(
+                content={"error": "No 'file' field in form data"},
+                status_code=400,
+            )
+
+        filename = getattr(upload, "filename", None) or "unknown"
+        data = await upload.read()
+
+        if len(data) > MAX_FILE_SIZE_BYTES:
+            size_mb = len(data) / (1024 * 1024)
+            return JSONResponse(
+                content={
+                    "error": f"File size {size_mb:.1f} MB exceeds maximum of "
+                    f"{MAX_FILE_SIZE_BYTES / (1024 * 1024):.0f} MB"
+                },
+                status_code=413,
+            )
+
+        converter = DocumentConverter(output_dir=str(job_logger.session_dir))
+        try:
+            result = await converter.convert_bytes(
+                data, filename, save_dir=str(job_logger.session_dir)
+            )
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "filename": filename,
+                    "file_type": result.file_type,
+                    "markdown_content": result.markdown_content,
+                    "markdown_path": result.markdown_path,
+                    "page_count": result.page_count,
+                    "row_count": result.row_count,
+                }
+            )
+        except UnsupportedFormatError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=400)
+        except FileTooLargeError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=413)
+        except ContentLimitError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=413)
+        except DependencyMissingError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=501)
+        except DocumentConversionError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=500)
 
     @app.get("/api/usage")
     async def usage_stats():

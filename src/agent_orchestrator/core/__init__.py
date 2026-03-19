@@ -105,6 +105,15 @@ from .conversation import ConversationManager, ConversationMessage, Conversation
 from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
 from .loop_detection import LoopDetector, LoopDetectedError, LoopStatus
+from .document_converter import (
+    DocumentConverter,
+    ConvertedDocument,
+    DocumentConversionError,
+    UnsupportedFormatError,
+    FileTooLargeError,
+    DependencyMissingError,
+    ContentLimitError,
+)
 from .skill import (
     SkillRequest,
     SkillMiddleware,
@@ -272,4 +281,12 @@ __all__ = [
     "LoopDetector",
     "LoopDetectedError",
     "LoopStatus",
+    # v1.6 — File Upload & Document Conversion
+    "DocumentConverter",
+    "ConvertedDocument",
+    "DocumentConversionError",
+    "UnsupportedFormatError",
+    "FileTooLargeError",
+    "DependencyMissingError",
+    "ContentLimitError",
 ]

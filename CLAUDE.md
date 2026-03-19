@@ -113,6 +113,7 @@ agent-orchestrator/
 │       │   ├── conversation.py # Thread-based conversation memory (multi-turn, fork, persist)
 │       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
 │       │   ├── tool_recovery.py    # Dangling tool call detection & placeholder injection
+│       │   ├── document_converter.py # File upload & document-to-Markdown conversion
 │       │   ├── yaml_config.py     # YAML config loader (reflection, env vars, versioning)
 │       │   ├── memory_filter.py   # Session-scoped file path filtering for persistent memory
 │       │   └── loop_detection.py # Loop detection middleware (sliding window, LRU eviction)
@@ -198,6 +199,7 @@ agent-orchestrator/
 - **SlackBot** — Slack integration via Socket Mode (no public IP). Maps Slack threads to orchestrator conversations (`slack-{channel}-{thread_ts}`). Handles `@bot` mentions, `/agent` and `/team` commands. Auto-detects task category for agent routing. Install: `pip install agent-orchestrator[slack]`.
 - **MemoryFilter** — Sanitizes session-scoped file paths (job dirs, tmp files, uploads, workspace) before persisting to conversation memory or cross-thread store. Replaces paths with `[session-file]` placeholder. Messages containing only session-file references are dropped. Integrated with `ConversationManager._save_thread()` and `InMemoryStore.aput()`.
 - **LoopDetector** — Per-session sliding window loop detection for agent tool calls. Hashes tool_name+params (MD5), tracks in a `deque(maxlen=20)`. Warns at 3 repeats, hard stops at 5. LRU eviction at 500 sessions. Integrated into `Agent.execute()` via optional `loop_detector` + `session_id` params. Emits `loop.warning` / `loop.hard_stop` events; increments `loop_warnings_total` / `loop_hard_stops_total` counters.
+- **DocumentConverter** — Converts uploaded files (PDF, Excel, CSV, Word, PowerPoint, HTML, text) to Markdown for LLM consumption. Graceful fallback when optional deps missing. Limits: 10 MB file size, 50 PDF pages, 10,000 spreadsheet rows. Upload via `POST /api/upload` (multipart/form-data).
 
 ## Agent Error Tracking
 
