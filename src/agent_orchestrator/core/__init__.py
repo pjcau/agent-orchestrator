@@ -101,6 +101,12 @@ from .store import (
     SearchItem,
     run_store_conformance,
 )
+from .clarification import (
+    ClarificationManager,
+    ClarificationRequest,
+    ClarificationResponse,
+    ClarificationType,
+)
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
 from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
@@ -289,4 +295,9 @@ __all__ = [
     "FileTooLargeError",
     "DependencyMissingError",
     "ContentLimitError",
+    # v1.7 — Structured Clarification
+    "ClarificationManager",
+    "ClarificationRequest",
+    "ClarificationResponse",
+    "ClarificationType",
 ]

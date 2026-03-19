@@ -55,6 +55,11 @@ class EventType(str, Enum):
     LOOP_WARNING = "loop.warning"
     LOOP_HARD_STOP = "loop.hard_stop"
 
+    # Clarification events
+    CLARIFICATION_REQUEST = "clarification.request"
+    CLARIFICATION_RESPONSE = "clarification.response"
+    CLARIFICATION_TIMEOUT = "clarification.timeout"
+
     # Cost / metrics
     COST_UPDATE = "metrics.cost_update"
     TOKEN_UPDATE = "metrics.token_update"

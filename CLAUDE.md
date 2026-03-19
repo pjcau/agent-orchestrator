@@ -116,7 +116,8 @@ agent-orchestrator/
 │       │   ├── document_converter.py # File upload & document-to-Markdown conversion
 │       │   ├── yaml_config.py     # YAML config loader (reflection, env vars, versioning)
 │       │   ├── memory_filter.py   # Session-scoped file path filtering for persistent memory
-│       │   └── loop_detection.py # Loop detection middleware (sliding window, LRU eviction)
+│       │   ├── loop_detection.py # Loop detection middleware (sliding window, LRU eviction)
+│       │   └── clarification.py # Structured clarification system (typed requests, timeout, manager)
 │       ├── client.py              # Embedded Python client (no HTTP/server required)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
@@ -151,7 +152,8 @@ agent-orchestrator/
 │           ├── github_skill.py  # GitHub integration via gh CLI
 │           ├── webhook_skill.py # Outgoing webhook skill
 │           ├── web_reader.py   # Web content fetcher & HTML text extractor
-│           └── skill_loader.py # Meta-skill: on-demand full skill instruction loading
+│           ├── skill_loader.py # Meta-skill: on-demand full skill instruction loading
+│           └── clarification_skill.py # Agent-human clarification skill (blocking/non-blocking)
 ├── tests/
 ├── orchestrator.yaml.example    # Example YAML configuration for the orchestrator
 ├── pyproject.toml
@@ -201,6 +203,7 @@ agent-orchestrator/
 - **MemoryFilter** — Sanitizes session-scoped file paths (job dirs, tmp files, uploads, workspace) before persisting to conversation memory or cross-thread store. Replaces paths with `[session-file]` placeholder. Messages containing only session-file references are dropped. Integrated with `ConversationManager._save_thread()` and `InMemoryStore.aput()`.
 - **LoopDetector** — Per-session sliding window loop detection for agent tool calls. Hashes tool_name+params (MD5), tracks in a `deque(maxlen=20)`. Warns at 3 repeats, hard stops at 5. LRU eviction at 500 sessions. Integrated into `Agent.execute()` via optional `loop_detector` + `session_id` params. Emits `loop.warning` / `loop.hard_stop` events; increments `loop_warnings_total` / `loop_hard_stops_total` counters.
 - **DocumentConverter** — Converts uploaded files (PDF, Excel, CSV, Word, PowerPoint, HTML, text) to Markdown for LLM consumption. Graceful fallback when optional deps missing. Limits: 10 MB file size, 50 PDF pages, 10,000 spreadsheet rows. Upload via `POST /api/upload` (multipart/form-data).
+- **ClarificationManager** — Structured agent-human clarification. 5 typed request categories (missing_info, ambiguous, approach, risk, suggestion). Blocking mode pauses agent until response or 5-minute timeout. Non-blocking mode emits event and continues. Events: `clarification.request`, `clarification.response`, `clarification.timeout`.
 
 ## Agent Error Tracking
 

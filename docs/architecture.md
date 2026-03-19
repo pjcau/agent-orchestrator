@@ -104,6 +104,7 @@ Examples:
 - `github` — GitHub integration via gh CLI
 - `webhook_send` — outgoing webhook notifications
 - `doc_sync` — documentation sync checker
+- `ask_clarification` — structured agent-human clarification (blocking/non-blocking)
 
 ### 4. Orchestrator
 
