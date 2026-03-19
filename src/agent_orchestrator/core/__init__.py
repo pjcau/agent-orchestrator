@@ -104,6 +104,7 @@ from .store import (
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
 from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
+from .loop_detection import LoopDetector, LoopDetectedError, LoopStatus
 from .skill import (
     SkillRequest,
     SkillMiddleware,
@@ -267,4 +268,8 @@ __all__ = [
     "substitute_env_vars",
     "validate_raw_config",
     "CURRENT_CONFIG_VERSION",
+    # v1.5 — Loop Detection
+    "LoopDetector",
+    "LoopDetectedError",
+    "LoopStatus",
 ]

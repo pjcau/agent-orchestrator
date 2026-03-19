@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .loop_detection import LoopDetector, LoopStatus
 from .provider import Message, Provider, Role, ToolDefinition
 from .skill import SkillRegistry
 from .tool_recovery import recover_dangling_tool_calls
@@ -65,17 +66,20 @@ class Agent:
         provider: Provider,
         skill_registry: SkillRegistry,
         escalation_provider: Provider | None = None,
+        loop_detector: LoopDetector | None = None,
     ):
         self.config = config
         self.provider = provider
         self.skills = skill_registry
         self.escalation_provider = escalation_provider
+        self.loop_detector = loop_detector
         self._messages: list[Message] = []
 
     async def execute(
         self,
         task: Task,
         conversation_history: list[Message] | None = None,
+        session_id: str | None = None,
     ) -> TaskResult:
         """Run the agent on a task with anti-stall enforcement and escalation.
 
@@ -83,11 +87,14 @@ class Agent:
             task: The task to execute.
             conversation_history: Optional list of previous user/assistant
                 messages to prepend for multi-turn context.
+            session_id: Optional session identifier for loop detection.
+                If not provided, loop detection is skipped.
         """
         result = await self._execute_with_provider(
             task,
             self.provider,
             conversation_history=conversation_history,
+            session_id=session_id,
         )
 
         # Escalate to cloud if local stalled and escalation provider is available
@@ -102,6 +109,7 @@ class Agent:
                 task,
                 self.escalation_provider,
                 conversation_history=conversation_history,
+                session_id=session_id,
             )
             escalated_result.escalated = True
             escalated_result.steps_taken += result.steps_taken
@@ -118,6 +126,7 @@ class Agent:
         task: Task,
         provider: Provider,
         conversation_history: list[Message] | None = None,
+        session_id: str | None = None,
     ) -> TaskResult:
         """Run the agent loop with a specific provider."""
         from .tracing import get_tracer
@@ -218,6 +227,28 @@ class Agent:
             )
 
             for tool_call in completion.tool_calls:
+                # Loop detection: check before executing
+                if self.loop_detector and session_id:
+                    loop_status = self.loop_detector.check(
+                        session_id, tool_call.name, tool_call.arguments or {}
+                    )
+                    if loop_status == LoopStatus.HARD_STOP:
+                        result = TaskResult(
+                            status=TaskStatus.FAILED,
+                            output=f"Loop detected: {tool_call.name} repeated too many times",
+                            steps_taken=steps,
+                            total_tokens=total_tokens,
+                            total_cost_usd=total_cost,
+                            error=f"Loop hard stop on {tool_call.name}",
+                            provider_used=provider.model_id,
+                        )
+                        span.set_attribute("agent.steps_taken", steps)
+                        span.set_attribute("agent.total_tokens", total_tokens)
+                        span.set_attribute("agent.total_cost_usd", total_cost)
+                        span.set_attribute("agent.status", result.status.value)
+                        span.end()
+                        return result
+
                 # Anti-stall: check retry count
                 approach_key = f"{tool_call.name}:{hash(str(tool_call.arguments))}"
                 retry_counts[approach_key] = retry_counts.get(approach_key, 0) + 1

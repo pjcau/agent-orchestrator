@@ -291,6 +291,16 @@ def default_metrics(registry: MetricsRegistry | None = None) -> MetricsRegistry:
         "Estimated tokens saved by context summarization",
     )
 
+    # Loop detection metrics
+    reg.counter(
+        "loop_warnings_total",
+        "Total number of loop warning events",
+    )
+    reg.counter(
+        "loop_hard_stops_total",
+        "Total number of loop hard stop events",
+    )
+
     return reg
 
 

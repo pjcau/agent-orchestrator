@@ -51,6 +51,10 @@ class EventType(str, Enum):
     TEAM_STEP = "team.step"
     TEAM_COMPLETE = "team.complete"
 
+    # Loop detection events
+    LOOP_WARNING = "loop.warning"
+    LOOP_HARD_STOP = "loop.hard_stop"
+
     # Cost / metrics
     COST_UPDATE = "metrics.cost_update"
     TOKEN_UPDATE = "metrics.token_update"

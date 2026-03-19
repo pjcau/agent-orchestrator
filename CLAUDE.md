@@ -114,7 +114,8 @@ agent-orchestrator/
 │       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
 │       │   ├── tool_recovery.py    # Dangling tool call detection & placeholder injection
 │       │   ├── yaml_config.py     # YAML config loader (reflection, env vars, versioning)
-│       │   └── memory_filter.py   # Session-scoped file path filtering for persistent memory
+│       │   ├── memory_filter.py   # Session-scoped file path filtering for persistent memory
+│       │   └── loop_detection.py # Loop detection middleware (sliding window, LRU eviction)
 │       ├── client.py              # Embedded Python client (no HTTP/server required)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
@@ -196,6 +197,7 @@ agent-orchestrator/
 - **OrchestratorClient** — Embedded Python client (`client.py`). Wraps Orchestrator, Agent, SkillRegistry, and StateGraph into a single API. Supports `run_agent()`, `run_team()`, `run_graph()`, `list_agents()`, `list_skills()`, plus sync wrappers. No HTTP server required.
 - **SlackBot** — Slack integration via Socket Mode (no public IP). Maps Slack threads to orchestrator conversations (`slack-{channel}-{thread_ts}`). Handles `@bot` mentions, `/agent` and `/team` commands. Auto-detects task category for agent routing. Install: `pip install agent-orchestrator[slack]`.
 - **MemoryFilter** — Sanitizes session-scoped file paths (job dirs, tmp files, uploads, workspace) before persisting to conversation memory or cross-thread store. Replaces paths with `[session-file]` placeholder. Messages containing only session-file references are dropped. Integrated with `ConversationManager._save_thread()` and `InMemoryStore.aput()`.
+- **LoopDetector** — Per-session sliding window loop detection for agent tool calls. Hashes tool_name+params (MD5), tracks in a `deque(maxlen=20)`. Warns at 3 repeats, hard stops at 5. LRU eviction at 500 sessions. Integrated into `Agent.execute()` via optional `loop_detector` + `session_id` params. Emits `loop.warning` / `loop.hard_stop` events; increments `loop_warnings_total` / `loop_hard_stops_total` counters.
 
 ## Agent Error Tracking
 
