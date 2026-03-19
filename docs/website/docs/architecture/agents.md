@@ -143,3 +143,11 @@ graph LR
     SM["Social-Media-Manager"] <-->|"content distribution"| CS
     EM["Email-Marketer"] <-->|"funnel automation, nurture flows"| GH
 ```
+
+### Tooling (1 agent)
+
+| Agent | Model | Responsibility |
+|-------|-------|---------------|
+| skillkit-scout | opus | Searches SkillKit marketplace (15,000+ skills), installs and assigns to appropriate agents |
+
+When the team-lead cannot route a task, skillkit-scout searches for existing skills. If found, the skill is installed and assigned. If not found, it reports to the user and suggests a custom agent or skill.

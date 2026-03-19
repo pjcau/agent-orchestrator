@@ -40,6 +40,7 @@ The interface uses a simple message-based protocol. Tool use is normalized to a 
 | Anthropic | `AnthropicProvider` | claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 |
 | OpenAI | `OpenAIProvider` | gpt-4o, gpt-4o-mini, o3 |
 | Google | `GoogleProvider` | gemini-2.0-flash, gemini-2.5-pro |
+| OpenRouter | `OpenRouterProvider` | Any OpenRouter model (qwen, deepseek, etc.) |
 | Local/Ollama | `LocalProvider` | Any Ollama model |
 
 ## Routing Strategies

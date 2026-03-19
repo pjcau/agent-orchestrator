@@ -218,7 +218,7 @@ Tool and LLM errors from sub-agents are persisted to PostgreSQL (`agent_errors` 
 - **API**: `GET /api/errors` — returns recent errors (last 100) and summary grouped by agent/error_type
 - **Graceful**: Falls back silently if DB unavailable (no crash, in-memory only)
 
-## Agents (24)
+## Agents (25)
 
 Agents are organised by **category** under `.claude/agents/<category>/`.
 The `team-lead` lives at root level (`.claude/agents/team-lead.md`).
@@ -327,7 +327,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
   → Not found: report to user, suggest custom agent/skill
 ```
 
-### Skills Map (17 total)
+### Skills Map (16 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|

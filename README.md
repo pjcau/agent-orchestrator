@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://pjcau.github.io/agent-orchestrator/"><img src="https://img.shields.io/badge/docs-docusaurus-7c3aed?style=flat-square" alt="Documentation"></a>
   <a href="https://pjcau.github.io/agent-orchestrator/docs/architecture/providers"><img src="https://img.shields.io/badge/providers-5-06b6d4?style=flat-square" alt="5 Providers"></a>
-  <a href="https://pjcau.github.io/agent-orchestrator/docs/architecture/agents"><img src="https://img.shields.io/badge/agents-24-a78bfa?style=flat-square" alt="24 Agents"></a>
+  <a href="https://pjcau.github.io/agent-orchestrator/docs/architecture/agents"><img src="https://img.shields.io/badge/agents-25-a78bfa?style=flat-square" alt="25 Agents"></a>
   <a href="https://pjcau.github.io/agent-orchestrator/docs/architecture/overview#routing-strategies"><img src="https://img.shields.io/badge/routing-6_strategies-22d3ee?style=flat-square" alt="6 Strategies"></a>
 </p>
 
@@ -84,11 +84,11 @@ Parallel execution, conditional routing, human-in-the-loop, checkpointing, sub-g
 
 ```bash
 pip install -e ".[dev]"
-pytest                              # 930+ tests
+pytest                              # 1355+ tests
 ruff check src/ tests/              # lint
 docker compose up docs -d           # docs site at http://localhost:3000
 ```
 
 ## Status
 
-v1.1.0 — 5 providers, StateGraph engine, 24 agents, real-time dashboard, fail-closed auth, 930+ tests.
+v1.2.0 — 5 providers, StateGraph engine, 25 agents, real-time dashboard, fail-closed auth, embedded client, YAML config, Slack/Telegram integrations, loop detection, sandbox execution, document upload, clarification system, 1355+ tests.

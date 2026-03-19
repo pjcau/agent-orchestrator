@@ -184,6 +184,23 @@ class Sandbox:
 - **Virtual path mapping** — translates host paths to container paths
 - **SandboxedShellSkill** — drop-in Skill wrapper for agent use via SkillRegistry
 
+## 7. DeerFlow Features (v1.2)
+
+The following abstractions were added based on analysis of the ByteDance DeerFlow project:
+
+- **LoopDetector** — per-session sliding window detection of repeated tool calls (warn at 3, hard stop at 5). LRU eviction at 500 sessions.
+- **ToolRecovery** — detects dangling tool calls (no matching ToolMessage) and injects placeholder responses to prevent LLM state corruption.
+- **Tool `_description`** — optional parameter on all skills forcing the LLM to explain WHY it's calling a tool. Logged to audit trail.
+- **Progressive Skill Loading** — system prompts include compact `SkillSummary` only; agents invoke `load_skill` to fetch full instructions on demand.
+- **Context Summarization** — configurable triggers (message count, token count, fraction) that auto-summarize old messages, retaining the last N verbatim.
+- **OrchestratorClient** — embedded Python client for scripts/notebooks. No HTTP server needed.
+- **YAML Config** — `orchestrator.yaml` with `use:` reflection pattern, env var substitution, config versioning.
+- **ClarificationManager** — structured agent-human clarification (5 types, blocking/non-blocking, 5-minute timeout).
+- **DocumentConverter** — converts PDF, Excel, CSV, Word, PowerPoint, HTML, text to Markdown. Graceful fallback when deps missing.
+- **MemoryFilter** — sanitizes session-scoped file paths before persisting to memory/store.
+- **SlackBot** — Socket Mode integration (no public IP). Thread-based conversations, category auto-detection.
+- **TelegramBot** — long-polling integration. Auth via user ID whitelist, response chunking.
+
 ## Mapping from Claude Code Concepts
 
 | Claude Code | This Framework | Notes |
