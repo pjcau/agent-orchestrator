@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Any, Awaitable, Callable
 
 from .checkpoint import Checkpoint, Checkpointer, InMemoryCheckpointer
+from .memory_filter import MemoryFilter
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +139,11 @@ class ConversationManager:
         max_history: int = 0,
         summarization_config: SummarizationConfig | None = None,
         summarize_func: Callable[[list[dict[str, Any]]], Awaitable[str]] | None = None,
+        memory_filter: MemoryFilter | None = None,
     ):
         self._checkpointer = checkpointer or InMemoryCheckpointer()
         self._max_history = max_history
+        self._memory_filter = memory_filter or MemoryFilter()
         self._threads: dict[str, list[ConversationMessage]] = {}
         self._summarization_config = summarization_config
         self._summarize_func = summarize_func
@@ -345,14 +348,21 @@ class ConversationManager:
         return []
 
     async def _save_thread(self, thread_id: str, messages: list[ConversationMessage]) -> None:
-        """Persist thread to in-memory cache and checkpoint store."""
+        """Persist thread to in-memory cache and checkpoint store.
+
+        Applies MemoryFilter before persisting: session-scoped file paths
+        are replaced with [session-file] and messages containing only
+        session-file references are dropped from the persisted state.
+        """
         self._threads[thread_id] = messages
         turn_count = len([m for m in messages if m.role == "user"])
+        msg_dicts = [m.to_dict() for m in messages]
+        filtered_dicts = self._memory_filter.filter_messages(msg_dicts)
         await self._checkpointer.save(
             Checkpoint(
                 checkpoint_id=f"conv:{thread_id}:{turn_count}",
                 thread_id=f"conv:{thread_id}",
-                state={"messages": [m.to_dict() for m in messages]},
+                state={"messages": filtered_dicts},
                 next_nodes=[],
                 step_index=turn_count,
             )

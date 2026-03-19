@@ -102,6 +102,7 @@ from .store import (
     run_store_conformance,
 )
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
+from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
 from .skill import (
     SkillRequest,
@@ -247,6 +248,10 @@ __all__ = [
     "ConversationManager",
     "ConversationMessage",
     "ConversationResult",
+    # v1.4 — Memory Upload Filtering
+    "MemoryFilter",
+    "SESSION_FILE_PATTERNS",
+    "PLACEHOLDER",
     # v1.3 — OpenTelemetry Tracing
     "setup_tracing",
     "instrument_fastapi",

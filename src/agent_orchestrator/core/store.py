@@ -194,11 +194,19 @@ class InMemoryStore(BaseStore):
 
     Items are stored in a flat dict keyed by (namespace, key).
     TTL is enforced on read (lazy expiration).
+
+    Args:
+        memory_filter: Optional MemoryFilter to sanitize string values
+                       before persistence. When set, all string fields in
+                       the value dict are filtered on put.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, memory_filter: "MemoryFilter | None" = None) -> None:
+        from .memory_filter import MemoryFilter as _MF
+
         self._data: dict[tuple[Namespace, str], Item] = {}
         self._ttls: dict[tuple[Namespace, str], float] = {}  # expiry timestamps
+        self._memory_filter: _MF | None = memory_filter
 
     def _is_expired(self, compound_key: tuple[Namespace, str]) -> bool:
         expiry = self._ttls.get(compound_key)
@@ -216,6 +224,18 @@ class InMemoryStore(BaseStore):
         self._cleanup_expired(compound_key)
         return self._data.get(compound_key)
 
+    def _filter_value(self, value: dict[str, Any]) -> dict[str, Any]:
+        """Apply memory filter to string fields in value dict."""
+        if self._memory_filter is None:
+            return value
+        filtered: dict[str, Any] = {}
+        for k, v in value.items():
+            if isinstance(v, str):
+                filtered[k] = self._memory_filter.filter_message(v)
+            else:
+                filtered[k] = v
+        return filtered
+
     async def aput(
         self,
         namespace: Namespace,
@@ -228,10 +248,11 @@ class InMemoryStore(BaseStore):
         now = time.time()
         existing = self._data.get(compound_key)
         created_at = existing.created_at if existing else now
+        filtered_value = self._filter_value(value)
         self._data[compound_key] = Item(
             namespace=namespace,
             key=key,
-            value=value,
+            value=filtered_value,
             created_at=created_at,
             updated_at=now,
         )
