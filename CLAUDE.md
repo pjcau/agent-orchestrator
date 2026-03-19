@@ -138,7 +138,8 @@ agent-orchestrator/
 │       │   ├── server.py        # CLI entrypoint (uvicorn)
 │       │   └── static/          # HTML/CSS/JS dashboard UI
 │       ├── integrations/
-│       │   ├── __init__.py      # Integration exports (TelegramBot)
+│       │   ├── __init__.py      # Integration exports (SlackBot, TelegramBot)
+│       │   ├── slack_bot.py     # Slack bot (Socket Mode, thread mapping, category routing)
 │       │   └── telegram_bot.py  # Telegram bot (long-polling, auth, chunking)
 │       └── skills/
 │           ├── filesystem.py    # File read/write/search
@@ -192,6 +193,7 @@ agent-orchestrator/
 - **ToolRecovery** — Detects dangling tool calls (assistant messages with `tool_calls` that have no matching `ToolMessage` response) and injects placeholder responses. Called automatically in `Agent.execute()` before each LLM call and in `ConversationManager._load_thread()` when restoring persisted threads.
 - **TelegramBot** — Telegram integration using long-polling (no public IP required). Maps Telegram chats to conversation_ids and routes free-text to agents. Commands: `/start`, `/new`, `/status`, `/agents`, `/help`. Auth via `allowed_user_ids`. Install: `pip install agent-orchestrator[telegram]`.
 - **OrchestratorClient** — Embedded Python client (`client.py`). Wraps Orchestrator, Agent, SkillRegistry, and StateGraph into a single API. Supports `run_agent()`, `run_team()`, `run_graph()`, `list_agents()`, `list_skills()`, plus sync wrappers. No HTTP server required.
+- **SlackBot** — Slack integration via Socket Mode (no public IP). Maps Slack threads to orchestrator conversations (`slack-{channel}-{thread_ts}`). Handles `@bot` mentions, `/agent` and `/team` commands. Auto-detects task category for agent routing. Install: `pip install agent-orchestrator[slack]`.
 
 ## Agent Error Tracking
 
