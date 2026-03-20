@@ -64,6 +64,7 @@ agent-orchestrator/
 │   └── simulate_finance_team.py # Multi-agent finance simulation (OpenRouter)
 ├── docker-compose.yml           # Dev services (postgres, dashboard, docs)
 ├── docker-compose.prod.yml      # Production (nginx, redis, prometheus, grafana, archiver, tempo)
+├── analysis/                     # Deep-dive analyses of external repos (langgraph, deepflow, paperclip)
 ├── docs/
 │   ├── architecture.md          # Core abstractions & patterns
 │   ├── cost-analysis.md         # Provider comparison & cost modeling
@@ -327,7 +328,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
   → Not found: report to user, suggest custom agent/skill
 ```
 
-### Skills Map (16 total)
+### Skills Map (18 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -347,6 +348,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 | `/fetch-star-repos` | scout | Fetch GitHub starred repos for research scout analysis |
 | `/research-scout` | research-scout | Analyze starred repos and propose code improvements |
 | `/web-research` | all | Search the internet for solutions, docs, and best practices |
+| `/analysis` | all | Deep-dive repo analysis: clone, explore, produce up to 30 MD files in analysis/<name>/ |
 
 ### Research Scout & Nightly Workflow
 
@@ -537,8 +539,5 @@ docker compose up docs          # http://localhost:3000
 | UserPromptSubmit | (all prompts) | Suggests relevant skills based on keyword matching |
 | PreToolUse | `Bash` | Safety guard (prevents dangerous operations) |
 | PostToolUse | `Edit` (project source files) | Reminds to run tests |
-| Pre-commit (git) | all commits | Lint, format, test, **docs check** |
 
-The **docs check** (`.husky/check-docs.sh`) verifies that CLAUDE.md stays in sync with the actual codebase: modules, docker services, hook scripts, test coverage.
-
-Config: `.claude/settings.json` · Scripts: `.claude/hooks/` · Git hooks: `.husky/`
+Config: `.claude/settings.json` · Scripts: `.claude/hooks/`

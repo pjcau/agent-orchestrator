@@ -65,6 +65,11 @@ if echo "$PROMPT" | grep -qE '(fix|bug|broken|error|crash|fail|fixa|correggi|rot
   SUGGESTIONS="$SUGGESTIONS /fix"
 fi
 
+# Analysis (deep repo analysis)
+if echo "$PROMPT" | grep -qE '(analy[sz]|deep.?dive|repo.*explor|study.*repo|examine.*repo)'; then
+  SUGGESTIONS="$SUGGESTIONS /analysis"
+fi
+
 if [ -n "$SUGGESTIONS" ]; then
   echo "{\"systemMessage\": \"Relevant skills:$SUGGESTIONS\"}"
 fi
