@@ -16,7 +16,16 @@
         "Real-time Execution Streaming (implemented as CompiledGraph.astream)",
         "Ephemeral Session Storage (implemented as SessionStore)"
       ]
+    },
+    "https://github.com/f/prompts.chat": {
+      "processed_at": "2026-03-19T03:07:36.437344+00:00",
+      "summary": "f/prompts.chat",
+      "improvements": [
+        "Prompt Template Metadata Storage",
+        "Dynamic System Prompt Injection",
+        "MCP Server for Prompt Access"
+      ]
     }
   },
-  "last_run": "2026-03-12T12:00:00.000000+00:00"
+  "last_run": "2026-03-19T03:07:36.437405+00:00"
 }
