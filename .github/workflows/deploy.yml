@@ -112,6 +112,9 @@ jobs:
           _inject BASE_URL "https://agents-orchestrator.com"
           _inject GITHUB_USERNAME "pjcau"
 
+          # Ensure Docker buildx >= 0.17.0 (required by compose build)
+          $SSH_CMD "ARCH=\$(uname -m) && [ \"\$ARCH\" = 'x86_64' ] && ARCH='amd64'; mkdir -p ~/.docker/cli-plugins && curl -fsSL \"https://github.com/docker/buildx/releases/download/v0.21.2/buildx-v0.21.2.linux-\$ARCH\" -o ~/.docker/cli-plugins/docker-buildx && chmod +x ~/.docker/cli-plugins/docker-buildx && docker buildx version"
+
           # Build and restart services (stop old containers first to avoid name conflicts)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans --timeout 30"
