@@ -133,10 +133,19 @@ jobs:
 
       - name: Health Check
         env:
+          SSH_KEY: ~/.ssh/deploy_key
           HOST: ${{ secrets.EC2_HOST }}
+          USER: ec2-user
         run: |
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
           echo "Waiting for service to start..."
           sleep 30
+
+          # Diagnose from inside EC2
+          echo "=== Container status ==="
+          $SSH_CMD "docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'nginx|dashboard'" || true
+          echo "=== Internal health check ==="
+          $SSH_CMD "docker exec \$(docker ps -q --filter name=nginx | head -1) wget -qO- --no-check-certificate https://localhost/health 2>&1 | head -5" || echo "Internal check failed"
 
           for i in $(seq 1 10); do
             STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$HOST/health" 2>/dev/null) || STATUS="000"
@@ -147,6 +156,12 @@ jobs:
             echo "Attempt $i: status=$STATUS, retrying in 15s..."
             sleep 15
           done
+
+          # Final diagnostics on failure
+          echo "=== Nginx logs ==="
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml logs --tail 20 nginx" || true
+          echo "=== Dashboard logs ==="
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml logs --tail 20 dashboard" || true
 
           echo "Health check failed after 10 attempts"
           exit 1
