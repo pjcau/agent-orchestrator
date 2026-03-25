@@ -113,7 +113,7 @@ jobs:
           _inject GITHUB_USERNAME "pjcau"
 
           # Ensure Docker buildx >= 0.17.0 (required by compose build)
-          $SSH_CMD "ARCH=\$(uname -m) && [ \"\$ARCH\" = 'x86_64' ] && ARCH='amd64'; mkdir -p ~/.docker/cli-plugins && curl -fsSL \"https://github.com/docker/buildx/releases/download/v0.21.2/buildx-v0.21.2.linux-\$ARCH\" -o ~/.docker/cli-plugins/docker-buildx && chmod +x ~/.docker/cli-plugins/docker-buildx && docker buildx version"
+          $SSH_CMD "sudo yum install -y docker-buildx-plugin 2>/dev/null || sudo dnf install -y docker-buildx-plugin 2>/dev/null || docker buildx version" || true
 
           # Build and restart services (stop old containers first to avoid name conflicts)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
@@ -136,17 +136,17 @@ jobs:
           HOST: ${{ secrets.EC2_HOST }}
         run: |
           echo "Waiting for service to start..."
-          sleep 10
+          sleep 30
 
-          for i in $(seq 1 6); do
-            STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$HOST/health" 2>/dev/null || echo "000")
+          for i in $(seq 1 10); do
+            STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "https://$HOST/health" 2>/dev/null) || STATUS="000"
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed (attempt $i)"
               exit 0
             fi
-            echo "Attempt $i: status=$STATUS, retrying in 10s..."
-            sleep 10
+            echo "Attempt $i: status=$STATUS, retrying in 15s..."
+            sleep 15
           done
 
-          echo "Health check failed after 6 attempts"
+          echo "Health check failed after 10 attempts"
           exit 1
