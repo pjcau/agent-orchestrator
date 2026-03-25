@@ -72,8 +72,8 @@ jobs:
           OAUTH_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
           GF_SMTP_USER: ${{ secrets.GRAFANA_SMTP_USER }}
           GF_SMTP_PASS: ${{ secrets.GRAFANA_SMTP_PASSWORD }}
-          GF_ADMIN_PASS: ${{ secrets.GRAFANA_PASSWORD }}
-          PG_PASS: ${{ secrets.POSTGRES_PASSWORD }}
+          GF_ADMIN_PASS: ${{ secrets.GRAFANA_PASSWORD || 'admin' }}
+          PG_PASS: ${{ secrets.POSTGRES_PASSWORD || 'orchestrator-prod-2026' }}
         run: |
           SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
 
