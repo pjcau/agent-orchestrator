@@ -20,6 +20,10 @@ env:
   TF_VERSION: "1.9.0"
   TF_WORKING_DIR: terraform
 
+concurrency:
+  group: terraform-state
+  cancel-in-progress: false
+
 jobs:
   terraform:
     name: Terraform Plan / Apply
@@ -29,7 +33,7 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4

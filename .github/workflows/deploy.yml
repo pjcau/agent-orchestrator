@@ -21,7 +21,7 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -44,10 +44,11 @@ jobs:
     name: Deploy to EC2
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -71,8 +72,13 @@ jobs:
           OAUTH_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
           GF_SMTP_USER: ${{ secrets.GRAFANA_SMTP_USER }}
           GF_SMTP_PASS: ${{ secrets.GRAFANA_SMTP_PASSWORD }}
+          GF_ADMIN_PASS: ${{ secrets.GRAFANA_PASSWORD }}
+          PG_PASS: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
           SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
+
+          # Ensure rsync is available on EC2
+          $SSH_CMD "which rsync >/dev/null 2>&1 || sudo yum install -y rsync"
 
           # Sync code (exclude dev files)
           rsync -azP --delete \
@@ -101,8 +107,8 @@ jobs:
           _inject OAUTH_CLIENT_SECRET "$OAUTH_SECRET"
           _inject GRAFANA_SMTP_USER "$GF_SMTP_USER"
           _inject GRAFANA_SMTP_PASSWORD "$GF_SMTP_PASS"
-          _inject GRAFANA_PASSWORD "admin"
-          _inject POSTGRES_PASSWORD "orchestrator-prod-2026"
+          _inject GRAFANA_PASSWORD "$GF_ADMIN_PASS"
+          _inject POSTGRES_PASSWORD "$PG_PASS"
           _inject BASE_URL "https://agents-orchestrator.com"
           _inject GITHUB_USERNAME "pjcau"
 
@@ -114,7 +120,7 @@ jobs:
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
 
           # Ensure postgres password matches .env.prod (fixes first-init mismatch)
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T postgres psql -U orchestrator -c \"ALTER USER orchestrator WITH PASSWORD 'orchestrator-prod-2026';\"" 2>/dev/null || true
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T postgres psql -U orchestrator -c \"ALTER USER orchestrator WITH PASSWORD '${PG_PASS}';\"" 2>/dev/null || true
 
           # Restart dashboard to pick up DB connection after password sync
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart dashboard"
