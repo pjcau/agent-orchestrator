@@ -57,7 +57,7 @@ jobs:
           ls -la logs/
 
       - name: Upload logs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ec2-logs-${{ github.run_id }}
           path: logs/
