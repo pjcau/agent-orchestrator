@@ -1,0 +1,1 @@
+../../.claude-kit/hooks/pre-safety-guard.sh

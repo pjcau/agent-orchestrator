@@ -1,0 +1,1 @@
+../../.claude-kit/hooks/post-submodule-sync.sh

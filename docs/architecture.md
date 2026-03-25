@@ -200,6 +200,11 @@ The following abstractions were added based on analysis of the ByteDance DeerFlo
 - **MemoryFilter** — sanitizes session-scoped file paths before persisting to memory/store.
 - **SlackBot** — Socket Mode integration (no public IP). Thread-based conversations, category auto-detection.
 - **TelegramBot** — long-polling integration. Auth via user ID whitelist, response chunking.
+- **RunManager (SSE)** — HTTP SSE streaming for graph runs. HITL interrupt/resume, configurable timeout, TTL eviction, EventBus mirroring. `dashboard/sse.py`.
+- **SandboxManager** — Session-scoped sandbox lifecycle. Lazy init, per-session workspace, LRU eviction (max 10), auto-cleanup. `dashboard/sandbox_manager.py`.
+- **PostgresStore** — Durable cross-thread key-value store. JSONB values, dot-encoded namespaces, lazy TTL, UPSERT. `core/store_postgres.py`.
+- **MCPClientManager** — Connect to external MCP servers (stdio/SSE). Tool discovery + injection into SkillRegistry. `core/mcp_client.py`.
+- **Modular Dashboard** — `app.py` composes `gateway_api.py` (REST) + `agent_runtime_router.py` (execution/streaming). Split-process mode via `--mode gateway|runtime`.
 
 ## Mapping from Claude Code Concepts
 

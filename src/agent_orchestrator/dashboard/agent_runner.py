@@ -11,19 +11,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from ..core.agent import AgentConfig, Task, TaskResult, TaskStatus
 from ..core.cache import InMemoryCache
 from ..core.conversation import ConversationManager
+from ..core.store import BaseStore
 from ..core.provider import Message, Provider, Role, ToolDefinition
 from ..core.sandbox import Sandbox
 from ..core.skill import SkillRegistry, cache_middleware
 from ..skills import FileReadSkill, FileWriteSkill, GlobSkill, ShellExecSkill
 from ..skills.sandboxed_shell import SandboxedShellSkill
 from .events import Event, EventBus, EventType
+from .sandbox_manager import SandboxManager
+
+logger = logging.getLogger(__name__)
 
 # Module-level shared tool cache for all agent runs
 _tool_cache = InMemoryCache(max_entries=200)
@@ -94,6 +100,8 @@ async def run_agent(
     session_id: str = "",
     conversation_id: str | None = None,
     conversation_manager: ConversationManager | None = None,
+    sandbox: Sandbox | None = None,
+    store: BaseStore | None = None,
 ) -> dict[str, Any]:
     """Run an agent on a task with real-time event emissions.
 
@@ -102,12 +110,18 @@ async def run_agent(
         conversation_manager: Optional ConversationManager instance. If both
             conversation_id and conversation_manager are provided, the agent
             will see previous exchanges and the new exchange will be persisted.
+        sandbox: Optional started Sandbox instance. When provided, the
+            sandboxed_shell skill is registered in addition to shell_exec,
+            giving the agent access to an isolated execution environment.
+        store: Optional BaseStore for per-agent long-term memory. When set,
+            recent memories are injected into the system prompt and a summary
+            is persisted after task completion.
 
     Returns a dict with success, output, steps, usage, etc.
     """
     bus = event_bus or EventBus.get()
 
-    # Build skill registry
+    # Build skill registry (include sandboxed shell if a sandbox was supplied)
     skill_registry = create_skill_registry(
         allowed_commands=[
             "ls",
@@ -124,6 +138,7 @@ async def run_agent(
             "git",
         ],
         working_directory=working_directory,
+        sandbox=sandbox,
     )
 
     # Default tools if none specified
@@ -133,6 +148,28 @@ async def run_agent(
     # Default role
     if not role:
         role = f"You are {agent_name}. Be concise and practical."
+
+    # Inject recent memories from the store into the system prompt.
+    # Queries agent-specific and shared namespaces, caps at 2000 chars.
+    if store is not None:
+        memory_lines: list[str] = []
+        try:
+            agent_items = await store.asearch(("agent", agent_name), limit=10)
+            shared_items = await store.asearch(("shared",), limit=5)
+            for item in agent_items:
+                snippet = str(item.value)[:300]
+                memory_lines.append(f"[agent/{agent_name}] {item.key}: {snippet}")
+            for item in shared_items:
+                snippet = str(item.value)[:300]
+                memory_lines.append(f"[shared] {item.key}: {snippet}")
+        except Exception:
+            pass  # Store unavailable — proceed without memory injection
+        if memory_lines:
+            memory_block = "<memory>\n" + "\n".join(memory_lines) + "\n</memory>"
+            # Cap total memory injection at 2000 characters
+            if len(memory_block) > 2000:
+                memory_block = memory_block[:1997] + "..."
+            role = memory_block + "\n\n" + role
 
     config = AgentConfig(
         name=agent_name,
@@ -187,6 +224,25 @@ async def run_agent(
             task_description,
             _passthrough,
         )
+
+    # Persist a summary of what the agent did to long-term store (30-day TTL).
+    if store is not None and result.status == TaskStatus.COMPLETED:
+        try:
+            task_summary = task_description[:500]
+            result_summary = (result.output or "")[:500]
+            await store.aput(
+                ("agent", agent_name),
+                f"task_{session_id}",
+                {
+                    "task": task_summary,
+                    "result_summary": result_summary,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "steps": result.steps_taken,
+                },
+                ttl=86400 * 30,  # 30-day TTL
+            )
+        except Exception:
+            pass  # Store write failure must not disrupt the agent result
 
     # Emit agent complete/error
     if result.status == TaskStatus.COMPLETED:
@@ -755,6 +811,8 @@ async def run_team(
     session_id: str = "",
     conversation_id: str | None = None,
     conversation_manager: ConversationManager | None = None,
+    sandbox_manager: SandboxManager | None = None,
+    store: BaseStore | None = None,
 ) -> dict[str, Any]:
     """Run a multi-agent team with dynamic routing.
 
@@ -765,6 +823,9 @@ async def run_team(
             tool call (file_write, shell_exec, etc.) consumes one step.
         conversation_id: Optional thread ID for multi-turn memory.
         conversation_manager: Optional ConversationManager for persistence.
+        sandbox_manager: Optional SandboxManager. When provided, each
+            sub-agent receives a session-scoped sandbox fetched via
+            ``sandbox_manager.get_or_create(session_id)``.
 
     Flow:
       1. team-lead analyzes the task and selects agents from the registry
@@ -970,6 +1031,18 @@ async def run_team(
             )
         )
 
+        # Resolve sandbox for this sub-agent when a manager is provided.
+        sub_sandbox: Sandbox | None = None
+        if sandbox_manager is not None:
+            try:
+                sub_sandbox = await sandbox_manager.get_or_create(session_id)
+            except Exception:
+                logger.warning(
+                    "Failed to obtain sandbox for session %s — running without sandbox",
+                    session_id,
+                    exc_info=True,
+                )
+
         async with sem:
             result = await run_agent(
                 agent_name=agent_name,
@@ -981,6 +1054,8 @@ async def run_team(
                 working_directory=working_directory,
                 usage_db=usage_db,
                 session_id=session_id,
+                sandbox=sub_sandbox,
+                store=store,
             )
 
         await bus.emit(

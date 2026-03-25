@@ -99,7 +99,8 @@ agent-orchestrator/
 │       │   ├── graph_templates.py # Template store with versioning & JSON
 │       │   ├── plugins.py       # Plugin manifest & loader
 │       │   ├── webhook.py       # Webhook registry & HMAC validation
-│       │   ├── mcp_server.py    # MCP tool/resource registry
+│       │   ├── mcp_server.py    # MCP tool/resource registry (server-side: expose agents/skills)
+│       │   ├── mcp_client.py    # MCP client (stdio + SSE transports, MCPClientManager, tool injection)
 │       │   ├── offline.py       # Offline mode (local-only filtering)
 │       │   ├── config_manager.py # Configuration manager (JSON, validation, rollback)
 │       │   ├── project.py       # Multi-project support
@@ -111,6 +112,7 @@ agent-orchestrator/
 │       │   ├── cache.py        # Task-level result caching (InMemory, TTL, cached_node)
 │       │   ├── conformance.py  # Conformance test suites (Provider, Checkpointer, Store)
 │       │   ├── store.py        # Cross-thread persistent store (namespace, filter, TTL)
+│       │   ├── store_postgres.py # PostgreSQL-backed persistent store (durable, JSONB, TTL)
 │       │   ├── conversation.py # Thread-based conversation memory (multi-turn, fork, persist)
 │       │   ├── sandbox.py        # Docker sandbox for isolated code execution
 │       │   ├── bookmark_tracker.py # JSON-based bookmark tracking (7-day lookback)
@@ -128,7 +130,9 @@ agent-orchestrator/
 │       │   ├── openrouter.py    # OpenRouter (free cloud models)
 │       │   └── local.py         # Local models (Ollama, vLLM)
 │       ├── dashboard/
-│       │   ├── app.py           # FastAPI dashboard (REST + WebSocket + streaming)
+│       │   ├── app.py           # Composition root — composes gateway + runtime routers
+│       │   ├── gateway_api.py   # Gateway router (REST management: config, jobs, MCP, metrics)
+│       │   ├── agent_runtime_router.py # Runtime router (agent/team exec, WebSocket, SSE)
 │       │   ├── agent_runner.py  # Agent/team execution with event emissions
 │       │   ├── agents_registry.py # Agent configuration registry (category-aware)
 │       │   ├── graphs.py        # Graph builders for dashboard prompt
@@ -141,7 +145,9 @@ agent-orchestrator/
 │       │   ├── usage_db.py      # Persistent usage stats + agent error tracking (PostgreSQL + in-memory)
 │       │   ├── tracing_metrics.py # Lightweight metrics collector for OTel spans
 │       │   ├── alert_webhook.py # Grafana alert → GitHub issue pipeline
-│       │   ├── server.py        # CLI entrypoint (uvicorn)
+│       │   ├── sse.py           # SSE streaming: RunManager, HITLConfig, event formatting
+│       │   ├── sandbox_manager.py # Session-scoped sandbox lifecycle (lazy init, LRU eviction)
+│       │   ├── server.py        # CLI entrypoint (uvicorn); --mode full|gateway|runtime
 │       │   └── static/          # HTML/CSS/JS dashboard UI
 │       ├── integrations/
 │       │   ├── __init__.py      # Integration exports (SlackBot, TelegramBot)
@@ -180,6 +186,7 @@ agent-orchestrator/
 - **PluginLoader** — Register/load plugin manifests (skills, providers) at runtime.
 - **WebhookRegistry** — Inbound webhooks with HMAC-SHA256 signature validation.
 - **MCPServerRegistry** — Expose agents/skills as MCP tools and resources. `Orchestrator.register_mcp_tools()` bridges all agents and skills into the registry in one call.
+- **MCPClientManager** — Connect to external MCP servers (stdio or SSE transport). Aggregates their tools (prefixed `{server}/{tool}`) and proxies `call_tool`. `SkillRegistry.register_mcp_tools()` injects all discovered tools as local skills.
 - **OfflineManager** — Filter to local-only providers when offline.
 - **ConfigManager** — Load/save/validate orchestrator configuration with rollback history. Supports YAML import/export via `import_yaml()`/`export_yaml()`.
 - **YAMLConfigLoader** — YAML-based configuration with reflection class loading (`module:Class`), `${ENV_VAR}` substitution, config versioning with auto-upgrade, and validation. See `orchestrator.yaml.example`.
@@ -189,6 +196,7 @@ agent-orchestrator/
 - **MigrationManager** — Import configs from LangGraph, CrewAI, AutoGen with auto-detection.
 - **APIRegistry** — Versioned REST API (/api/v1/) with OpenAPI 3.0 spec export.
 - **BaseStore** — Cross-thread persistent key-value store (namespace, filter, TTL). Separate from checkpoints.
+- **PostgresStore** — Durable PostgreSQL backend for BaseStore. JSONB values, lazy TTL expiry, UPSERT semantics, dot-encoded namespaces. Wired into dashboard at startup when `DATABASE_URL` is set; falls back to InMemoryStore.
 - **SessionStore** — Session-scoped wrapper on BaseStore. Auto-tracks written keys, deletes all session data on close(). Async context manager.
 - **StreamEvent / astream()** — Real-time graph execution streaming. `CompiledGraph.astream()` yields `StreamEvent` at each node start/end/error, with state deltas and timing.
 - **SkillMiddleware** — Composable interceptors on skill execution (retry, logging, timeout, cache).
@@ -208,6 +216,26 @@ agent-orchestrator/
 - **DocumentConverter** — Converts uploaded files (PDF, Excel, CSV, Word, PowerPoint, HTML, text) to Markdown for LLM consumption. Graceful fallback when optional deps missing. Limits: 10 MB file size, 50 PDF pages, 10,000 spreadsheet rows. Upload via `POST /api/upload` (multipart/form-data).
 - **ClarificationManager** — Structured agent-human clarification. 5 typed request categories (missing_info, ambiguous, approach, risk, suggestion). Blocking mode pauses agent until response or 5-minute timeout. Non-blocking mode emits event and continues. Events: `clarification.request`, `clarification.response`, `clarification.timeout`.
 - **Sandbox** — Isolated execution environment (Docker or local). `SandboxConfig` controls image, timeout, memory/CPU limits, network, writable paths. Virtual path mapping with traversal protection. `SandboxedShellSkill` wraps sandbox as a drop-in Skill for agent use.
+- **SandboxManager** — Session-scoped sandbox lifecycle in dashboard. Lazy initialization on first use, per-session workspace isolation (`/workspace/{session_id}/`), LRU eviction at 10 concurrent, cleanup on shutdown. Enabled via `SANDBOX_ENABLED=true`. Wired into `run_agent()` and `run_team()`. API: `GET /api/sandbox/status`, `DELETE /api/sandbox/{session_id}`.
+- **RunManager (SSE)** — HTTP SSE streaming for graph execution. Creates background runs, fans events to multiple SSE subscribers, supports HITL interrupt/resume with configurable timeout. Max 100 runs, 30-min TTL eviction. Mirrors events to EventBus for WebSocket clients.
+- **Modular Dashboard** — `app.py` is a composition root (282 lines) that includes `gateway_api.py` (REST management) and `agent_runtime_router.py` (execution + streaming). Can run as single process or split via `--mode gateway|runtime`. Split mode: `docker-compose.split.yml` + `nginx-split.conf`.
+
+## SSE Streaming Runs
+
+HTTP Server-Sent Events (SSE) for graph execution — an alternative to WebSocket streaming compatible with LangGraph SDK patterns.
+
+- **Module**: `dashboard/sse.py` — `RunManager`, `HITLConfig`, `RunInfo`, SSE formatting helpers
+- **Endpoints** (registered in `app.py`):
+  - `POST /api/runs` — create and start a graph run; returns `{"run_id": "..."}` immediately
+  - `GET /api/runs/{run_id}` — poll run status (`pending/running/interrupted/completed/failed`)
+  - `GET /api/runs/{run_id}/stream` — `text/event-stream`; streams `data:` JSON lines in real-time
+  - `POST /api/runs/{run_id}/resume` — resume an interrupted (HITL) run with `{"human_input": {...}}`
+- **stream_mode**: `"events"` (node-level, default) or `"values"` (full state snapshot per step)
+- **RunManager**: max 100 active runs; TTL eviction after 30 min; fans events out to multiple SSE subscribers
+- **HITLConfig**: `enabled`, `timeout_seconds` (default 300), `auto_approve` (useful for tests)
+- **Reconnection**: `Last-Event-ID` header triggers a reconnect comment; each event carries an `id:` field
+- **EventBus integration**: SSE events are also mirrored to the EventBus so WebSocket clients see them
+- **Tests**: `tests/test_sse.py` — 44 tests covering lifecycle, formatting, HITL, TTL, stream modes, integration
 
 ## Agent Error Tracking
 
@@ -218,6 +246,18 @@ Tool and LLM errors from sub-agents are persisted to PostgreSQL (`agent_errors` 
 - **Hooks**: `agent_runner._instrumented_execute()` logs errors when `result.success == False`
 - **API**: `GET /api/errors` — returns recent errors (last 100) and summary grouped by agent/error_type
 - **Graceful**: Falls back silently if DB unavailable (no crash, in-memory only)
+
+## Agent Memory System
+
+Cross-thread long-term memory for agents, backed by PostgreSQL (durable) or InMemoryStore (dev).
+
+- **Store**: `src/agent_orchestrator/core/store_postgres.py` — `PostgresStore(pool)` implements BaseStore on `store_items` table (JSONB values, dot-encoded namespaces, lazy TTL expiry)
+- **Wiring**: Dashboard startup creates `PostgresStore` when `DATABASE_URL` is set, `InMemoryStore` otherwise. Accessible as `app.state.store` and via `store_holder[0]`
+- **Namespaces**: `("agent", agent_name)` for per-agent memory, `("shared",)` for cross-agent facts
+- **Injection**: Before each `run_agent` call, recent memories from both namespaces are prepended to the system prompt as a `<memory>` block (capped at 2000 chars)
+- **Persistence**: After a successful agent run, a task summary is stored under `("agent", agent_name)` with a 30-day TTL
+- **Summarization**: `ConversationManager` is configured with `SummarizationConfig(threshold=50, retain_last=10)` — triggers at 50 messages, keeps 10 most recent verbatim
+- **API**: `GET /api/memory/namespaces`, `GET /api/memory/{namespace}`, `DELETE /api/memory/{namespace}/{key}`, `GET /api/memory/stats`
 
 ## Agents (25)
 
@@ -468,6 +508,18 @@ The dashboard exposes all agents and skills as MCP (Model Context Protocol) tool
 - **Orchestrator bridge**: `Orchestrator.register_mcp_tools()` populates an `MCPServerRegistry` from all configured agents and skills
 - **UI**: MCP tool count shown in dashboard header
 
+#### MCP Client — connecting to external servers
+
+The dashboard also acts as an MCP **client**, connecting outbound to external MCP servers.
+
+- **List servers**: `GET /api/mcp/servers` — connected external servers with tool counts
+- **Add server**: `POST /api/mcp/servers` — connect to a new external server (body: `name`, `transport`, `command`/`url`, `env`, `headers`)
+- **Remove server**: `DELETE /api/mcp/servers/{name}` — disconnect and remove a server
+- **Read resource**: `GET /api/mcp/resources/{server_name}/{uri}` — fetch resource content from an external server
+- **Transports**: `stdio` (subprocess stdin/stdout) and `sse` (Server-Sent Events + HTTP POST)
+- **Tool injection**: `SkillRegistry.register_mcp_tools(manager)` registers all external tools as local skills (prefixed `{server}/{tool}`)
+- **Implementation**: `core/mcp_client.py` — `MCPClientManager`, `MCPClient`, `StdioTransport`, `SSETransport`
+
 ### Session Explorer
 
 Built-in file browser for navigating agent-created artifacts per session. Access via the **Explorer** button in the header.
@@ -508,6 +560,30 @@ The dashboard header shows two metric groups:
 - **Speed tracking**: `avg_speed` (total average output tok/s from DB), `session_speed` (current server session)
 - **DB indicator**: green dot = PostgreSQL connected, metrics persisted; red = in-memory only
 - **Debug**: `GET /auth/debug` — shows OAuth config (base_url, redirect_uri, client_id prefix)
+
+### UI Enhancements (DeepFlow-Inspired)
+
+Rich rendering capabilities in the vanilla JS dashboard (no framework, CDN-only):
+
+- **Mermaid.js** — renders ` ```mermaid ` code blocks as SVG diagrams in chat messages (CDN: `mermaid@11`)
+- **KaTeX** — renders `$...$` (inline) and `$$...$$` (block) LaTeX math formulas (CDN: `katex@0.16`)
+- **Progressive markdown streaming** — buffers streaming chunks and re-renders full markdown on each chunk, fixing broken code blocks and tables mid-stream
+- **Reasoning/thinking accordion** — extracts `<thinking>` / `<reasoning>` tags into collapsible `<details>` blocks (auto-collapsed, purple left border)
+- **Task Plan panel** — right sidebar section showing real-time graph execution progress (pending/in_progress/completed/failed) with elapsed time per node
+- **HITL option buttons** — renders clarification options as clickable pill buttons; interrupt events show Approve/Reject buttons; clicks POST to `/api/runs/{run_id}/resume`
+- **SSE toggle** — switch between WebSocket and EventSource for event streaming; indicator dot in header
+
+### Modular Architecture
+
+The dashboard is split into composable router modules for independent scaling:
+
+- **`app.py`** (282 lines) — composition root: middleware, shared state, router composition
+- **`gateway_api.py`** — REST management: config, users, jobs, MCP, metrics, memory, sandbox
+- **`agent_runtime_router.py`** — execution: `/api/prompt`, `/api/agent/run`, `/api/team/*`, WebSocket, SSE
+- **Single process** (default): `python -m agent_orchestrator.dashboard.server` — includes both routers
+- **Split process**: `--mode gateway` (port 5006) or `--mode runtime` (port 5007)
+- **Docker split**: `docker compose -f docker-compose.prod.yml -f docker-compose.split.yml up`
+- **Nginx routing**: `nginx-split.conf` routes `/api/prompt`, `/api/agent/*`, `/api/team/*`, `/ws*` to runtime; everything else to gateway
 
 ## Development
 

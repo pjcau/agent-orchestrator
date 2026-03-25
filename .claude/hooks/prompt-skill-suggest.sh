@@ -1,0 +1,1 @@
+../../.claude-kit/hooks/prompt-skill-suggest.sh

@@ -4,9 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Orchestrator Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css?v=063">
+    <link rel="stylesheet" href="/static/style.css?v=064">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" integrity="sha256-gZkRS+wguLadkfp9Ci2xON9gtBRxMDqil/PQKJNXhSk=" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css" crossorigin="anonymous">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha256-g3pvpbDHNrUrveKythkPMF2j/J7UFoHbUyFQcFe1yEY=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
     <header>
@@ -69,6 +73,8 @@
                 <button id="btn-logout" class="btn-sidebar-toggle" title="Logout">Logout</button>
             </div>
             <span id="ws-indicator" class="ws-dot disconnected" title="WebSocket"></span>
+            <button id="btn-sse-toggle" class="btn-sidebar-toggle sse-toggle-btn" title="Toggle SSE mode">SSE</button>
+            <span id="sse-indicator" class="sse-dot inactive" title="SSE stream"></span>
         </div>
     </header>
 
@@ -251,6 +257,21 @@
                 </div>
             </div>
 
+            <!-- Task Plan (collapsible) -->
+            <div class="sidebar-section collapsible-section" id="section-task-plan">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <button class="btn-collapse" data-target="section-task-plan" title="Toggle section">&#9660;</button>
+                        <h2>Task Plan</h2>
+                    </div>
+                </div>
+                <div class="section-body" id="body-task-plan">
+                    <div id="task-plan-list" class="task-plan-list">
+                        <div class="empty-state">No active plan</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Compare -->
             <div class="sidebar-section">
                 <h2>Compare</h2>
@@ -401,6 +422,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=063"></script>
+    <script src="/static/app.js?v=064"></script>
 </body>
 </html>

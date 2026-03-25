@@ -1,0 +1,1 @@
+../../.claude-kit/skills/simplify.md

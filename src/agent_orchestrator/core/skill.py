@@ -196,6 +196,39 @@ class SkillRegistry:
     def list_skills(self) -> list[str]:
         return list(self._skills.keys())
 
+    def register_mcp_tools(self, client_manager: "Any") -> int:
+        """Register external MCP tools as skills.
+
+        Creates a wrapper skill for each tool returned by
+        ``client_manager.get_all_tools()``.  Each wrapper delegates execution
+        to ``client_manager.call_tool(server_name, tool_name, arguments)``.
+
+        Returns the number of skills registered.
+        """
+        from .mcp_client import MCPClientManager
+
+        if not isinstance(client_manager, MCPClientManager):
+            raise TypeError("client_manager must be an MCPClientManager instance")
+
+        tools = client_manager.get_all_tools()
+        registered = 0
+        for tool in tools:
+            # tool.name is already prefixed: "{server}/{tool_name}"
+            parts = tool.name.split("/", 1)
+            server_name = parts[0]
+            remote_tool_name = parts[1] if len(parts) > 1 else tool.name
+
+            skill = _MCPToolSkill(
+                tool=tool,
+                server_name=server_name,
+                remote_tool_name=remote_tool_name,
+                client_manager=client_manager,
+            )
+            self.register(skill)
+            registered += 1
+
+        return registered
+
     def to_tool_definitions(self) -> list[dict]:
         """Export all skills as tool definitions (for LLM APIs).
 
@@ -353,3 +386,54 @@ def cache_middleware(
         return result
 
     return middleware
+
+
+# ---------------------------------------------------------------------------
+# MCP tool skill wrapper
+# ---------------------------------------------------------------------------
+
+
+class _MCPToolSkill(Skill):
+    """Internal wrapper that exposes an external MCP tool as a local Skill.
+
+    Instantiated by ``SkillRegistry.register_mcp_tools``; not part of the
+    public API.  The skill name uses the full ``{server}/{tool}`` prefix so
+    that tools from different servers never collide.
+    """
+
+    def __init__(
+        self,
+        tool: Any,  # MCPTool
+        server_name: str,
+        remote_tool_name: str,
+        client_manager: Any,  # MCPClientManager
+    ) -> None:
+        self._tool = tool
+        self._server_name = server_name
+        self._remote_tool_name = remote_tool_name
+        self._client_manager = client_manager
+
+    @property
+    def name(self) -> str:
+        return self._tool.name
+
+    @property
+    def description(self) -> str:
+        return self._tool.description
+
+    @property
+    def parameters(self) -> dict:
+        return self._tool.input_schema
+
+    @property
+    def category(self) -> str:
+        return "mcp"
+
+    async def execute(self, params: dict) -> SkillResult:
+        try:
+            output = await self._client_manager.call_tool(
+                self._server_name, self._remote_tool_name, params
+            )
+            return SkillResult(success=True, output=output)
+        except Exception as exc:
+            return SkillResult(success=False, output=None, error=str(exc))

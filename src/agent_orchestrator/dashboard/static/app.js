@@ -1,10 +1,17 @@
-/** Agent Orchestrator Dashboard v0.3.0
+/** Agent Orchestrator Dashboard v0.4.0
  * Unified interface: Multi-Agent / Single Agent / Simple Prompt
  * Default: Multi-Agent + Cloud (OpenRouter)
+ * New: Mermaid diagrams, KaTeX math, progressive streaming, thinking accordion,
+ *      task plan panel, HITL buttons, SSE connection support
  */
 
 (function () {
   "use strict";
+
+  // --- Initialize Mermaid ---
+  if (typeof window.mermaid !== "undefined") {
+    window.mermaid.initialize({ startOnLoad: false, theme: "dark" });
+  }
 
   // --- Frontend error reporting to server ---
   window.addEventListener('error', function(e) {
@@ -73,6 +80,16 @@
   let allModels = { ollama: [], openrouter: [] };
   const MAX_EVENTS = 500;
   let cumulativeUsage = null;
+
+  // --- Task Plan state ---
+  let taskPlanItems = [];
+
+  // --- Streaming buffer (for progressive re-render) ---
+  let streamBuffer = "";
+
+  // --- SSE state ---
+  let sseSource = null;
+  let sseMode = false;
 
   // --- Running state management ---
   function setRunning(running) {
@@ -155,6 +172,9 @@
   const $historySessions = $("history-sessions");
   const $historyDetail = $("history-detail");
   const $btnCloseHistory = $("btn-close-history");
+  const $taskPlanList = $("task-plan-list");
+  const $btnSseToggle = $("btn-sse-toggle");
+  const $sseIndicator = $("sse-indicator");
 
   // --- WebSocket management ---
   // Track page unload to prevent reconnection during refresh
@@ -584,10 +604,13 @@
 
     $chatMessages.appendChild(bubble);
     $chatMessages.scrollTop = $chatMessages.scrollHeight;
+    // Run Mermaid + KaTeX after DOM insertion
+    postRenderBubble(bubble);
     return bubble;
   }
 
   function addStreamingBubble() {
+    streamBuffer = "";
     const bubble = document.createElement("div");
     bubble.className = "chat-bubble assistant streaming";
     bubble.id = "streaming-bubble";
@@ -600,10 +623,10 @@
   function appendToStream(text) {
     const bubble = $("streaming-bubble");
     if (!bubble) return;
-    const cursor = bubble.querySelector(".stream-cursor");
-    if (cursor) cursor.remove();
-    bubble.insertAdjacentHTML("beforeend", esc(text));
-    bubble.insertAdjacentHTML("beforeend", '<span class="stream-cursor"></span>');
+    // Buffer all received chunks and re-render full accumulated markdown
+    streamBuffer += text;
+    const rendered = renderMarkdown(streamBuffer);
+    bubble.innerHTML = safeHTML(`<div class="md-content">${rendered}</div><span class="stream-cursor"></span>`);
     $chatMessages.scrollTop = $chatMessages.scrollHeight;
   }
 
@@ -612,10 +635,11 @@
     if (!bubble) return;
     bubble.id = "";
     bubble.classList.remove("streaming");
-    const cursor = bubble.querySelector(".stream-cursor");
-    if (cursor) cursor.remove();
-    const rawText = bubble.textContent || "";
-    bubble.innerHTML = `<div class="md-content">${renderMarkdown(rawText)}</div>`;
+    // Use the buffered full text for final render (ensures complete markdown)
+    const finalText = streamBuffer || bubble.textContent || "";
+    streamBuffer = "";
+    const rendered = renderMarkdown(finalText);
+    bubble.innerHTML = safeHTML(`<div class="md-content">${rendered}</div>`);
     if (data) {
       const elapsed = data.elapsed_s || 0;
       const speed = data.speed || 0;
@@ -626,13 +650,87 @@
       meta.textContent = `${tokens} tok · ${speed} tok/s · ${model} · ${elapsed}s`;
       bubble.appendChild(meta);
     }
+    // Run Mermaid and KaTeX on finalized bubble
+    runMermaidOn(bubble);
+    runKatexOn(bubble);
     $chatMessages.scrollTop = $chatMessages.scrollHeight;
+  }
+
+  // --- Thinking/reasoning tag extraction ---
+  /** Extract <thinking>...</thinking> or <reasoning>...</reasoning> blocks.
+   * Returns { cleanText, thinkingBlocks: string[] } */
+  function extractThinkingBlocks(text) {
+    const thinkingBlocks = [];
+    const cleanText = text.replace(/<(thinking|reasoning)>([\s\S]*?)<\/\1>/gi, function(_, _tag, content) {
+      thinkingBlocks.push(content.trim());
+      return "";
+    });
+    return { cleanText: cleanText.trim(), thinkingBlocks };
+  }
+
+  /** Render thinking blocks as collapsible accordion HTML. */
+  function renderThinkingAccordion(blocks) {
+    if (!blocks || !blocks.length) return "";
+    return blocks.map(function(content) {
+      const escapedContent = esc(content);
+      return `<details class="thinking-accordion"><summary class="thinking-summary">Thinking...</summary><div class="thinking-content">${escapedContent}</div></details>`;
+    }).join("");
+  }
+
+  // --- Mermaid helpers ---
+  let _mermaidCounter = 0;
+  function runMermaidOn(container) {
+    if (typeof window.mermaid === "undefined") return;
+    const nodes = container.querySelectorAll(".mermaid");
+    if (!nodes.length) return;
+    window.mermaid.run({ nodes: Array.from(nodes) }).catch(function() {});
+  }
+
+  // --- KaTeX helpers ---
+  function runKatexOn(container) {
+    if (typeof window.renderMathInElement === "undefined") return;
+    try {
+      window.renderMathInElement(container, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "$", right: "$", display: false },
+        ],
+        throwOnError: false,
+      });
+    } catch (_) {}
+  }
+
+  // --- Post-render hook (Mermaid + KaTeX) on any message bubble ---
+  function postRenderBubble(bubble) {
+    runMermaidOn(bubble);
+    runKatexOn(bubble);
   }
 
   // --- Markdown Renderer ---
   function renderMarkdown(text) {
     if (!text) return "";
-    let html = esc(text);
+
+    // Extract thinking/reasoning blocks first (before escaping)
+    const { cleanText, thinkingBlocks } = extractThinkingBlocks(text);
+    const thinkingHtml = renderThinkingAccordion(thinkingBlocks);
+
+    let html = esc(cleanText);
+
+    // Mermaid code blocks — render as .mermaid div (not escaped, raw content needed)
+    // We use a placeholder approach: store raw code, insert div after escaping pass
+    const mermaidPlaceholders = [];
+    // First pass on the original (pre-escape) text to find mermaid blocks
+    cleanText.replace(/```mermaid\n([\s\S]*?)```/g, function(_, code) {
+      mermaidPlaceholders.push(code.trim());
+    });
+    let mermaidIdx = 0;
+    html = html.replace(/```mermaid\n([\s\S]*?)```/g, function() {
+      const code = mermaidPlaceholders[mermaidIdx++] || "";
+      const id = "mermaid-" + (++_mermaidCounter);
+      // The code is raw; we embed it as text content via a data attribute and render later
+      // Use a div with class mermaid — mermaid.run() will replace its textContent with SVG
+      return `<div class="mermaid" id="${id}">${code.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div>`;
+    });
 
     // Code blocks (```lang\n...\n```)
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
@@ -666,14 +764,18 @@
     // Links
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-    // Line breaks
+    // Line breaks (skip inside pre/mermaid blocks)
     html = html.replace(/\n/g, "<br>");
     // Fix <br> inside pre blocks
     html = html.replace(/<pre class="md-code-block"><code>([\s\S]*?)<\/code><\/pre>/g, function(_, code) {
       return '<pre class="md-code-block"><code>' + code.replace(/<br>/g, "\n") + '</code></pre>';
     });
+    // Fix <br> inside mermaid divs
+    html = html.replace(/(<div class="mermaid"[^>]*>)([\s\S]*?)(<\/div>)/g, function(_, open, content, close) {
+      return open + content.replace(/<br>/g, "\n") + close;
+    });
 
-    return html;
+    return thinkingHtml + html;
   }
 
   function formatOutput(text) { return renderMarkdown(text); }
@@ -1279,11 +1381,156 @@
       graphNodeStates = Object.create(null); events = []; activityCount = 0; interactions = []; renderedInteractionCount = 0;
       $timeline.innerHTML = "";
       $agentActivity.innerHTML = '<div class="empty-state">Waiting for agents...</div>';
+      clearTaskPlan();
       if ($interactionTimeline) $interactionTimeline.innerHTML = "";
       renderHeader(); renderGraph(); renderAgentBadges(); renderAgentMessages();
       $detailView.innerHTML = '<div class="empty-state">Click a graph node or event</div>';
       addSystemBubble("Reset");
     } catch (e) { alert("Reset failed: " + e.message); }
+  }
+
+  // --- Task Plan Panel ---
+  const TASK_STATUS_ICONS = {
+    pending: "⏳",
+    in_progress: "🔄",
+    completed: "✅",
+    failed: "❌",
+  };
+
+  function clearTaskPlan() {
+    taskPlanItems = [];
+    renderTaskPlan();
+  }
+
+  function upsertTaskPlanItem(nodeId, status, startTime) {
+    const existing = taskPlanItems.find(function(i) { return i.nodeId === nodeId; });
+    if (existing) {
+      existing.status = status;
+      if (status === "completed" || status === "failed") {
+        existing.elapsed = startTime ? Math.round((Date.now() - startTime) / 100) / 10 : null;
+      }
+    } else {
+      taskPlanItems.push({ nodeId: nodeId, status: status, startedAt: Date.now(), elapsed: null });
+    }
+    renderTaskPlan();
+  }
+
+  function renderTaskPlan() {
+    if (!$taskPlanList) return;
+    if (!taskPlanItems.length) {
+      $taskPlanList.innerHTML = '<div class="empty-state">No active plan</div>';
+      return;
+    }
+    $taskPlanList.innerHTML = taskPlanItems.map(function(item) {
+      const icon = TASK_STATUS_ICONS[item.status] || "⏳";
+      const elapsed = item.elapsed !== null ? `<span class="task-plan-elapsed">${item.elapsed}s</span>` : "";
+      return `<div class="task-plan-item task-plan-${item.status}">
+        <span class="task-plan-icon">${icon}</span>
+        <span class="task-plan-name">${esc(item.nodeId)}</span>
+        ${elapsed}
+      </div>`;
+    }).join("");
+  }
+
+  // --- HITL Button Rendering ---
+  function renderHitlButtons(bubble, evt) {
+    const data = evt.data || {};
+
+    // clarification.request — show option buttons
+    if (evt.type === "clarification.request" || evt.event_type === "clarification.request") {
+      const options = data.options || [];
+      const runId = data.run_id || "";
+      if (!options.length) return;
+      const container = document.createElement("div");
+      container.className = "hitl-options";
+      options.forEach(function(opt) {
+        const btn = document.createElement("button");
+        btn.className = "hitl-option-btn";
+        btn.textContent = opt;
+        btn.addEventListener("click", function() {
+          sendHitlResponse(runId, opt);
+          container.querySelectorAll(".hitl-option-btn").forEach(function(b) { b.disabled = true; });
+          btn.classList.add("hitl-selected");
+        });
+        container.appendChild(btn);
+      });
+      bubble.appendChild(container);
+      return;
+    }
+
+    // interrupt — show Approve / Reject
+    if (evt.type === "interrupt" || evt.event_type === "interrupt") {
+      const runId = data.run_id || "";
+      const container = document.createElement("div");
+      container.className = "hitl-interrupt";
+      const approveBtn = document.createElement("button");
+      approveBtn.className = "hitl-approve-btn";
+      approveBtn.textContent = "Approve";
+      const rejectBtn = document.createElement("button");
+      rejectBtn.className = "hitl-reject-btn";
+      rejectBtn.textContent = "Reject";
+      function disableAll() {
+        approveBtn.disabled = true;
+        rejectBtn.disabled = true;
+      }
+      approveBtn.addEventListener("click", function() { sendHitlResponse(runId, "approved"); disableAll(); approveBtn.classList.add("hitl-selected"); });
+      rejectBtn.addEventListener("click", function() { sendHitlResponse(runId, "rejected"); disableAll(); rejectBtn.classList.add("hitl-selected"); });
+      container.appendChild(approveBtn);
+      container.appendChild(rejectBtn);
+      bubble.appendChild(container);
+    }
+  }
+
+  function sendHitlResponse(runId, value) {
+    if (!runId) return;
+    fetch(`/api/runs/${encodeURIComponent(runId)}/resume`, {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+      body: JSON.stringify({ value: value }),
+    }).catch(function() {});
+  }
+
+  // --- SSE Support ---
+  function connectSSE(runId) {
+    disconnectSSE();
+    const url = runId ? `/api/runs/${encodeURIComponent(runId)}/stream` : "/api/stream";
+    sseSource = new EventSource(url);
+    if ($sseIndicator) $sseIndicator.className = "sse-dot active";
+
+    sseSource.onmessage = function(e) {
+      try {
+        const data = JSON.parse(e.data);
+        // Feed into same pipeline as WebSocket events
+        if (data.type === "event") {
+          handleEvent(data.data);
+        } else if (data.type === "token") {
+          appendToStream(data.content);
+        } else if (data.type === "done") {
+          finalizeStream(data);
+          if (data.speed) lastTokenSpeed = data.speed;
+          renderHeader();
+          setRunning(false);
+        }
+      } catch (_) {}
+    };
+
+    sseSource.onerror = function() {
+      if ($sseIndicator) $sseIndicator.className = "sse-dot error";
+    };
+  }
+
+  function disconnectSSE() {
+    if (sseSource) {
+      sseSource.close();
+      sseSource = null;
+    }
+    if ($sseIndicator) $sseIndicator.className = "sse-dot inactive";
+  }
+
+  function toggleSseMode() {
+    sseMode = !sseMode;
+    if ($btnSseToggle) $btnSseToggle.classList.toggle("active", sseMode);
+    if (!sseMode) disconnectSSE();
   }
 
   // --- Toggle Sidebar ---
@@ -1468,16 +1715,39 @@
     if (evt.event_type === "graph.start") {
       snapshot.graph = { nodes: evt.data.nodes || [], edges: evt.data.edges || [] };
       graphNodeStates = Object.create(null);
+      clearTaskPlan();
       renderGraph();
     } else if (evt.event_type === "graph.node.enter") {
-      safeSet(graphNodeStates, evt.node_name || evt.data.node, "active");
+      const nodeName = evt.node_name || (evt.data && evt.data.node) || "";
+      safeSet(graphNodeStates, nodeName, "active");
+      upsertTaskPlanItem(nodeName, "in_progress", Date.now());
       renderGraph();
     } else if (evt.event_type === "graph.node.exit") {
-      safeSet(graphNodeStates, evt.node_name || evt.data.node, "done");
+      const nodeName = evt.node_name || (evt.data && evt.data.node) || "";
+      safeSet(graphNodeStates, nodeName, "done");
+      const item = taskPlanItems.find(function(i) { return i.nodeId === nodeName; });
+      upsertTaskPlanItem(nodeName, "completed", item ? item.startedAt : null);
+      renderGraph();
+    } else if (evt.event_type === "graph.node.error") {
+      const nodeName = evt.node_name || (evt.data && evt.data.node) || "";
+      safeSet(graphNodeStates, nodeName, "error");
+      const item = taskPlanItems.find(function(i) { return i.nodeId === nodeName; });
+      upsertTaskPlanItem(nodeName, "failed", item ? item.startedAt : null);
       renderGraph();
     } else if (evt.event_type === "graph.end") {
       Object.keys(graphNodeStates).forEach((k) => { if (graphNodeStates[k] === "active") graphNodeStates[k] = "done"; });
       renderGraph();
+    }
+
+    // HITL events — clarification request or interrupt
+    if (evt.event_type === "clarification.request" || evt.event_type === "interrupt") {
+      const bubble = document.createElement("div");
+      bubble.className = "chat-bubble assistant";
+      const msg = (evt.data && evt.data.message) || (evt.event_type === "interrupt" ? "Approval required" : "Please choose an option:");
+      bubble.innerHTML = safeHTML(`<div class="md-content">${renderMarkdown(msg)}</div>`);
+      $chatMessages.appendChild(bubble);
+      renderHitlButtons(bubble, evt);
+      $chatMessages.scrollTop = $chatMessages.scrollHeight;
     }
 
     if (evt.event_type === "agent.tool_call" && evt.data.tool_name) {
@@ -1687,6 +1957,10 @@
     }
   }
 
+  // --- Auth helpers ---
+  /** Returns any additional auth request headers (empty when using session cookies). */
+  function authHeaders() { return {}; }
+
   // --- Helpers ---
   function formatTime(ts) {
     const d = new Date(ts * 1000);
@@ -1746,6 +2020,9 @@
   $btnCompare.addEventListener("click", runComparison);
   $btnResetGraph.addEventListener("click", resetGraph);
   $btnToggleSidebar.addEventListener("click", toggleSidebar);
+
+  // SSE toggle button
+  if ($btnSseToggle) $btnSseToggle.addEventListener("click", toggleSseMode);
 
   // Cache clear button
   if ($btnClearCache) {

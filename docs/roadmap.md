@@ -474,6 +474,87 @@ async def smart_route(request) -> str:
 
 ---
 
+## v1.2 — Architecture Modernization (DeepFlow-Inspired)
+
+**Goal:** Modernize the orchestrator with SSE streaming, enhanced UI, sandbox activation, MCP client integration, semantic memory, and modular process split.
+**Reference:** [`analysis/deepflow/`](../analysis/deepflow/) — 30-file deep analysis of DeepFlow (DeerFlow) internals.
+**Status:** In progress (March 2026)
+
+### Sprint 1: SSE Streaming + HITL Endpoints
+
+| Task | Status | Priority | Detail |
+|------|--------|----------|--------|
+| SSE streaming endpoint | New | **Critical** | `GET /api/runs/{run_id}/stream` returning `text/event-stream`. Wires `CompiledGraph.astream()` to HTTP. Supports `stream_mode` param (events/values/messages). No persistent WebSocket required. |
+| HITL resume endpoint | New | **Critical** | `POST /api/runs/{run_id}/resume` accepting `{human_input: {...}}`. Resumes interrupted graphs from checkpoint. Returns new SSE stream for continued execution. |
+| Run management | New | High | `POST /api/runs` to create a run, `GET /api/runs/{run_id}` for status. Run registry with TTL eviction. |
+| Frontend SSE client | New | High | `EventSource` in app.js consuming SSE stream. Fallback to existing WebSocket for browsers without SSE. |
+| Configurable HITL | New | Medium | `hitl_config` parameter: enable/disable HITL per graph, configurable timeout, auto-approve option. |
+
+### Sprint 2: UI Components (DeepFlow-Inspired)
+
+| Task | Status | Priority | Detail |
+|------|--------|----------|--------|
+| Mermaid.js diagrams | New | High | CDN drop-in (`mermaid.min.js`). Render `\`\`\`mermaid` blocks in chat messages as SVG diagrams. |
+| KaTeX math rendering | New | High | CDN drop-in. Render `$...$` (inline) and `$$...$$` (block) LaTeX in messages. |
+| Progressive markdown streaming | New | High | Buffer streaming chunks, re-parse markdown on each chunk. Fix broken code blocks/tables mid-stream. ~50-line change in streaming handler. |
+| Reasoning/thinking accordion | New | High | Collapsible `<details>` block for model CoT/thinking content. Auto-collapsed by default. |
+| Plan/Todo panel | New | Medium | Sidebar section showing task plan (pending/in_progress/completed) during graph execution. Driven by graph node events. |
+| HITL option buttons | New | Medium | Render clarification options as clickable buttons in chat. POST chosen option to resume endpoint. |
+| Cytoscape.js graph upgrade | New | Low | Replace custom SVG graph with Cytoscape.js for proper layout, zoom, pan, edge routing. |
+
+### Sprint 3: Sandbox Activation
+
+| Task | Status | Priority | Detail |
+|------|--------|----------|--------|
+| Wire sandbox into app.py | New | **Critical** | Pass `Sandbox` instance to `create_skill_registry()` in all call sites. `sandboxed_shell` skill becomes available to agents. |
+| Sandbox lifecycle management | New | High | Per-session sandbox scope. Lazy initialization on first tool use. Auto-cleanup on session end. |
+| `run_agent()` sandbox param | New | High | Add `sandbox: Optional[Sandbox]` parameter to `run_agent()` and `run_team()`. |
+| Docker mode testing | New | Medium | Integration tests for Docker sandbox backend (requires Docker daemon). |
+| Per-session workspace isolation | New | Medium | Each session gets its own `/workspace/{session_id}/` directory tree inside the container. |
+
+### Sprint 4: MCP Client Integrator
+
+| Task | Status | Priority | Detail |
+|------|--------|----------|--------|
+| `MCPClient` class | New | **Critical** | Connect to external MCP servers. Support stdio and SSE transports. Discover tools and resources. |
+| Config-driven server management | New | High | `mcp_servers` config section (name → type/command/URL). Hot-reload on config change. |
+| Tool injection into agents | New | High | MCP-discovered external tools injected into agent skill registries at runtime. Agents can use GitHub MCP, filesystem MCP, etc. |
+| Resource content serving | New | Medium | `GET /api/mcp/resources/{uri}` endpoint to fetch resource content from the registry. |
+| OAuth for HTTP/SSE servers | New | Low | `client_credentials` and `refresh_token` OAuth grant types for authenticated MCP servers. |
+| Dashboard MCP config UI | New | Low | UI panel to add/remove/configure external MCP servers. |
+
+### Sprint 5: Memory System Enhancement
+
+| Task | Status | Priority | Detail |
+|------|--------|----------|--------|
+| Wire InMemoryStore into dashboard | New | **Critical** | Instantiate `InMemoryStore` in `app.py`, pass to `ConversationManager` and agent runner. Cross-thread memory operational. |
+| Activate summarization | New | High | Configure `SummarizationConfig` on `ConversationManager` (trigger at 50 messages or 80% of max_history). Wire a summarize function using the active LLM provider. |
+| PostgresStore backend | New | High | Durable cross-thread store backed by PostgreSQL. Same interface as `InMemoryStore`. Table: `store_items(namespace, key, value JSONB, ttl, created_at)`. |
+| Per-agent memory namespace | New | Medium | Each agent writes to `("agent", agent_name)` namespace. Personal preferences and learned patterns persist across conversations. |
+| Memory injection in system prompt | New | Medium | Build a `<memory>` block from recent store entries and inject into agent system prompts. Capped at 2000 tokens. |
+| Semantic fact extraction | New | Low | LLM-powered background extraction of facts from conversations. Classify as preference/knowledge/context/behavior/goal with confidence scores. |
+
+### Sprint 6: Modular Process Split
+
+| Task | Status | Priority | Detail |
+|------|--------|----------|--------|
+| Extract `agent_runtime.py` module | New | High | Move WebSocket streaming, `run_agent()`, `run_team()`, graph execution into a separate FastAPI router module. |
+| Extract `gateway_api.py` module | New | High | Move REST management endpoints (config, users, jobs, MCP, metrics) into a separate router module. |
+| Static file serving separation | New | Medium | Serve `dashboard/static/` via nginx directly in production (bypass FastAPI for static assets). |
+| Multi-process docker-compose | New | Medium | Optional `docker-compose.split.yml` with agent-runtime, gateway-api, and nginx as separate services. |
+| Shared state via Redis | New | Low | When running as separate processes, share event bus and session state via Redis pub/sub. |
+
+### v1.2 KPIs
+
+- SSE streaming endpoint operational with HITL resume
+- UI renders Mermaid, KaTeX, thinking blocks, and plan/todo in real-time
+- Sandbox activated — agents execute code in isolated containers
+- MCP client connects to at least 2 external servers (GitHub, filesystem)
+- Cross-thread memory persisted to PostgreSQL
+- App split into at least 2 independent router modules
+
+---
+
 ## Growth Opportunities (Suggestions)
 
 These are high-potential features that could accelerate product growth, based on market trends in the AI agent orchestration space ($8.5B market in 2026).

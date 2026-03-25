@@ -61,7 +61,9 @@ class TestLogInjectionSkillRegistry:
 
         for record in caplog.records:
             assert "\n" not in record.getMessage(), "Log message contains newline (log injection)"
-            assert "\r" not in record.getMessage(), "Log message contains carriage return (log injection)"
+            assert "\r" not in record.getMessage(), (
+                "Log message contains carriage return (log injection)"
+            )
 
     @pytest.mark.asyncio
     async def test_skill_name_newlines_sanitized(self, caplog):
@@ -119,11 +121,7 @@ class TestLogInjectionConversation:
                 "role": "assistant",
                 "content": "thinking...",
                 "timestamp": 1.0,
-                "metadata": {
-                    "tool_calls": [
-                        {"id": "call\r\nFAKE", "name": "tool\nINJECT"}
-                    ]
-                },
+                "metadata": {"tool_calls": [{"id": "call\r\nFAKE", "name": "tool\nINJECT"}]},
             }
         ]
 
@@ -147,11 +145,7 @@ class TestStackTraceExposure:
     def test_no_str_exc_in_json_responses(self):
         """AST check: no str(exc) inside JSONResponse calls in except handlers."""
         app_path = (
-            Path(__file__).parent.parent
-            / "src"
-            / "agent_orchestrator"
-            / "dashboard"
-            / "app.py"
+            Path(__file__).parent.parent / "src" / "agent_orchestrator" / "dashboard" / "app.py"
         )
         source = app_path.read_text()
         tree = ast.parse(source)
@@ -182,7 +176,6 @@ class TestStackTraceExposure:
                                     "in JSONResponse within except handler"
                                 )
 
-        assert not violations, (
-            "Exception details exposed in HTTP responses:\n"
-            + "\n".join(violations)
+        assert not violations, "Exception details exposed in HTTP responses:\n" + "\n".join(
+            violations
         )
