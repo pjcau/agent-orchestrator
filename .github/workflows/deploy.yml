@@ -115,6 +115,21 @@ jobs:
           # Ensure Docker buildx >= 0.17.0 (required by compose build)
           $SSH_CMD "sudo yum install -y docker-buildx-plugin 2>/dev/null || sudo dnf install -y docker-buildx-plugin 2>/dev/null || docker buildx version" || true
 
+          # Generate self-signed certs if Let's Encrypt certs don't exist (prevents nginx crash)
+          $SSH_CMD "
+            for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
+              CERT_DIR=$APP_DIR/certs/live/\$DOMAIN
+              if [ ! -f \$CERT_DIR/fullchain.pem ]; then
+                echo \"Generating self-signed cert for \$DOMAIN\"
+                sudo mkdir -p \$CERT_DIR
+                sudo openssl req -x509 -nodes -days 90 -newkey rsa:2048 \
+                  -keyout \$CERT_DIR/privkey.pem \
+                  -out \$CERT_DIR/fullchain.pem \
+                  -subj \"/CN=\$DOMAIN\" 2>/dev/null
+              fi
+            done
+          "
+
           # Build and restart services (stop old containers first to avoid name conflicts)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans --timeout 30"
@@ -141,23 +156,23 @@ jobs:
           echo "Waiting for service to start..."
           sleep 15
 
-          # Check dashboard health via SSH (bypasses nginx/SSL)
+          # Check dashboard container health via Docker inspect (dashboard runs HTTPS internally)
           for i in $(seq 1 8); do
-            STATUS=$($SSH_CMD "docker exec \$(docker ps -q --filter name=dashboard | head -1) python -c \"import urllib.request; print(urllib.request.urlopen('http://localhost:5005/health').status)\"" 2>/dev/null) || STATUS="000"
-            STATUS=$(echo "$STATUS" | tr -d '[:space:]')
-            if [ "$STATUS" = "200" ]; then
+            HEALTH=$($SSH_CMD "docker inspect --format='{{.State.Health.Status}}' \$(docker ps -q --filter name=dashboard | head -1) 2>/dev/null" 2>/dev/null) || HEALTH="unknown"
+            HEALTH=$(echo "$HEALTH" | tr -d '[:space:]')
+            if [ "$HEALTH" = "healthy" ]; then
               echo "Dashboard health check passed (attempt $i)"
-              # Also verify nginx is running (may restart if SSL certs missing)
+              # Also verify nginx is running
               $SSH_CMD "docker ps --format '{{.Names}} {{.Status}}' | grep nginx" || echo "WARNING: nginx not healthy"
               exit 0
             fi
-            echo "Attempt $i: dashboard status=$STATUS, retrying in 10s..."
+            echo "Attempt $i: dashboard health=$HEALTH, retrying in 10s..."
             sleep 10
           done
 
           # Diagnostics on failure
           echo "=== Container status ==="
-          $SSH_CMD "docker ps --format 'table {{.Names}}\t{{.Status}}'" || true
+          $SSH_CMD "docker ps -a --format 'table {{.Names}}\t{{.Status}}'" || true
           echo "=== Dashboard logs ==="
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail 20 dashboard" || true
           echo "=== Nginx logs ==="

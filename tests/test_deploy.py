@@ -241,7 +241,14 @@ class TestDeployWorkflow:
     def test_health_check_included(self):
         content = self.WORKFLOW.read_text()
         assert "Health Check" in content
-        assert "/health" in content
+        assert "docker inspect" in content
+
+    def test_self_signed_cert_fallback(self):
+        """Self-signed certs are generated if Let's Encrypt certs are missing."""
+        content = self.WORKFLOW.read_text()
+        assert "self-signed cert" in content.lower()
+        assert "openssl req" in content
+        assert "agents-orchestrator.com" in content
 
     def test_nginx_restart_after_deploy(self):
         """Nginx must be restarted after dashboard rebuild to pick up new container IP."""
