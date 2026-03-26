@@ -143,7 +143,26 @@ jobs:
           # Restart dashboard to pick up DB connection after password sync
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart dashboard"
 
-          # Restart nginx to pick up new dashboard container IP (avoids 502)
+          # Provision Let's Encrypt certs if not already present (requires nginx running on port 80)
+          $SSH_CMD "
+            for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
+              LE_DIR=$APP_DIR/certs/live/\$DOMAIN
+              # Check if a real LE cert exists (has 'Issuer: .* Let' in it)
+              if [ -f \$LE_DIR/fullchain.pem ] && openssl x509 -in \$LE_DIR/fullchain.pem -issuer -noout 2>/dev/null | grep -qi 'let'; then
+                echo \"Let's Encrypt cert already exists for \$DOMAIN\"
+              else
+                echo \"Requesting Let's Encrypt cert for \$DOMAIN\"
+                cd $APP_DIR && docker compose -f docker-compose.prod.yml run --rm certbot \
+                  certonly --webroot -w /var/www/certbot \
+                  --email admin@\$DOMAIN \
+                  --agree-tos --no-eff-email \
+                  -d \$DOMAIN \
+                  --force-renewal 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal)\"
+              fi
+            done
+          "
+
+          # Restart nginx to pick up new certs and dashboard container IP (avoids 502)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx"
 
       - name: Health Check

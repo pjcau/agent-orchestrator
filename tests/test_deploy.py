@@ -250,6 +250,13 @@ class TestDeployWorkflow:
         assert "openssl req" in content
         assert "agents-orchestrator.com" in content
 
+    def test_letsencrypt_cert_provisioning(self):
+        """Deploy should request Let's Encrypt certs if not already present."""
+        content = self.WORKFLOW.read_text()
+        assert "certbot" in content.lower()
+        assert "certonly" in content
+        assert "--webroot" in content
+
     def test_nginx_restart_after_deploy(self):
         """Nginx must be restarted after dashboard rebuild to pick up new container IP."""
         content = self.WORKFLOW.read_text()
