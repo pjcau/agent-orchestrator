@@ -1,0 +1,38 @@
+[package]
+name = "agent-orchestrator-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "_agent_orchestrator_rust"
+# cdylib produces the Python-importable .so extension module.
+# rlib is needed so that `cargo test` can link the integration tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+regex = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[[test]]
+name = "test_graph_engine"
+path = "tests/test_graph_engine.rs"
+
+[[test]]
+name = "test_router"
+path = "tests/test_router.rs"
+
+[[test]]
+name = "test_task_queue"
+path = "tests/test_task_queue.rs"
+
+[[test]]
+name = "test_rate_limiter"
+path = "tests/test_rate_limiter.rs"
+
+[[test]]
+name = "test_metrics"
+path = "tests/test_metrics.rs"

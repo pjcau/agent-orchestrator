@@ -33,10 +33,68 @@ Install everything: `pip install agent-orchestrator[all]`
 
 Provider-agnostic AI agent orchestration framework. Abstracts the concepts of skill, agent, subagent, and inter-agent cooperation away from any single LLM vendor (Claude, GPT, Gemini, Llama, Mistral, etc.).
 
+## Hybrid Architecture (React + Rust/PyO3)
+
+The project uses a hybrid architecture for optimal performance:
+
+| Layer | Directory | Technology | Purpose |
+|-------|-----------|-----------|---------|
+| **Frontend** | `frontend/` | React + Vite + TypeScript | Modern reactive UI (replaces vanilla JS in `static/`) |
+| **Core Engine** | `rust/` | Rust + PyO3 + maturin | Accelerated graph, router, queue, rate limiter, metrics |
+| **Backend** | `src/agent_orchestrator/` | Python (FastAPI) | Agents, providers, skills, orchestration |
+
+### React Frontend (`frontend/`)
+
+- Built with Vite + React 19 + TypeScript
+- State management: Zustand
+- Data fetching: @tanstack/react-query
+- Graph visualization: @xyflow/react
+- Charts: Recharts
+- Dev: `cd frontend && npm run dev` (proxies API to localhost:5005)
+- Build: `cd frontend && npm run build` (outputs to `frontend/dist/`)
+- The FastAPI backend serves `frontend/dist/` when present, falls back to `static/`
+
+### Rust Core Engine (`rust/`)
+
+Optional Rust acceleration via PyO3. Falls back to pure Python when not compiled.
+
+- Build: `cd rust && maturin develop --release`
+- Install: `pip install agent-orchestrator[rust]`
+- Modules ported: `graph_engine`, `router`, `task_queue`, `rate_limiter`, `metrics`
+- Each Python module has `try: from _agent_orchestrator_rust import ... except ImportError` fallback
+- Docker multi-stage build handles React + Rust + Python automatically
+
+### Import Pattern (Rust Fallback)
+
+```python
+try:
+    from _agent_orchestrator_rust import RustClassifier
+    _HAS_RUST = True
+except ImportError:
+    _HAS_RUST = False
+```
+
+All core modules (`graph.py`, `router.py`, `task_queue.py`, `rate_limiter.py`, `metrics.py`) follow this pattern.
+
 ## Project Structure
 
 ```
 agent-orchestrator/
+├── frontend/                    # React + Vite + TypeScript frontend
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   └── src/
+│       ├── api/                 # API client, types, React Query hooks
+│       ├── stores/              # Zustand state management
+│       ├── hooks/               # WebSocket, SSE hooks
+│       ├── components/          # React components (chat, graph, metrics, layout)
+│       └── pages/               # Page-level components
+├── rust/                        # Rust core engine (PyO3 + maturin)
+│   ├── Cargo.toml
+│   ├── pyproject.toml           # maturin build config
+│   ├── src/                     # Rust source (graph_engine, router, queue, etc.)
+│   └── tests/                   # Rust unit tests
 ├── terraform/
 │   ├── backend/main.tf          # S3 + DynamoDB bootstrap (one-time)
 │   ├── modules/
@@ -49,7 +107,7 @@ agent-orchestrator/
 │   ├── outputs.tf               # Root outputs
 │   └── terraform.tfvars.example # Example config (never commit .tfvars)
 ├── docker/
-│   ├── dashboard/Dockerfile     # Dashboard container (FastAPI + auth)
+│   ├── dashboard/Dockerfile     # Multi-stage: Node (React) + Rust (PyO3) + Python (FastAPI)
 │   ├── docs/Dockerfile          # Docusaurus docs site
 │   ├── archiver/Dockerfile      # Job archiver (S3 upload + PG metadata)
 │   ├── nginx/nginx.conf         # Reverse proxy (TLS, rate limiting, WebSocket)
@@ -259,13 +317,21 @@ Cross-thread long-term memory for agents, backed by PostgreSQL (durable) or InMe
 - **Summarization**: `ConversationManager` is configured with `SummarizationConfig(threshold=50, retain_last=10)` — triggers at 50 messages, keeps 10 most recent verbatim
 - **API**: `GET /api/memory/namespaces`, `GET /api/memory/{namespace}`, `DELETE /api/memory/{namespace}/{key}`, `GET /api/memory/stats`
 
-## Agents (25)
+## Agents (30)
 
 Agents are organised by **category** under `.claude/agents/<category>/`.
-The `team-lead` lives at root level (`.claude/agents/team-lead.md`).
+Root-level agents live directly in `.claude/agents/`.
+
+### Root-Level Agents (6)
 
 ```
-team-lead (sonnet) ──── orchestrator, coordinates all categories
+.claude/agents/
+  ├── team-lead (sonnet) ──────── orchestrator, coordinates all categories
+  ├── architect (sonnet) ──────── codebase architecture analysis
+  ├── code-reviewer (sonnet) ──── code quality and security review
+  ├── dependency-checker (sonnet)  dependency updates, vulnerabilities, unused packages
+  ├── migration-helper (sonnet) ── database migrations, API versioning, breaking changes
+  └── test-runner (sonnet) ──────── run tests after code changes
 ```
 
 ### Software Engineering (8 agents)
@@ -595,6 +661,13 @@ pip install -e ".[dev,dashboard]"
 
 # Install with OpenTelemetry support
 pip install -e ".[dev,dashboard,otel]"
+
+# Install with Rust acceleration (optional — requires Rust toolchain)
+cd rust && maturin develop --release && cd ..
+
+# React frontend development
+cd frontend && npm install && npm run dev    # http://localhost:5173 (proxied)
+cd frontend && npm run build                 # build to frontend/dist/
 
 # Tests & linting (local venv)
 pytest

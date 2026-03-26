@@ -1,3 +1,30 @@
+# ============================================================
+# Stage 1: Build React frontend
+# ============================================================
+FROM node:22-alpine AS frontend-build
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+COPY frontend/ .
+RUN npm run build
+
+# ============================================================
+# Stage 2: Build Rust extension (optional — graceful failure)
+# ============================================================
+FROM python:3.14-slim AS rust-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl build-essential pkg-config && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    rm -rf /var/lib/apt/lists/*
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN pip install --no-cache-dir maturin
+WORKDIR /rust
+COPY rust/ .
+RUN maturin build --release --out dist 2>/dev/null || echo "Rust build skipped"
+
+# ============================================================
+# Stage 3: Final Python image
+# ============================================================
 FROM python:3.14-slim
 
 WORKDIR /workspace
@@ -7,6 +34,13 @@ COPY pyproject.toml .
 COPY src/ src/
 RUN pip install --no-cache-dir -e ".[dev,dashboard,anthropic,openai,postgres]"
 
+# Install Rust extension if built successfully (graceful: no-op if missing)
+COPY --from=rust-build /rust/dist/*.whl /tmp/wheels/
+RUN pip install /tmp/wheels/*.whl 2>/dev/null || true && rm -rf /tmp/wheels
+
 COPY . .
+
+# Copy built React assets
+COPY --from=frontend-build /app/dist /workspace/frontend/dist
 
 ENV PYTHONPATH=/workspace/src

@@ -16,6 +16,14 @@ from .health import HealthMonitor
 from .orchestrator import TaskComplexity
 from .provider import Provider
 
+# Rust acceleration (optional — falls back to pure Python)
+try:
+    from _agent_orchestrator_rust import RustClassifier as _RustClassifier
+
+    _HAS_RUST = True
+except ImportError:
+    _HAS_RUST = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -112,9 +120,25 @@ class TaskComplexityClassifier:
     - Keyword matching against curated word sets
     - Regex patterns for common low-complexity operations
     - Word count thresholds for length-based signals
+
+    Uses Rust accelerated classifier when available.
     """
 
+    def __init__(self) -> None:
+        self._rust = _RustClassifier() if _HAS_RUST else None
+
     def classify(self, task: str) -> TaskComplexity:
+        if self._rust:
+            rc = self._rust.classify(task)
+            return TaskComplexity(
+                level=rc.level,
+                estimated_tokens=rc.estimated_tokens,
+                requires_tools=rc.requires_tools,
+                requires_reasoning=rc.requires_reasoning,
+            )
+        return self._classify_python(task)
+
+    def _classify_python(self, task: str) -> TaskComplexity:
         """Return a TaskComplexity for the given task description string."""
         lower = task.lower()
 

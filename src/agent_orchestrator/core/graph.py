@@ -20,6 +20,14 @@ from typing import Any, Callable, Awaitable
 from .checkpoint import Checkpoint, Checkpointer
 from .channels import BaseChannel, ChannelManager, BinaryOperatorChannel
 
+# Rust acceleration (optional — falls back to pure Python)
+try:
+    from _agent_orchestrator_rust import GraphTopology as _RustGraphTopology
+
+    _HAS_RUST = True
+except ImportError:
+    _HAS_RUST = False
+
 
 # Sentinel nodes
 START = "__start__"
@@ -161,6 +169,7 @@ class StateGraph:
         self._reducers: dict[str, Reducer] = reducers or {}
         self._channel_config: dict[str, BaseChannel] = channel_config or {}
         self._compiled = False
+        self._rust_topo = _RustGraphTopology() if _HAS_RUST else None
 
     def add_node(self, name: str, func: NodeFunc, **metadata: Any) -> StateGraph:
         if name in (START, END):
@@ -168,10 +177,14 @@ class StateGraph:
         if name in self._nodes:
             raise ValueError(f"Node already exists: {name}")
         self._nodes[name] = NodeConfig(name=name, func=func, metadata=metadata)
+        if self._rust_topo:
+            self._rust_topo.add_node(name)
         return self
 
     def add_edge(self, source: str, target: str) -> StateGraph:
         self._edges.append(Edge(source=source, target=target, edge_type=EdgeType.FIXED))
+        if self._rust_topo:
+            self._rust_topo.add_edge(source, target)
         return self
 
     def add_conditional_edges(
@@ -189,6 +202,8 @@ class StateGraph:
                 route_map=route_map,
             )
         )
+        if self._rust_topo:
+            self._rust_topo.add_conditional_edge(source, route_map)
         return self
 
     def compile(
@@ -217,6 +232,10 @@ class StateGraph:
 
     def _validate(self) -> None:
         """Validate graph structure before compilation."""
+        if self._rust_topo:
+            self._rust_topo.validate()
+            return
+
         # Check that START has at least one outgoing edge
         start_edges = [e for e in self._edges if e.source == START]
         if not start_edges:
@@ -243,6 +262,9 @@ class StateGraph:
 
     def _find_reachable(self, start: str) -> set[str]:
         """BFS to find all reachable nodes from start."""
+        if self._rust_topo:
+            return self._rust_topo.find_reachable(start)
+
         visited: set[str] = set()
         queue = [start]
         while queue:

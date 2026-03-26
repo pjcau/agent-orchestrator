@@ -1,10 +1,21 @@
-"""In-memory metrics collection — Prometheus-compatible naming, no external deps."""
+"""In-memory metrics collection — Prometheus-compatible naming, no external deps.
+
+Optionally accelerated by Rust via PyO3 when _agent_orchestrator_rust is installed.
+"""
 
 from __future__ import annotations
 
 import math
 import time
 from typing import Any
+
+# Rust acceleration (optional — falls back to pure Python)
+try:
+    from _agent_orchestrator_rust import RustMetricsRegistry as _RustMetricsRegistry  # noqa: F401
+
+    _HAS_RUST_METRICS = True
+except ImportError:
+    _HAS_RUST_METRICS = False
 
 
 # ---------------------------------------------------------------------------

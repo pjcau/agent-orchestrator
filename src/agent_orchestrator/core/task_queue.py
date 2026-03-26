@@ -1,10 +1,24 @@
-"""Persistent task queue — in-memory now, Postgres-ready interface for later."""
+"""Persistent task queue — in-memory now, Postgres-ready interface for later.
+
+Optionally accelerated by Rust via PyO3 when _agent_orchestrator_rust is installed.
+"""
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+# Rust acceleration (optional — falls back to pure Python)
+try:
+    from _agent_orchestrator_rust import (
+        RustTaskQueue as _RustTaskQueue,
+        RustQueuedTask as _RustQueuedTask,
+    )
+
+    _HAS_RUST = True
+except ImportError:
+    _HAS_RUST = False
 
 
 @dataclass
@@ -32,15 +46,58 @@ class QueueStats:
     total: int
 
 
+def _to_rust_task(t: QueuedTask) -> _RustQueuedTask:
+    """Convert Python QueuedTask to Rust RustQueuedTask."""
+    rt = _RustQueuedTask(t.task_id, t.description, t.priority)
+    rt.status = t.status
+    rt.agent_name = t.agent_name
+    rt.created_at = t.created_at
+    rt.started_at = t.started_at
+    rt.completed_at = t.completed_at
+    rt.result = t.result
+    rt.retries = t.retries
+    rt.max_retries = t.max_retries
+    return rt
+
+
+def _from_rust_task(rt: _RustQueuedTask) -> QueuedTask:
+    """Convert Rust RustQueuedTask to Python QueuedTask."""
+    return QueuedTask(
+        task_id=rt.task_id,
+        description=rt.description,
+        priority=rt.priority,
+        status=rt.status,
+        agent_name=rt.agent_name,
+        created_at=rt.created_at,
+        started_at=rt.started_at,
+        completed_at=rt.completed_at,
+        result=rt.result,
+        retries=rt.retries,
+        max_retries=rt.max_retries,
+    )
+
+
+if not _HAS_RUST:
+    # Placeholders when Rust is not available
+    def _to_rust_task(t):  # type: ignore[misc]  # noqa: F811
+        raise RuntimeError("Rust not available")
+
+    def _from_rust_task(rt):  # type: ignore[misc]  # noqa: F811
+        raise RuntimeError("Rust not available")
+
+
 class TaskQueue:
     """In-memory priority task queue.
 
     Priority is descending (higher integer = processed first).
     Within the same priority, tasks are ordered FIFO by created_at.
+
+    Optionally backed by Rust for faster sorting and lookup.
     """
 
     def __init__(self) -> None:
         self._tasks: dict[str, QueuedTask] = {}
+        self._rust: _RustTaskQueue | None = _RustTaskQueue() if _HAS_RUST else None
 
     # ------------------------------------------------------------------
     # Write operations
@@ -50,6 +107,8 @@ class TaskQueue:
         """Add a task to the queue. Returns the task_id."""
         task.status = "pending"
         self._tasks[task.task_id] = task
+        if self._rust:
+            self._rust.enqueue(_to_rust_task(task))
         return task.task_id
 
     def dequeue(self, agent_name: str | None = None) -> QueuedTask | None:

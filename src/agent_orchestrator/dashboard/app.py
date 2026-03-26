@@ -289,15 +289,28 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             logger.info("Sandbox manager: all sessions cleaned up")
 
     # -----------------------------------------------------------------------
-    # Static files and root HTML
+    # Static files and root HTML (React frontend preferred, vanilla JS fallback)
     # -----------------------------------------------------------------------
 
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    react_dist = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index():
-        index_file = STATIC_DIR / "index.html"
-        return HTMLResponse(content=index_file.read_text())
+    if react_dist.is_dir() and (react_dist / "index.html").exists():
+        logger.info("Serving React frontend from %s", react_dist)
+        app.mount("/assets", StaticFiles(directory=str(react_dist / "assets")), name="assets")
+        # Keep legacy static mount for backward compatibility
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+        @app.get("/", response_class=HTMLResponse)
+        async def index():
+            return HTMLResponse(content=(react_dist / "index.html").read_text())
+    else:
+        logger.info("React frontend not found, serving vanilla JS from %s", STATIC_DIR)
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+        @app.get("/", response_class=HTMLResponse)
+        async def index():
+            index_file = STATIC_DIR / "index.html"
+            return HTMLResponse(content=index_file.read_text())
 
     # -----------------------------------------------------------------------
     # Include modular routers

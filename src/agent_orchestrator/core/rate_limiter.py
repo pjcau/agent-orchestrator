@@ -1,9 +1,20 @@
-"""Per-provider rate limiting using a sliding window algorithm."""
+"""Per-provider rate limiting using a sliding window algorithm.
+
+Optionally accelerated by Rust via PyO3 when _agent_orchestrator_rust is installed.
+"""
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+
+# Rust acceleration (optional — falls back to pure Python)
+try:
+    from _agent_orchestrator_rust import RustRateLimiter as _RustRateLimiter
+
+    _HAS_RUST_RL = True
+except ImportError:
+    _HAS_RUST_RL = False
 
 
 @dataclass
@@ -40,6 +51,12 @@ class RateLimiter:
         self._states: dict[str, _ProviderState] = {
             c.provider_key: _ProviderState() for c in configs
         }
+        self._rust: _RustRateLimiter | None = None
+        if _HAS_RUST_RL:
+            rust_configs = [
+                (c.provider_key, c.requests_per_minute, c.tokens_per_minute) for c in configs
+            ]
+            self._rust = _RustRateLimiter(rust_configs)
 
     # ------------------------------------------------------------------
     # Public API
@@ -50,6 +67,9 @@ class RateLimiter:
 
         Does NOT record the request — call record_usage() after success.
         """
+        if self._rust:
+            return self._rust.acquire(provider_key, estimated_tokens)
+
         config = self._configs.get(provider_key)
         if config is None:
             # Unknown provider — allow by default
@@ -71,6 +91,10 @@ class RateLimiter:
 
     def record_usage(self, provider_key: str, tokens: int) -> None:
         """Record that a request with the given token count was made now."""
+        if self._rust:
+            self._rust.record_usage(provider_key, tokens)
+            return
+
         if provider_key not in self._states:
             self._states[provider_key] = _ProviderState()
 

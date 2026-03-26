@@ -23,14 +23,18 @@ Agents are **provider-parameterized** — the same agent definition can run on C
 ## Agent Categories
 
 Agents are organised by **category** under `.claude/agents/<category>/`.
-The `team-lead` lives at root level and coordinates all categories.
+Root-level agents live directly in `.claude/agents/`.
 
-```mermaid
-graph TD
-    TL["team-lead (sonnet)<br/>orchestrator, coordinates all categories"]
+### Root-Level Agents (6)
 
-    style TL fill:#4a90d9,color:#fff
-```
+| Agent | Model | Purpose |
+|-------|-------|---------|
+| team-lead | sonnet | Orchestrator, coordinates all categories |
+| architect | sonnet | Codebase architecture analysis |
+| code-reviewer | sonnet | Code quality and security review |
+| dependency-checker | sonnet | Dependency updates, vulnerabilities, unused packages |
+| migration-helper | sonnet | Database migrations, API versioning, breaking changes |
+| test-runner | sonnet | Run tests after code changes |
 
 ### Software Engineering (8 agents)
 
