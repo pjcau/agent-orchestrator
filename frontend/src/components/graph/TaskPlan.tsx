@@ -1,4 +1,3 @@
-import React from "react";
 import { useAppStore } from "@/stores/useAppStore";
 
 const STATUS_ICONS: Record<string, string> = {

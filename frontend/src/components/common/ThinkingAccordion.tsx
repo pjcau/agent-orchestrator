@@ -1,5 +1,3 @@
-import React from "react";
-
 interface ThinkingAccordionProps {
   content: string;
 }

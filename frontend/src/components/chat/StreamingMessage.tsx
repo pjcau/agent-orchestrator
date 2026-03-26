@@ -1,4 +1,3 @@
-import React from "react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 
 interface StreamingMessageProps {

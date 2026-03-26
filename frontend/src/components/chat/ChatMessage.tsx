@@ -1,4 +1,3 @@
-import React from "react";
 import type { ChatMessage as ChatMessageType, AssistantContent } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { HITLOptions, HITLInterrupt } from "@/components/common/HITLButtons";

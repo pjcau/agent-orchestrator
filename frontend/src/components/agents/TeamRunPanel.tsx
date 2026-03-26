@@ -1,4 +1,3 @@
-import React from "react";
 import { useAppStore } from "@/stores/useAppStore";
 
 /** Displays team run status and active agent information. */

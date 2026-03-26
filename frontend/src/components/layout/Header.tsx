@@ -1,4 +1,3 @@
-import React from "react";
 import { useAppStore } from "@/stores/useAppStore";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { MetricsBar } from "@/components/metrics/MetricsBar";

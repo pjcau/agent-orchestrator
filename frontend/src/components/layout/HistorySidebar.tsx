@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useJobsList, useJobDetail, useDeleteJob } from "@/api/hooks";
 import type { JobSession, JobRecord } from "@/api/types";
 import apiClient from "@/api/client";

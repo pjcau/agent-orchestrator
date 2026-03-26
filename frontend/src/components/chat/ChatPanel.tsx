@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useAppStore } from "@/stores/useAppStore";
 import { useModels, useNewConversation } from "@/api/hooks";
 import { useWebSocketContext } from "@/hooks/useWebSocketContext";
