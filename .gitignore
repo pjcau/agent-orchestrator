@@ -20,6 +20,10 @@ dist/
 build/
 .venv/
 
+# Rust (built via maturin develop)
+rust/target/
+rust/Cargo.lock
+
 # Job logs
 jobs/
 

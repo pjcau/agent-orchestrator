@@ -245,6 +245,19 @@ class TestJavaScriptFunctions:
         assert "function postRenderBubble" in js, "postRenderBubble not found in app.js"
         assert "postRenderBubble(bubble)" in js, "postRenderBubble not called on bubble in app.js"
 
+    def test_open_explorer_for_session_function(self):
+        """app.js must define openExplorerForSession for history→explorer navigation."""
+        js = read_js()
+        assert "function openExplorerForSession" in js, (
+            "openExplorerForSession function not found in app.js"
+        )
+
+    def test_history_view_files_button(self):
+        """app.js history detail must include a View Files button."""
+        js = read_js()
+        assert "btn-history-files" in js, "btn-history-files class not found in app.js"
+        assert "View Files" in js, "View Files button text not found in app.js"
+
 
 # ---------------------------------------------------------------------------
 # CSS class checks
@@ -284,6 +297,42 @@ class TestCssClasses:
         """style.css must define sse-* styles."""
         css = read_css()
         assert ".sse-dot" in css, ".sse-dot not found in style.css"
+
+    def test_tool_call_result_readable_height(self):
+        """style.css tool-call-result must have min-height for readability."""
+        css = read_css()
+        # Find the .tool-call-result block
+        idx = css.find(".tool-call-result {")
+        assert idx != -1, ".tool-call-result not found in style.css"
+        block = css[idx : idx + 300]
+        assert "min-height" in block, ".tool-call-result must have min-height for readability"
+        assert "overflow-y" in block, (
+            ".tool-call-result must have overflow-y for scrollable content"
+        )
+
+    def test_tool_call_header_wraps(self):
+        """style.css tool-call-header must wrap long content."""
+        css = read_css()
+        idx = css.find(".tool-call-header {")
+        assert idx != -1, ".tool-call-header not found in style.css"
+        block = css[idx : idx + 300]
+        assert "flex-wrap" in block, (
+            ".tool-call-header must have flex-wrap for long agent/tool names"
+        )
+        assert "word-break" in block, ".tool-call-header must have word-break"
+
+    def test_history_modal_overflow_contained(self):
+        """style.css history layout must constrain overflow."""
+        css = read_css()
+        idx = css.find(".modal-wide {")
+        assert idx != -1, ".modal-wide not found in style.css"
+        block = css[idx : idx + 200]
+        assert "overflow" in block, ".modal-wide must have overflow control"
+
+    def test_btn_history_files_style(self):
+        """style.css must define .btn-history-files for View Files button."""
+        css = read_css()
+        assert ".btn-history-files" in css, ".btn-history-files not found in style.css"
 
 
 # ---------------------------------------------------------------------------

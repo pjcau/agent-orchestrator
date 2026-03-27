@@ -2275,6 +2275,7 @@
     const actions = `<div class="history-actions">
       <button class="btn-history-load" data-sid="${esc(sessionId)}">Load into chat</button>
       <button class="btn-history-switch" data-sid="${esc(sessionId)}">Switch &amp; continue</button>
+      <button class="btn-history-files" data-sid="${esc(sessionId)}">View Files</button>
     </div>`;
     const rows = records.map((r) => {
       const prompt = r.prompt || r.task || "";
@@ -2300,6 +2301,10 @@
     // Wire up action buttons
     $historyDetail.querySelector(".btn-history-load")?.addEventListener("click", () => loadSessionIntoChat(sessionId));
     $historyDetail.querySelector(".btn-history-switch")?.addEventListener("click", () => switchToSession(sessionId));
+    $historyDetail.querySelector(".btn-history-files")?.addEventListener("click", () => {
+      $historyModal.classList.add("hidden");
+      openExplorerForSession(sessionId);
+    });
   }
 
   async function loadSessionIntoChat(sessionId) {
@@ -2469,6 +2474,28 @@
       const resp = await fetch("/api/jobs/list");
       const data = await resp.json();
       renderExplorerSessions(data.sessions || []);
+    } catch (e) {
+      $explorerSessions.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function openExplorerForSession(sessionId) {
+    $explorerModal.classList.remove("hidden");
+    $explorerSessions.innerHTML = '<div class="empty-state">Loading...</div>';
+    $explorerFiles.innerHTML = '<div class="empty-state">Loading files...</div>';
+    $explorerPreview.innerHTML = '<div class="empty-state">Select a file</div>';
+    $btnExplorerDownload.disabled = false;
+    explorerCurrentSession = sessionId;
+    try {
+      const resp = await fetch("/api/jobs/list");
+      const data = await resp.json();
+      renderExplorerSessions(data.sessions || []);
+      // Auto-select the target session
+      const target = $explorerSessions.querySelector(`[data-sid="${CSS.escape(sessionId)}"]`);
+      if (target) {
+        target.classList.add("active");
+      }
+      loadExplorerFiles(sessionId);
     } catch (e) {
       $explorerSessions.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
     }
