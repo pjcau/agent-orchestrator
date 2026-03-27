@@ -5,6 +5,20 @@ import type { SandboxInfo } from "@/api/types";
 import "./sandbox.css";
 
 /**
+ * Build the preview URL for a sandbox port.
+ * In development (localhost), connects directly to the host port.
+ * In production, uses the nginx /sandbox-preview/{port}/ proxy.
+ */
+function sandboxPreviewUrl(hostPort: string): string {
+  const isDev = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (isDev) {
+    return `http://localhost:${hostPort}`;
+  }
+  // Production: proxy through nginx to avoid exposing extra ports
+  return `${window.location.origin}/sandbox-preview/${hostPort}/`;
+}
+
+/**
  * Sandbox workspace panel — shows container status, preview iframe,
  * and interactive terminal for the current session's sandbox.
  */
@@ -80,14 +94,14 @@ export function SandboxPanel() {
                 >
                   {portEntries.map(([containerPort, hostPort]) => (
                     <option key={containerPort} value={String(hostPort)}>
-                      :{containerPort} &rarr; localhost:{hostPort}
+                      :{containerPort} &rarr; :{hostPort}
                     </option>
                   ))}
                 </select>
               </div>
               <iframe
                 className="sandbox-panel__iframe"
-                src={`http://localhost:${previewPort || portEntries[0]?.[1]}`}
+                src={sandboxPreviewUrl(previewPort || String(portEntries[0]?.[1] ?? ""))}
                 title="Sandbox Preview"
                 sandbox="allow-scripts allow-same-origin allow-forms"
               />
@@ -181,8 +195,8 @@ function SandboxStatusView({
             {Object.entries(info.mapped_ports).map(([cp, hp]) => (
               <li key={cp}>
                 Container :{cp} &rarr;{" "}
-                <a href={`http://localhost:${hp}`} target="_blank" rel="noopener noreferrer">
-                  localhost:{hp}
+                <a href={sandboxPreviewUrl(String(hp))} target="_blank" rel="noopener noreferrer">
+                  :{hp}
                 </a>
               </li>
             ))}

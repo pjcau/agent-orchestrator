@@ -22,6 +22,8 @@ services:
       context: .
       dockerfile: docker/dashboard/Dockerfile
     user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:-0}"  # Add Docker socket group (run: DOCKER_GID=$(stat -f%g /var/run/docker.sock) on macOS)
     volumes:
       - .:/workspace
       - /var/run/docker.sock:/var/run/docker.sock  # Sandbox: Docker-in-Docker

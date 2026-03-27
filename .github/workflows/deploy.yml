@@ -111,6 +111,10 @@ jobs:
           _inject POSTGRES_PASSWORD "$PG_PASS"
           _inject BASE_URL "https://agents-orchestrator.com"
           _inject GITHUB_USERNAME "pjcau"
+          _inject SANDBOX_ENABLED "true"
+          _inject SANDBOX_TYPE "docker"
+          _inject SANDBOX_IMAGE "python:3.12-slim"
+          _inject SANDBOX_MAX_CONCURRENT "10"
 
           # Ensure Docker buildx >= 0.17.0 (required by compose build)
           $SSH_CMD "sudo yum install -y docker-buildx-plugin 2>/dev/null || sudo dnf install -y docker-buildx-plugin 2>/dev/null || docker buildx version" || true
