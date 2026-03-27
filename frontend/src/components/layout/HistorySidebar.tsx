@@ -3,11 +3,13 @@ import { useJobsList, useJobDetail, useDeleteJob } from "@/api/hooks";
 import type { JobSession, JobRecord } from "@/api/types";
 import apiClient from "@/api/client";
 import { useAppStore } from "@/stores/useAppStore";
+import { SessionExplorer } from "./SessionExplorer";
 
 /** Left sidebar showing session history list with ability to load sessions. */
 export function HistorySidebar() {
   const { data: jobsList, isLoading, refetch } = useJobsList();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [explorerSessionId, setExplorerSessionId] = useState<string | null>(null);
   const { data: jobDetail } = useJobDetail(selectedSessionId ?? "");
   const deleteJob = useDeleteJob();
   const { addMessage, setConversationId, clearMessages } = useAppStore();
@@ -168,7 +170,27 @@ export function HistorySidebar() {
             >
               Load into chat
             </button>
+            <button
+              className="btn-explorer-action"
+              onClick={() =>
+                setExplorerSessionId(
+                  explorerSessionId === selectedSessionId
+                    ? null
+                    : selectedSessionId
+                )
+              }
+            >
+              {explorerSessionId === selectedSessionId
+                ? "Hide Files"
+                : "View Files"}
+            </button>
           </div>
+          {explorerSessionId === selectedSessionId && (
+            <SessionExplorer
+              sessionId={selectedSessionId}
+              onClose={() => setExplorerSessionId(null)}
+            />
+          )}
           {jobDetail.records.map((r: JobRecord) => {
             const prompt = r.prompt ?? r.task ?? "";
             const result = r.result ?? {};
