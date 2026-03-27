@@ -119,11 +119,18 @@ jobs:
           # Ensure Docker buildx >= 0.17.0 (required by compose build)
           $SSH_CMD "sudo yum install -y docker-buildx-plugin 2>/dev/null || sudo dnf install -y docker-buildx-plugin 2>/dev/null || docker buildx version" || true
 
-          # Generate self-signed certs if Let's Encrypt certs don't exist (prevents nginx crash)
+          # Generate self-signed certs if missing or expired (prevents nginx crash)
           $SSH_CMD "
             for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
               CERT_DIR=$APP_DIR/certs/live/\$DOMAIN
+              NEED_CERT=false
               if [ ! -f \$CERT_DIR/fullchain.pem ]; then
+                NEED_CERT=true
+              elif ! openssl x509 -in \$CERT_DIR/fullchain.pem -checkend 0 -noout 2>/dev/null; then
+                echo \"Cert expired for \$DOMAIN, regenerating self-signed\"
+                NEED_CERT=true
+              fi
+              if [ \"\$NEED_CERT\" = true ]; then
                 echo \"Generating self-signed cert for \$DOMAIN\"
                 sudo mkdir -p \$CERT_DIR
                 sudo openssl req -x509 -nodes -days 90 -newkey rsa:2048 \
@@ -162,7 +169,7 @@ jobs:
                   --email admin@\$DOMAIN \
                   --agree-tos --no-eff-email \
                   -d \$DOMAIN \
-                  --force-renewal 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal)\"
+                  --keep-until-expiring 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal)\"
               fi
             done
           "

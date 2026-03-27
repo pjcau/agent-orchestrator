@@ -244,11 +244,13 @@ class TestDeployWorkflow:
         assert "docker inspect" in content
 
     def test_self_signed_cert_fallback(self):
-        """Self-signed certs are generated if Let's Encrypt certs are missing."""
+        """Self-signed certs are generated if Let's Encrypt certs are missing or expired."""
         content = self.WORKFLOW.read_text()
         assert "self-signed cert" in content.lower()
         assert "openssl req" in content
         assert "agents-orchestrator.com" in content
+        # Must also regenerate self-signed if existing cert is expired
+        assert "checkend" in content, "Should check cert expiry with openssl checkend"
 
     def test_letsencrypt_cert_provisioning(self):
         """Deploy should request Let's Encrypt certs if not already present."""
@@ -256,6 +258,9 @@ class TestDeployWorkflow:
         assert "certbot" in content.lower()
         assert "certonly" in content
         assert "--webroot" in content
+        # Must NOT force-renew (causes Let's Encrypt rate limits)
+        assert "--force-renewal" not in content, "force-renewal causes LE rate limits"
+        assert "--keep-until-expiring" in content
 
     def test_nginx_restart_after_deploy(self):
         """Nginx must be restarted after dashboard rebuild to pick up new container IP."""
