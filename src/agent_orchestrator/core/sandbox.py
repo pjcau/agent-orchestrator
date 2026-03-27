@@ -2,12 +2,14 @@
 
 Provides a secure, containerised execution environment for agent-generated code.
 Supports Docker containers (production) and local subprocess (testing/fallback).
-Includes virtual path mapping with traversal protection.
+Includes virtual path mapping with traversal protection, port forwarding, and
+container introspection for live preview workflows.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -23,6 +25,44 @@ class SandboxType(Enum):
 
 
 @dataclass
+class PortMapping:
+    """A port mapping between host and container.
+
+    Attributes:
+        container_port: Port inside the container.
+        host_port: Port on the host (0 = auto-assign).
+        protocol: Protocol (tcp or udp).
+    """
+
+    container_port: int
+    host_port: int = 0
+    protocol: str = "tcp"
+
+
+@dataclass
+class SandboxInfo:
+    """Runtime information about a sandbox container.
+
+    Attributes:
+        container_id: Docker container ID (None for LOCAL).
+        status: Current status (running, stopped, not_started).
+        image: Docker image name.
+        mapped_ports: Actual host:container port mappings after start.
+        uptime_seconds: Seconds since container started.
+        memory_limit: Configured memory limit.
+        cpu_limit: Configured CPU limit.
+    """
+
+    container_id: str | None
+    status: str
+    image: str
+    mapped_ports: dict[int, int] = field(default_factory=dict)
+    uptime_seconds: float = 0.0
+    memory_limit: str = ""
+    cpu_limit: float = 0.0
+
+
+@dataclass
 class SandboxConfig:
     """Configuration for a sandbox environment.
 
@@ -35,6 +75,9 @@ class SandboxConfig:
         network_enabled: Whether to allow network access.
         writable_paths: Paths inside the container that are writable.
         virtual_path_map: Host-to-container path mappings.
+        exposed_ports: Ports to forward from container to host.
+        startup_command: Optional command to run after container starts.
+        env_vars: Environment variables to set inside the container.
     """
 
     type: SandboxType = SandboxType.DOCKER
@@ -45,6 +88,9 @@ class SandboxConfig:
     network_enabled: bool = False
     writable_paths: list[str] = field(default_factory=lambda: ["/workspace"])
     virtual_path_map: dict[str, str] = field(default_factory=dict)
+    exposed_ports: list[PortMapping] = field(default_factory=list)
+    startup_command: str | None = None
+    env_vars: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -109,6 +155,8 @@ class Sandbox:
         self._config = config or SandboxConfig()
         self._container_id: str | None = None
         self._started = False
+        self._start_time: float | None = None
+        self._mapped_ports: dict[int, int] = {}
 
     @property
     def config(self) -> SandboxConfig:
@@ -122,6 +170,42 @@ class Sandbox:
     def container_id(self) -> str | None:
         return self._container_id
 
+    @property
+    def port_mappings(self) -> dict[int, int]:
+        """Actual container_port -> host_port mappings after start."""
+        return dict(self._mapped_ports)
+
+    async def get_info(self) -> SandboxInfo:
+        """Return runtime information about this sandbox."""
+        if not self._started:
+            return SandboxInfo(
+                container_id=None,
+                status="not_started",
+                image=self._config.image,
+                memory_limit=self._config.memory_limit,
+                cpu_limit=self._config.cpu_limit,
+            )
+
+        uptime = time.monotonic() - self._start_time if self._start_time else 0.0
+
+        if self._config.type == SandboxType.DOCKER and self._container_id:
+            # Query actual container status
+            status = await self._get_docker_status()
+            # Refresh port mappings from Docker
+            await self._refresh_port_mappings()
+        else:
+            status = "running"
+
+        return SandboxInfo(
+            container_id=self._container_id,
+            status=status,
+            image=self._config.image,
+            mapped_ports=dict(self._mapped_ports),
+            uptime_seconds=round(uptime, 1),
+            memory_limit=self._config.memory_limit,
+            cpu_limit=self._config.cpu_limit,
+        )
+
     async def start(self) -> None:
         """Start the sandbox environment."""
         if self._started:
@@ -134,6 +218,7 @@ class Sandbox:
             pass
 
         self._started = True
+        self._start_time = time.monotonic()
 
     async def stop(self) -> None:
         """Stop and clean up the sandbox environment."""
@@ -145,6 +230,8 @@ class Sandbox:
 
         self._started = False
         self._container_id = None
+        self._start_time = None
+        self._mapped_ports = {}
 
     async def execute(self, command: str, timeout: int | None = None) -> SandboxResult:
         """Execute a command inside the sandbox.
@@ -257,7 +344,7 @@ class Sandbox:
     # ─── Docker Internals ────────────────────────────────────────────
 
     async def _start_docker(self) -> None:
-        """Start a Docker container."""
+        """Start a Docker container with optional port forwarding and env vars."""
         cmd_parts = [
             "docker",
             "run",
@@ -268,7 +355,21 @@ class Sandbox:
         ]
 
         if not self._config.network_enabled:
-            cmd_parts.append("--network=none")
+            # When ports are exposed, network must be enabled
+            if not self._config.exposed_ports:
+                cmd_parts.append("--network=none")
+
+        # Port mappings
+        for pm in self._config.exposed_ports:
+            if pm.host_port:
+                cmd_parts.extend(["-p", f"{pm.host_port}:{pm.container_port}/{pm.protocol}"])
+            else:
+                # Auto-assign host port
+                cmd_parts.extend(["-p", f"{pm.container_port}/{pm.protocol}"])
+
+        # Environment variables
+        for key, value in self._config.env_vars.items():
+            cmd_parts.extend(["-e", f"{key}={value}"])
 
         # Mount writable paths as tmpfs for isolation
         for wp in self._config.writable_paths:
@@ -290,6 +391,18 @@ class Sandbox:
 
         self._container_id = stdout.decode().strip()
 
+        # Resolve actual port mappings
+        if self._config.exposed_ports:
+            await self._refresh_port_mappings()
+
+        # Run startup command if configured
+        if self._config.startup_command:
+            result = await self._execute_docker(
+                self._config.startup_command, self._config.timeout_seconds
+            )
+            if result.exit_code != 0:
+                raise SandboxError(f"Startup command failed: {result.stderr}")
+
     async def _stop_docker(self) -> None:
         """Stop and remove the Docker container."""
         if not self._container_id:
@@ -303,6 +416,57 @@ class Sandbox:
             stderr=asyncio.subprocess.PIPE,
         )
         await proc.communicate()
+
+    async def _refresh_port_mappings(self) -> None:
+        """Query Docker for actual port mappings and update _mapped_ports."""
+        if not self._container_id:
+            return
+
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "inspect",
+            "--format",
+            "{{json .NetworkSettings.Ports}}",
+            self._container_id,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return
+
+        try:
+            ports_json = json.loads(stdout.decode().strip())
+            self._mapped_ports = {}
+            if ports_json:
+                for container_key, bindings in ports_json.items():
+                    if not bindings:
+                        continue
+                    # container_key is like "8000/tcp"
+                    container_port = int(container_key.split("/")[0])
+                    host_port = int(bindings[0]["HostPort"])
+                    self._mapped_ports[container_port] = host_port
+        except (json.JSONDecodeError, KeyError, IndexError, ValueError):
+            pass
+
+    async def _get_docker_status(self) -> str:
+        """Query Docker for the container's current status."""
+        if not self._container_id:
+            return "not_started"
+
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "inspect",
+            "--format",
+            "{{.State.Status}}",
+            self._container_id,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return "unknown"
+        return stdout.decode().strip() or "unknown"
 
     async def _execute_docker(self, command: str, timeout: int) -> SandboxResult:
         """Execute a command inside the Docker container."""

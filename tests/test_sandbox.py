@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 
 from agent_orchestrator.core.sandbox import (
+    PortMapping,
     Sandbox,
     SandboxConfig,
     SandboxError,
+    SandboxInfo,
     SandboxResult,
     SandboxType,
     _validate_path,
@@ -435,3 +437,129 @@ class TestAgentRunnerSandboxIntegration:
             registry = create_skill_registry(sandbox=sandbox)
             assert "shell_exec" in registry.list_skills()
             assert "sandboxed_shell" in registry.list_skills()
+
+
+# ─── PortMapping dataclass ─────────────────────────────────────────
+
+
+class TestPortMapping:
+    def test_defaults(self):
+        pm = PortMapping(container_port=8000)
+        assert pm.container_port == 8000
+        assert pm.host_port == 0
+        assert pm.protocol == "tcp"
+
+    def test_custom_values(self):
+        pm = PortMapping(container_port=3000, host_port=9001, protocol="udp")
+        assert pm.container_port == 3000
+        assert pm.host_port == 9001
+        assert pm.protocol == "udp"
+
+
+# ─── SandboxInfo dataclass ─────────────────────────────────────────
+
+
+class TestSandboxInfo:
+    def test_defaults(self):
+        info = SandboxInfo(container_id=None, status="not_started", image="python:3.12-slim")
+        assert info.container_id is None
+        assert info.status == "not_started"
+        assert info.mapped_ports == {}
+        assert info.uptime_seconds == 0.0
+
+    def test_full_info(self):
+        info = SandboxInfo(
+            container_id="abc123",
+            status="running",
+            image="node:20",
+            mapped_ports={3000: 9001, 8000: 9002},
+            uptime_seconds=42.5,
+            memory_limit="1g",
+            cpu_limit=2.0,
+        )
+        assert info.container_id == "abc123"
+        assert info.mapped_ports[3000] == 9001
+        assert info.memory_limit == "1g"
+
+
+# ─── Extended SandboxConfig fields ─────────────────────────────────
+
+
+class TestSandboxConfigExtended:
+    def test_new_fields_defaults(self):
+        cfg = SandboxConfig()
+        assert cfg.exposed_ports == []
+        assert cfg.startup_command is None
+        assert cfg.env_vars == {}
+
+    def test_exposed_ports(self):
+        cfg = SandboxConfig(
+            exposed_ports=[
+                PortMapping(container_port=8000, host_port=9001),
+                PortMapping(container_port=3000),
+            ],
+        )
+        assert len(cfg.exposed_ports) == 2
+        assert cfg.exposed_ports[0].host_port == 9001
+        assert cfg.exposed_ports[1].host_port == 0
+
+    def test_startup_command(self):
+        cfg = SandboxConfig(startup_command="pip install flask")
+        assert cfg.startup_command == "pip install flask"
+
+    def test_env_vars(self):
+        cfg = SandboxConfig(env_vars={"NODE_ENV": "development", "PORT": "3000"})
+        assert cfg.env_vars["NODE_ENV"] == "development"
+        assert len(cfg.env_vars) == 2
+
+
+# ─── Sandbox get_info & port_mappings (LOCAL mode) ─────────────────
+
+
+class TestSandboxGetInfo:
+    @pytest.mark.asyncio
+    async def test_get_info_not_started(self):
+        sandbox = Sandbox(SandboxConfig(type=SandboxType.LOCAL, image="node:20"))
+        info = await sandbox.get_info()
+        assert info.status == "not_started"
+        assert info.container_id is None
+        assert info.image == "node:20"
+        assert info.mapped_ports == {}
+
+    @pytest.mark.asyncio
+    async def test_get_info_running(self):
+        async with Sandbox(SandboxConfig(type=SandboxType.LOCAL)) as sandbox:
+            info = await sandbox.get_info()
+            assert info.status == "running"
+            assert info.uptime_seconds >= 0.0
+            assert info.image == "python:3.12-slim"
+
+    @pytest.mark.asyncio
+    async def test_get_info_after_stop(self):
+        sandbox = Sandbox(SandboxConfig(type=SandboxType.LOCAL))
+        await sandbox.start()
+        await sandbox.stop()
+        info = await sandbox.get_info()
+        assert info.status == "not_started"
+
+    @pytest.mark.asyncio
+    async def test_port_mappings_empty_by_default(self):
+        async with Sandbox(SandboxConfig(type=SandboxType.LOCAL)) as sandbox:
+            assert sandbox.port_mappings == {}
+
+    @pytest.mark.asyncio
+    async def test_start_time_tracked(self):
+        sandbox = Sandbox(SandboxConfig(type=SandboxType.LOCAL))
+        assert sandbox._start_time is None
+        await sandbox.start()
+        assert sandbox._start_time is not None
+        await sandbox.stop()
+        assert sandbox._start_time is None
+
+    @pytest.mark.asyncio
+    async def test_mapped_ports_reset_on_stop(self):
+        sandbox = Sandbox(SandboxConfig(type=SandboxType.LOCAL))
+        await sandbox.start()
+        sandbox._mapped_ports = {8000: 9001}  # Simulate port mapping
+        await sandbox.stop()
+        assert sandbox._mapped_ports == {}

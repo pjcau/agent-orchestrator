@@ -273,8 +273,8 @@ agent-orchestrator/
 - **LoopDetector** — Per-session sliding window loop detection for agent tool calls. Hashes tool_name+params (MD5), tracks in a `deque(maxlen=20)`. Warns at 3 repeats, hard stops at 5. LRU eviction at 500 sessions. Integrated into `Agent.execute()` via optional `loop_detector` + `session_id` params. Emits `loop.warning` / `loop.hard_stop` events; increments `loop_warnings_total` / `loop_hard_stops_total` counters.
 - **DocumentConverter** — Converts uploaded files (PDF, Excel, CSV, Word, PowerPoint, HTML, text) to Markdown for LLM consumption. Graceful fallback when optional deps missing. Limits: 10 MB file size, 50 PDF pages, 10,000 spreadsheet rows. Upload via `POST /api/upload` (multipart/form-data).
 - **ClarificationManager** — Structured agent-human clarification. 5 typed request categories (missing_info, ambiguous, approach, risk, suggestion). Blocking mode pauses agent until response or 5-minute timeout. Non-blocking mode emits event and continues. Events: `clarification.request`, `clarification.response`, `clarification.timeout`.
-- **Sandbox** — Isolated execution environment (Docker or local). `SandboxConfig` controls image, timeout, memory/CPU limits, network, writable paths. Virtual path mapping with traversal protection. `SandboxedShellSkill` wraps sandbox as a drop-in Skill for agent use.
-- **SandboxManager** — Session-scoped sandbox lifecycle in dashboard. Lazy initialization on first use, per-session workspace isolation (`/workspace/{session_id}/`), LRU eviction at 10 concurrent, cleanup on shutdown. Enabled via `SANDBOX_ENABLED=true`. Wired into `run_agent()` and `run_team()`. API: `GET /api/sandbox/status`, `DELETE /api/sandbox/{session_id}`.
+- **Sandbox** — Isolated execution environment (Docker or local). `SandboxConfig` controls image, timeout, memory/CPU limits, network, writable paths, `exposed_ports` (port forwarding), `startup_command`, and `env_vars`. `PortMapping` maps container ports to host ports (auto-assign or explicit). `SandboxInfo` provides runtime introspection (status, mapped ports, uptime). Virtual path mapping with traversal protection. `SandboxedShellSkill` wraps sandbox as a drop-in Skill for agent use.
+- **SandboxManager** — Session-scoped sandbox lifecycle in dashboard. Lazy initialization on first use, per-session workspace isolation (`/workspace/{session_id}/`), configurable `max_concurrent` (default 10), LRU eviction, cleanup on shutdown. **Port allocation pool** (default range 9000-9099) prevents host-port collisions between sessions. `get_sandbox_info(session_id)` returns `SandboxInfo` with live container metadata. Enabled via `SANDBOX_ENABLED=true`. Wired into `run_agent()` and `run_team()`. API: `GET /api/sandbox/status`, `DELETE /api/sandbox/{session_id}`.
 - **RunManager (SSE)** — HTTP SSE streaming for graph execution. Creates background runs, fans events to multiple SSE subscribers, supports HITL interrupt/resume with configurable timeout. Max 100 runs, 30-min TTL eviction. Mirrors events to EventBus for WebSocket clients.
 - **Modular Dashboard** — `app.py` is a composition root (282 lines) that includes `gateway_api.py` (REST management) and `agent_runtime_router.py` (execution + streaming). Can run as single process or split via `--mode gateway|runtime`. Split mode: `docker-compose.split.yml` + `nginx-split.conf`.
 
@@ -434,7 +434,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
   → Not found: report to user, suggest custom agent/skill
 ```
 
-### Skills Map (18 total)
+### Skills Map (19 total)
 
 | Skill | Agent | Description |
 |-------|-------|-------------|
@@ -455,6 +455,7 @@ Team-lead cannot route task → skillkit-scout searches 15,000+ skills
 | `/research-scout` | research-scout | Analyze starred repos and propose code improvements |
 | `/web-research` | all | Search the internet for solutions, docs, and best practices |
 | `/analysis` | all | Deep-dive repo analysis: clone, explore, produce up to 30 MD files in analysis/<name>/ |
+| `/epic` | all | Multi-phase epic: break large features into phased stories, execute each via /feature |
 
 ### Research Scout & Nightly Workflow
 

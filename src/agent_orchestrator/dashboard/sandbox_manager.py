@@ -3,7 +3,8 @@
 Manages sandbox instances per session with lazy initialization
 and automatic cleanup. Each session gets its own isolated workspace
 directory. Evicts the oldest idle session once the concurrent limit is
-reached (LRU eviction).
+reached (LRU eviction). Tracks port allocations to avoid host-port
+collisions between sessions.
 """
 
 from __future__ import annotations
@@ -12,12 +13,16 @@ import logging
 import time
 from typing import Optional
 
-from ..core.sandbox import Sandbox, SandboxConfig
+from ..core.sandbox import PortMapping, Sandbox, SandboxConfig, SandboxInfo
 
 logger = logging.getLogger(__name__)
 
-# Maximum number of simultaneously active sandboxes.
+# Default maximum number of simultaneously active sandboxes.
 _MAX_CONCURRENT = 10
+
+# Default host port range for sandbox port allocation.
+_DEFAULT_PORT_RANGE_START = 9000
+_DEFAULT_PORT_RANGE_END = 9099
 
 
 class SandboxManager:
@@ -35,12 +40,23 @@ class SandboxManager:
         await manager.cleanup_all()  # on shutdown
     """
 
-    def __init__(self, default_config: Optional[SandboxConfig] = None) -> None:
+    def __init__(
+        self,
+        default_config: Optional[SandboxConfig] = None,
+        max_concurrent: int = _MAX_CONCURRENT,
+        port_range_start: int = _DEFAULT_PORT_RANGE_START,
+        port_range_end: int = _DEFAULT_PORT_RANGE_END,
+    ) -> None:
         self._default_config = default_config or SandboxConfig()
+        self._max_concurrent = max_concurrent
+        self._port_range_start = port_range_start
+        self._port_range_end = port_range_end
         # Maps session_id -> Sandbox
         self._sandboxes: dict[str, Sandbox] = {}
         # Maps session_id -> last-used timestamp (monotonic)
         self._last_used: dict[str, float] = {}
+        # Tracks allocated host ports -> session_id
+        self._allocated_ports: dict[int, str] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -65,11 +81,12 @@ class SandboxManager:
                 self._last_used[session_id] = time.monotonic()
                 return sandbox
             # Sandbox exists but stopped — remove so it can be re-created.
+            self._release_ports(session_id)
             del self._sandboxes[session_id]
             self._last_used.pop(session_id, None)
 
         # Enforce concurrent limit via LRU eviction.
-        if len(self._sandboxes) >= _MAX_CONCURRENT:
+        if len(self._sandboxes) >= self._max_concurrent:
             await self._evict_oldest()
 
         # Build a per-session config with its own workspace directory.
@@ -92,6 +109,7 @@ class SandboxManager:
         """
         sandbox = self._sandboxes.pop(session_id, None)
         self._last_used.pop(session_id, None)
+        self._release_ports(session_id)
         if sandbox is not None:
             try:
                 await sandbox.stop()
@@ -109,6 +127,13 @@ class SandboxManager:
         for session_id in session_ids:
             await self.cleanup_session(session_id)
 
+    async def get_sandbox_info(self, session_id: str) -> SandboxInfo | None:
+        """Return runtime info for a session's sandbox, or None if not found."""
+        sandbox = self._sandboxes.get(session_id)
+        if sandbox is None:
+            return None
+        return await sandbox.get_info()
+
     @property
     def active_count(self) -> int:
         """Number of currently tracked sandbox sessions."""
@@ -119,9 +144,71 @@ class SandboxManager:
         """Snapshot of active session IDs."""
         return list(self._sandboxes.keys())
 
+    @property
+    def max_concurrent(self) -> int:
+        """Configured maximum concurrent sandboxes."""
+        return self._max_concurrent
+
+    @property
+    def allocated_ports(self) -> dict[int, str]:
+        """Snapshot of allocated host ports mapped to session IDs."""
+        return dict(self._allocated_ports)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _allocate_ports(self, session_id: str, ports: list[PortMapping]) -> list[PortMapping]:
+        """Allocate host ports for the given port mappings.
+
+        For mappings with host_port=0, assigns the next available port from
+        the configured range. Mappings with an explicit host_port are kept
+        as-is.
+
+        Returns:
+            New list of PortMapping with resolved host ports.
+        """
+        resolved = []
+        for pm in ports:
+            if pm.host_port != 0:
+                # Explicit port — use as-is, track it
+                self._allocated_ports[pm.host_port] = session_id
+                resolved.append(pm)
+            else:
+                # Auto-assign from range
+                host_port = self._next_available_port()
+                if host_port is not None:
+                    self._allocated_ports[host_port] = session_id
+                    resolved.append(
+                        PortMapping(
+                            container_port=pm.container_port,
+                            host_port=host_port,
+                            protocol=pm.protocol,
+                        )
+                    )
+                else:
+                    logger.warning(
+                        "No available ports in range %d-%d for session %s",
+                        self._port_range_start,
+                        self._port_range_end,
+                        session_id,
+                    )
+                    # Keep the mapping with host_port=0 — Docker will auto-assign
+                    resolved.append(pm)
+        return resolved
+
+    def _next_available_port(self) -> int | None:
+        """Return the next unallocated port in the configured range."""
+        for port in range(self._port_range_start, self._port_range_end + 1):
+            if port not in self._allocated_ports:
+                return port
+        return None
+
+    def _release_ports(self, session_id: str) -> None:
+        """Release all host ports allocated to a session."""
+        to_remove = [p for p, sid in self._allocated_ports.items() if sid == session_id]
+        for port in to_remove:
+            del self._allocated_ports[port]
 
     def _session_config(self, session_id: str) -> SandboxConfig:
         """Build a SandboxConfig with a per-session workspace path."""
@@ -135,6 +222,9 @@ class SandboxManager:
             if path != "/workspace" and path not in writable:
                 writable.append(path)
 
+        # Allocate host ports for any exposed ports
+        exposed_ports = self._allocate_ports(session_id, list(cfg.exposed_ports))
+
         return SandboxConfig(
             type=cfg.type,
             image=cfg.image,
@@ -144,6 +234,9 @@ class SandboxManager:
             network_enabled=cfg.network_enabled,
             writable_paths=writable,
             virtual_path_map=dict(cfg.virtual_path_map),
+            exposed_ports=exposed_ports,
+            startup_command=cfg.startup_command,
+            env_vars=dict(cfg.env_vars),
         )
 
     async def _evict_oldest(self) -> None:
@@ -151,5 +244,9 @@ class SandboxManager:
         if not self._last_used:
             return
         oldest = min(self._last_used, key=self._last_used.get)  # type: ignore[arg-type]
-        logger.debug("Evicting sandbox for session %s (LRU, limit=%d)", oldest, _MAX_CONCURRENT)
+        logger.debug(
+            "Evicting sandbox for session %s (LRU, limit=%d)",
+            oldest,
+            self._max_concurrent,
+        )
         await self.cleanup_session(oldest)
