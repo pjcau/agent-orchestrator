@@ -154,13 +154,13 @@ jobs:
           # Restart dashboard to pick up DB connection after password sync
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart dashboard"
 
-          # Provision Let's Encrypt certs if not already present (requires nginx running on port 80)
+          # Provision SSL certs: try Let's Encrypt first, fallback to Buypass Go SSL
           $SSH_CMD "
             for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
               LE_DIR=$APP_DIR/certs/live/\$DOMAIN
-              # Check if a real LE cert exists (has 'Issuer: .* Let' in it)
-              if [ -f \$LE_DIR/fullchain.pem ] && openssl x509 -in \$LE_DIR/fullchain.pem -issuer -noout 2>/dev/null | grep -qi 'let'; then
-                echo \"Let's Encrypt cert already exists for \$DOMAIN\"
+              # Check if a valid (non-expired, non-self-signed) cert exists
+              if [ -f \$LE_DIR/fullchain.pem ] && openssl x509 -in \$LE_DIR/fullchain.pem -checkend 86400 -noout 2>/dev/null && openssl x509 -in \$LE_DIR/fullchain.pem -issuer -noout 2>/dev/null | grep -qivE 'CN\\s*=\\s*\$DOMAIN'; then
+                echo \"Valid cert already exists for \$DOMAIN\"
               else
                 echo \"Requesting Let's Encrypt cert for \$DOMAIN\"
                 cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
@@ -169,7 +169,17 @@ jobs:
                   --email admin@\$DOMAIN \
                   --agree-tos --no-eff-email \
                   -d \$DOMAIN \
-                  --keep-until-expiring 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal)\"
+                  --keep-until-expiring 2>&1
+                if [ \$? -ne 0 ]; then
+                  echo \"Let's Encrypt failed for \$DOMAIN, trying Buypass Go SSL\"
+                  cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                    run --rm --entrypoint certbot certbot \
+                    certonly --webroot -w /var/www/certbot \
+                    --server https://api.buypass.com/acme/directory \
+                    --email admin@\$DOMAIN \
+                    --agree-tos --no-eff-email \
+                    -d \$DOMAIN 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal)\"
+                fi
               fi
             done
           "

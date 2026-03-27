@@ -262,6 +262,12 @@ class TestDeployWorkflow:
         assert "--force-renewal" not in content, "force-renewal causes LE rate limits"
         assert "--keep-until-expiring" in content
 
+    def test_buypass_fallback(self):
+        """Deploy should fallback to Buypass Go SSL when Let's Encrypt fails."""
+        content = self.WORKFLOW.read_text()
+        assert "buypass.com/acme/directory" in content
+        assert "Buypass" in content
+
     def test_nginx_restart_after_deploy(self):
         """Nginx must be restarted after dashboard rebuild to pick up new container IP."""
         content = self.WORKFLOW.read_text()
