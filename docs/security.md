@@ -369,6 +369,14 @@ Agent-generated code runs inside isolated Docker containers (`core/sandbox.py`).
 - `..` components are rejected before any filesystem access
 - Virtual path mapping translates host paths to container paths
 
+**Port forwarding**: `PortMapping` exposes container ports on the host (range 9000-9099). In production, Nginx proxies these via `/sandbox-preview/{port}/` — no extra ports are opened on the EC2 security group. `SandboxManager` tracks port allocations to prevent collisions.
+
+**Docker socket access**: When `SANDBOX_TYPE=docker`, the dashboard container mounts `/var/run/docker.sock` to spawn sandbox containers. This grants root-equivalent access to the host — any process that can write to the socket can create privileged containers. Mitigations:
+- Only authenticated users (OAuth2 + API key) can trigger sandbox creation
+- Sandbox containers run with `--memory`, `--cpus`, and `--network=none` limits
+- The EC2 instance should be isolated (no shared tenancy)
+- Monitor container creation via `docker events` or CloudWatch
+
 **Usage**: `SandboxedShellSkill` in `SkillRegistry` wraps the sandbox as a standard agent skill. The `agent_runner.py` accepts an optional `sandbox` parameter to enable sandboxed execution.
 
 ## Future Improvements

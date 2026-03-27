@@ -88,11 +88,11 @@ Parallel execution, conditional routing, human-in-the-loop, checkpointing, sub-g
 
 ```bash
 pip install -e ".[dev]"
-pytest                              # 1632+ tests
+pytest                              # 1692+ tests
 ruff check src/ tests/              # lint
 docker compose up docs -d           # docs site at http://localhost:3000
 ```
 
 ## Status
 
-v1.0.0 — 5 providers, StateGraph engine, 30 agents, React frontend, Rust core engine (PyO3), real-time dashboard, fail-closed auth, embedded client, YAML config, Slack/Telegram integrations, loop detection, sandbox execution, document upload, clarification system, 1632+ tests.
+v1.0.0 — 5 providers, StateGraph engine, 30 agents, React frontend, Rust core engine (PyO3), real-time dashboard, fail-closed auth, embedded client, YAML config, Slack/Telegram integrations, loop detection, sandbox execution, document upload, clarification system, 1692+ tests.

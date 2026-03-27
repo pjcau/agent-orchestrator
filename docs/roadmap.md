@@ -17,7 +17,7 @@
 - SkillKit scout agent for marketplace skill discovery (15,000+ skills)
 - Per-agent cost tracking, fallback chains, budget enforcement
 - OrbStack/Docker infrastructure (dashboard, postgres, test, lint, format)
-- 939+ tests, pre-commit hooks, CI pipeline
+- 1692+ tests, pre-commit hooks, CI pipeline
 
 **What's missing for production:**
 - No cloud deployment (runs only locally)

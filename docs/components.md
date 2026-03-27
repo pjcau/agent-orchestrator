@@ -8,6 +8,7 @@ graph TD
         REST["REST API /api/*"]
         WS["WebSocket /ws"]
         STREAM["Streaming /ws/stream"]
+        TERM["Terminal WS /ws/sandbox/*/terminal"]
         UI["UI (React/Vite or vanilla JS fallback)"]
         REST --> EB
         WS --> EB
