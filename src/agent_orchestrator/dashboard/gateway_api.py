@@ -1531,8 +1531,105 @@ async def sandbox_status(request: Request):
         content={
             "enabled": True,
             "active_sessions": sandbox_manager.active_count,
+            "max_concurrent": sandbox_manager.max_concurrent,
             "session_ids": sandbox_manager.session_ids,
+            "allocated_ports": {str(k): v for k, v in sandbox_manager.allocated_ports.items()},
         }
+    )
+
+
+@gateway_router.get("/sandbox/{session_id}/info")
+async def sandbox_info(session_id: str, request: Request):
+    """Return detailed info for a session's sandbox (ports, status, uptime)."""
+    sandbox_manager = request.app.state.sandbox_manager
+    if sandbox_manager is None:
+        return JSONResponse(
+            content={"error": "Sandbox system is disabled"},
+            status_code=400,
+        )
+    info = await sandbox_manager.get_sandbox_info(session_id)
+    if info is None:
+        return JSONResponse(
+            content={"error": f"No sandbox for session '{session_id}'"},
+            status_code=404,
+        )
+    return JSONResponse(
+        content={
+            "session_id": session_id,
+            "container_id": info.container_id,
+            "status": info.status,
+            "image": info.image,
+            "mapped_ports": {str(k): v for k, v in info.mapped_ports.items()},
+            "uptime_seconds": info.uptime_seconds,
+            "memory_limit": info.memory_limit,
+            "cpu_limit": info.cpu_limit,
+        }
+    )
+
+
+@gateway_router.get("/sandbox/{session_id}/logs")
+async def sandbox_logs(session_id: str, request: Request):
+    """Stream container logs via Server-Sent Events.
+
+    Query parameters:
+    - ``tail`` (int, default 100): number of trailing lines.
+    - ``follow`` (bool, default false): stream new log lines as they arrive.
+    """
+    from starlette.responses import StreamingResponse
+
+    sandbox_manager = request.app.state.sandbox_manager
+    if sandbox_manager is None:
+        return JSONResponse(
+            content={"error": "Sandbox system is disabled"},
+            status_code=400,
+        )
+
+    sandbox = sandbox_manager._sandboxes.get(session_id)
+    if sandbox is None or not sandbox.is_running:
+        return JSONResponse(
+            content={"error": f"No running sandbox for session '{session_id}'"},
+            status_code=404,
+        )
+
+    container_id = sandbox.container_id
+    if container_id is None:
+        # LOCAL mode — no Docker logs available
+        return JSONResponse(
+            content={"error": "Logs only available for Docker sandboxes"},
+            status_code=400,
+        )
+
+    tail = request.query_params.get("tail", "100")
+    follow = request.query_params.get("follow", "false").lower() == "true"
+
+    async def _stream_logs():
+        import asyncio as _aio
+
+        cmd = ["docker", "logs", f"--tail={tail}"]
+        if follow:
+            cmd.append("--follow")
+        cmd.append(container_id)
+
+        proc = await _aio.create_subprocess_exec(
+            *cmd,
+            stdout=_aio.subprocess.PIPE,
+            stderr=_aio.subprocess.STDOUT,
+        )
+        try:
+            while True:
+                line = await proc.stdout.readline()  # type: ignore[union-attr]
+                if not line:
+                    break
+                yield f"data: {line.decode(errors='replace').rstrip()}\n\n"
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.communicate()
+
+    return StreamingResponse(
+        _stream_logs(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

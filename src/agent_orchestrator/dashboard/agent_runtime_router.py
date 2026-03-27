@@ -608,3 +608,80 @@ async def websocket_endpoint(ws: WebSocket):
         bus.unsubscribe(queue)
         if active_ws.get("/ws") is ws:
             active_ws.pop("/ws", None)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — sandbox terminal
+# ---------------------------------------------------------------------------
+
+
+@runtime_router.websocket("/ws/sandbox/{session_id}/terminal")
+async def sandbox_terminal(ws: WebSocket, session_id: str):
+    """Interactive terminal into a session's sandbox container.
+
+    Bidirectional WebSocket: client sends commands (text), server streams
+    output back. Uses ``docker exec -i`` for Docker sandboxes.
+    """
+    _ws_api_keys: set = ws.app.state.ws_api_keys
+    ws_user = check_ws_auth(ws, _ws_api_keys)
+    if not ws_user:
+        await ws.close(code=1008, reason="Authentication required")
+        return
+
+    sandbox_manager = ws.app.state.sandbox_manager
+    if sandbox_manager is None:
+        await ws.close(code=1008, reason="Sandbox system is disabled")
+        return
+
+    sandbox = sandbox_manager._sandboxes.get(session_id)
+    if sandbox is None or not sandbox.is_running:
+        await ws.close(code=1008, reason=f"No running sandbox for session '{session_id}'")
+        return
+
+    container_id = sandbox.container_id
+    if container_id is None:
+        await ws.close(code=1008, reason="Terminal only available for Docker sandboxes")
+        return
+
+    await ws.accept()
+
+    # Start an interactive shell in the container
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "exec",
+        "-i",
+        container_id,
+        "/bin/sh",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+
+    async def _read_output():
+        """Read output from the shell process and send to WebSocket."""
+        try:
+            while True:
+                chunk = await proc.stdout.read(4096)  # type: ignore[union-attr]
+                if not chunk:
+                    break
+                await ws.send_text(chunk.decode(errors="replace"))
+        except Exception:
+            pass
+
+    read_task = asyncio.create_task(_read_output())
+
+    try:
+        while True:
+            data = await ws.receive_text()
+            if proc.stdin and not proc.stdin.is_closing():
+                proc.stdin.write(data.encode())
+                await proc.stdin.drain()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        read_task.cancel()
+        if proc.returncode is None:
+            proc.kill()
+            await proc.communicate()

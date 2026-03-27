@@ -466,3 +466,162 @@ class TestSessionConfigNewFields:
         assert len(mgr.allocated_ports) > 0
         await mgr.cleanup_session("port-session")
         assert len(mgr.allocated_ports) == 0
+
+
+# ---------------------------------------------------------------------------
+# Gateway API sandbox endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestSandboxAPIEndpoints:
+    """Test sandbox REST API endpoints via the gateway router."""
+
+    @pytest.fixture
+    def _sandbox_app(self):
+        """Create a minimal FastAPI app with sandbox manager wired up."""
+        from fastapi import FastAPI
+        from agent_orchestrator.dashboard.gateway_api import gateway_router
+
+        app = FastAPI()
+        app.include_router(gateway_router)
+        mgr = SandboxManager(default_config=_local_config(), max_concurrent=5)
+        app.state.sandbox_manager = mgr
+        return app, mgr
+
+    @pytest.fixture
+    def _disabled_app(self):
+        """Create a FastAPI app with sandbox disabled."""
+        from fastapi import FastAPI
+        from agent_orchestrator.dashboard.gateway_api import gateway_router
+
+        app = FastAPI()
+        app.include_router(gateway_router)
+        app.state.sandbox_manager = None
+        return app
+
+    @pytest.mark.asyncio
+    async def test_sandbox_status_enabled(self, _sandbox_app):
+        from httpx import ASGITransport, AsyncClient
+
+        app, mgr = _sandbox_app
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/sandbox/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["enabled"] is True
+        assert data["max_concurrent"] == 5
+        assert data["active_sessions"] == 0
+
+    @pytest.mark.asyncio
+    async def test_sandbox_status_disabled(self, _disabled_app):
+        from httpx import ASGITransport, AsyncClient
+
+        app = _disabled_app
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/sandbox/status")
+        assert resp.status_code == 200
+        assert resp.json()["enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_sandbox_info_existing(self, _sandbox_app):
+        from httpx import ASGITransport, AsyncClient
+
+        app, mgr = _sandbox_app
+        await mgr.get_or_create("info-session")
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/sandbox/info-session/info")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"] == "info-session"
+        assert data["status"] == "running"
+        assert data["image"] == "python:3.12-slim"
+        await mgr.cleanup_all()
+
+    @pytest.mark.asyncio
+    async def test_sandbox_info_nonexistent(self, _sandbox_app):
+        from httpx import ASGITransport, AsyncClient
+
+        app, mgr = _sandbox_app
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/sandbox/no-such/info")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_sandbox_info_disabled(self, _disabled_app):
+        from httpx import ASGITransport, AsyncClient
+
+        app = _disabled_app
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/sandbox/any/info")
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_sandbox_logs_no_docker(self, _sandbox_app):
+        """LOCAL-mode sandbox returns 400 for logs (no Docker container)."""
+        from httpx import ASGITransport, AsyncClient
+
+        app, mgr = _sandbox_app
+        await mgr.get_or_create("logs-session")
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/sandbox/logs-session/logs")
+        assert resp.status_code == 400
+        assert "Docker" in resp.json()["error"]
+        await mgr.cleanup_all()
+
+    @pytest.mark.asyncio
+    async def test_sandbox_cleanup_success(self, _sandbox_app):
+        from httpx import ASGITransport, AsyncClient
+
+        app, mgr = _sandbox_app
+        await mgr.get_or_create("cleanup-session")
+        assert mgr.active_count == 1
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.delete("/api/sandbox/cleanup-session")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        assert mgr.active_count == 0
+
+    @pytest.mark.asyncio
+    async def test_sandbox_status_shows_allocated_ports(self, _sandbox_app):
+        from httpx import ASGITransport, AsyncClient
+
+        app, mgr = _sandbox_app
+        # Manually allocate a port to test the response field
+        mgr._allocated_ports[9001] = "test-session"
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/sandbox/status")
+        data = resp.json()
+        assert "9001" in data["allocated_ports"]
+        assert data["allocated_ports"]["9001"] == "test-session"
+
+
+# ---------------------------------------------------------------------------
+# App.py sandbox configuration from env vars
+# ---------------------------------------------------------------------------
+
+
+class TestAppSandboxEnvConfig:
+    def test_sandbox_type_from_env(self, monkeypatch):
+        """SANDBOX_TYPE env var controls the sandbox type."""
+        monkeypatch.setenv("SANDBOX_ENABLED", "true")
+        monkeypatch.setenv("SANDBOX_TYPE", "local")
+        _type_str = os.environ.get("SANDBOX_TYPE", "docker").lower()
+        _type = SandboxType.DOCKER if _type_str == "docker" else SandboxType.LOCAL
+        assert _type == SandboxType.LOCAL
+
+    def test_sandbox_type_defaults_to_docker(self, monkeypatch):
+        """Default sandbox type is Docker."""
+        monkeypatch.delenv("SANDBOX_TYPE", raising=False)
+        _type_str = os.environ.get("SANDBOX_TYPE", "docker").lower()
+        _type = SandboxType.DOCKER if _type_str == "docker" else SandboxType.LOCAL
+        assert _type == SandboxType.DOCKER
+
+    def test_sandbox_image_from_env(self, monkeypatch):
+        monkeypatch.setenv("SANDBOX_IMAGE", "node:20")
+        image = os.environ.get("SANDBOX_IMAGE", "python:3.12-slim")
+        assert image == "node:20"
+
+    def test_sandbox_max_concurrent_from_env(self, monkeypatch):
+        monkeypatch.setenv("SANDBOX_MAX_CONCURRENT", "20")
+        _max = int(os.environ.get("SANDBOX_MAX_CONCURRENT", "10"))
+        assert _max == 20

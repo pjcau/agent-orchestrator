@@ -206,14 +206,22 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Sandbox manager -- session-scoped isolated execution environments.
     _sandbox_enabled = os.environ.get("SANDBOX_ENABLED", "false").lower() == "true"
+    _sandbox_type_str = os.environ.get("SANDBOX_TYPE", "docker").lower()
+    _sandbox_type = SandboxType.DOCKER if _sandbox_type_str == "docker" else SandboxType.LOCAL
+    _sandbox_image = os.environ.get("SANDBOX_IMAGE", "python:3.12-slim")
     _sandbox_config = SandboxConfig(
-        type=SandboxType.LOCAL,
-        timeout_seconds=30,
-        memory_limit="512m",
+        type=_sandbox_type,
+        image=_sandbox_image,
+        timeout_seconds=int(os.environ.get("SANDBOX_TIMEOUT", "60")),
+        memory_limit=os.environ.get("SANDBOX_MEMORY", "512m"),
+        network_enabled=_sandbox_type == SandboxType.DOCKER,
         writable_paths=["/workspace"],
     )
+    _sandbox_max = int(os.environ.get("SANDBOX_MAX_CONCURRENT", "10"))
     sandbox_manager: SandboxManager | None = (
-        SandboxManager(default_config=_sandbox_config) if _sandbox_enabled else None
+        SandboxManager(default_config=_sandbox_config, max_concurrent=_sandbox_max)
+        if _sandbox_enabled
+        else None
     )
 
     # SSE run manager
