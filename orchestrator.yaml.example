@@ -60,3 +60,16 @@ budgets:
   daily_limit_usd: 5.00
   per_task_limit_usd: 0.50
   alert_threshold_pct: 80
+
+# ---------------------------------------------------------------------------
+# Sandbox — isolated execution environment for agent code
+# ---------------------------------------------------------------------------
+sandbox:
+  enabled: false              # Set true to enable per-session sandboxes
+  type: docker                # "docker" (production) or "local" (testing)
+  image: "python:3.12-slim"   # Default Docker image for sandboxes
+  timeout_seconds: 60         # Default command timeout
+  memory_limit: "512m"        # Docker memory limit per container
+  max_concurrent: 10          # Max simultaneous sandbox containers
+  port_range_start: 9000      # Host port allocation range (start)
+  port_range_end: 9099        # Host port allocation range (end)

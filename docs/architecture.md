@@ -163,26 +163,60 @@ sequenceDiagram
 - **Dependency ordering** — orchestrator ensures backend runs before frontend when needed
 - **Conflict resolution** — when two agents modify the same file, team-lead resolves
 
-### 6. Sandbox
+### 6. Sandbox Workspace
 
-Isolated execution environment for agent-generated code. Prevents untrusted code from affecting the host system.
+Per-session isolated execution environment with live preview. Each session gets its own Docker container that persists for the session lifetime.
 
 ```python
 class Sandbox:
-    """Docker or local subprocess sandbox with resource limits."""
+    """Docker or local subprocess sandbox with resource limits and port forwarding."""
     async def start(self) -> None: ...
     async def execute(self, command: str, timeout: int | None = None) -> SandboxResult: ...
     async def write_file(self, path: str, content: str) -> None: ...
     async def read_file(self, path: str) -> str: ...
+    async def get_info(self) -> SandboxInfo: ...
     async def stop(self) -> None: ...
 ```
 
 **Key features**:
 - **Docker mode** — runs commands in an isolated container with memory/CPU limits and optional network isolation
 - **Local mode** — subprocess fallback for testing (no isolation)
+- **Port forwarding** — `PortMapping` maps container ports to host ports for live preview (auto-assign or explicit)
+- **Startup commands** — optional `startup_command` runs after container starts (e.g., `pip install flask`)
+- **Environment variables** — inject `env_vars` into the container at creation time
+- **Container introspection** — `SandboxInfo` returns status, mapped ports, uptime, resource limits
 - **Path traversal protection** — validates all file paths against allowed roots, blocks `..` escapes
 - **Virtual path mapping** — translates host paths to container paths
 - **SandboxedShellSkill** — drop-in Skill wrapper for agent use via SkillRegistry
+
+**SandboxManager** — session-scoped lifecycle:
+- Lazy initialization on first use per session
+- Configurable `max_concurrent` (default 10), LRU eviction
+- **Port allocation pool** (default 9000-9099) prevents host-port collisions
+- `get_sandbox_info(session_id)` returns live container metadata
+
+**Dashboard APIs**:
+- `GET /api/sandbox/status` — system overview (enabled, sessions, ports)
+- `GET /api/sandbox/{id}/info` — container status, mapped ports, uptime
+- `GET /api/sandbox/{id}/logs` — SSE-streamed container logs
+- `DELETE /api/sandbox/{id}` — force stop and cleanup
+- `WS /ws/sandbox/{id}/terminal` — interactive shell via WebSocket
+
+**Frontend** — toggleable sandbox panel with 4 tabs:
+- **Status** — container info, ports, uptime, resource usage
+- **Preview** — iframe pointing to forwarded port (select port from dropdown)
+- **Terminal** — WebSocket-connected interactive shell
+- **Logs** — real-time log streaming
+
+**Configuration** via environment variables:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SANDBOX_ENABLED` | `false` | Enable sandbox system |
+| `SANDBOX_TYPE` | `docker` | `docker` or `local` |
+| `SANDBOX_IMAGE` | `python:3.12-slim` | Default container image |
+| `SANDBOX_TIMEOUT` | `60` | Default command timeout (seconds) |
+| `SANDBOX_MEMORY` | `512m` | Container memory limit |
+| `SANDBOX_MAX_CONCURRENT` | `10` | Max simultaneous containers |
 
 ## 7. DeerFlow Features (v1.2)
 
@@ -201,7 +235,7 @@ The following abstractions were added based on analysis of the ByteDance DeerFlo
 - **SlackBot** — Socket Mode integration (no public IP). Thread-based conversations, category auto-detection.
 - **TelegramBot** — long-polling integration. Auth via user ID whitelist, response chunking.
 - **RunManager (SSE)** — HTTP SSE streaming for graph runs. HITL interrupt/resume, configurable timeout, TTL eviction, EventBus mirroring. `dashboard/sse.py`.
-- **SandboxManager** — Session-scoped sandbox lifecycle. Lazy init, per-session workspace, LRU eviction (max 10), auto-cleanup. `dashboard/sandbox_manager.py`.
+- **SandboxManager** — Session-scoped sandbox lifecycle with port allocation pool. Configurable max_concurrent, port range (9000-9099), container introspection. REST + WS APIs for info, logs, terminal. `dashboard/sandbox_manager.py`.
 - **PostgresStore** — Durable cross-thread key-value store. JSONB values, dot-encoded namespaces, lazy TTL, UPSERT. `core/store_postgres.py`.
 - **MCPClientManager** — Connect to external MCP servers (stdio/SSE). Tool discovery + injection into SkillRegistry. `core/mcp_client.py`.
 - **Modular Dashboard** — `app.py` composes `gateway_api.py` (REST) + `agent_runtime_router.py` (execution/streaming). Split-process mode via `--mode gateway|runtime`.

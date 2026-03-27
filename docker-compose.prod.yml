@@ -43,8 +43,13 @@ services:
       - CORS_ALLOWED_ORIGINS=${BASE_URL}
       - GITHUB_USERNAME=${GITHUB_USERNAME}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+      - SANDBOX_ENABLED=${SANDBOX_ENABLED:-false}
+      - SANDBOX_TYPE=${SANDBOX_TYPE:-docker}
+      - SANDBOX_IMAGE=${SANDBOX_IMAGE:-python:3.12-slim}
+      - SANDBOX_MAX_CONCURRENT=${SANDBOX_MAX_CONCURRENT:-10}
     volumes:
       - ./jobs:/workspace/jobs
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy

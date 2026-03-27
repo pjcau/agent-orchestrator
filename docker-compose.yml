@@ -24,13 +24,19 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - .:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock  # Sandbox: Docker-in-Docker
     working_dir: /workspace
     ports:
       - "5005:5005"
+      - "9000-9019:9000-9019"  # Sandbox: port forwarding range
     environment:
       - PYTHONPATH=/workspace/src
       - DATABASE_URL=postgresql://orchestrator:orchestrator@postgres:5432/orchestrator
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - SANDBOX_ENABLED=${SANDBOX_ENABLED:-false}
+      - SANDBOX_TYPE=${SANDBOX_TYPE:-docker}
+      - SANDBOX_IMAGE=${SANDBOX_IMAGE:-python:3.12-slim}
+      - SANDBOX_MAX_CONCURRENT=${SANDBOX_MAX_CONCURRENT:-10}
     env_file:
       - path: .env.local
         required: false
