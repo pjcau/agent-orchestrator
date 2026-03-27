@@ -22,6 +22,8 @@ import type {
   TeamRunResponse,
   ConversationNewResponse,
   JobRecord,
+  SandboxStatus,
+  SandboxInfo,
 } from "./types";
 
 // Query keys — centralised for cache invalidation
@@ -35,6 +37,8 @@ export const queryKeys = {
   usage: ["usage"] as const,
   cacheStats: ["cache", "stats"] as const,
   mcpTools: ["mcp", "tools"] as const,
+  sandboxStatus: ["sandbox", "status"] as const,
+  sandboxInfo: (sessionId: string) => ["sandbox", sessionId, "info"] as const,
 };
 
 // --- Queries ---
@@ -171,6 +175,40 @@ export function useMCPTools(
   });
 }
 
+export function useSandboxStatus(
+  options?: Partial<UseQueryOptions<SandboxStatus>>
+) {
+  return useQuery<SandboxStatus>({
+    queryKey: queryKeys.sandboxStatus,
+    queryFn: async () => {
+      const resp = await apiClient.get<SandboxStatus>("/api/sandbox/status");
+      return resp.data;
+    },
+    staleTime: 10 * 1000,
+    refetchInterval: 15 * 1000,
+    ...options,
+  });
+}
+
+export function useSandboxInfo(
+  sessionId: string,
+  options?: Partial<UseQueryOptions<SandboxInfo>>
+) {
+  return useQuery<SandboxInfo>({
+    queryKey: queryKeys.sandboxInfo(sessionId),
+    queryFn: async () => {
+      const resp = await apiClient.get<SandboxInfo>(
+        `/api/sandbox/${encodeURIComponent(sessionId)}/info`
+      );
+      return resp.data;
+    },
+    enabled: Boolean(sessionId),
+    staleTime: 5 * 1000,
+    refetchInterval: 10 * 1000,
+    ...options,
+  });
+}
+
 // --- Mutations ---
 
 export function usePrompt() {
@@ -263,6 +301,18 @@ export function useGraphReset() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.usage });
+    },
+  });
+}
+
+export function useSandboxCleanup() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: async (sessionId) => {
+      await apiClient.delete(`/api/sandbox/${encodeURIComponent(sessionId)}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxStatus });
     },
   });
 }

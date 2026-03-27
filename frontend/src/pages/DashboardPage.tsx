@@ -5,8 +5,9 @@ import { HistorySidebar } from "@/components/layout/HistorySidebar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { GraphVisualizer } from "@/components/graph/GraphVisualizer";
 import { AgentSelector } from "@/components/agents/AgentSelector";
+import { SandboxPanel } from "@/components/sandbox/SandboxPanel";
 import { useAppStore } from "@/stores/useAppStore";
-import { useGraphReset } from "@/api/hooks";
+import { useGraphReset, useSandboxStatus } from "@/api/hooks";
 
 type LeftPanelMode = "history" | null;
 
@@ -16,8 +17,10 @@ type LeftPanelMode = "history" | null;
  */
 export function DashboardPage() {
   const [leftPanel, setLeftPanel] = useState<LeftPanelMode>(null);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
   const { sidebarOpen, setSidebarOpen, setSseMode, sseMode, reset } = useAppStore();
   const graphReset = useGraphReset();
+  const { data: sandboxStatus } = useSandboxStatus();
 
   const handleToggleSidebar = () => setSidebarOpen(!sidebarOpen);
   const handleToggleSSE = () => setSseMode(!sseMode);
@@ -76,6 +79,13 @@ export function DashboardPage() {
           <section className="chat-section">
             <ChatPanel />
           </section>
+
+          {/* Bottom: Sandbox workspace */}
+          {sandboxOpen && (
+            <section className="sandbox-section">
+              <SandboxPanel />
+            </section>
+          )}
         </main>
 
         {/* Right panel — Event logs, activity, cache */}
@@ -91,6 +101,18 @@ export function DashboardPage() {
         >
           History
         </button>
+        {sandboxStatus?.enabled && (
+          <button
+            className={`btn-sidebar-toggle ${sandboxOpen ? "active" : ""}`}
+            onClick={() => setSandboxOpen(!sandboxOpen)}
+            title="Sandbox workspace"
+          >
+            Sandbox
+            {sandboxStatus.active_sessions > 0 && (
+              <span className="sandbox-badge">{sandboxStatus.active_sessions}</span>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

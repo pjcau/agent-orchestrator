@@ -324,3 +324,24 @@ export interface InteractionItem {
   status: "pending" | "running" | "completed" | "failed";
   time: number;
 }
+
+// --- Sandbox types ---
+
+export interface SandboxStatus {
+  enabled: boolean;
+  active_sessions: number;
+  max_concurrent: number;
+  session_ids: string[];
+  allocated_ports: Record<string, string>;
+}
+
+export interface SandboxInfo {
+  session_id: string;
+  container_id: string | null;
+  status: string;
+  image: string;
+  mapped_ports: Record<string, number>;
+  uptime_seconds: number;
+  memory_limit: string;
+  cpu_limit: number;
+}
