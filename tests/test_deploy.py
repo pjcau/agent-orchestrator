@@ -243,17 +243,23 @@ class TestDeployWorkflow:
         assert "Health Check" in content
         assert "docker inspect" in content
 
-    def test_self_signed_cert_fallback(self):
-        """Self-signed certs are generated if Let's Encrypt certs are missing or expired."""
+    def test_self_signed_cert_bootstrap(self):
+        """Self-signed cert only generated on first deploy (no cert exists)."""
         content = self.WORKFLOW.read_text()
-        assert "self-signed cert" in content.lower()
+        assert "self-signed" in content.lower()
+        assert "bootstrap" in content.lower(), "Self-signed is only a bootstrap for first deploy"
         assert "openssl req" in content
         assert "agents-orchestrator.com" in content
-        # Must also regenerate self-signed if existing cert is expired
+        # Must check if cert already exists before generating
         assert "checkend" in content, "Should check cert expiry with openssl checkend"
+        # Must NOT write through symlinks (would destroy LE archive certs)
+        assert "rm -f" in content, "Should remove symlinks before writing self-signed certs"
+        assert "mktemp" in content, "Should use temp dir to avoid writing through symlinks"
+        # Must skip if valid cert exists
+        assert "not touching" in content.lower(), "Should skip cert generation if valid cert exists"
 
     def test_letsencrypt_cert_provisioning(self):
-        """Deploy should request Let's Encrypt certs if not already present."""
+        """Deploy requests LE only if cert is self-signed or expiring soon."""
         content = self.WORKFLOW.read_text()
         assert "certbot" in content.lower()
         assert "certonly" in content
@@ -261,12 +267,11 @@ class TestDeployWorkflow:
         # Must NOT force-renew (causes Let's Encrypt rate limits)
         assert "--force-renewal" not in content, "force-renewal causes LE rate limits"
         assert "--keep-until-expiring" in content
-
-    def test_buypass_fallback(self):
-        """Deploy should fallback to Buypass Go SSL when Let's Encrypt fails."""
-        content = self.WORKFLOW.read_text()
-        assert "buypass.com/acme/directory" in content
-        assert "Buypass" in content
+        # Should only request when self-signed or expiring
+        assert "IS_SELF_SIGNED" in content, "Should detect self-signed certs"
+        assert "EXPIRING_SOON" in content, "Should detect certs expiring within 30 days"
+        # Should skip if valid LE cert exists
+        assert "skipping certbot" in content.lower(), "Should skip certbot for valid LE certs"
 
     def test_nginx_restart_after_deploy(self):
         """Nginx must be restarted after dashboard rebuild to pick up new container IP."""

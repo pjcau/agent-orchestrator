@@ -119,24 +119,29 @@ jobs:
           # Ensure Docker buildx >= 0.17.0 (required by compose build)
           $SSH_CMD "sudo yum install -y docker-buildx-plugin 2>/dev/null || sudo dnf install -y docker-buildx-plugin 2>/dev/null || docker buildx version" || true
 
-          # Generate self-signed certs if missing or expired (prevents nginx crash)
+          # --- SSL certs ---
+          # Certs persist on disk at $APP_DIR/certs/ across deploys.
+          # Self-signed is ONLY generated on first-ever deploy (no cert exists).
+          # The certbot container renews LE certs automatically every 12h.
+          # Deploy only requests LE if current cert is self-signed or expiring.
+          # IMPORTANT: never write through symlinks — would destroy LE archive certs.
           $SSH_CMD "
             for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
               CERT_DIR=$APP_DIR/certs/live/\$DOMAIN
-              NEED_CERT=false
-              if [ ! -f \$CERT_DIR/fullchain.pem ]; then
-                NEED_CERT=true
-              elif ! openssl x509 -in \$CERT_DIR/fullchain.pem -checkend 0 -noout 2>/dev/null; then
-                echo \"Cert expired for \$DOMAIN, regenerating self-signed\"
-                NEED_CERT=true
-              fi
-              if [ \"\$NEED_CERT\" = true ]; then
-                echo \"Generating self-signed cert for \$DOMAIN\"
+              if [ -f \$CERT_DIR/fullchain.pem ] && openssl x509 -in \$CERT_DIR/fullchain.pem -checkend 0 -noout 2>/dev/null; then
+                echo \"Valid cert exists for \$DOMAIN — not touching it\"
+              else
+                echo \"No valid cert for \$DOMAIN — generating self-signed bootstrap cert\"
                 sudo mkdir -p \$CERT_DIR
+                TMPDIR=\$(mktemp -d)
                 sudo openssl req -x509 -nodes -days 90 -newkey rsa:2048 \
-                  -keyout \$CERT_DIR/privkey.pem \
-                  -out \$CERT_DIR/fullchain.pem \
+                  -keyout \$TMPDIR/privkey.pem \
+                  -out \$TMPDIR/fullchain.pem \
                   -subj \"/CN=\$DOMAIN\" 2>/dev/null
+                sudo rm -f \$CERT_DIR/fullchain.pem \$CERT_DIR/privkey.pem
+                sudo cp \$TMPDIR/fullchain.pem \$CERT_DIR/fullchain.pem
+                sudo cp \$TMPDIR/privkey.pem \$CERT_DIR/privkey.pem
+                rm -rf \$TMPDIR
               fi
             done
           "
@@ -154,32 +159,30 @@ jobs:
           # Restart dashboard to pick up DB connection after password sync
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod restart dashboard"
 
-          # Provision SSL certs: try Let's Encrypt first, fallback to Buypass Go SSL
+          # --- LE cert provisioning (only if current cert is self-signed or expiring soon) ---
+          # The certbot renewal container handles routine renewal. This step only runs
+          # on first deploy (to replace the bootstrap self-signed) or if cert is near expiry.
           $SSH_CMD "
             for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
               LE_DIR=$APP_DIR/certs/live/\$DOMAIN
-              # Check if a valid (non-expired, non-self-signed) cert exists
-              if [ -f \$LE_DIR/fullchain.pem ] && openssl x509 -in \$LE_DIR/fullchain.pem -checkend 86400 -noout 2>/dev/null && openssl x509 -in \$LE_DIR/fullchain.pem -issuer -noout 2>/dev/null | grep -qivE 'CN\\s*=\\s*\$DOMAIN'; then
-                echo \"Valid cert already exists for \$DOMAIN\"
-              else
-                echo \"Requesting Let's Encrypt cert for \$DOMAIN\"
+              ISSUER=\$(openssl x509 -in \$LE_DIR/fullchain.pem -issuer -noout 2>/dev/null || echo '')
+              IS_SELF_SIGNED=false
+              echo \"\$ISSUER\" | grep -qiE \"CN\\s*=\\s*\$DOMAIN\" && IS_SELF_SIGNED=true
+              EXPIRING_SOON=false
+              openssl x509 -in \$LE_DIR/fullchain.pem -checkend 2592000 -noout 2>/dev/null || EXPIRING_SOON=true
+
+              if [ \"\$IS_SELF_SIGNED\" = true ] || [ \"\$EXPIRING_SOON\" = true ]; then
+                echo \"Requesting Let's Encrypt cert for \$DOMAIN (self_signed=\$IS_SELF_SIGNED, expiring_soon=\$EXPIRING_SOON)\"
                 cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
                   run --rm --entrypoint certbot certbot \
                   certonly --webroot -w /var/www/certbot \
                   --email admin@\$DOMAIN \
                   --agree-tos --no-eff-email \
                   -d \$DOMAIN \
-                  --keep-until-expiring 2>&1
-                if [ \$? -ne 0 ]; then
-                  echo \"Let's Encrypt failed for \$DOMAIN, trying Buypass Go SSL\"
-                  cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                    run --rm --entrypoint certbot certbot \
-                    certonly --webroot -w /var/www/certbot \
-                    --server https://api.buypass.com/acme/directory \
-                    --email admin@\$DOMAIN \
-                    --agree-tos --no-eff-email \
-                    -d \$DOMAIN 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal)\"
-                fi
+                  --non-interactive \
+                  --keep-until-expiring 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal, using existing cert)\"
+              else
+                echo \"Valid LE cert for \$DOMAIN — skipping certbot\"
               fi
             done
           "
