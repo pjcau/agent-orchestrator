@@ -16,7 +16,16 @@
         "Real-time Execution Streaming (implemented as CompiledGraph.astream)",
         "Ephemeral Session Storage (implemented as SessionStore)"
       ]
+    },
+    "https://github.com/Gentleman-Programming/agent-teams-lite": {
+      "processed_at": "2026-04-08T03:09:19.664198+00:00",
+      "summary": "Gentleman-Programming/agent-teams-lite",
+      "improvements": [
+        "Marker-based Prompt Injection System",
+        "Spec-Driven Development Workflow Template",
+        "Engram Persistent Memory Protocol"
+      ]
     }
   },
-  "last_run": "2026-03-12T12:00:00.000000+00:00"
+  "last_run": "2026-04-08T03:09:19.664253+00:00"
 }
