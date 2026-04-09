@@ -106,5 +106,257 @@
     "added": "2026-03-08T15:16:18Z",
     "source": "github-star",
     "notes": "📚 A curated list of awesome articles, videos, and other resources to learn and practice software architecture, patterns, and principles. | Language: C# | Topics: architectural-patterns, architectural-styles, architecture, awesome-list, clean-architecture"
+  },
+  {
+    "url": "https://github.com/addyosmani/agent-skills",
+    "added": "2026-04-08T15:21:17Z",
+    "source": "github-star",
+    "notes": "Production-grade engineering skills for AI coding agents. | Language: Shell | Topics: agent-skills, antigravity, antigravity-ide, claude-code, cursor"
+  },
+  {
+    "url": "https://github.com/JackChen-me/open-multi-agent",
+    "added": "2026-04-05T14:14:34Z",
+    "source": "github-star",
+    "notes": "TypeScript multi-agent framework — one runTeam() call from goal to result. Auto task decomposition, parallel execution. 3 dependencies, deploys anywhere Node.js runs. | Language: TypeScript | Topics: agent-framework, ai-agents, anthropic, claude, gemma4"
+  },
+  {
+    "url": "https://github.com/rohitg00/agentmemory",
+    "added": "2026-04-04T20:18:57Z",
+    "source": "github-star",
+    "notes": "Persistent memory for AI coding agents | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/hiyouga/LlamaFactory",
+    "added": "2026-04-03T17:10:36Z",
+    "source": "github-star",
+    "notes": "Unified Efficient Fine-Tuning of 100+ LLMs & VLMs (ACL 2024) | Language: Python | Topics: agent, ai, deepseek, fine-tuning, gemma"
+  },
+  {
+    "url": "https://github.com/sentrux/sentrux",
+    "added": "2026-03-27T11:57:00Z",
+    "source": "github-star",
+    "notes": "Real-time architectural sensor that helps AI agents close the feedback loop, enabling recursive self-improvement of code quality. Pure Rust. | Language: Rust | Topics: agentharness, architecture, cobol, cobol-language, code-quality"
+  },
+  {
+    "url": "https://github.com/getcompanion-ai/feynman",
+    "added": "2026-03-25T23:33:29Z",
+    "source": "github-star",
+    "notes": " | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/mikeyobrien/ralph-orchestrator",
+    "added": "2026-03-25T21:45:43Z",
+    "source": "github-star",
+    "notes": "An improved implementation of the Ralph Wiggum technique for autonomous AI agent orchestration | Language: Rust | Topics: ai, ai-agents, ai-agents-framework, ai-developer-tools, claude-code"
+  },
+  {
+    "url": "https://github.com/datalab-to/chandra",
+    "added": "2026-03-25T14:57:28Z",
+    "source": "github-star",
+    "notes": "OCR model that handles complex tables, forms, handwriting with full layout. | Language: Python | Topics: ai, ocr"
+  },
+  {
+    "url": "https://github.com/penso/arbor",
+    "added": "2026-03-23T15:23:43Z",
+    "source": "github-star",
+    "notes": "Run agentic coding workflows in a fully native desktop app for Git worktrees, terminals, and diffs. | Language: Rust"
+  },
+  {
+    "url": "https://github.com/FrancyJGLisboa/agent-skill-creator",
+    "added": "2026-03-23T15:07:36Z",
+    "source": "github-star",
+    "notes": "Turn any workflow into reusable AI agent skills that install on 14+ tools — Claude Code, Copilot, Cursor, Windsurf, Codex, Gemini, Kiro, and more. One SKILL.md, every platform. | Language: Python"
+  },
+  {
+    "url": "https://github.com/collaborator-ai/collab-public",
+    "added": "2026-03-22T20:58:52Z",
+    "source": "github-star",
+    "notes": "Collaborator is a place to create with agents. | Language: TypeScript | Topics: agents, ai, claude-code, codex-cli, ide"
+  },
+  {
+    "url": "https://github.com/kyegomez/swarms",
+    "added": "2026-03-22T12:29:49Z",
+    "source": "github-star",
+    "notes": "The Enterprise-Grade Production-Ready Multi-Agent Orchestration Framework. Website: https://swarms.ai | Language: Python | Topics: agentic-ai, agentic-workflow, agents, ai, artificial-intelligence"
+  },
+  {
+    "url": "https://github.com/paperclipai/paperclip",
+    "added": "2026-03-20T21:52:35Z",
+    "source": "github-star",
+    "notes": "Open-source orchestration for zero-human companies | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/llm-use/llm-use",
+    "added": "2026-03-20T21:52:33Z",
+    "source": "github-star",
+    "notes": "LLM orchestration toolkit for agent workflows: planner + workers + synthesis, optional router (LLM + learned   fallback), supports OpenAI/Anthropic/Ollama/llama.cpp, real scraping with caching, MCP se | Language: Python | Topics: ab-testing, ai-orchestration, anthropic, api-gateway, artificial-intelligence"
+  },
+  {
+    "url": "https://github.com/zerobootdev/zeroboot",
+    "added": "2026-03-20T13:08:59Z",
+    "source": "github-star",
+    "notes": "Sub-millisecond VM sandboxes for AI agents via copy-on-write forking | Language: Rust | Topics: ai-agents, code-execution, copy-on-write, firecracker, kvm"
+  },
+  {
+    "url": "https://github.com/Open-Dev-Society/OpenStock",
+    "added": "2026-03-20T07:23:23Z",
+    "source": "github-star",
+    "notes": "OpenStock is an open-source alternative to expensive market platforms. Track real-time prices, set personalized alerts, and explore detailed company insights — built openly, for everyone, forever free | Language: TypeScript | Topics: coderabbit, inngest, nextjs, shadcn-ui, stock-market"
+  },
+  {
+    "url": "https://github.com/openrocket/openrocket",
+    "added": "2026-03-20T06:49:47Z",
+    "source": "github-star",
+    "notes": "Model-rocketry aerodynamics and trajectory simulation software | Language: Java | Topics: aerospace, flight-simulator, java, modeling, optimization"
+  },
+  {
+    "url": "https://github.com/math-inc/OpenGauss",
+    "added": "2026-03-19T22:31:50Z",
+    "source": "github-star",
+    "notes": " | Language: Python"
+  },
+  {
+    "url": "https://github.com/dagger/container-use",
+    "added": "2026-03-16T20:58:06Z",
+    "source": "github-star",
+    "notes": "Development environments for coding agents. Enable multiple agents to work safely and independently with your preferred stack. | Language: Go"
+  },
+  {
+    "url": "https://github.com/DannyMac180/ace-platform",
+    "added": "2026-03-15T19:30:01Z",
+    "source": "github-star",
+    "notes": "ACE Platform for Agentic Context Engineering | Language: Python"
+  },
+  {
+    "url": "https://github.com/andrewyng/context-hub",
+    "added": "2026-03-15T19:20:35Z",
+    "source": "github-star",
+    "notes": " | Language: JavaScript"
+  },
+  {
+    "url": "https://github.com/ZhuLinsen/daily_stock_analysis",
+    "added": "2026-03-15T19:07:10Z",
+    "source": "github-star",
+    "notes": "LLM驱动的 A/H/美股智能分析器：多数据源行情 + 实时新闻 + LLM决策仪表盘 + 多渠道推送，零成本定时运行，纯白嫖. LLM-powered stock analysis system for A/H/US markets. | Language: Python | Topics: agent, ai, aigc, gemini, llm"
+  },
+  {
+    "url": "https://github.com/hyperspaceai/agi",
+    "added": "2026-03-14T07:17:12Z",
+    "source": "github-star",
+    "notes": "The first distributed AGI system. Thousands of autonomous AI agents collaboratively train models, share experiments via P2P gossip, and push breakthroughs here. Fully peer-to-peer. Join from your brow | Topics: agi, ai-agents, ai-research, artificial-general-intelligence, autonomous-agents"
+  },
+  {
+    "url": "https://github.com/Ansem-SoD/Picofly",
+    "added": "2026-03-13T19:09:01Z",
+    "source": "github-star",
+    "notes": "Information and firmware related to the rp2040-zero based chip for the nx | Language: C | Topics: firmware, homebrew"
+  },
+  {
+    "url": "https://github.com/open-jarvis/OpenJarvis",
+    "added": "2026-03-13T12:35:22Z",
+    "source": "github-star",
+    "notes": "Personal AI, On Personal Devices | Language: Python"
+  },
+  {
+    "url": "https://github.com/Light-Heart-Labs/DreamServer",
+    "added": "2026-03-13T09:25:44Z",
+    "source": "github-star",
+    "notes": "Local AI anywhere, for everyone — LLM inference, chat UI, voice, agents, workflows, RAG, and image generation. No cloud, no subscriptions. | Language: Rust | Topics: ai-agents, amd, comfyui, docker, llama-cpp"
+  },
+  {
+    "url": "https://github.com/jamesrochabrun/AgentHub",
+    "added": "2026-03-13T07:01:03Z",
+    "source": "github-star",
+    "notes": "Manage all sessions in Claude Code and Codex. Easily create new worktrees, run multiple terminals in parallel, preview edits before accepting them, make inline changes directly from diffs, and more. | Language: Swift"
+  },
+  {
+    "url": "https://github.com/Imbad0202/academic-research-skills",
+    "added": "2026-03-13T06:56:02Z",
+    "source": "github-star",
+    "notes": "Academic Research Skills for Claude Code: research → write → review → revise → finalize | Language: TeX | Topics: academic-pipeline, academic-writing, ai-research, claude, claude-code"
+  },
+  {
+    "url": "https://github.com/Nicolepcx/ai-agents-the-definitive-guide",
+    "added": "2026-03-12T14:28:12Z",
+    "source": "github-star",
+    "notes": "Repo for AI Agents The Definitive Guide | Language: Jupyter Notebook | Topics: ai-agents, benchmarks, deployment, langchain, langgraph"
+  },
+  {
+    "url": "https://github.com/stepfun-ai/Step-3.5-Flash",
+    "added": "2026-03-12T06:25:55Z",
+    "source": "github-star",
+    "notes": "Fast, Sharp & Reliable Agentic Intelligence | Language: C++"
+  },
+  {
+    "url": "https://github.com/BAI-LAB/Survey-on-AI-Memory",
+    "added": "2026-03-11T22:47:53Z",
+    "source": "github-star",
+    "notes": "Official repository for \"Survey on AI Memory: Theories, Taxonomies, Evaluations, and Emerging Trends\". "
+  },
+  {
+    "url": "https://github.com/TinyAGI/fractals",
+    "added": "2026-03-11T19:45:46Z",
+    "source": "github-star",
+    "notes": "Fractals is a recursive task orchestrator for agent swarm | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/huytieu/COG-second-brain",
+    "added": "2026-03-11T17:01:13Z",
+    "source": "github-star",
+    "notes": "The Easiest Second Brain Setup That Actually Self-Evolves using Claude code - Obsidian - Github | Language: Shell"
+  },
+  {
+    "url": "https://github.com/google/A2UI",
+    "added": "2026-03-11T15:30:00Z",
+    "source": "github-star",
+    "notes": " | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/langflow-ai/openrag",
+    "added": "2026-03-11T15:05:52Z",
+    "source": "github-star",
+    "notes": "OpenRAG is a comprehensive, single package Retrieval-Augmented Generation platform built on Langflow, Docling, and Opensearch.  | Language: Python"
+  },
+  {
+    "url": "https://github.com/kapi2800/qwen3-tts-apple-silicon",
+    "added": "2026-03-11T13:35:53Z",
+    "source": "github-star",
+    "notes": "Run Qwen3-TTS text-to-speech locally on Mac (M1/M2/M3/M4). Voice cloning, voice design, custom voices. 100% offline using MLX. | Language: Python | Topics: apple-silicon, m1, m2, m3, m4"
+  },
+  {
+    "url": "https://github.com/arcanite24/gb-recompiled",
+    "added": "2026-03-11T09:26:18Z",
+    "source": "github-star",
+    "notes": "A static recompiler for original GameBoy ROMs that translates Z80 assembly directly into portable, modern C code. | Language: C++ | Topics: recompiler"
+  },
+  {
+    "url": "https://github.com/trevin-creator/Tiny-Lab",
+    "added": "2026-03-11T09:24:24Z",
+    "source": "github-star",
+    "notes": "Tiny Lab is a small Apple Silicon ML research tool with a real control plane, one shipped MLX training path, and checkpoint evaluation built in. | Language: Python"
+  },
+  {
+    "url": "https://github.com/jundot/omlx",
+    "added": "2026-03-10T22:27:11Z",
+    "source": "github-star",
+    "notes": "LLM inference server with continuous batching & SSD caching for Apple Silicon — managed from the macOS menu bar | Language: Python | Topics: apple-silicon, inference-server, llm, macos, mlx"
+  },
+  {
+    "url": "https://github.com/Circuit-Digest/ESP-Drone",
+    "added": "2026-03-10T12:15:23Z",
+    "source": "github-star",
+    "notes": " | Language: C"
+  },
+  {
+    "url": "https://github.com/CodeGraphContext/CodeGraphContext",
+    "added": "2026-03-10T10:13:59Z",
+    "source": "github-star",
+    "notes": "An MCP server plus a CLI tool that indexes local code into a graph database to provide context to AI assistants. | Language: Python | Topics: hacktoberfest2025, social-winter-of-code"
+  },
+  {
+    "url": "https://github.com/zjunlp/SkillNet",
+    "added": "2026-03-10T09:31:22Z",
+    "source": "github-star",
+    "notes": "Create, Evaluate, and Connect AI Skills | Language: Python | Topics: ai-agents, ai-skills, artificial-intelligence, knowledge-graph, large-language-models"
   }
 ]
