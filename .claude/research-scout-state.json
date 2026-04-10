@@ -16,7 +16,16 @@
         "Real-time Execution Streaming (implemented as CompiledGraph.astream)",
         "Ephemeral Session Storage (implemented as SessionStore)"
       ]
+    },
+    "https://github.com/addyosmani/agent-skills": {
+      "processed_at": "2026-04-10T03:09:13.090975+00:00",
+      "summary": "addyosmani/agent-skills",
+      "improvements": [
+        "Add Verification Gate Middleware",
+        "Enforce Atomic Task Decomposition",
+        "Dynamic Context Injection"
+      ]
     }
   },
-  "last_run": "2026-03-12T12:00:00.000000+00:00"
+  "last_run": "2026-04-10T03:09:13.091033+00:00"
 }
