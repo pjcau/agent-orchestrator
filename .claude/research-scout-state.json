@@ -16,7 +16,16 @@
         "Real-time Execution Streaming (implemented as CompiledGraph.astream)",
         "Ephemeral Session Storage (implemented as SessionStore)"
       ]
+    },
+    "https://github.com/MemPalace/mempalace": {
+      "processed_at": "2026-04-13T03:10:37.978746+00:00",
+      "summary": "MemPalace/mempalace",
+      "improvements": [
+        "Hierarchical Metadata Tags",
+        "Raw Interaction Verbatim Logging",
+        "Semantic History-Based Routing"
+      ]
     }
   },
-  "last_run": "2026-03-12T12:00:00.000000+00:00"
+  "last_run": "2026-04-13T03:10:37.978814+00:00"
 }
