@@ -39,3 +39,4 @@ Confidence is out of 100, broken down into 6 categories:
 |------|------|-------|----------|------|------------|
 | 2026-04-14 | [task-tracker (a)](2026-04-14_task-tracker.md) | Task Tracker full-stack | qwen3-coder-next (iter 0) + qwen3.5-flash-02-23 (iter 1-5) | $0.675 | 43.6 / 100 |
 | 2026-04-14 | [task-tracker (b)](2026-04-14b_task-tracker.md) | Same goal, after filesystem-confinement fix + generic SE prompt rules | qwen3.5-flash-02-23 | **$0.155** | **71.0 / 100** (+27.4) |
+| 2026-04-14 | [task-tracker (c)](2026-04-14c_task-tracker.md) | Same goal, stricter rules attempt (wiring-check + validation checklist); shows the prompt-engineering plateau | qwen3.5-flash-02-23 | $0.135 | **61.0 / 100** (−10.0, variance + over-prescription) |
