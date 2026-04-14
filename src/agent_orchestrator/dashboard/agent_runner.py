@@ -806,7 +806,23 @@ def _build_role_for_agent(agent_info: dict) -> str:
             f"You are {name}: {desc}. "
             "Write actual code files. Use file_write to create files. "
             "Combine related content into fewer files when possible. "
-            "Be practical, write working code."
+            "Be practical, write working code.\n\n"
+            "SOFTWARE ENGINEERING RULES (apply to EVERY task):\n"
+            "1. Dependency pins: in requirements.txt / package.json, use loose pins "
+            "(e.g. `fastapi>=0.109,<1`, `\"react\": \"^19\"`) unless you are certain "
+            "an exact version exists. NEVER invent a version number you haven't seen.\n"
+            "2. Smoke-test before declaring done. For Python entry points run "
+            "`python -c \"import main\"` via shell_exec; for Node run `node --check "
+            "path/to/entry.js`. If the import/check fails, FIX IT before finishing.\n"
+            "3. Single source of truth for layout. If a directory structure already "
+            "exists in your working directory (e.g. `backend/api/v1/`), EXTEND it. "
+            "Never create a parallel layout (e.g. also `backend/src/`). List the "
+            "working directory first with glob_search or `ls` before writing.\n"
+            "4. Finish cleanly. When all required files exist and smoke-test passes, "
+            "stop. Do not keep looping on shell commands.\n"
+            "5. If you cannot complete the task in your step budget, write a short "
+            "status line via file_write to `STATUS.md` with what's done and what "
+            "remains — a concrete handoff beats silent stalling."
         )
 
 
@@ -922,8 +938,17 @@ async def run_team(
             '{"agent": "risk-analyst", "task": "Assess portfolio risk"}]\n'
             'Data: [{"agent": "data-analyst", "task": "Perform EDA"}, '
             '{"agent": "ml-engineer", "task": "Train classifier"}]\n\n'
-            "IMPORTANT: Match agents to the task domain. Do NOT default to software agents "
-            "for non-software tasks. Select only agents relevant to this task."
+            "ROUTING RULES:\n"
+            "- Match agents to the task domain. Do NOT default to software agents "
+            "for non-software tasks. Select only agents relevant to this task.\n"
+            "- Technical documentation (README, CHANGELOG, API docs, docstrings, "
+            "architecture notes) is ENGINEERING work: route to backend, frontend, "
+            "devops, or ai-engineer. Do NOT route it to content-strategist — that "
+            "agent is for marketing copy, not technical writing.\n"
+            "- Don't over-decompose. If a single agent can handle the task end to end, "
+            "assign to that one agent rather than splitting into trivial pieces.\n"
+            "- Each sub-task must be concrete and independently testable (a file, an "
+            "endpoint, a command). Avoid vague tasks like 'review' or 'improve X'."
         ),
     )
     if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
