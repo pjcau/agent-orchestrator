@@ -113,6 +113,23 @@ def test_fallback_matches_shell_when_no_config(tmp_path: Path) -> None:
     assert spec is not None and spec.name == "shell"
 
 
+def test_detects_config_in_subdir_next_to_entry(tmp_path: Path) -> None:
+    """Polyglot layouts often have `backend/requirements.txt` + `backend/main.py`
+    at top level, not at the repo root. Detection must match that too."""
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend" / "requirements.txt").write_text("fastapi\n")
+    (tmp_path / "backend" / "main.py").write_text("app = 1\n")
+    # also throw a frontend/ so both config files exist in subdirs
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "frontend" / "package.json").write_text("{}")
+    (tmp_path / "frontend" / "index.js").write_text("// ok")
+
+    spec, entry = detect_language(tmp_path)
+    assert spec is not None
+    assert spec.name == "python"
+    assert entry == "backend/main.py"
+
+
 # ---------------------------------------------------------------------------
 # Execution — subprocess mocked
 # ---------------------------------------------------------------------------

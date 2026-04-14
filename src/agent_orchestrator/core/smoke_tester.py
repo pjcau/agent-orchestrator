@@ -252,18 +252,50 @@ LANGUAGE_SPECS: tuple[LanguageSpec, ...] = (
 # ---------------------------------------------------------------------------
 
 
-def _matches_spec_config(cwd: Path, spec: LanguageSpec) -> bool:
-    """True if at least one of the spec's config files exists in cwd.
+def _matches_spec_config(cwd: Path, spec: LanguageSpec, entry: str | None = None) -> bool:
+    """True if at least one of the spec's config files exists near the project root.
+
+    "Near" means: in `cwd` itself, OR in any ancestor of `entry` up to `cwd`.
+    This matters for polyglot / subdirectory layouts like::
+
+        repo/
+        ├── backend/requirements.txt  ← config here
+        ├── backend/main.py           ← entry here
+        └── frontend/package.json
+
+    where the config is next to the entry, not at the top level.
 
     Special cases:
-    - `csharp`: any `*.csproj` file counts (no single fixed name).
+    - `csharp`: any `*.csproj` file counts (no single fixed name). Searched
+      recursively up to depth 2.
     - `lua` / `shell`: no config file required; match on entry patterns only.
     """
     if spec.name == "csharp":
-        return any(p.suffix == ".csproj" for p in cwd.iterdir() if p.is_file())
+        # csproj can live at any depth in typical .NET repos
+        for depth1 in list(cwd.iterdir()) + [cwd]:
+            if depth1.is_file() and depth1.suffix == ".csproj":
+                return True
+            if depth1.is_dir():
+                for p in depth1.iterdir():
+                    if p.is_file() and p.suffix == ".csproj":
+                        return True
+        return False
     if not spec.config_files:
         return True
-    return any((cwd / cf).exists() for cf in spec.config_files)
+    # cwd itself
+    if any((cwd / cf).exists() for cf in spec.config_files):
+        return True
+    # ancestors of entry, up to (and excluding) cwd
+    if entry:
+        entry_path = (cwd / entry).resolve()
+        for parent in entry_path.parents:
+            if parent == cwd.parent or not str(parent).startswith(str(cwd)):
+                break
+            if parent == cwd:
+                break
+            if any((parent / cf).exists() for cf in spec.config_files):
+                return True
+    return False
 
 
 def _find_entry(cwd: Path, spec: LanguageSpec) -> str | None:
@@ -289,13 +321,13 @@ def detect_language(cwd: Path) -> tuple[LanguageSpec | None, str | None]:
     1. A spec whose config file matches AND an entry pattern matches — strongest signal.
     2. A spec with empty config_files (shell, lua) whose entry pattern matches — fallback.
     """
-    # Pass 1: require both config and entry
+    # Pass 1: require both config and entry (config can live next to the entry,
+    # not only in cwd — see _matches_spec_config docstring).
     for spec in LANGUAGE_SPECS:
         if spec.config_files or spec.name == "csharp":
-            if _matches_spec_config(cwd, spec):
-                entry = _find_entry(cwd, spec)
-                if entry:
-                    return spec, entry
+            entry = _find_entry(cwd, spec)
+            if entry and _matches_spec_config(cwd, spec, entry):
+                return spec, entry
 
     # Pass 2: config-less specs (shell, lua) with matching entry
     for spec in LANGUAGE_SPECS:
