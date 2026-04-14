@@ -19,17 +19,22 @@ def test_software_engineering_role_contains_generic_rules() -> None:
     role = agent_runner._build_role_for_agent(
         {"name": "backend", "description": "API", "category": "software-engineering"}
     )
-    # 1. dependency pinning
-    assert "Dependency pins" in role
+    low = role.lower()
+    # dependency pinning
+    assert "dependency pins" in low
     assert "NEVER invent a version" in role
-    # 2. smoke-test
-    assert "Smoke-test" in role or "smoke-test" in role.lower()
-    assert "python -c" in role or "node --check" in role
-    # 3. single source of truth
-    assert "Single source of truth" in role or "parallel layout" in role
-    # 4. finish cleanly
-    assert "Finish cleanly" in role or "stop" in role.lower()
-    # 5. handoff on timeout
+    # smoke-test mention (optional but should be documented)
+    assert "smoke-test" in low or "smoke test" in low
+    assert "python -c" in role
+    # wiring integrity — agents must know to register routers/blueprints/etc.
+    assert "registered" in low or "wiring" in low
+    assert "include_router" in role
+    assert "register_blueprint" in role
+    assert "add_command" in role
+    # single source of truth
+    assert "single source of truth" in low or "parallel layout" in low
+    # finish cleanly + STATUS.md handoff
+    assert "finish cleanly" in low or "stop" in low
     assert "STATUS.md" in role
 
 
@@ -54,3 +59,12 @@ def test_team_lead_plan_prompt_routes_docs_to_engineering() -> None:
 def test_team_lead_plan_prompt_forbids_over_decomposition() -> None:
     src = inspect.getsource(agent_runner.run_team)
     assert "over-decompose" in src or "single agent" in src.lower()
+
+
+def test_team_lead_validation_has_wiring_check() -> None:
+    """Validation must now check wiring + deps coherence + smoke-test evidence."""
+    src = inspect.getsource(agent_runner.run_team)
+    low = src.lower()
+    assert "entry-point wiring" in low or "wiring" in low
+    assert "dependency coherence" in low or "orphan imports" in low
+    assert "smoke test evidence" in low or "smoke test" in low

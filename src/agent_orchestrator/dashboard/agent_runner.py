@@ -813,14 +813,20 @@ def _build_role_for_agent(agent_info: dict) -> str:
             "an exact version exists. NEVER invent a version number you haven't seen.\n"
             "2. Smoke-test before declaring done. For Python entry points run "
             "`python -c \"import main\"` via shell_exec; for Node run `node --check "
-            "path/to/entry.js`. If the import/check fails, FIX IT before finishing.\n"
-            "3. Single source of truth for layout. If a directory structure already "
+            "path/to/entry.js`. If the import/check fails, FIX IT before finishing. "
+            "Optional, skip if tight on step budget.\n"
+            "3. Wiring: when you create a router/blueprint/CLI command/migration, "
+            "make sure it is registered in the entry point (e.g. "
+            "`app.include_router(x)`, `app.register_blueprint(x)`, "
+            "`cli.add_command(x)`, migration imported in `env.py`). A file that is "
+            "never imported is dead code.\n"
+            "4. Single source of truth for layout. If a directory structure already "
             "exists in your working directory (e.g. `backend/api/v1/`), EXTEND it. "
             "Never create a parallel layout (e.g. also `backend/src/`). List the "
             "working directory first with glob_search or `ls` before writing.\n"
-            "4. Finish cleanly. When all required files exist and smoke-test passes, "
+            "5. Finish cleanly. When all required files exist and smoke-test passes, "
             "stop. Do not keep looping on shell commands.\n"
-            "5. If you cannot complete the task in your step budget, write a short "
+            "6. If you cannot complete the task in your step budget, write a short "
             "status line via file_write to `STATUS.md` with what's done and what "
             "remains — a concrete handoff beats silent stalling."
         )
@@ -1175,7 +1181,27 @@ async def run_team(
                 ),
             )
         ],
-        system="You are the team lead. Validate sub-agent outputs. Be strict but fair.",
+        system=(
+            "You are the team lead. Validate sub-agent outputs. Be strict but fair.\n\n"
+            "SOFTWARE-ENGINEERING VALIDATION CHECKLIST — mark as insufficient and "
+            "re-delegate if any of these fail:\n"
+            "A. Entry-point wiring: every router / blueprint / CLI command / "
+            "plugin / migration created by the sub-agents must be registered in "
+            "its entry point. If `auth.py` defines an `APIRouter` but `main.py` "
+            "does not call `app.include_router(auth_router)`, the app is broken.\n"
+            "B. Dependency coherence: every `import X` in the new code must have "
+            "a matching entry in requirements.txt / package.json. No orphan "
+            "imports.\n"
+            "C. Smoke test evidence: at least one sub-agent must have executed a "
+            "smoke test (python -c import, node --check, cargo check, go build) "
+            "and reported success. If the step log shows the smoke test failed "
+            "or was never run, this is INSUFFICIENT.\n"
+            "D. Single layout: there must be only ONE canonical directory layout "
+            "in the output (no parallel `backend/src/` + `backend/api/v1/`). "
+            "If the evidence shows duplicates, re-delegate a cleanup task.\n"
+            "When re-delegating, be specific: name the exact file + the exact "
+            "missing wiring / dependency / test, not a vague 'fix issues'."
+        ),
     )
     if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
         all_fallback_logs.extend(
@@ -1198,6 +1224,37 @@ async def run_team(
 
     # One round of re-delegation if needed
     re_assignments = _parse_team_plan(validation_completion.content, valid_names)
+
+    # --- Step 3.5: Smoke test on produced artefacts -----------------------
+    # Generic 20-language syntax-only check; never raises. Feeds a structured
+    # re-assignment on failure. Skipped silently when no known language or
+    # toolchain is detected. Disable globally with DISABLE_SMOKE_TEST=true.
+    smoke_result = None
+    if (
+        working_directory
+        and os.environ.get("DISABLE_SMOKE_TEST", "").lower() != "true"
+    ):
+        from ..core.smoke_tester import run_smoke_test, suggest_agent_for_language
+
+        smoke_result = await run_smoke_test(working_directory)
+        evidence_parts.append(f"[SMOKE] {smoke_result.as_feedback}")
+        if not smoke_result.success and smoke_result.skipped_reason is None:
+            # Real failure (not skip) — prepend as high-priority re-assignment.
+            agent_hint = suggest_agent_for_language(smoke_result.language)
+            if agent_hint in valid_names:
+                err_snippet = (smoke_result.stderr or smoke_result.stdout or "").strip()[:400]
+                smoke_assignment = {
+                    "agent": agent_hint,
+                    "task": (
+                        f"Smoke test failed on {smoke_result.entry_point} "
+                        f"({smoke_result.language}, exit={smoke_result.exit_code}). "
+                        f"Fix this error and make the entry point parse cleanly:\n"
+                        f"{err_snippet}"
+                    ),
+                }
+                # Prepend so smoke fixes run before any other re-delegation.
+                re_assignments = [smoke_assignment] + (re_assignments or [])
+
     if re_assignments:
         re_results = await asyncio.gather(
             *[_run_sub_agent(a, i + len(assignments)) for i, a in enumerate(re_assignments[:3])],
@@ -1320,6 +1377,18 @@ async def run_team(
         "total_tokens": total_tokens,
         "total_cost_usd": total_cost,
         "elapsed_s": round(elapsed, 2),
+        "smoke_test": (
+            {
+                "language": smoke_result.language,
+                "entry_point": smoke_result.entry_point,
+                "success": smoke_result.success,
+                "exit_code": smoke_result.exit_code,
+                "skipped_reason": smoke_result.skipped_reason,
+                "feedback": smoke_result.as_feedback,
+            }
+            if smoke_result is not None
+            else None
+        ),
     }
 
 
