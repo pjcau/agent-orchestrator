@@ -149,6 +149,17 @@ async def run_agent(
     if not role:
         role = f"You are {agent_name}. Be concise and practical."
 
+    # Inform the agent about its sandboxed working directory so it writes
+    # files inside the session workspace instead of polluting the host project.
+    if working_directory:
+        role += (
+            f"\n\nYour working directory is: {working_directory}\n"
+            "ALWAYS use relative paths (e.g. `backend/main.py`) when calling "
+            "file_write / file_read / shell_exec. NEVER use absolute paths "
+            "starting with `/workspace`, `/`, or any path outside your "
+            "working directory — they will be remapped under it."
+        )
+
     # Inject recent memories from the store into the system prompt.
     # Queries agent-specific and shared namespaces, caps at 2000 chars.
     if store is not None:

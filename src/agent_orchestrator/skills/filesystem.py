@@ -8,6 +8,23 @@ from pathlib import Path
 from ..core.skill import Skill, SkillResult
 
 
+def _confine(cwd: Path | None, raw: str) -> Path:
+    """Resolve a user-supplied path under cwd. Absolute paths that escape cwd
+    are remapped under it (treat cwd as a chroot-like root). This prevents
+    agents from writing outside the session working directory."""
+    if cwd is None:
+        return Path(raw)
+    p = Path(raw)
+    if p.is_absolute():
+        cwd_r = cwd.resolve()
+        try:
+            p.resolve().relative_to(cwd_r)
+            return p
+        except ValueError:
+            return cwd / p.relative_to(p.anchor)
+    return cwd / p
+
+
 class FileReadSkill(Skill):
     def __init__(self, working_directory: str | Path | None = None):
         self._cwd = Path(working_directory) if working_directory else None
@@ -31,9 +48,7 @@ class FileReadSkill(Skill):
         }
 
     async def execute(self, params: dict) -> SkillResult:
-        path = Path(params["file_path"])
-        if self._cwd and not path.is_absolute():
-            path = self._cwd / path
+        path = _confine(self._cwd, params["file_path"])
         if not path.exists():
             return SkillResult(success=False, output=None, error=f"File not found: {path}")
         if not path.is_file():
@@ -66,9 +81,7 @@ class FileWriteSkill(Skill):
         }
 
     async def execute(self, params: dict) -> SkillResult:
-        path = Path(params["file_path"])
-        if self._cwd and not path.is_absolute():
-            path = self._cwd / path
+        path = _confine(self._cwd, params["file_path"])
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(params["content"], encoding="utf-8")
         return SkillResult(success=True, output=f"Written {len(params['content'])} chars to {path}")
@@ -98,9 +111,7 @@ class GlobSkill(Skill):
         }
 
     async def execute(self, params: dict) -> SkillResult:
-        base = Path(params.get("directory", "."))
-        if self._cwd and not base.is_absolute():
-            base = self._cwd / base
+        base = _confine(self._cwd, params.get("directory", "."))
         matches = sorted(glob_module.glob(params["pattern"], root_dir=str(base), recursive=True))
         return SkillResult(
             success=True, output="\n".join(matches) if matches else "No matches found"
