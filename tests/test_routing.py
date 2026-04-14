@@ -299,14 +299,6 @@ class TestTaskRouter:
         result = router.route("task")
         assert result is None
 
-    def test_split_execution_falls_back_to_complexity(self):
-        providers = self._make_providers()
-        router = TaskRouter(
-            providers, config=RouterConfig(strategy=RoutingStrategy.SPLIT_EXECUTION)
-        )
-        result = router.route("simple task", complexity=TaskComplexity(level="low"))
-        assert result is not None
-
     def test_get_classifier(self):
         router = TaskRouter({})
         assert isinstance(router.get_classifier(), TaskComplexityClassifier)

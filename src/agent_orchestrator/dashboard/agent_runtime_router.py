@@ -411,8 +411,8 @@ async def stream_endpoint(ws: WebSocket):
     if old_ws:
         try:
             await old_ws.close(code=1001, reason="Replaced by new connection")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to close replaced /ws/stream connection: %s", exc)
 
     await ws.accept()
     active_ws["/ws/stream"] = ws
@@ -560,8 +560,8 @@ async def stream_endpoint(ws: WebSocket):
 
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("/ws/stream loop terminated unexpectedly: %s", exc, exc_info=True)
     finally:
         if active_ws.get("/ws/stream") is ws:
             active_ws.pop("/ws/stream", None)
@@ -588,8 +588,8 @@ async def websocket_endpoint(ws: WebSocket):
     if old_ws:
         try:
             await old_ws.close(code=1001, reason="Replaced by new connection")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to close replaced /ws connection: %s", exc)
 
     await ws.accept()
     active_ws["/ws"] = ws
@@ -602,8 +602,8 @@ async def websocket_endpoint(ws: WebSocket):
             await ws.send_json({"type": "event", "data": event.to_dict()})
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("/ws event relay terminated unexpectedly: %s", exc, exc_info=True)
     finally:
         bus.unsubscribe(queue)
         if active_ws.get("/ws") is ws:
@@ -665,8 +665,8 @@ async def sandbox_terminal(ws: WebSocket, session_id: str):
                 if not chunk:
                     break
                 await ws.send_text(chunk.decode(errors="replace"))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Sandbox terminal read loop ended: %s", exc)
 
     read_task = asyncio.create_task(_read_output())
 
@@ -678,8 +678,8 @@ async def sandbox_terminal(ws: WebSocket, session_id: str):
                 await proc.stdin.drain()
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Sandbox terminal loop terminated unexpectedly: %s", exc, exc_info=True)
     finally:
         read_task.cancel()
         if proc.returncode is None:

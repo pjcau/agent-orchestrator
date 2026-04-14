@@ -573,3 +573,52 @@ class TestCacheAccessors:
 
         cache = get_tool_cache()
         assert isinstance(cache, InMemoryCache)
+
+
+# ─── Concurrency — thread safety ───────────────────────────────────
+
+
+class TestCacheThreadSafety:
+    def test_concurrent_put_and_get(self):
+        """Parallel put/get from 16 threads must not lose or corrupt entries."""
+        import threading
+
+        cache = InMemoryCache(max_entries=10_000)
+        errors: list[Exception] = []
+
+        def worker(worker_id: int) -> None:
+            try:
+                for i in range(200):
+                    key = f"w{worker_id}-{i}"
+                    cache.put(key, f"val-{worker_id}-{i}", ttl_seconds=60)
+                    entry = cache.get(key)
+                    assert entry is not None and entry.value == f"val-{worker_id}-{i}"
+            except Exception as exc:  # pragma: no cover — surfaced via assertion below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent errors: {errors}"
+        assert cache.size() == 16 * 200
+
+    def test_concurrent_eviction(self):
+        """Eviction under contention must keep the cache within max_entries."""
+        import threading
+
+        cache = InMemoryCache(max_entries=100)
+
+        def worker(worker_id: int) -> None:
+            for i in range(500):
+                cache.put(f"w{worker_id}-{i}", i, ttl_seconds=60)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert cache.size() <= 100

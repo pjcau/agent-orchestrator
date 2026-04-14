@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -99,51 +100,56 @@ class BaseCache(ABC):
 
 
 class InMemoryCache(BaseCache):
-    """In-memory LRU-style cache with TTL support."""
+    """In-memory LRU-style cache with TTL support. Thread-safe via RLock."""
 
     def __init__(self, max_entries: int = 1000) -> None:
         self._store: dict[str, CacheEntry] = {}
         self._max_entries = max_entries
         self._stats = CacheStats()
+        self._lock = threading.RLock()
 
     def get(self, key: str) -> CacheEntry | None:
-        entry = self._store.get(key)
-        if entry is None:
-            self._stats.misses += 1
-            return None
-        if entry.is_expired:
-            del self._store[key]
-            self._stats.misses += 1
-            self._stats.evictions += 1
-            return None
-        entry.hit_count += 1
-        self._stats.hits += 1
-        return entry
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                self._stats.misses += 1
+                return None
+            if entry.is_expired:
+                del self._store[key]
+                self._stats.misses += 1
+                self._stats.evictions += 1
+                return None
+            entry.hit_count += 1
+            self._stats.hits += 1
+            return entry
 
     def put(self, key: str, value: Any, ttl_seconds: int = 3600, node_name: str = "") -> None:
-        # Evict oldest if at capacity
-        if len(self._store) >= self._max_entries and key not in self._store:
-            self._evict_oldest()
-        self._store[key] = CacheEntry(
-            key=key,
-            value=value,
-            ttl_seconds=ttl_seconds,
-            node_name=node_name,
-        )
+        with self._lock:
+            if len(self._store) >= self._max_entries and key not in self._store:
+                self._evict_oldest()
+            self._store[key] = CacheEntry(
+                key=key,
+                value=value,
+                ttl_seconds=ttl_seconds,
+                node_name=node_name,
+            )
 
     def invalidate(self, key: str) -> bool:
-        if key in self._store:
-            del self._store[key]
-            return True
-        return False
+        with self._lock:
+            if key in self._store:
+                del self._store[key]
+                return True
+            return False
 
     def clear(self) -> int:
-        count = len(self._store)
-        self._store.clear()
-        return count
+        with self._lock:
+            count = len(self._store)
+            self._store.clear()
+            return count
 
     def size(self) -> int:
-        return len(self._store)
+        with self._lock:
+            return len(self._store)
 
     def get_stats(self) -> CacheStats:
         return self._stats

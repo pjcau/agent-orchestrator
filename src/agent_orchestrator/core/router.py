@@ -13,8 +13,17 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from .health import HealthMonitor
-from .orchestrator import TaskComplexity
 from .provider import Provider
+
+
+@dataclass
+class TaskComplexity:
+    """Classification output — describes a task's complexity level and needs."""
+
+    level: str  # "low", "medium", "high"
+    estimated_tokens: int = 2000
+    requires_tools: bool = True
+    requires_reasoning: bool = False
 
 # Rust acceleration (optional — falls back to pure Python)
 try:
@@ -178,12 +187,18 @@ class TaskComplexityClassifier:
 
 
 class RoutingStrategy(str, Enum):
+    """Unified routing strategies for both Orchestrator and TaskRouter.
+
+    FIXED is used by the Orchestrator to bypass routing (use assigned provider).
+    The remaining strategies are implemented in TaskRouter.
+    """
+
+    FIXED = "fixed"
     LOCAL_FIRST = "local_first"
     COST_OPTIMIZED = "cost_optimized"
     CAPABILITY_BASED = "capability_based"
     FALLBACK_CHAIN = "fallback_chain"
     COMPLEXITY_BASED = "complexity_based"
-    SPLIT_EXECUTION = "split_execution"  # interface stub only
 
 
 # Provider keys considered "local" (Ollama, vLLM, etc.)
@@ -257,9 +272,6 @@ class TaskRouter:
         if strategy == RoutingStrategy.FALLBACK_CHAIN:
             return self._fallback_chain()
         if strategy == RoutingStrategy.COMPLEXITY_BASED:
-            return self._complexity_based(complexity)
-        if strategy == RoutingStrategy.SPLIT_EXECUTION:
-            # Interface stub: fall back to complexity_based for now
             return self._complexity_based(complexity)
 
         return None

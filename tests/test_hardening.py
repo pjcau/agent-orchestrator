@@ -130,6 +130,29 @@ class TestRateLimiter:
         status = limiter.get_status("unknown")
         assert status.is_limited is False
 
+    def test_thread_safe_record_usage(self):
+        """Concurrent record_usage from many threads must not lose records."""
+        import threading
+
+        limiter = RateLimiter(
+            [RateLimitConfig(requests_per_minute=100_000, tokens_per_minute=10_000_000, provider_key="p1")]
+        )
+
+        def worker() -> None:
+            for _ in range(200):
+                limiter.record_usage("p1", 10)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        status = limiter.get_status("p1")
+        # 8 * 200 = 1600 requests, each 10 tokens = 16_000 tokens
+        assert 100_000 - status.requests_remaining == 1600
+        assert 10_000_000 - status.tokens_remaining == 16_000
+
 
 # --- AuditLog ---
 

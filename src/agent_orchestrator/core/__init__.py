@@ -1,9 +1,15 @@
 from .provider import Provider, ModelCapabilities, Completion, Message
 from .agent import Agent, AgentConfig, TaskResult
 from .skill import Skill, SkillRegistry
-from .orchestrator import Orchestrator
 from .cooperation import CooperationProtocol, TaskAssignment
-from .router import TaskRouter, TaskComplexityClassifier, RouterConfig
+from .router import (
+    TaskRouter,
+    TaskComplexityClassifier,
+    RouterConfig,
+    RoutingStrategy,
+    TaskComplexity,
+)
+from .orchestrator import Orchestrator, OrchestratorConfig
 from .usage import UsageTracker, BudgetConfig, UsageRecord
 from .health import HealthMonitor, ProviderHealth
 from .benchmark import BenchmarkSuite, BenchmarkResult
@@ -53,7 +59,7 @@ from .config_manager import (
 )
 from .yaml_config import (
     YAMLConfigLoader,
-    OrchestratorConfig,
+    OrchestratorConfig as YAMLOrchestratorConfig,
     YAMLConfigError,
     load_class,
     substitute_env_vars,
@@ -168,6 +174,10 @@ __all__ = [
     "TaskRouter",
     "TaskComplexityClassifier",
     "RouterConfig",
+    "RoutingStrategy",
+    "TaskComplexity",
+    "Orchestrator",
+    "OrchestratorConfig",
     "UsageTracker",
     "BudgetConfig",
     "UsageRecord",
@@ -282,7 +292,7 @@ __all__ = [
     "traced",
     # v1.4 — YAML Configuration
     "YAMLConfigLoader",
-    "OrchestratorConfig",
+    "YAMLOrchestratorConfig",
     "BudgetConfig",
     "YAMLConfigError",
     "YAMLBudgetConfig",

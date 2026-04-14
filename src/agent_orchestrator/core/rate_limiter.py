@@ -5,6 +5,7 @@ Optionally accelerated by Rust via PyO3 when _agent_orchestrator_rust is install
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -51,6 +52,7 @@ class RateLimiter:
         self._states: dict[str, _ProviderState] = {
             c.provider_key: _ProviderState() for c in configs
         }
+        self._lock = threading.RLock()
         self._rust: _RustRateLimiter | None = None
         if _HAS_RUST_RL:
             rust_configs = [
@@ -75,19 +77,20 @@ class RateLimiter:
             # Unknown provider — allow by default
             return True
 
-        state = self._states[provider_key]
-        now = time.time()
-        self._evict(state, now)
+        with self._lock:
+            state = self._states[provider_key]
+            now = time.time()
+            self._evict(state, now)
 
-        requests_used = len(state.request_timestamps)
-        tokens_used = sum(t for _, t in state.token_timestamps)
+            requests_used = len(state.request_timestamps)
+            tokens_used = sum(t for _, t in state.token_timestamps)
 
-        if requests_used >= config.requests_per_minute:
-            return False
-        if estimated_tokens > 0 and tokens_used + estimated_tokens > config.tokens_per_minute:
-            return False
+            if requests_used >= config.requests_per_minute:
+                return False
+            if estimated_tokens > 0 and tokens_used + estimated_tokens > config.tokens_per_minute:
+                return False
 
-        return True
+            return True
 
     def record_usage(self, provider_key: str, tokens: int) -> None:
         """Record that a request with the given token count was made now."""
@@ -95,56 +98,58 @@ class RateLimiter:
             self._rust.record_usage(provider_key, tokens)
             return
 
-        if provider_key not in self._states:
-            self._states[provider_key] = _ProviderState()
+        with self._lock:
+            if provider_key not in self._states:
+                self._states[provider_key] = _ProviderState()
 
-        now = time.time()
-        state = self._states[provider_key]
-        state.request_timestamps.append(now)
-        if tokens > 0:
-            state.token_timestamps.append((now, tokens))
+            now = time.time()
+            state = self._states[provider_key]
+            state.request_timestamps.append(now)
+            if tokens > 0:
+                state.token_timestamps.append((now, tokens))
 
     def get_status(self, provider_key: str) -> RateLimitStatus:
         """Return current rate-limit status for a provider."""
-        config = self._configs.get(provider_key)
-        state = self._states.get(provider_key)
-        now = time.time()
+        with self._lock:
+            config = self._configs.get(provider_key)
+            state = self._states.get(provider_key)
+            now = time.time()
 
-        if config is None or state is None:
+            if config is None or state is None:
+                return RateLimitStatus(
+                    provider_key=provider_key,
+                    requests_remaining=0,
+                    tokens_remaining=0,
+                    resets_at=now,
+                    is_limited=False,
+                )
+
+            self._evict(state, now)
+
+            requests_used = len(state.request_timestamps)
+            tokens_used = sum(t for _, t in state.token_timestamps)
+
+            requests_remaining = max(0, config.requests_per_minute - requests_used)
+            tokens_remaining = max(0, config.tokens_per_minute - tokens_used)
+
+            oldest = self._oldest_timestamp(state)
+            resets_at = oldest + self._WINDOW if oldest is not None else now
+
+            is_limited = requests_remaining == 0 or tokens_remaining == 0
+
             return RateLimitStatus(
                 provider_key=provider_key,
-                requests_remaining=0,
-                tokens_remaining=0,
-                resets_at=now,
-                is_limited=False,
+                requests_remaining=requests_remaining,
+                tokens_remaining=tokens_remaining,
+                resets_at=resets_at,
+                is_limited=is_limited,
             )
-
-        self._evict(state, now)
-
-        requests_used = len(state.request_timestamps)
-        tokens_used = sum(t for _, t in state.token_timestamps)
-
-        requests_remaining = max(0, config.requests_per_minute - requests_used)
-        tokens_remaining = max(0, config.tokens_per_minute - tokens_used)
-
-        # Next reset: when the oldest entry in the window expires
-        oldest = self._oldest_timestamp(state)
-        resets_at = oldest + self._WINDOW if oldest is not None else now
-
-        is_limited = requests_remaining == 0 or tokens_remaining == 0
-
-        return RateLimitStatus(
-            provider_key=provider_key,
-            requests_remaining=requests_remaining,
-            tokens_remaining=tokens_remaining,
-            resets_at=resets_at,
-            is_limited=is_limited,
-        )
 
     def reset(self, provider_key: str) -> None:
         """Clear all recorded usage for a provider."""
-        if provider_key in self._states:
-            self._states[provider_key] = _ProviderState()
+        with self._lock:
+            if provider_key in self._states:
+                self._states[provider_key] = _ProviderState()
 
     # ------------------------------------------------------------------
     # Internals
