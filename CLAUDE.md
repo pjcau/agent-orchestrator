@@ -179,12 +179,13 @@ agent-orchestrator/
 │       │   ├── yaml_config.py     # YAML config loader (reflection, env vars, versioning)
 │       │   ├── memory_filter.py   # Session-scoped file path filtering for persistent memory
 │       │   ├── loop_detection.py # Loop detection middleware (sliding window, LRU eviction)
+│       │   ├── resilience.py      # Retry with exponential backoff + circuit breaker
 │       │   └── clarification.py # Structured clarification system (typed requests, timeout, manager)
 │       ├── client.py              # Embedded Python client (no HTTP/server required)
 │       ├── providers/
 │       │   ├── anthropic.py     # Claude provider
 │       │   ├── openai.py        # GPT provider
-│       │   ├── google.py        # Gemini provider
+│       │   ├── google.py        # Gemini provider (async, tools, streaming)
 │       │   ├── openrouter.py    # OpenRouter (free cloud models)
 │       │   └── local.py         # Local models (Ollama, vLLM)
 │       ├── dashboard/
@@ -271,6 +272,7 @@ agent-orchestrator/
 - **SlackBot** — Slack integration via Socket Mode (no public IP). Maps Slack threads to orchestrator conversations (`slack-{channel}-{thread_ts}`). Handles `@bot` mentions, `/agent` and `/team` commands. Auto-detects task category for agent routing. Install: `pip install agent-orchestrator[slack]`.
 - **MemoryFilter** — Sanitizes session-scoped file paths (job dirs, tmp files, uploads, workspace) before persisting to conversation memory or cross-thread store. Replaces paths with `[session-file]` placeholder. Messages containing only session-file references are dropped. Integrated with `ConversationManager._save_thread()` and `InMemoryStore.aput()`.
 - **LoopDetector** — Per-session sliding window loop detection for agent tool calls. Hashes tool_name+params (MD5), tracks in a `deque(maxlen=20)`. Warns at 3 repeats, hard stops at 5. LRU eviction at 500 sessions. Integrated into `Agent.execute()` via optional `loop_detector` + `session_id` params. Emits `loop.warning` / `loop.hard_stop` events; increments `loop_warnings_total` / `loop_hard_stops_total` counters.
+- **Resilience** — `core/resilience.py`. `RetryPolicy` (exponential backoff with jitter, customizable `retryable` predicate) and `CircuitBreaker` (closed/open/half_open, threshold + cooldown). Combine via `resilient_call()`. Opt-in per-call wrapping — does not force behavior on existing providers. Non-retryable by default: `ValueError`, `TypeError`, `CircuitOpenError`.
 - **DocumentConverter** — Converts uploaded files (PDF, Excel, CSV, Word, PowerPoint, HTML, text) to Markdown for LLM consumption. Graceful fallback when optional deps missing. Limits: 10 MB file size, 50 PDF pages, 10,000 spreadsheet rows. Upload via `POST /api/upload` (multipart/form-data).
 - **ClarificationManager** — Structured agent-human clarification. 5 typed request categories (missing_info, ambiguous, approach, risk, suggestion). Blocking mode pauses agent until response or 5-minute timeout. Non-blocking mode emits event and continues. Events: `clarification.request`, `clarification.response`, `clarification.timeout`.
 - **Sandbox** — Isolated execution environment (Docker or local). `SandboxConfig` controls image, timeout, memory/CPU limits, network, writable paths, `exposed_ports` (port forwarding), `startup_command`, and `env_vars`. `PortMapping` maps container ports to host ports (auto-assign or explicit). `SandboxInfo` provides runtime introspection (status, mapped ports, uptime). Virtual path mapping with traversal protection. `SandboxedShellSkill` wraps sandbox as a drop-in Skill for agent use.

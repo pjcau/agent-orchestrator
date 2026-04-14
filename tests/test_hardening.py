@@ -135,7 +135,11 @@ class TestRateLimiter:
         import threading
 
         limiter = RateLimiter(
-            [RateLimitConfig(requests_per_minute=100_000, tokens_per_minute=10_000_000, provider_key="p1")]
+            [
+                RateLimitConfig(
+                    requests_per_minute=100_000, tokens_per_minute=10_000_000, provider_key="p1"
+                )
+            ]
         )
 
         def worker() -> None:

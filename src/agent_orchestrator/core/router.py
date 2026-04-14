@@ -25,6 +25,7 @@ class TaskComplexity:
     requires_tools: bool = True
     requires_reasoning: bool = False
 
+
 # Rust acceleration (optional — falls back to pure Python)
 try:
     from _agent_orchestrator_rust import RustClassifier as _RustClassifier
