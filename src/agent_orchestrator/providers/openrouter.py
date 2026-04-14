@@ -63,6 +63,14 @@ class OpenRouterProvider(OpenAIProvider):
             "reasoning": 0.45,
         },
         # Qwen (Alibaba)
+        "qwen/qwen3.6-plus": {
+            "input_cost": 0.325,
+            "output_cost": 1.95,
+            "context": 1_000_000,
+            "max_output": 32_768,
+            "coding": 0.92,
+            "reasoning": 0.90,
+        },
         "qwen/qwen3-coder:free": {
             "input_cost": 0.0,
             "output_cost": 0.0,
@@ -216,6 +224,7 @@ class OpenRouterProvider(OpenAIProvider):
 
     # Fallback order: best free models sorted by coding quality
     FALLBACK_ORDER = [
+        "qwen/qwen3.6-plus",
         "qwen/qwen3-coder:free",
         "qwen/qwen3-coder-next",
         "qwen/qwen3.5-397b-a17b",
