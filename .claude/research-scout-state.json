@@ -16,7 +16,16 @@
         "Real-time Execution Streaming (implemented as CompiledGraph.astream)",
         "Ephemeral Session Storage (implemented as SessionStore)"
       ]
+    },
+    "https://github.com/raphaelmansuy/edgequake": {
+      "processed_at": "2026-04-16T03:09:47.366194+00:00",
+      "summary": "raphaelmansuy/edgequake",
+      "improvements": [
+        "Domain Context Injection Middleware",
+        "Hybrid Graph-Vector Routing Strategy",
+        "Multimodal Fallback Chain"
+      ]
     }
   },
-  "last_run": "2026-03-12T12:00:00.000000+00:00"
+  "last_run": "2026-04-16T03:09:47.366267+00:00"
 }
