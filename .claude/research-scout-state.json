@@ -16,7 +16,16 @@
         "Real-time Execution Streaming (implemented as CompiledGraph.astream)",
         "Ephemeral Session Storage (implemented as SessionStore)"
       ]
+    },
+    "https://github.com/HKUDS/RAG-Anything": {
+      "processed_at": "2026-04-19T03:09:08.397803+00:00",
+      "summary": "HKUDS/RAG-Anything",
+      "improvements": [
+        "Multimodal Content Preprocessing Middleware",
+        "Graph-Indexed Persistent Memory",
+        "Context-Aware Semantic Routing"
+      ]
     }
   },
-  "last_run": "2026-03-12T12:00:00.000000+00:00"
+  "last_run": "2026-04-19T03:09:08.397867+00:00"
 }
