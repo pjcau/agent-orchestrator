@@ -1232,13 +1232,18 @@ async def list_files(path: str = ""):
     """List files in the project directory."""
     import os as _os
 
-    # Inline containment check (CodeQL-recognized sanitizer pattern).
-    if path and ("\x00" in path or ".." in path or _os.path.isabs(path)):
-        return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
     base_real = _os.path.realpath(str(_PROJECT_BASE))
-    target_real = _os.path.realpath(_os.path.join(base_real, path))
-    if target_real != base_real and not target_real.startswith(base_real + _os.sep):
-        return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
+    if not path:
+        # Listing the project root; no user-tainted component.
+        target_real = base_real
+    else:
+        if "\x00" in path or ".." in path or _os.path.isabs(path):
+            return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
+        joined = _os.path.realpath(_os.path.join(base_real, path))
+        # CodeQL-recognized containment sanitizer.
+        if not joined.startswith(base_real + _os.sep):
+            return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
+        target_real = joined
 
     if not _os.path.isdir(target_real):
         return JSONResponse(content={"error": "Not a directory"}, status_code=404)
@@ -1252,8 +1257,9 @@ async def list_files(path: str = ""):
         if name.startswith(".") or name in ("__pycache__", "node_modules", ".git"):
             continue
         entry_real = _os.path.realpath(_os.path.join(target_real, name))
-        # Skip anything that escapes project root (e.g. symlinks pointing outside).
-        if entry_real != base_real and not entry_real.startswith(base_real + _os.sep):
+        # Re-verify containment for each entry (defends against symlinks
+        # pointing outside the project root). CodeQL-recognized sanitizer.
+        if not entry_real.startswith(base_real + _os.sep):
             continue
         rel = _os.path.relpath(entry_real, base_real)
         try:
