@@ -10,6 +10,8 @@ from typing import Any
 
 from .clarification import ClarificationManager
 from .loop_detection import LoopDetector, LoopStatus
+from .metrics import MetricsRegistry
+from .prompt_markers import inject_marker_sections
 from .provider import Message, Provider, Role, ToolDefinition
 from .skill import SkillRegistry
 from .tool_recovery import recover_dangling_tool_calls
@@ -70,6 +72,7 @@ class Agent:
         escalation_provider: Provider | None = None,
         loop_detector: LoopDetector | None = None,
         clarification_manager: ClarificationManager | None = None,
+        metrics: MetricsRegistry | None = None,
     ):
         self.config = config
         self.provider = provider
@@ -77,8 +80,36 @@ class Agent:
         self.escalation_provider = escalation_provider
         self.loop_detector = loop_detector
         self.clarification_manager = clarification_manager
+        self._metrics = metrics
         self._messages: list[Message] = []
         self._status: TaskStatus = TaskStatus.PENDING
+        # Marker-based prompt sections. Applied to `config.role` every time
+        # a system prompt is built. Use `set_prompt_section` to mutate.
+        self._prompt_sections: dict[str, str] = {}
+
+    def set_prompt_section(self, marker: str, content: str) -> None:
+        """Update one named section of the system prompt.
+
+        Markers are delimited inside the prompt by
+        ``<!-- MARKER START -->`` / ``<!-- MARKER END -->`` comments. Setting
+        the same marker twice replaces the block in place; no other sections
+        are touched. This prevents configuration drift when multiple callers
+        (agents, middlewares, humans) want to patch different parts of the
+        system prompt independently.
+        """
+        self._prompt_sections[marker] = content
+        if self._metrics is not None:
+            self._metrics.counter(
+                "marker_updates_total",
+                "Total marker-section prompt updates",
+                labels={"agent": self.config.name},
+            ).inc()
+
+    def build_system_prompt(self) -> str:
+        """Return the effective system prompt with all marker sections applied."""
+        if not self._prompt_sections:
+            return self.config.role
+        return inject_marker_sections(self.config.role, self._prompt_sections)
 
     async def execute(
         self,
@@ -199,7 +230,7 @@ class Agent:
             completion = await provider.traced_complete(
                 messages=self._messages,
                 tools=tool_defs if tool_defs else None,
-                system=self.config.role,
+                system=self.build_system_prompt(),
             )
 
             total_tokens += completion.usage.input_tokens + completion.usage.output_tokens

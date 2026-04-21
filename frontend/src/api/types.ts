@@ -345,3 +345,30 @@ export interface SandboxInfo {
   memory_limit: string;
   cpu_limit: number;
 }
+
+// ── PromptRegistry (PR #56) ─────────────────────────────────────────────
+
+export interface PromptTemplate {
+  name: string;
+  content: string;
+  tags: string[];
+  category: string | null;
+  version: string;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PromptListResponse {
+  templates: PromptTemplate[];
+}
+
+// ── Compaction stats (PR #60) ───────────────────────────────────────────
+
+export interface CompactionStats {
+  summarization_count: number;
+  tokens_saved: number;
+  messages_compacted: number;
+  last_compaction_ratio: number;
+}

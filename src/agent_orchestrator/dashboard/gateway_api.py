@@ -25,7 +25,7 @@ import os
 import uuid
 from pathlib import Path as _Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..core.mcp_server import MCPServerRegistry
@@ -1841,5 +1841,119 @@ async def skill_invoke(body: dict, request: Request):
             "success": result.success,
             "output": str(result.output)[:5000] if result.output else "",
             "error": result.error,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prompt Registry (PR #56) — /api/prompts
+# ---------------------------------------------------------------------------
+
+
+def _prompt_registry_or_404(request: Request):
+    reg = getattr(request.app.state, "prompt_registry", None)
+    if reg is None:
+        raise HTTPException(
+            status_code=503,
+            detail="prompt_registry not initialised (store unavailable)",
+        )
+    return reg
+
+
+@gateway_router.get("/prompts")
+async def list_prompts(request: Request, limit: int = 100, offset: int = 0):
+    """Return every registered prompt template (newest first)."""
+    reg = _prompt_registry_or_404(request)
+    templates = await reg.list_all(limit=limit, offset=offset)
+    templates.sort(key=lambda t: t.updated_at, reverse=True)
+    return JSONResponse(content={"templates": [t.to_dict() for t in templates]})
+
+
+@gateway_router.get("/prompts/search")
+async def search_prompts(
+    request: Request,
+    tags: str | None = None,
+    category: str | None = None,
+    limit: int = 10,
+):
+    """Search prompts by AND-intersection of tags and optional category.
+
+    ``tags`` is a comma-separated list (``?tags=python,testing``).
+    """
+    reg = _prompt_registry_or_404(request)
+    tag_list = [t.strip() for t in tags.split(",")] if tags else None
+    results = await reg.search(tags=tag_list, category=category, limit=limit)
+    return JSONResponse(content={"templates": [t.to_dict() for t in results]})
+
+
+@gateway_router.get("/prompts/{name}")
+async def get_prompt(name: str, request: Request):
+    """Return one prompt template by name, or 404 if unknown."""
+    reg = _prompt_registry_or_404(request)
+    tpl = await reg.get(name)
+    if tpl is None:
+        raise HTTPException(status_code=404, detail=f"prompt '{name}' not found")
+    return JSONResponse(content=tpl.to_dict())
+
+
+@gateway_router.post("/prompts")
+async def create_or_update_prompt(body: dict, request: Request):
+    """Register a new prompt or update an existing one.
+
+    Body schema: ``{name, content, tags?, category?, version?, description?, metadata?}``.
+    """
+    from ..core.prompt_registry import PromptTemplate
+
+    name = body.get("name")
+    content = body.get("content")
+    if not isinstance(name, str) or not name.strip():
+        raise HTTPException(status_code=400, detail="'name' is required")
+    if not isinstance(content, str) or not content:
+        raise HTTPException(status_code=400, detail="'content' is required")
+
+    reg = _prompt_registry_or_404(request)
+    template = PromptTemplate(
+        name=name.strip(),
+        content=content,
+        tags=list(body.get("tags") or []),
+        category=body.get("category"),
+        version=str(body.get("version") or "1"),
+        description=body.get("description"),
+        metadata=dict(body.get("metadata") or {}),
+    )
+    await reg.register(template)
+    return JSONResponse(content=template.to_dict(), status_code=201)
+
+
+@gateway_router.delete("/prompts/{name}")
+async def delete_prompt(name: str, request: Request):
+    """Remove a prompt template. Idempotent."""
+    reg = _prompt_registry_or_404(request)
+    await reg.delete(name)
+    return JSONResponse(content={"deleted": name})
+
+
+# ---------------------------------------------------------------------------
+# Compaction metrics (PR #60) — /api/compaction/stats
+# ---------------------------------------------------------------------------
+
+
+@gateway_router.get("/compaction/stats")
+async def compaction_stats(request: Request):
+    """Return live conversation-compaction statistics for the dashboard.
+
+    The values surface directly from the running ``ConversationManager`` so
+    the frontend can show a real "tokens saved" counter rather than a
+    placeholder. When no summarization has fired yet all values are zero.
+    """
+    conv_manager = request.app.state.conv_manager
+    return JSONResponse(
+        content={
+            "summarization_count": int(getattr(conv_manager, "summarization_count", 0)),
+            "tokens_saved": int(getattr(conv_manager, "tokens_saved", 0)),
+            "messages_compacted": int(getattr(conv_manager, "messages_compacted", 0)),
+            "last_compaction_ratio": float(
+                getattr(conv_manager, "last_compaction_ratio", 0.0)
+            ),
         }
     )

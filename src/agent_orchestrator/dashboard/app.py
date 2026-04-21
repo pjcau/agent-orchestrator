@@ -29,6 +29,8 @@ from ..core.conversation import (
 from ..core.checkpoint import InMemoryCheckpointer
 from ..core.checkpoint_postgres import PostgresCheckpointer
 from ..core.memory_filter import MemoryFilter
+from ..core.metrics import default_metrics
+from ..core.prompt_registry import PromptRegistry
 from ..core.store import InMemoryStore
 from ..core.sandbox import SandboxConfig, SandboxType
 from .events import EventBus
@@ -198,10 +200,15 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         lines = [f"{m.get('role', '?')}: {str(m.get('content', ''))[:200]}" for m in messages]
         return "Summary of earlier conversation:\n" + "\n".join(lines[:20])
 
+    # Centralised MetricsRegistry — fed by ConversationManager, PromptRegistry,
+    # Agent marker updates, and exposed via /metrics endpoint.
+    metrics_registry = default_metrics()
+
     conv_manager = ConversationManager(
         checkpointer=_conv_checkpointer,
         summarization_config=_summarization_config,
         summarize_func=_llm_summarize,
+        metrics=metrics_registry,
     )
 
     # Sandbox manager -- session-scoped isolated execution environments.
@@ -246,6 +253,10 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # Set store eagerly so tests that don't trigger startup can access it.
     # Startup will replace it with PostgresStore when DATABASE_URL is set.
     app.state.store = store_holder[0]
+    app.state.metrics_registry = metrics_registry
+    app.state.prompt_registry = PromptRegistry(
+        app.state.store, metrics=metrics_registry
+    ) if app.state.store is not None else None
     app.state.sandbox_manager = sandbox_manager
     app.state.run_manager = run_manager
     app.state.mcp_client_manager = mcp_client_manager
@@ -286,6 +297,10 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
                 app.state.store = _fallback
         else:
             app.state.store = store_holder[0]
+        # Rebuild PromptRegistry against the resolved store (Postgres or InMemory).
+        app.state.prompt_registry = PromptRegistry(
+            app.state.store, metrics=metrics_registry
+        )
 
         if _sandbox_enabled:
             logger.info("Sandbox system enabled (SANDBOX_ENABLED=true)")

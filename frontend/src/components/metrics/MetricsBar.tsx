@@ -1,5 +1,5 @@
 import { useAppStore } from "@/stores/useAppStore";
-import { useUsage, useMCPTools } from "@/api/hooks";
+import { useUsage, useMCPTools, useCompactionStats } from "@/api/hooks";
 
 function formatNumber(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
@@ -12,6 +12,7 @@ export function MetricsBar() {
   const { totalTokens, totalCostUsd, lastTokenSpeed, cache } = useAppStore();
   const { data: usage } = useUsage();
   const { data: mcpData } = useMCPTools();
+  const { data: compaction } = useCompactionStats();
 
   const cacheTotal = (cache.hits ?? 0) + (cache.misses ?? 0);
   const cacheRate =
@@ -84,6 +85,24 @@ export function MetricsBar() {
         <span className="metric-label">MCP</span>
         <span className="metric-value">{mcpData?.count ?? "-"}</span>
       </div>
+
+      <div className="metric-separator" />
+
+      {/* Compaction savings — only visible once a compaction has fired (#60) */}
+      {compaction && compaction.summarization_count > 0 && (
+        <div
+          className="metrics-compaction"
+          title={`${compaction.summarization_count} summarizations · ${compaction.messages_compacted} messages folded`}
+        >
+          <span className="metrics-compaction__label">Tokens saved</span>
+          <span className="metrics-compaction__value">
+            {formatNumber(compaction.tokens_saved)}
+          </span>
+          <span className="metrics-compaction__ratio">
+            ratio {(compaction.last_compaction_ratio * 100).toFixed(0)}%
+          </span>
+        </div>
+      )}
     </div>
   );
 }

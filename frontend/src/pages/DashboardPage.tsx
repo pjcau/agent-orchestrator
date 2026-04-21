@@ -6,10 +6,11 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { GraphVisualizer } from "@/components/graph/GraphVisualizer";
 import { AgentSelector } from "@/components/agents/AgentSelector";
 import { SandboxPanel } from "@/components/sandbox/SandboxPanel";
+import { PromptsPanel } from "@/components/prompts/PromptsPanel";
 import { useAppStore } from "@/stores/useAppStore";
 import { useGraphReset, useSandboxStatus } from "@/api/hooks";
 
-type LeftPanelMode = "history" | null;
+type LeftPanelMode = "history" | "prompts" | null;
 
 /**
  * Main 3-column dashboard layout:
@@ -27,6 +28,10 @@ export function DashboardPage() {
 
   const handleToggleHistory = () => {
     setLeftPanel((p) => (p === "history" ? null : "history"));
+  };
+
+  const handleTogglePrompts = () => {
+    setLeftPanel((p) => (p === "prompts" ? null : "prompts"));
   };
 
   const handleResetGraph = async () => {
@@ -48,10 +53,9 @@ export function DashboardPage() {
       />
 
       <div className="dashboard__body">
-        {/* Left panel — History */}
-        {leftPanel === "history" && (
-          <HistorySidebar />
-        )}
+        {/* Left panel — History or Prompts */}
+        {leftPanel === "history" && <HistorySidebar />}
+        {leftPanel === "prompts" && <PromptsPanel />}
 
         {/* Center — main content */}
         <main className="dashboard__main">
@@ -100,6 +104,13 @@ export function DashboardPage() {
           title="Job history"
         >
           History
+        </button>
+        <button
+          className={`btn-sidebar-toggle ${leftPanel === "prompts" ? "active" : ""}`}
+          onClick={handleTogglePrompts}
+          title="Prompt registry"
+        >
+          Prompts
         </button>
         {sandboxStatus?.enabled && (
           <button

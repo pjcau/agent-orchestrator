@@ -24,6 +24,9 @@ import type {
   JobRecord,
   SandboxStatus,
   SandboxInfo,
+  PromptListResponse,
+  PromptTemplate,
+  CompactionStats,
 } from "./types";
 
 // Query keys — centralised for cache invalidation
@@ -39,6 +42,10 @@ export const queryKeys = {
   mcpTools: ["mcp", "tools"] as const,
   sandboxStatus: ["sandbox", "status"] as const,
   sandboxInfo: (sessionId: string) => ["sandbox", sessionId, "info"] as const,
+  prompts: ["prompts", "list"] as const,
+  promptSearch: (tags: string[], category: string | null) =>
+    ["prompts", "search", tags.join(","), category ?? ""] as const,
+  compactionStats: ["compaction", "stats"] as const,
 };
 
 // --- Queries ---
@@ -205,6 +212,90 @@ export function useSandboxInfo(
     enabled: Boolean(sessionId),
     staleTime: 5 * 1000,
     refetchInterval: 10 * 1000,
+    ...options,
+  });
+}
+
+// ── Prompt registry (PR #56) ───────────────────────────────────────────
+
+export function usePrompts(
+  options?: Partial<UseQueryOptions<PromptListResponse>>
+) {
+  return useQuery<PromptListResponse>({
+    queryKey: queryKeys.prompts,
+    queryFn: async () => {
+      const resp = await apiClient.get<PromptListResponse>("/api/prompts");
+      return resp.data;
+    },
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function usePromptSearch(
+  tags: string[],
+  category: string | null,
+  options?: Partial<UseQueryOptions<PromptListResponse>>
+) {
+  const enabled = tags.length > 0 || Boolean(category);
+  return useQuery<PromptListResponse>({
+    queryKey: queryKeys.promptSearch(tags, category),
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (tags.length > 0) params.set("tags", tags.join(","));
+      if (category) params.set("category", category);
+      const resp = await apiClient.get<PromptListResponse>(
+        `/api/prompts/search?${params.toString()}`
+      );
+      return resp.data;
+    },
+    enabled,
+    staleTime: 15 * 1000,
+    ...options,
+  });
+}
+
+export function useCreatePrompt() {
+  const qc = useQueryClient();
+  return useMutation<PromptTemplate, Error, Partial<PromptTemplate> & { name: string; content: string }>(
+    {
+      mutationFn: async (body) => {
+        const resp = await apiClient.post<PromptTemplate>("/api/prompts", body);
+        return resp.data;
+      },
+      onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.prompts }),
+    }
+  );
+}
+
+export function useDeletePrompt() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: string }, Error, string>({
+    mutationFn: async (name) => {
+      const resp = await apiClient.delete<{ deleted: string }>(
+        `/api/prompts/${encodeURIComponent(name)}`
+      );
+      return resp.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.prompts }),
+  });
+}
+
+// ── Compaction stats (PR #60) ──────────────────────────────────────────
+
+export function useCompactionStats(
+  options?: Partial<UseQueryOptions<CompactionStats>>
+) {
+  return useQuery<CompactionStats>({
+    queryKey: queryKeys.compactionStats,
+    queryFn: async () => {
+      const resp = await apiClient.get<CompactionStats>(
+        "/api/compaction/stats"
+      );
+      return resp.data;
+    },
+    staleTime: 10 * 1000,
+    refetchInterval: 20 * 1000,
     ...options,
   });
 }

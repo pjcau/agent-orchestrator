@@ -312,6 +312,44 @@ def default_metrics(registry: MetricsRegistry | None = None) -> MetricsRegistry:
         "Total number of loop hard stop events",
     )
 
+    # Marker-based prompt injection (#57)
+    reg.counter(
+        "marker_updates_total",
+        "Total marker-section prompt updates applied to agents",
+    )
+
+    # Prompt registry (#56)
+    reg.counter(
+        "prompt_registry_lookups_total",
+        "Total prompt registry lookups (hit + miss)",
+    )
+    reg.counter(
+        "prompt_registry_hits_total",
+        "Total prompt registry lookups that returned at least one result",
+    )
+    reg.counter(
+        "prompt_registry_misses_total",
+        "Total prompt registry lookups that returned zero results",
+    )
+    reg.histogram(
+        "prompt_registry_lookup_duration_seconds",
+        "Latency of prompt registry lookups in seconds",
+    )
+
+    # Conversation compaction — detailed metrics (#60)
+    reg.histogram(
+        "conversation_summarization_duration_seconds",
+        "Latency of a single summarization pass in seconds",
+    )
+    reg.gauge(
+        "conversation_compaction_ratio",
+        "Ratio tokens_after / tokens_before for the most recent compaction",
+    )
+    reg.counter(
+        "conversation_messages_compacted_total",
+        "Total messages folded into summaries",
+    )
+
     return reg
 
 

@@ -25,6 +25,7 @@ from typing import Any, Awaitable, Callable
 
 from .checkpoint import Checkpoint, Checkpointer, InMemoryCheckpointer
 from .memory_filter import MemoryFilter
+from .metrics import MetricsRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +141,7 @@ class ConversationManager:
         summarization_config: SummarizationConfig | None = None,
         summarize_func: Callable[[list[dict[str, Any]]], Awaitable[str]] | None = None,
         memory_filter: MemoryFilter | None = None,
+        metrics: MetricsRegistry | None = None,
     ):
         self._checkpointer = checkpointer or InMemoryCheckpointer()
         self._max_history = max_history
@@ -147,9 +149,14 @@ class ConversationManager:
         self._threads: dict[str, list[ConversationMessage]] = {}
         self._summarization_config = summarization_config
         self._summarize_func = summarize_func
-        # Track summarization statistics
+        self._metrics = metrics
+        # Track summarization statistics (also exposed via MetricsRegistry
+        # when one is passed in; these attributes remain as the in-process
+        # source of truth for callers that can't reach the registry).
         self.summarization_count: int = 0
         self.tokens_saved: int = 0
+        self.messages_compacted: int = 0
+        self.last_compaction_ratio: float = 0.0
 
     async def send(
         self,
@@ -306,12 +313,39 @@ class ConversationManager:
         tokens_before = sum(estimate_tokens(m.content) for m in old_messages)
 
         old_dicts = [m.to_dict() for m in old_messages]
+        start_t = time.monotonic()
         summary_text = await self._summarize_func(old_dicts)
+        elapsed = time.monotonic() - start_t
 
         tokens_after = estimate_tokens(summary_text)
         saved = max(0, tokens_before - tokens_after)
         self.tokens_saved += saved
         self.summarization_count += 1
+        self.messages_compacted += len(old_messages)
+        ratio = tokens_after / tokens_before if tokens_before > 0 else 0.0
+        self.last_compaction_ratio = ratio
+
+        if self._metrics is not None:
+            self._metrics.counter(
+                "conversation_summarization_total",
+                "Total number of context summarizations performed",
+            ).inc()
+            self._metrics.gauge(
+                "conversation_tokens_saved",
+                "Estimated tokens saved by context summarization",
+            ).set(self.tokens_saved)
+            self._metrics.histogram(
+                "conversation_summarization_duration_seconds",
+                "Latency of a single summarization pass in seconds",
+            ).observe(elapsed)
+            self._metrics.gauge(
+                "conversation_compaction_ratio",
+                "Ratio tokens_after / tokens_before for the most recent compaction",
+            ).set(ratio)
+            self._metrics.counter(
+                "conversation_messages_compacted_total",
+                "Total messages folded into summaries",
+            ).inc(len(old_messages))
 
         summary_msg = ConversationMessage(
             role="system",

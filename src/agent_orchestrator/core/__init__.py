@@ -114,6 +114,12 @@ from .clarification import (
     ClarificationType,
 )
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
+from .prompt_markers import (
+    inject_marker_sections,
+    extract_marker_sections,
+    diff_sections,
+)
+from .prompt_registry import PromptRegistry, PromptTemplate, PROMPT_NAMESPACE
 from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
 from .sandbox import Sandbox, SandboxConfig, SandboxResult, SandboxType, SandboxError
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
@@ -275,6 +281,14 @@ __all__ = [
     "ConversationManager",
     "ConversationMessage",
     "ConversationResult",
+    # Phase 1 — PR #57 marker-based prompt injection
+    "inject_marker_sections",
+    "extract_marker_sections",
+    "diff_sections",
+    # Phase 1 — PR #56 prompt registry
+    "PromptRegistry",
+    "PromptTemplate",
+    "PROMPT_NAMESPACE",
     # v1.4 — Memory Upload Filtering
     "MemoryFilter",
     "SESSION_FILE_PATTERNS",

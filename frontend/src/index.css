@@ -1036,6 +1036,143 @@ body {
 .history-session-item:hover { background: var(--bg-hover); border-color: var(--border); }
 .history-session-item--current { border-color: rgba(88,166,255,0.3); }
 .history-session-item--selected { background: var(--bg-hover); border-color: var(--accent); }
+.history-session-item--loading { opacity: 0.65; cursor: progress; }
+.history-session-item--error { border-color: var(--red, #f85149); background: rgba(248,81,73,0.08); }
+.history-session-error {
+  font-size: 10px;
+  color: var(--red, #f85149);
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+/* ── Prompts registry panel (PR #56) ────────────────────────────────── */
+.prompts-panel {
+  width: 320px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+.prompts-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.prompts-panel__header h2 { margin: 0; font-size: 14px; }
+.prompts-panel__filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.prompts-panel__filters input {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  font-size: 11px;
+  border-radius: 3px;
+}
+.prompts-new {
+  margin: 8px 12px 4px;
+  font-size: 11px;
+}
+.prompts-form {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.prompts-form input, .prompts-form textarea {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 6px;
+  font-size: 11px;
+  border-radius: 3px;
+  font-family: inherit;
+}
+.prompts-form textarea { font-family: var(--font-mono); resize: vertical; }
+.prompts-form__actions { display: flex; gap: 6px; margin-top: 4px; }
+.prompts-form__error {
+  font-size: 10px;
+  color: var(--red, #f85149);
+  margin-top: 4px;
+}
+.prompts-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+.prompts-item {
+  position: relative;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+.prompts-item:hover { background: var(--bg-hover); border-color: var(--border); }
+.prompts-item.selected { background: var(--bg-hover); border-color: var(--accent); }
+.prompts-item__name { font-size: 12px; font-weight: 600; }
+.prompts-item__meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; font-size: 10px; }
+.prompts-item__cat {
+  color: var(--accent);
+  padding: 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+}
+.prompts-item__tag {
+  color: var(--text-dim);
+  padding: 1px 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+}
+.prompts-item__version { color: var(--text-dim); margin-left: auto; }
+
+.prompts-detail {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  overflow-y: auto;
+  max-height: 40%;
+}
+.prompts-detail h3 { margin: 0 0 4px; font-size: 13px; }
+.prompts-detail__desc { font-size: 11px; color: var(--text-dim); margin: 0 0 6px; }
+.prompts-detail__content {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-hover);
+  padding: 8px;
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* ── Compaction widget in header (PR #60) ───────────────────────────── */
+.metrics-compaction {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 2px 8px;
+  border-left: 1px solid var(--border);
+}
+.metrics-compaction__label {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.metrics-compaction__value {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.metrics-compaction__ratio {
+  font-size: 9px;
+  color: var(--text-dim);
+}
 
 .history-session-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .history-session-ts { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); }
