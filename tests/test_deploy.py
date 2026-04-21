@@ -5,6 +5,7 @@ and deploy workflow.
 """
 
 import pathlib
+import re
 
 import yaml
 
@@ -249,7 +250,7 @@ class TestDeployWorkflow:
         assert "self-signed" in content.lower()
         assert "bootstrap" in content.lower(), "Self-signed is only a bootstrap for first deploy"
         assert "openssl req" in content
-        assert "agents-orchestrator.com" in content
+        assert re.search(r"agents-orchestrator\.com", content) is not None
         # Must check if cert already exists before generating
         assert "checkend" in content, "Should check cert expiry with openssl checkend"
         # Must NOT write through symlinks (would destroy LE archive certs)

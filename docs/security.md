@@ -348,7 +348,8 @@ A daily GitHub Action (`.github/workflows/security-autofix.yml`) runs at 03:00 U
 
 Supported fix categories:
 - **Log injection** (`py/log-injection`): sanitizes user-controlled values with `_sanitize_log()`
-- **Path injection** (`py/path-injection`): adds `..` traversal checks before path construction
+- **Path injection** (`py/path-injection`): `_safe_resolve_path()` in `gateway_api.py` rejects `..` and absolute paths, then uses the CodeQL-recognized `os.path.realpath()` + `startswith(base + sep)` containment check
+- **Stack-trace exposure** (`py/stack-trace-exposure`): HTTP error responses return generic messages; full exception (with `exc_info=True`) is logged server-side only
 - **Weak hashing** (`py/weak-sensitive-data-hashing`): upgrades SHA-256 to PBKDF2-SHA256
 
 Password hashing uses bcrypt (cost=12) by default, with PBKDF2-SHA256 fallback when bcrypt is not installed. Legacy SHA-256 hashes are still verified for migration but new hashes always use the stronger algorithm.

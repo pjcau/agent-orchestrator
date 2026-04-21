@@ -889,8 +889,12 @@ async def resume_run(run_id: str, body: dict, request: Request):
     human_input = body.get("human_input") or {}
     try:
         resumed_id = await run_manager.resume_run(run_id, human_input)
-    except ValueError as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except ValueError:
+        logger.warning("resume_run rejected for %r", _sanitize_log(run_id), exc_info=True)
+        return JSONResponse(
+            content={"error": "Cannot resume run (not found or not interrupted)"},
+            status_code=400,
+        )
     return JSONResponse(content={"run_id": resumed_id})
 
 
@@ -1227,20 +1231,24 @@ def _safe_resolve_path(user_path: str) -> _Path | None:
     """Safely resolve a user-provided path relative to PROJECT_ROOT.
 
     Returns None if the path attempts traversal or escapes the project root.
-    Reconstructs the path from validated components to break taint chains.
+
+    Uses the ``os.path.realpath`` + ``startswith(base + sep)`` pattern
+    recognized as a sanitizer for path-injection taint flow analysis.
     """
     import os as _os
 
-    if ".." in user_path.split("/") or ".." in user_path.split("\\"):
+    if not user_path:
+        return _Path(_os.path.realpath(str(_PROJECT_BASE)))
+    if "\x00" in user_path or ".." in user_path:
         return None
-    normalized = _os.path.normpath(user_path)
-    if normalized.startswith("..") or _os.path.isabs(normalized):
+    if _os.path.isabs(user_path):
         return None
-    candidate = (_PROJECT_BASE / normalized).resolve()
-    if not candidate.is_relative_to(_PROJECT_BASE):
+
+    base_real = _os.path.realpath(str(_PROJECT_BASE))
+    candidate_real = _os.path.realpath(_os.path.join(base_real, user_path))
+    if candidate_real != base_real and not candidate_real.startswith(base_real + _os.sep):
         return None
-    safe_suffix = candidate.relative_to(_PROJECT_BASE)
-    return _Path(_PROJECT_BASE / safe_suffix)
+    return _Path(candidate_real)
 
 
 @gateway_router.get("/files")
@@ -1697,14 +1705,19 @@ async def mcp_add_server(body: dict, request: Request):
     )
     try:
         config.validate()
-    except ValueError as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except ValueError:
+        logger.warning("MCP config validation failed for %r", _sanitize_log(name), exc_info=True)
+        return JSONResponse(
+            content={"error": "Invalid MCP server configuration"}, status_code=400
+        )
 
     try:
         await mcp_client_manager.add_server(name, config)
-    except Exception as exc:
-        logger.warning("MCP add_server failed for %s: %s", name, exc)
-        return JSONResponse(content={"error": f"Failed to connect: {exc}"}, status_code=502)
+    except Exception:
+        logger.warning("MCP add_server failed for %r", _sanitize_log(name), exc_info=True)
+        return JSONResponse(
+            content={"error": "Failed to connect to MCP server"}, status_code=502
+        )
 
     tool_count = len([t for t in mcp_client_manager.get_all_tools() if t.server_name == name])
     return JSONResponse(
@@ -1744,8 +1757,14 @@ async def mcp_read_resource(uri: str, request: Request):
         )
     try:
         content = await client.read_resource(resource_uri)
-    except Exception as exc:
-        return JSONResponse(content={"error": f"Failed to read resource: {exc}"}, status_code=502)
+    except Exception:
+        logger.warning(
+            "MCP read_resource failed: server=%r uri=%r",
+            _sanitize_log(server_name),
+            _sanitize_log(resource_uri),
+            exc_info=True,
+        )
+        return JSONResponse(content={"error": "Failed to read resource"}, status_code=502)
     return JSONResponse(content={"uri": resource_uri, "server": server_name, "content": content})
 
 
