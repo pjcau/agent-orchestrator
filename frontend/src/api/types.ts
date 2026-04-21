@@ -346,6 +346,15 @@ export interface SandboxInfo {
   cpu_limit: number;
 }
 
+export interface SandboxStats {
+  cpu_percent: number;
+  memory_bytes: number;
+  memory_limit_bytes: number;
+  memory_percent: number;
+  net_rx_bytes: number;
+  net_tx_bytes: number;
+}
+
 // ── PromptRegistry (PR #56) ─────────────────────────────────────────────
 
 export interface PromptTemplate {

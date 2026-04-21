@@ -28,6 +28,44 @@ from typing import Any
 Namespace = tuple[str, ...]
 
 
+# ─── Hierarchical namespace helpers (PR #81) ──────────────────────────
+
+NAMESPACE_SEP = "."
+
+
+def path_to_namespace(path: str, sep: str = NAMESPACE_SEP) -> Namespace:
+    """Convert a dotted path (``"project.alice.tasks"``) into a ``Namespace``.
+
+    Empty strings and leading/trailing separators are dropped so both
+    ``"a.b"`` and ``".a.b."`` resolve to ``("a", "b")``.
+    """
+    if not path:
+        return ()
+    parts = [p for p in path.split(sep) if p]
+    return tuple(parts)
+
+
+def namespace_to_path(namespace: Namespace, sep: str = NAMESPACE_SEP) -> str:
+    """Inverse of ``path_to_namespace`` — always a clean dotted string."""
+    return sep.join(namespace)
+
+
+def descends_from(ns: Namespace, prefix: Namespace) -> bool:
+    """True when ``ns`` is equal to or a descendant of ``prefix``.
+
+    Hierarchical scoping: ``("a", "b", "c")`` descends from ``("a",)`` and
+    ``("a", "b")`` but not from ``("a", "x")``.
+    """
+    if len(prefix) > len(ns):
+        return False
+    return ns[: len(prefix)] == prefix
+
+
+def namespace_depth(ns: Namespace) -> int:
+    """Depth of a namespace (number of levels). Root is depth 0."""
+    return len(ns)
+
+
 @dataclass
 class Item:
     """A stored item with namespace-based hierarchy."""
@@ -184,6 +222,48 @@ class BaseStore(ABC):
         if loop and loop.is_running():
             raise RuntimeError("Use adelete() in async context")
         asyncio.run(self.adelete(namespace, key))
+
+    # ─── Path-based hierarchical helpers (PR #81) ─────────────────────
+
+    async def aget_path(self, path: str, key: str) -> Item | None:
+        """Ergonomic ``aget`` that accepts a dotted path string.
+
+        ``aget_path("project.alice", "profile")`` is equivalent to
+        ``aget(("project", "alice"), "profile")``.
+        """
+        return await self.aget(path_to_namespace(path), key)
+
+    async def aput_path(
+        self,
+        path: str,
+        key: str,
+        value: dict[str, Any],
+        *,
+        ttl: float | None = None,
+    ) -> None:
+        """Ergonomic ``aput`` that accepts a dotted path string."""
+        await self.aput(path_to_namespace(path), key, value, ttl=ttl)
+
+    async def asearch_path(
+        self,
+        path_prefix: str,
+        *,
+        filter: dict[str, Any] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> list[SearchItem]:
+        """Ergonomic ``asearch`` that accepts a dotted path prefix.
+
+        The prefix is scope-matching: ``asearch_path("project")`` returns
+        items at any depth under that root (``project.alice.x``,
+        ``project.bob.y``, etc.).
+        """
+        return await self.asearch(
+            path_to_namespace(path_prefix),
+            filter=filter,
+            limit=limit,
+            offset=offset,
+        )
 
 
 # ─── InMemoryStore ────────────────────────────────────────────────────

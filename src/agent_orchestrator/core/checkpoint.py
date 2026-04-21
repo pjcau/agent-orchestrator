@@ -17,12 +17,21 @@ from typing import Any
 
 @dataclass
 class Checkpoint:
+    """One snapshot of graph state.
+
+    ``raw_log`` (PR #81) optionally stores the verbatim sequence of
+    messages that led to this state. When set, callers can re-render a
+    faithful transcript even after summarisation has compacted the
+    conversation. It's opt-in — default ``None`` to avoid storage bloat.
+    """
+
     checkpoint_id: str
     thread_id: str
     state: dict[str, Any]
     next_nodes: list[str]
     step_index: int
     metadata: dict[str, Any] = field(default_factory=dict)
+    raw_log: str | None = None
 
 
 class Checkpointer(ABC):
@@ -84,9 +93,15 @@ class SQLiteCheckpointer(Checkpointer):
                     state TEXT NOT NULL,
                     next_nodes TEXT NOT NULL,
                     step_index INTEGER NOT NULL,
-                    metadata TEXT DEFAULT '{}'
+                    metadata TEXT DEFAULT '{}',
+                    raw_log TEXT
                 )
             """)
+            # Backfill column on pre-existing tables from older schema.
+            try:
+                self._conn.execute("ALTER TABLE checkpoints ADD COLUMN raw_log TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_thread
                 ON checkpoints(thread_id, step_index)
@@ -99,8 +114,8 @@ class SQLiteCheckpointer(Checkpointer):
         conn.execute(
             """
             INSERT OR REPLACE INTO checkpoints
-            (checkpoint_id, thread_id, state, next_nodes, step_index, metadata)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (checkpoint_id, thread_id, state, next_nodes, step_index, metadata, raw_log)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 checkpoint.checkpoint_id,
@@ -109,6 +124,7 @@ class SQLiteCheckpointer(Checkpointer):
                 json.dumps(checkpoint.next_nodes),
                 checkpoint.step_index,
                 json.dumps(checkpoint.metadata),
+                checkpoint.raw_log,
             ),
         )
         conn.commit()
@@ -145,6 +161,7 @@ class SQLiteCheckpointer(Checkpointer):
             next_nodes=json.loads(row[3]),
             step_index=row[4],
             metadata=json.loads(row[5]) if row[5] else {},
+            raw_log=row[6] if len(row) > 6 else None,
         )
 
     def close(self) -> None:

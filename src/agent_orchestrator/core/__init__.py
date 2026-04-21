@@ -140,6 +140,20 @@ from .skill import (
     retry_middleware,
     timeout_middleware,
     cache_middleware,
+    verification_middleware,
+    context_loader_middleware,
+)
+from .atomic_tasks import (
+    AtomicTaskIssue,
+    validate_atomic_tasks,
+    record_issues,
+)
+from .store import (
+    path_to_namespace,
+    namespace_to_path,
+    descends_from,
+    namespace_depth,
+    NAMESPACE_SEP,
 )
 
 __all__ = [
@@ -289,6 +303,18 @@ __all__ = [
     "PromptRegistry",
     "PromptTemplate",
     "PROMPT_NAMESPACE",
+    # Phase 2 — PR #59 verification + atomic tasks
+    "verification_middleware",
+    "context_loader_middleware",
+    "AtomicTaskIssue",
+    "validate_atomic_tasks",
+    "record_issues",
+    # Phase 2 — PR #81 hierarchical namespace helpers
+    "path_to_namespace",
+    "namespace_to_path",
+    "descends_from",
+    "namespace_depth",
+    "NAMESPACE_SEP",
     # v1.4 — Memory Upload Filtering
     "MemoryFilter",
     "SESSION_FILE_PATTERNS",

@@ -24,6 +24,7 @@ import type {
   JobRecord,
   SandboxStatus,
   SandboxInfo,
+  SandboxStats,
   PromptListResponse,
   PromptTemplate,
   CompactionStats,
@@ -42,6 +43,7 @@ export const queryKeys = {
   mcpTools: ["mcp", "tools"] as const,
   sandboxStatus: ["sandbox", "status"] as const,
   sandboxInfo: (sessionId: string) => ["sandbox", sessionId, "info"] as const,
+  sandboxStats: (sessionId: string) => ["sandbox", sessionId, "stats"] as const,
   prompts: ["prompts", "list"] as const,
   promptSearch: (tags: string[], category: string | null) =>
     ["prompts", "search", tags.join(","), category ?? ""] as const,
@@ -193,6 +195,25 @@ export function useSandboxStatus(
     },
     staleTime: 10 * 1000,
     refetchInterval: 15 * 1000,
+    ...options,
+  });
+}
+
+export function useSandboxStats(
+  sessionId: string,
+  options?: Partial<UseQueryOptions<SandboxStats>>
+) {
+  return useQuery<SandboxStats>({
+    queryKey: queryKeys.sandboxStats(sessionId),
+    queryFn: async () => {
+      const resp = await apiClient.get<SandboxStats>(
+        `/api/sandbox/${encodeURIComponent(sessionId)}/stats`
+      );
+      return resp.data;
+    },
+    enabled: Boolean(sessionId),
+    staleTime: 1000,
+    refetchInterval: 3000,
     ...options,
   });
 }

@@ -48,9 +48,14 @@ class PostgresCheckpointer(Checkpointer):
                     next_nodes JSONB NOT NULL,
                     step_index INTEGER NOT NULL,
                     metadata JSONB DEFAULT '{{}}'::jsonb,
+                    raw_log TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            # Backfill column on pre-existing tables from older schema.
+            await conn.execute(
+                f"ALTER TABLE {self._table} ADD COLUMN IF NOT EXISTS raw_log TEXT"
+            )
             await conn.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_{self._table}_thread
                 ON {self._table}(thread_id, step_index)
@@ -62,11 +67,11 @@ class PostgresCheckpointer(Checkpointer):
             await conn.execute(
                 f"""
                 INSERT INTO {self._table}
-                (checkpoint_id, thread_id, state, next_nodes, step_index, metadata)
-                VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6::jsonb)
+                (checkpoint_id, thread_id, state, next_nodes, step_index, metadata, raw_log)
+                VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6::jsonb, $7)
                 ON CONFLICT (checkpoint_id)
                 DO UPDATE SET state = $3::jsonb, next_nodes = $4::jsonb,
-                             step_index = $5, metadata = $6::jsonb
+                             step_index = $5, metadata = $6::jsonb, raw_log = $7
                 """,
                 checkpoint.checkpoint_id,
                 checkpoint.thread_id,
@@ -74,6 +79,7 @@ class PostgresCheckpointer(Checkpointer):
                 json.dumps(checkpoint.next_nodes),
                 checkpoint.step_index,
                 json.dumps(checkpoint.metadata),
+                checkpoint.raw_log,
             )
 
     async def get(self, checkpoint_id: str) -> Checkpoint | None:
@@ -134,6 +140,7 @@ class PostgresCheckpointer(Checkpointer):
             next_nodes=next_nodes,
             step_index=row["step_index"],
             metadata=metadata,
+            raw_log=row["raw_log"] if "raw_log" in row.keys() else None,
         )
 
     async def close(self) -> None:

@@ -1012,6 +1012,33 @@ async def run_team(
     # Cap sub-agents
     assignments = assignments[:max_sub_agents]
 
+    # Atomic task validation (PR #59) — lint, not a hard gate
+    from ..core.atomic_tasks import record_issues, validate_atomic_tasks
+
+    atomic_issues = validate_atomic_tasks(assignments)
+    if atomic_issues:
+        await bus.emit(
+            Event(
+                event_type=EventType.AGENT_STEP,
+                agent_name="team-lead",
+                data={
+                    "step": "atomic_validation",
+                    "issues": [
+                        {
+                            "index": it.index,
+                            "agent": it.agent,
+                            "reason": it.reason,
+                            "task_preview": it.task[:160],
+                        }
+                        for it in atomic_issues
+                    ],
+                },
+            )
+        )
+    # Metrics are recorded at the caller level (run_team has no direct app
+    # reference). The event bus above already surfaces issues for the UI.
+    record_issues(atomic_issues, None)
+
     # Mark plan phase as done
     await bus.emit(
         Event(

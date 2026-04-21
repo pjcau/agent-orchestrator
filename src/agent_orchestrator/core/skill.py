@@ -336,6 +336,152 @@ def timeout_middleware(timeout_seconds: float = 30.0) -> SkillMiddleware:
     return middleware
 
 
+def verification_middleware(
+    validators: dict[str, Callable[[SkillResult], bool | tuple[bool, str]]],
+    metrics: Any = None,
+) -> SkillMiddleware:
+    """Quality gate middleware — reject skill results that fail validators (PR #59).
+
+    For each skill name mapped to a validator, after the skill runs the
+    result is passed to the validator. Validators return either:
+    - ``bool`` — ``True`` accepts, ``False`` rejects with a generic reason.
+    - ``(bool, str)`` — explicit pass/fail with a reason string.
+
+    A rejected result is converted into an error ``SkillResult`` so callers
+    see a clear failure. Metrics (``verification_total``,
+    ``verification_pass_total``, ``verification_fail_total``,
+    ``verification_duration_seconds``) are recorded when a
+    ``MetricsRegistry`` is supplied.
+    """
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        result = await next_fn(request)
+        validator = validators.get(request.skill_name)
+        if validator is None:
+            return result
+
+        start = time.monotonic()
+        verdict = validator(result)
+        duration = time.monotonic() - start
+
+        if isinstance(verdict, tuple):
+            passed, reason = verdict
+        else:
+            passed = bool(verdict)
+            reason = "verification gate failed"
+
+        if metrics is not None:
+            metrics.counter(
+                "verification_total",
+                "Total skill results passed through verification",
+                labels={"skill": request.skill_name},
+            ).inc()
+            if passed:
+                metrics.counter(
+                    "verification_pass_total",
+                    "Skill results that passed the verification gate",
+                    labels={"skill": request.skill_name},
+                ).inc()
+            else:
+                metrics.counter(
+                    "verification_fail_total",
+                    "Skill results that failed the verification gate",
+                    labels={"skill": request.skill_name},
+                ).inc()
+            metrics.histogram(
+                "verification_duration_seconds",
+                "Latency of verification validators in seconds",
+                labels={"skill": request.skill_name},
+            ).observe(duration)
+
+        if passed:
+            return result
+        # Reject — convert into a failed SkillResult so downstream sees it.
+        return SkillResult(
+            success=False,
+            output=result.output,
+            error=f"verification: {reason}",
+        )
+
+    return middleware
+
+
+def context_loader_middleware(
+    context_dir: Any,
+    target_skills: set[str] | None = None,
+    metadata_key: str = "context",
+    max_bytes: int = 50_000,
+    metrics: Any = None,
+) -> SkillMiddleware:
+    """Inject reference context files into ``request.metadata`` (PR #61).
+
+    Reads every ``.md`` file under ``context_dir`` once at middleware
+    creation time (cached in-memory) and injects the concatenated content
+    under ``request.metadata[metadata_key]`` so skills that know to look
+    for it can prepend the reference material to their prompts. Skills
+    that don't reference this key are unaffected.
+
+    Safer than modifying ``params`` directly, since unknown params break
+    LLM tool schemas. Content is capped at ``max_bytes`` to avoid blowing
+    up downstream prompts.
+
+    Metrics: ``context_files_loaded_total`` and ``context_bytes_injected``
+    are recorded if a ``MetricsRegistry`` is provided.
+    """
+    from pathlib import Path as _Path
+
+    context_path = _Path(str(context_dir))
+    cached_content: str = ""
+    cached_file_count: int = 0
+    if context_path.is_dir():
+        parts: list[str] = []
+        total_bytes = 0
+        for md in sorted(context_path.glob("*.md")):
+            try:
+                text = md.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            block = f"# {md.name}\n{text}"
+            if total_bytes + len(block) > max_bytes:
+                break
+            parts.append(block)
+            total_bytes += len(block)
+            cached_file_count += 1
+        cached_content = "\n\n".join(parts)
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        if not cached_content:
+            return await next_fn(request)
+        if target_skills is not None and request.skill_name not in target_skills:
+            return await next_fn(request)
+
+        new_metadata = dict(request.metadata)
+        new_metadata[metadata_key] = cached_content
+        injected = request.override(metadata=new_metadata)
+
+        if metrics is not None:
+            metrics.counter(
+                "context_files_loaded_total",
+                "Total skill invocations that received context injection",
+                labels={"skill": request.skill_name},
+            ).inc(cached_file_count)
+            metrics.counter(
+                "context_bytes_injected",
+                "Total bytes of reference context injected into skill metadata",
+                labels={"skill": request.skill_name},
+            ).inc(len(cached_content))
+
+        return await next_fn(injected)
+
+    return middleware
+
+
 def cache_middleware(
     cache: Any,
     cacheable_skills: set[str] | None = None,

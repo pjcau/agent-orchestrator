@@ -1584,6 +1584,30 @@ async def sandbox_info(session_id: str, request: Request):
     )
 
 
+@gateway_router.get("/sandbox/{session_id}/stats")
+async def sandbox_stats(session_id: str, request: Request):
+    """Return a live CPU/memory/network snapshot for a session's sandbox.
+
+    Shape: ``{cpu_percent, memory_bytes, memory_limit_bytes,
+    memory_percent, net_rx_bytes, net_tx_bytes}``. All zeros when the
+    container is stopped or docker stats is unavailable.
+    """
+    sandbox_manager = request.app.state.sandbox_manager
+    if sandbox_manager is None:
+        return JSONResponse(
+            content={"error": "Sandbox system is disabled"},
+            status_code=400,
+        )
+    sandbox = sandbox_manager._sandboxes.get(session_id)
+    if sandbox is None:
+        return JSONResponse(
+            content={"error": f"No sandbox for session '{session_id}'"},
+            status_code=404,
+        )
+    stats = await sandbox.get_stats()
+    return JSONResponse(content=stats)
+
+
 @gateway_router.get("/sandbox/{session_id}/logs")
 async def sandbox_logs(session_id: str, request: Request):
     """Stream container logs via Server-Sent Events.

@@ -298,3 +298,47 @@
 .sandbox-terminal__input::placeholder {
   color: #555;
 }
+
+/* Live resource usage chart (PR #81 follow-up) */
+.sandbox-livestats {
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid var(--border, #30363d);
+  border-radius: 4px;
+  background: var(--bg-hover, #1c1f26);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sandbox-livestats__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sandbox-livestats__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 32px;
+}
+.sandbox-livestats__value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  margin-left: auto;
+  min-width: 44px;
+  text-align: right;
+}
+.sandbox-livestats__chart {
+  flex: 1;
+  background: var(--bg, #0d1117);
+  border-radius: 2px;
+}
+.sandbox-livestats__row--tx {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  justify-content: space-between;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}

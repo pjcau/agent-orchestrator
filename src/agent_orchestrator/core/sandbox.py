@@ -175,6 +175,87 @@ class Sandbox:
         """Actual container_port -> host_port mappings after start."""
         return dict(self._mapped_ports)
 
+    async def get_stats(self) -> dict[str, float]:
+        """Return live resource usage snapshot for this sandbox (PR #81 follow-up).
+
+        Returns a dict with ``cpu_percent``, ``memory_bytes``,
+        ``memory_limit_bytes``, ``memory_percent``, ``net_rx_bytes``,
+        ``net_tx_bytes``. Returns zeros if the container is not running
+        or when Docker is unavailable — never raises.
+        """
+        zero = {
+            "cpu_percent": 0.0,
+            "memory_bytes": 0.0,
+            "memory_limit_bytes": 0.0,
+            "memory_percent": 0.0,
+            "net_rx_bytes": 0.0,
+            "net_tx_bytes": 0.0,
+        }
+        if self._config.type != SandboxType.DOCKER or not self._container_id:
+            return zero
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker",
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{json .}}",
+                self._container_id,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode != 0 or not stdout:
+                return zero
+
+            import json as _json
+
+            data = _json.loads(stdout.decode(errors="replace").strip().splitlines()[0])
+
+            def _parse_bytes(s: str) -> float:
+                s = s.strip()
+                units = {
+                    "B": 1,
+                    "KB": 1_000,
+                    "KiB": 1_024,
+                    "MB": 1_000_000,
+                    "MiB": 1_048_576,
+                    "GB": 1_000_000_000,
+                    "GiB": 1_073_741_824,
+                }
+                for unit, mul in sorted(units.items(), key=lambda kv: -len(kv[0])):
+                    if s.endswith(unit):
+                        try:
+                            return float(s[: -len(unit)].strip()) * mul
+                        except ValueError:
+                            return 0.0
+                try:
+                    return float(s)
+                except ValueError:
+                    return 0.0
+
+            cpu_pct = float(data.get("CPUPerc", "0").rstrip("%") or 0)
+            # MemUsage is "used / limit"
+            mem_usage_str = str(data.get("MemUsage", "0B / 0B"))
+            used_s, _, limit_s = mem_usage_str.partition("/")
+            mem_used = _parse_bytes(used_s)
+            mem_limit = _parse_bytes(limit_s)
+            mem_pct = float(data.get("MemPerc", "0").rstrip("%") or 0)
+            net_str = str(data.get("NetIO", "0B / 0B"))
+            rx_s, _, tx_s = net_str.partition("/")
+            return {
+                "cpu_percent": cpu_pct,
+                "memory_bytes": mem_used,
+                "memory_limit_bytes": mem_limit,
+                "memory_percent": mem_pct,
+                "net_rx_bytes": _parse_bytes(rx_s),
+                "net_tx_bytes": _parse_bytes(tx_s),
+            }
+        except Exception:
+            # Docker unavailable, parse errors, etc — return zeros silently.
+            return zero
+
     async def get_info(self) -> SandboxInfo:
         """Return runtime information about this sandbox."""
         if not self._started:

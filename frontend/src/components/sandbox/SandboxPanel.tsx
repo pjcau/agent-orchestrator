@@ -1,5 +1,11 @@
-import { useState } from "react";
-import { useSandboxStatus, useSandboxInfo, useSandboxCleanup, useSessionInfo } from "@/api/hooks";
+import { useEffect, useRef, useState } from "react";
+import {
+  useSandboxStatus,
+  useSandboxInfo,
+  useSandboxCleanup,
+  useSessionInfo,
+  useSandboxStats,
+} from "@/api/hooks";
 import { SandboxTerminal } from "./SandboxTerminal";
 import { sandboxPreviewUrl } from "./sandboxPreviewUrl";
 import type { SandboxInfo } from "@/api/types";
@@ -58,6 +64,8 @@ export function SandboxPanel() {
           isLoading={isLoading}
           activeSessions={status.active_sessions}
           maxConcurrent={status.max_concurrent}
+          sessionId={sessionId}
+          isRunning={isRunning}
           onCleanup={() => {
             if (sessionId) cleanup.mutate(sessionId);
           }}
@@ -125,12 +133,16 @@ function SandboxStatusView({
   isLoading,
   activeSessions,
   maxConcurrent,
+  sessionId,
+  isRunning,
   onCleanup,
 }: {
   info: SandboxInfo | null;
   isLoading: boolean;
   activeSessions: number;
   maxConcurrent: number;
+  sessionId: string;
+  isRunning: boolean;
   onCleanup: () => void;
 }) {
   if (isLoading) {
@@ -191,12 +203,116 @@ function SandboxStatusView({
         </div>
       )}
 
+      {/* Live resource usage chart (PR #81 follow-up) */}
+      {isRunning && sessionId && <SandboxLiveStats sessionId={sessionId} />}
+
       {info?.status === "running" && (
         <button className="sandbox-panel__cleanup-btn" onClick={onCleanup}>
           Stop Sandbox
         </button>
       )}
     </div>
+  );
+}
+
+const HISTORY_POINTS = 30;
+
+function SandboxLiveStats({ sessionId }: { sessionId: string }) {
+  const { data: stats } = useSandboxStats(sessionId);
+  const cpuHistory = useRef<number[]>([]);
+  const memHistory = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (!stats) return;
+    cpuHistory.current = [...cpuHistory.current, stats.cpu_percent].slice(
+      -HISTORY_POINTS
+    );
+    memHistory.current = [...memHistory.current, stats.memory_percent].slice(
+      -HISTORY_POINTS
+    );
+  }, [stats?.cpu_percent, stats?.memory_percent]);
+
+  if (!stats) return null;
+
+  const cpu = cpuHistory.current;
+  const mem = memHistory.current;
+
+  return (
+    <div className="sandbox-livestats">
+      <div className="sandbox-livestats__row">
+        <div className="sandbox-livestats__label">CPU</div>
+        <Sparkline values={cpu} color="var(--accent, #58a6ff)" max={100} />
+        <div className="sandbox-livestats__value">
+          {stats.cpu_percent.toFixed(1)}%
+        </div>
+      </div>
+      <div className="sandbox-livestats__row">
+        <div className="sandbox-livestats__label">MEM</div>
+        <Sparkline values={mem} color="#bc8cff" max={100} />
+        <div className="sandbox-livestats__value">
+          {stats.memory_percent.toFixed(1)}%
+        </div>
+      </div>
+      <div className="sandbox-livestats__row sandbox-livestats__row--tx">
+        <span>↓ {formatBytes(stats.net_rx_bytes)}</span>
+        <span>↑ {formatBytes(stats.net_tx_bytes)}</span>
+        <span>
+          {formatBytes(stats.memory_bytes)} / {formatBytes(stats.memory_limit_bytes)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (!n) return "0B";
+  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(1)}GB`;
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)}MB`;
+  if (n >= 1_024) return `${(n / 1_024).toFixed(1)}KB`;
+  return `${n.toFixed(0)}B`;
+}
+
+function Sparkline({
+  values,
+  color,
+  max = 100,
+  width = 160,
+  height = 28,
+}: {
+  values: number[];
+  color: string;
+  max?: number;
+  width?: number;
+  height?: number;
+}) {
+  if (values.length === 0) {
+    return <svg width={width} height={height} aria-hidden="true" />;
+  }
+  const step = width / Math.max(1, HISTORY_POINTS - 1);
+  const padStart = Math.max(0, HISTORY_POINTS - values.length);
+  const points = values
+    .map((v, i) => {
+      const x = (padStart + i) * step;
+      const y = height - (Math.min(v, max) / max) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return (
+    <svg
+      width={width}
+      height={height}
+      aria-label="sparkline"
+      className="sandbox-livestats__chart"
+    >
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
   );
 }
 
