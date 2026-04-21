@@ -155,6 +155,7 @@ from .store import (
     namespace_depth,
     NAMESPACE_SEP,
 )
+from .modality import Modality, detect_modality, record_detection
 
 __all__ = [
     "Provider",
@@ -315,6 +316,10 @@ __all__ = [
     "descends_from",
     "namespace_depth",
     "NAMESPACE_SEP",
+    # Phase 3 — PR #88 modality detection
+    "Modality",
+    "detect_modality",
+    "record_detection",
     # v1.4 — Memory Upload Filtering
     "MemoryFilter",
     "SESSION_FILE_PATTERNS",

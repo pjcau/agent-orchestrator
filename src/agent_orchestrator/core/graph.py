@@ -307,19 +307,41 @@ class CompiledGraph:
         thread_id: str | None = None,
         resume_from: str | None = None,
         human_input: dict[str, Any] | None = None,
+        *,
+        preload: "list[tuple[tuple[str, ...], str, str]] | None" = None,
+        store: Any = None,
     ) -> GraphResult:
         """Execute the graph from START to END.
 
         Args:
-            initial_state: Starting state dict
-            thread_id: Optional thread ID for checkpointing
-            resume_from: Optional checkpoint ID to resume from
-            human_input: Input to provide when resuming from a human-in-the-loop
-                        interrupt. Merged into state before continuing.
+            initial_state: Starting state dict.
+            thread_id: Optional thread ID for checkpointing.
+            resume_from: Optional checkpoint ID to resume from.
+            human_input: Input to provide when resuming from a human-in-the-
+                loop interrupt. Merged into state before continuing.
+            preload: Hybrid execution (PR #84). A list of
+                ``(namespace, key, state_key)`` triples. Before traversal,
+                each item is fetched from ``store`` and copied into
+                ``initial_state[state_key]`` so nodes can reference
+                external memory without extra skill calls.  Fetches that
+                return None are silently skipped.
+            store: The ``BaseStore`` to fetch preload entries from. Required
+                when ``preload`` is supplied.
         """
         thread_id = thread_id or str(uuid.uuid4())
         steps: list[StepRecord] = []
         step_index = 0
+
+        # Hybrid execution — preload external context from the store.
+        if preload and not resume_from:
+            if store is None:
+                raise ValueError("preload requires a store argument")
+            merged = dict(initial_state)
+            for ns, key, state_key in preload:
+                item = await store.aget(tuple(ns), key)
+                if item is not None:
+                    merged[state_key] = item.value
+            initial_state = merged
 
         # Resume from checkpoint if requested
         if resume_from and self._checkpointer:
