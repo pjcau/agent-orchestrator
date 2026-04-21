@@ -1,32 +1,9 @@
 import { useState } from "react";
 import { useSandboxStatus, useSandboxInfo, useSandboxCleanup, useSessionInfo } from "@/api/hooks";
 import { SandboxTerminal } from "./SandboxTerminal";
+import { sandboxPreviewUrl } from "./sandboxPreviewUrl";
 import type { SandboxInfo } from "@/api/types";
 import "./sandbox.css";
-
-/**
- * Build the preview URL for a sandbox port.
- * In development (localhost), connects directly to the host port.
- * In production, uses the nginx /sandbox-preview/{port}/ proxy.
- */
-function sandboxPreviewUrl(hostPort: string): string {
-  // Strict allowlist: port must be digits only, 1-65535. Rejects any
-  // DOM-injected payload before it reaches the iframe src URL.
-  if (!/^\d{1,5}$/.test(hostPort)) {
-    return "about:blank";
-  }
-  const portNum = Number(hostPort);
-  if (portNum < 1 || portNum > 65535) {
-    return "about:blank";
-  }
-  const safePort = String(portNum);
-  const isDev = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (isDev) {
-    return `http://localhost:${safePort}`;
-  }
-  // Production: proxy through nginx to avoid exposing extra ports
-  return `${window.location.origin}/sandbox-preview/${safePort}/`;
-}
 
 /**
  * Sandbox workspace panel — shows container status, preview iframe,
