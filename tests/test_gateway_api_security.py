@@ -1,53 +1,87 @@
 """Security regression tests for gateway_api path/error handling.
 
-Covers CodeQL alert fixes:
-- py/path-injection (_safe_resolve_path sanitizer)
+Covers CodeQL alert fixes on the /api/files and /api/file endpoints:
+- py/path-injection (inline realpath + startswith sanitizer)
 - py/stack-trace-exposure (generic error responses)
 - py/log-injection (sanitized log calls)
 """
 
-from agent_orchestrator.dashboard.gateway_api import _safe_resolve_path, _PROJECT_BASE
+import pytest
 
 
-class TestSafeResolvePath:
-    def test_empty_path_returns_project_root(self):
-        result = _safe_resolve_path("")
-        assert result is not None
-        assert str(result) == str(_PROJECT_BASE)
+def _make_client():
+    """Build an AsyncClient wired to the dashboard ASGI app."""
+    from httpx import ASGITransport, AsyncClient
+    from agent_orchestrator.dashboard.app import create_dashboard_app
 
-    def test_relative_path_resolved(self):
-        result = _safe_resolve_path("README.md")
-        assert result is not None
-        assert result.name == "README.md"
-        assert result.is_relative_to(_PROJECT_BASE)
+    app = create_dashboard_app()
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
-    def test_nested_relative_path_resolved(self):
-        result = _safe_resolve_path("src/agent_orchestrator")
-        assert result is not None
-        assert result.is_relative_to(_PROJECT_BASE)
 
-    def test_parent_traversal_blocked(self):
-        assert _safe_resolve_path("../../../etc/passwd") is None
+@pytest.mark.asyncio
+class TestFilesEndpointSanitizer:
+    async def test_list_files_empty_path_lists_project_root(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/files")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["path"] == ""
+        assert isinstance(body["items"], list)
 
-    def test_absolute_path_blocked(self):
-        assert _safe_resolve_path("/etc/passwd") is None
+    async def test_list_files_valid_subdir(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/files", params={"path": "src"})
+        assert resp.status_code == 200
+        assert resp.json()["path"] == "src"
 
-    def test_mixed_traversal_blocked(self):
-        assert _safe_resolve_path("src/../../../etc/passwd") is None
-        assert _safe_resolve_path("src/../../etc") is None
+    async def test_list_files_parent_traversal_blocked(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/files", params={"path": "../../../etc"})
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "Path traversal denied"
 
-    def test_null_byte_blocked(self):
-        assert _safe_resolve_path("file\x00.txt") is None
+    async def test_list_files_absolute_path_blocked(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/files", params={"path": "/etc"})
+        assert resp.status_code == 400
 
-    def test_nonexistent_but_contained_path_allowed(self):
-        # Resolves successfully because realpath does not require existence;
-        # containment check still enforced.
-        result = _safe_resolve_path("nonexistent/file.txt")
-        assert result is not None
-        assert result.is_relative_to(_PROJECT_BASE)
+    async def test_list_files_null_byte_blocked(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/files", params={"path": "src\x00/evil"})
+        assert resp.status_code == 400
 
-    def test_result_is_pathlib_path(self):
-        from pathlib import Path
+    async def test_read_file_valid(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/file", params={"path": "README.md"})
+        assert resp.status_code == 200
+        assert "content" in resp.json()
 
-        result = _safe_resolve_path("README.md")
-        assert isinstance(result, Path)
+    async def test_read_file_parent_traversal_blocked(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/file", params={"path": "../../../etc/passwd"})
+        assert resp.status_code == 400
+
+    async def test_read_file_absolute_blocked(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/file", params={"path": "/etc/passwd"})
+        assert resp.status_code == 400
+
+    async def test_read_file_mixed_traversal_blocked(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/file", params={"path": "src/../../etc/passwd"})
+        assert resp.status_code == 400
+
+    async def test_read_file_not_a_file(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        async with _make_client() as client:
+            resp = await client.get("/api/file", params={"path": "src"})
+        assert resp.status_code == 404

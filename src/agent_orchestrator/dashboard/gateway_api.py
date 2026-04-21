@@ -1227,54 +1227,46 @@ _PROJECT_ROOT = _Path(__file__).parent.parent.parent.parent
 _PROJECT_BASE = _PROJECT_ROOT.resolve()
 
 
-def _safe_resolve_path(user_path: str) -> _Path | None:
-    """Safely resolve a user-provided path relative to PROJECT_ROOT.
-
-    Returns None if the path attempts traversal or escapes the project root.
-
-    Uses the ``os.path.realpath`` + ``startswith(base + sep)`` pattern
-    recognized as a sanitizer for path-injection taint flow analysis.
-    """
-    import os as _os
-
-    if not user_path:
-        return _Path(_os.path.realpath(str(_PROJECT_BASE)))
-    if "\x00" in user_path or ".." in user_path:
-        return None
-    if _os.path.isabs(user_path):
-        return None
-
-    base_real = _os.path.realpath(str(_PROJECT_BASE))
-    candidate_real = _os.path.realpath(_os.path.join(base_real, user_path))
-    if candidate_real != base_real and not candidate_real.startswith(base_real + _os.sep):
-        return None
-    return _Path(candidate_real)
-
-
 @gateway_router.get("/files")
 async def list_files(path: str = ""):
     """List files in the project directory."""
-    target = _safe_resolve_path(path)
-    if target is None:
+    import os as _os
+
+    # Inline containment check (CodeQL-recognized sanitizer pattern).
+    if path and ("\x00" in path or ".." in path or _os.path.isabs(path)):
+        return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
+    base_real = _os.path.realpath(str(_PROJECT_BASE))
+    target_real = _os.path.realpath(_os.path.join(base_real, path))
+    if target_real != base_real and not target_real.startswith(base_real + _os.sep):
         return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
 
-    if not target.is_dir():
+    if not _os.path.isdir(target_real):
         return JSONResponse(content={"error": "Not a directory"}, status_code=404)
 
     items = []
-    for entry in sorted(target.iterdir()):
-        rel = entry.relative_to(_PROJECT_BASE)
-        if any(
-            part.startswith(".") or part in ("__pycache__", "node_modules", ".git")
-            for part in rel.parts
-        ):
+    try:
+        entries = sorted(_os.listdir(target_real))
+    except OSError:
+        return JSONResponse(content={"error": "Not a directory"}, status_code=404)
+    for name in entries:
+        if name.startswith(".") or name in ("__pycache__", "node_modules", ".git"):
             continue
+        entry_real = _os.path.realpath(_os.path.join(target_real, name))
+        # Skip anything that escapes project root (e.g. symlinks pointing outside).
+        if entry_real != base_real and not entry_real.startswith(base_real + _os.sep):
+            continue
+        rel = _os.path.relpath(entry_real, base_real)
+        try:
+            stat_result = _os.stat(entry_real)
+        except OSError:
+            continue
+        is_dir = _os.path.isdir(entry_real)
         items.append(
             {
-                "name": entry.name,
-                "path": str(rel),
-                "is_dir": entry.is_dir(),
-                "size": entry.stat().st_size if entry.is_file() else 0,
+                "name": name,
+                "path": rel,
+                "is_dir": is_dir,
+                "size": stat_result.st_size if not is_dir else 0,
             }
         )
     return JSONResponse(content={"path": path, "items": items})
@@ -1283,18 +1275,29 @@ async def list_files(path: str = ""):
 @gateway_router.get("/file")
 async def read_file(path: str):
     """Read a file's content."""
-    target = _safe_resolve_path(path)
-    if target is None:
+    import os as _os
+
+    # Inline containment check (CodeQL-recognized sanitizer pattern).
+    if not path or "\x00" in path or ".." in path or _os.path.isabs(path):
+        return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
+    base_real = _os.path.realpath(str(_PROJECT_BASE))
+    target_real = _os.path.realpath(_os.path.join(base_real, path))
+    if not target_real.startswith(base_real + _os.sep):
         return JSONResponse(content={"error": "Path traversal denied"}, status_code=400)
 
-    if not target.is_file():
+    if not _os.path.isfile(target_real):
         return JSONResponse(content={"error": "Not a file"}, status_code=404)
 
-    if target.stat().st_size > 100_000:
+    try:
+        stat_result = _os.stat(target_real)
+    except OSError:
+        return JSONResponse(content={"error": "Not a file"}, status_code=404)
+    if stat_result.st_size > 100_000:
         return JSONResponse(content={"error": "File too large (>100KB)"}, status_code=400)
 
     try:
-        content = target.read_text(errors="replace")
+        with open(target_real, encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
         return JSONResponse(content={"path": path, "content": content})
     except Exception:
         logger.exception("Failed to read file: %r", _sanitize_log(path))
