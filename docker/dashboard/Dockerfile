@@ -1,7 +1,7 @@
 # ============================================================
 # Stage 1: Build React frontend
 # ============================================================
-FROM node:22-alpine AS frontend-build
+FROM node:25-alpine AS frontend-build
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
