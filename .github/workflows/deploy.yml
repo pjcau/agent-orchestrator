@@ -251,7 +251,10 @@ jobs:
                 fi
                 # Re-create the self-signed bootstrap if certbot failed (avoids
                 # nginx failing to start because cert files went missing).
-                if [ ! -f $APP_DIR/certs/live/\$DOMAIN/fullchain.pem ]; then
+                # Use sudo test because the live/archive dirs are root-only and
+                # a plain `[ -f ]` would always report false for ec2-user,
+                # destroying the cert certbot just issued.
+                if ! sudo test -f $APP_DIR/certs/live/\$DOMAIN/fullchain.pem; then
                   echo \"LE issuance failed — restoring self-signed bootstrap for \$DOMAIN\"
                   sudo mkdir -p $APP_DIR/certs/live/\$DOMAIN
                   TMP2=\$(mktemp -d)
