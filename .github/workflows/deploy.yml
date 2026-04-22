@@ -255,15 +255,36 @@ jobs:
                                        $APP_DIR/certs/renewal/\${DOMAIN}*.conf\"
                 fi
                 if [ \"\$ADOPTED\" = false ]; then
-                  cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                    run --rm --entrypoint certbot certbot \
-                    certonly --webroot -w /var/www/certbot \
-                    --cert-name \$DOMAIN \
-                    --email admin@\$DOMAIN \
-                    --agree-tos --no-eff-email \
-                    -d \$DOMAIN \
-                    --non-interactive \
-                    --keep-until-expiring 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal, using existing cert)\"
+                  # Try Let's Encrypt first (most browsers already trust it).
+                  LE_OK=false
+                  if (cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                        run --rm --entrypoint certbot certbot \
+                        certonly --webroot -w /var/www/certbot \
+                        --cert-name \$DOMAIN \
+                        --email admin@\$DOMAIN \
+                        --agree-tos --no-eff-email \
+                        -d \$DOMAIN \
+                        --non-interactive \
+                        --keep-until-expiring 2>&1); then
+                    LE_OK=true
+                  fi
+                  # If LE is rate-limited or otherwise unavailable, fall back to
+                  # Buypass Go SSL — free ACME CA with an independent rate limit
+                  # (20 certs / domain / week). This keeps the site valid while
+                  # LE recovers.
+                  if [ \"\$LE_OK\" = false ]; then
+                    echo \"Let's Encrypt failed for \$DOMAIN — falling back to Buypass Go SSL\"
+                    cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                      run --rm --entrypoint certbot certbot \
+                      certonly --webroot -w /var/www/certbot \
+                      --server https://api.buypass.com/acme/directory \
+                      --cert-name \$DOMAIN \
+                      --email admin@\$DOMAIN \
+                      --agree-tos --no-eff-email \
+                      -d \$DOMAIN \
+                      --non-interactive \
+                      --keep-until-expiring 2>&1 || echo \"Buypass failed for \$DOMAIN (non-fatal, keeping existing cert)\"
+                  fi
                 fi
                 # Re-create the self-signed bootstrap if certbot failed (avoids
                 # nginx failing to start because cert files went missing).
