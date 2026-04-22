@@ -20,6 +20,11 @@ COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/l
 curl -SL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" -o "$DOCKER_CONFIG/docker-compose"
 chmod +x "$DOCKER_CONFIG/docker-compose"
 
+# Install Docker Buildx plugin (AL2023 doesn't ship docker-buildx-plugin; compose build requires >= 0.17)
+BUILDX_VERSION="v0.18.0"
+curl -SL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-$(uname -m | sed 's/x86_64/amd64/')" -o "$DOCKER_CONFIG/docker-buildx"
+chmod +x "$DOCKER_CONFIG/docker-buildx"
+
 # Add ec2-user to docker group
 usermod -aG docker ec2-user
 
