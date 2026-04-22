@@ -8,6 +8,16 @@ set -euo pipefail
 # Update system
 dnf update -y
 
+# Create 4 GB swapfile — docker compose build with React + Rust + Python
+# easily OOMs on 4 GB RAM instances (t3.medium). Swap is slower but saves the build.
+if [ ! -f /swapfile ]; then
+  fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 # Install Docker
 dnf install -y docker
 systemctl enable docker

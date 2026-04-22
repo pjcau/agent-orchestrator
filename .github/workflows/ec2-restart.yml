@@ -1,0 +1,54 @@
+name: EC2 Restart
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    name: Restart EC2 instance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: eu-west-1
+    steps:
+      - name: Find instance by EIP
+        id: find
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-addresses \
+            --public-ips "${{ secrets.EC2_HOST }}" \
+            --query 'Addresses[0].InstanceId' --output text)
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "No instance associated with EIP ${{ secrets.EC2_HOST }}"
+            exit 1
+          fi
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+          echo "Instance: $INSTANCE_ID"
+
+      - name: Describe instance state
+        run: |
+          aws ec2 describe-instances \
+            --instance-ids "${{ steps.find.outputs.instance_id }}" \
+            --query 'Reservations[0].Instances[0].{State:State.Name,Type:InstanceType,Launch:LaunchTime}' \
+            --output table
+
+      - name: Request instance restart
+        run: |
+          aws ec2 reboot-instances --instance-ids "${{ steps.find.outputs.instance_id }}"
+          echo "Restart requested. Waiting for instance to come back online..."
+
+      - name: Wait for SSH
+        run: |
+          for i in $(seq 1 30); do
+            if nc -z -w 3 "${{ secrets.EC2_HOST }}" 22 2>/dev/null; then
+              echo "SSH reachable after ${i} attempts"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "SSH did not come back after 5 minutes"
+          exit 1

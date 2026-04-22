@@ -75,10 +75,25 @@ jobs:
           GF_ADMIN_PASS: ${{ secrets.GRAFANA_PASSWORD || 'admin' }}
           PG_PASS: ${{ secrets.POSTGRES_PASSWORD || 'orchestrator-prod-2026' }}
         run: |
-          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new $USER@$HOST"
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=20 $USER@$HOST"
 
           # Ensure rsync is available on EC2
           $SSH_CMD "which rsync >/dev/null 2>&1 || sudo yum install -y rsync"
+
+          # Ensure at least 4 GB swap is present — docker compose build with
+          # React + Rust/maturin + Python can OOM on t3.medium (4 GB RAM).
+          # Idempotent: creates /swapfile only if missing.
+          $SSH_CMD "
+            if ! swapon --show | grep -q /swapfile; then
+              echo 'Creating 4 GB swapfile'
+              sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+            fi
+            free -h | head -3
+          "
 
           # Sync code (exclude dev files)
           rsync -azP --delete \
