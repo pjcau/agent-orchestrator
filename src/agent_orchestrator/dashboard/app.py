@@ -254,9 +254,11 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # Startup will replace it with PostgresStore when DATABASE_URL is set.
     app.state.store = store_holder[0]
     app.state.metrics_registry = metrics_registry
-    app.state.prompt_registry = PromptRegistry(
-        app.state.store, metrics=metrics_registry
-    ) if app.state.store is not None else None
+    app.state.prompt_registry = (
+        PromptRegistry(app.state.store, metrics=metrics_registry)
+        if app.state.store is not None
+        else None
+    )
     app.state.sandbox_manager = sandbox_manager
     app.state.run_manager = run_manager
     app.state.mcp_client_manager = mcp_client_manager
@@ -298,9 +300,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         else:
             app.state.store = store_holder[0]
         # Rebuild PromptRegistry against the resolved store (Postgres or InMemory).
-        app.state.prompt_registry = PromptRegistry(
-            app.state.store, metrics=metrics_registry
-        )
+        app.state.prompt_registry = PromptRegistry(app.state.store, metrics=metrics_registry)
 
         if _sandbox_enabled:
             logger.info("Sandbox system enabled (SANDBOX_ENABLED=true)")

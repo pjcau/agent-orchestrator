@@ -53,9 +53,7 @@ class PostgresCheckpointer(Checkpointer):
                 )
             """)
             # Backfill column on pre-existing tables from older schema.
-            await conn.execute(
-                f"ALTER TABLE {self._table} ADD COLUMN IF NOT EXISTS raw_log TEXT"
-            )
+            await conn.execute(f"ALTER TABLE {self._table} ADD COLUMN IF NOT EXISTS raw_log TEXT")
             await conn.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_{self._table}_thread
                 ON {self._table}(thread_id, step_index)

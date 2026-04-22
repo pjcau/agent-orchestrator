@@ -1,6 +1,5 @@
 """Tests for marker-based prompt injection (PR #57)."""
 
-
 from agent_orchestrator.core.prompt_markers import (
     diff_sections,
     extract_marker_sections,
@@ -18,11 +17,7 @@ class TestInjectMarkerSections:
         assert out.startswith("You are helpful.")
 
     def test_replaces_existing_section_in_place(self):
-        base = (
-            "Header text.\n"
-            "<!-- RULES START -->\nold rules\n<!-- RULES END -->\n"
-            "Footer text."
-        )
+        base = "Header text.\n<!-- RULES START -->\nold rules\n<!-- RULES END -->\nFooter text."
         out = inject_marker_sections(base, {"RULES": "new rules"})
         assert "old rules" not in out
         assert "new rules" in out
@@ -36,10 +31,7 @@ class TestInjectMarkerSections:
         assert once == twice
 
     def test_preserves_unrelated_sections(self):
-        base = (
-            "<!-- A START -->\nalpha\n<!-- A END -->\n"
-            "<!-- B START -->\nbeta\n<!-- B END -->"
-        )
+        base = "<!-- A START -->\nalpha\n<!-- A END -->\n<!-- B START -->\nbeta\n<!-- B END -->"
         out = inject_marker_sections(base, {"A": "ALPHA"})
         sections = extract_marker_sections(out)
         assert sections["A"] == "ALPHA"
@@ -72,10 +64,7 @@ class TestExtractMarkerSections:
         assert extract_marker_sections("") == {}
 
     def test_extracts_all_sections(self):
-        p = (
-            "<!-- A START -->\none\n<!-- A END -->\n"
-            "<!-- B START -->\ntwo\n<!-- B END -->"
-        )
+        p = "<!-- A START -->\none\n<!-- A END -->\n<!-- B START -->\ntwo\n<!-- B END -->"
         assert extract_marker_sections(p) == {"A": "one", "B": "two"}
 
     def test_ignores_mismatched_tags(self):
@@ -109,9 +98,7 @@ class TestAgentIntegration:
         from agent_orchestrator.core.agent import Agent, AgentConfig
         from agent_orchestrator.core.skill import SkillRegistry
 
-        config = AgentConfig(
-            name="t", role="base role", provider_key="x", tools=[]
-        )
+        config = AgentConfig(name="t", role="base role", provider_key="x", tools=[])
         agent = Agent(
             config=config,
             provider=None,  # type: ignore[arg-type]
@@ -123,9 +110,7 @@ class TestAgentIntegration:
         from agent_orchestrator.core.agent import Agent, AgentConfig
         from agent_orchestrator.core.skill import SkillRegistry
 
-        config = AgentConfig(
-            name="t", role="base role", provider_key="x", tools=[]
-        )
+        config = AgentConfig(name="t", role="base role", provider_key="x", tools=[])
         agent = Agent(
             config=config,
             provider=None,  # type: ignore[arg-type]
@@ -142,9 +127,7 @@ class TestAgentIntegration:
         from agent_orchestrator.core.skill import SkillRegistry
 
         reg = MetricsRegistry()
-        config = AgentConfig(
-            name="alpha", role="base", provider_key="x", tools=[]
-        )
+        config = AgentConfig(name="alpha", role="base", provider_key="x", tools=[])
         agent = Agent(
             config=config,
             provider=None,  # type: ignore[arg-type]

@@ -41,8 +41,7 @@ def test_software_engineering_role_contains_generic_rules() -> None:
 def test_finance_role_does_not_contain_engineering_rules() -> None:
     """The SE-specific rules must not leak into other categories."""
     role = agent_runner._build_role_for_agent(
-        {"name": "financial-analyst", "description": "Financial modelling",
-         "category": "finance"}
+        {"name": "financial-analyst", "description": "Financial modelling", "category": "finance"}
     )
     assert "Dependency pins" not in role
     assert "Smoke-test" not in role

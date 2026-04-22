@@ -124,9 +124,7 @@ class PromptRegistry:
 
     async def list_all(self, limit: int = 100, offset: int = 0) -> list[PromptTemplate]:
         """List every registered template (up to ``limit``)."""
-        results = await self._store.asearch(
-            self._namespace, limit=limit, offset=offset
-        )
+        results = await self._store.asearch(self._namespace, limit=limit, offset=offset)
         return [PromptTemplate.from_dict(r.value) for r in results]
 
     async def search(

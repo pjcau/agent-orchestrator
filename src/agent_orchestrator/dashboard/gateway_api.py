@@ -1740,17 +1740,13 @@ async def mcp_add_server(body: dict, request: Request):
         config.validate()
     except ValueError:
         logger.warning("MCP config validation failed for %r", _sanitize_log(name), exc_info=True)
-        return JSONResponse(
-            content={"error": "Invalid MCP server configuration"}, status_code=400
-        )
+        return JSONResponse(content={"error": "Invalid MCP server configuration"}, status_code=400)
 
     try:
         await mcp_client_manager.add_server(name, config)
     except Exception:
         logger.warning("MCP add_server failed for %r", _sanitize_log(name), exc_info=True)
-        return JSONResponse(
-            content={"error": "Failed to connect to MCP server"}, status_code=502
-        )
+        return JSONResponse(content={"error": "Failed to connect to MCP server"}, status_code=502)
 
     tool_count = len([t for t in mcp_client_manager.get_all_tools() if t.server_name == name])
     return JSONResponse(
@@ -1976,8 +1972,6 @@ async def compaction_stats(request: Request):
             "summarization_count": int(getattr(conv_manager, "summarization_count", 0)),
             "tokens_saved": int(getattr(conv_manager, "tokens_saved", 0)),
             "messages_compacted": int(getattr(conv_manager, "messages_compacted", 0)),
-            "last_compaction_ratio": float(
-                getattr(conv_manager, "last_compaction_ratio", 0.0)
-            ),
+            "last_compaction_ratio": float(getattr(conv_manager, "last_compaction_ratio", 0.0)),
         }
     )

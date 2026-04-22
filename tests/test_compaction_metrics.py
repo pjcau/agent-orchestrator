@@ -1,6 +1,5 @@
 """Tests that ConversationManager emits compaction metrics (PR #60)."""
 
-
 from agent_orchestrator.core.conversation import (
     ConversationManager,
     ConversationMessage,
@@ -47,9 +46,7 @@ class TestCompactionMetrics:
         cfg = SummarizationConfig(
             trigger=SummarizationTrigger.MESSAGE_COUNT, threshold=10, retain_last=2
         )
-        mgr = ConversationManager(
-            summarization_config=cfg, summarize_func=_summarise, metrics=reg
-        )
+        mgr = ConversationManager(summarization_config=cfg, summarize_func=_summarise, metrics=reg)
         await mgr.summarize_thread(_messages(10))
         saved = reg.gauge("conversation_tokens_saved", "").get()
         assert saved > 0
@@ -60,9 +57,7 @@ class TestCompactionMetrics:
         cfg = SummarizationConfig(
             trigger=SummarizationTrigger.MESSAGE_COUNT, threshold=10, retain_last=2
         )
-        mgr = ConversationManager(
-            summarization_config=cfg, summarize_func=_summarise, metrics=reg
-        )
+        mgr = ConversationManager(summarization_config=cfg, summarize_func=_summarise, metrics=reg)
         await mgr.summarize_thread(_messages(10))
 
         ratio_gauge = reg.gauge("conversation_compaction_ratio", "").get()
@@ -74,9 +69,7 @@ class TestCompactionMetrics:
         cfg = SummarizationConfig(
             trigger=SummarizationTrigger.MESSAGE_COUNT, threshold=10, retain_last=2
         )
-        mgr = ConversationManager(
-            summarization_config=cfg, summarize_func=_summarise, metrics=reg
-        )
+        mgr = ConversationManager(summarization_config=cfg, summarize_func=_summarise, metrics=reg)
         await mgr.summarize_thread(_messages(10))
 
         compacted = reg.counter("conversation_messages_compacted_total", "").get()
@@ -88,9 +81,7 @@ class TestCompactionMetrics:
         cfg = SummarizationConfig(
             trigger=SummarizationTrigger.MESSAGE_COUNT, threshold=10, retain_last=2
         )
-        mgr = ConversationManager(
-            summarization_config=cfg, summarize_func=_summarise, metrics=reg
-        )
+        mgr = ConversationManager(summarization_config=cfg, summarize_func=_summarise, metrics=reg)
         await mgr.summarize_thread(_messages(10))
 
         hist = reg.histogram("conversation_summarization_duration_seconds", "")
@@ -102,9 +93,7 @@ class TestCompactionMetrics:
         cfg = SummarizationConfig(
             trigger=SummarizationTrigger.MESSAGE_COUNT, threshold=10, retain_last=2
         )
-        mgr = ConversationManager(
-            summarization_config=cfg, summarize_func=_summarise, metrics=reg
-        )
+        mgr = ConversationManager(summarization_config=cfg, summarize_func=_summarise, metrics=reg)
         await mgr.summarize_thread(_messages(10))
         await mgr.summarize_thread(_messages(12))
 
@@ -116,9 +105,7 @@ class TestCompactionMetrics:
         cfg = SummarizationConfig(
             trigger=SummarizationTrigger.MESSAGE_COUNT, threshold=10, retain_last=2
         )
-        mgr = ConversationManager(
-            summarization_config=cfg, summarize_func=_summarise, metrics=None
-        )
+        mgr = ConversationManager(summarization_config=cfg, summarize_func=_summarise, metrics=None)
         await mgr.summarize_thread(_messages(10))
         assert mgr.summarization_count == 1
         assert mgr.tokens_saved > 0

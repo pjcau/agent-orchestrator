@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from agent_orchestrator.core.smoke_tester import (
     LANGUAGE_SPECS,
-    SmokeResult,
     detect_language,
     run_smoke_test,
     suggest_agent_for_language,
@@ -90,9 +89,26 @@ def test_twenty_languages_defined() -> None:
     assert len(LANGUAGE_SPECS) == 20
     names = {s.name for s in LANGUAGE_SPECS}
     expected = {
-        "python", "rust", "go", "typescript", "javascript", "csharp",
-        "java", "kotlin", "scala", "swift", "dart", "php", "ruby",
-        "elixir", "haskell", "r", "lua", "cpp", "c", "shell",
+        "python",
+        "rust",
+        "go",
+        "typescript",
+        "javascript",
+        "csharp",
+        "java",
+        "kotlin",
+        "scala",
+        "swift",
+        "dart",
+        "php",
+        "ruby",
+        "elixir",
+        "haskell",
+        "r",
+        "lua",
+        "cpp",
+        "c",
+        "shell",
     }
     assert names == expected
 
@@ -155,8 +171,10 @@ def test_run_smoke_test_success(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("")
     (tmp_path / "main.py").write_text("print('ok')\n")
 
-    with patch("shutil.which", return_value="/usr/bin/python3"), \
-         patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess(0, b"ok", b"")):
+    with (
+        patch("shutil.which", return_value="/usr/bin/python3"),
+        patch("asyncio.create_subprocess_exec", side_effect=_mock_subprocess(0, b"ok", b"")),
+    ):
         result = asyncio.run(run_smoke_test(tmp_path))
 
     assert result.success is True
@@ -172,9 +190,13 @@ def test_run_smoke_test_failure_contains_stderr(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "main.rs").write_text("fn main() { oops }")
 
-    with patch("shutil.which", return_value="/usr/bin/cargo"), \
-         patch("asyncio.create_subprocess_exec",
-               side_effect=_mock_subprocess(1, b"", b"error: cannot find value `oops`")):
+    with (
+        patch("shutil.which", return_value="/usr/bin/cargo"),
+        patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=_mock_subprocess(1, b"", b"error: cannot find value `oops`"),
+        ),
+    ):
         result = asyncio.run(run_smoke_test(tmp_path))
 
     assert result.success is False
@@ -187,7 +209,7 @@ def test_run_smoke_test_failure_contains_stderr(tmp_path: Path) -> None:
 def test_run_smoke_test_skips_when_binary_missing(tmp_path: Path) -> None:
     (tmp_path / "Package.swift").write_text("")
     (tmp_path / "Sources").mkdir()
-    (tmp_path / "Sources" / "main.swift").write_text("print(\"hi\")\n")
+    (tmp_path / "Sources" / "main.swift").write_text('print("hi")\n')
 
     with patch("shutil.which", return_value=None):
         result = asyncio.run(run_smoke_test(tmp_path))
@@ -220,13 +242,17 @@ def test_run_smoke_test_timeout(tmp_path: Path) -> None:
     async def _hang(*_a, **_k):
         class _Hang:
             returncode = 0
+
             async def communicate(self) -> tuple[bytes, bytes]:
                 await asyncio.sleep(10)
                 return b"", b""
+
         return _Hang()
 
-    with patch("shutil.which", return_value="/usr/bin/python3"), \
-         patch("asyncio.create_subprocess_exec", side_effect=_hang):
+    with (
+        patch("shutil.which", return_value="/usr/bin/python3"),
+        patch("asyncio.create_subprocess_exec", side_effect=_hang),
+    ):
         result = asyncio.run(run_smoke_test(tmp_path, timeout=0.05))
 
     assert result.success is False
@@ -241,8 +267,10 @@ def test_run_smoke_test_never_raises(tmp_path: Path) -> None:
     async def _boom(*_a, **_k):
         raise RuntimeError("simulated crash")
 
-    with patch("shutil.which", return_value="/usr/bin/python3"), \
-         patch("asyncio.create_subprocess_exec", side_effect=_boom):
+    with (
+        patch("shutil.which", return_value="/usr/bin/python3"),
+        patch("asyncio.create_subprocess_exec", side_effect=_boom),
+    ):
         result = asyncio.run(run_smoke_test(tmp_path))
 
     assert result.success is False

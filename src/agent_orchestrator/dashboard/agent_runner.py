@@ -810,10 +810,10 @@ def _build_role_for_agent(agent_info: dict) -> str:
             "Be practical, write working code.\n\n"
             "SOFTWARE ENGINEERING RULES (apply to EVERY task):\n"
             "1. Dependency pins: in requirements.txt / package.json, use loose pins "
-            "(e.g. `fastapi>=0.109,<1`, `\"react\": \"^19\"`) unless you are certain "
+            '(e.g. `fastapi>=0.109,<1`, `"react": "^19"`) unless you are certain '
             "an exact version exists. NEVER invent a version number you haven't seen.\n"
             "2. Smoke-test before declaring done. For Python entry points run "
-            "`python -c \"import main\"` via shell_exec; for Node run `node --check "
+            '`python -c "import main"` via shell_exec; for Node run `node --check '
             "path/to/entry.js`. If the import/check fails, FIX IT before finishing. "
             "Optional, skip if tight on step budget.\n"
             "3. Wiring: when you create a router/blueprint/CLI command/migration, "
@@ -1258,10 +1258,7 @@ async def run_team(
     # re-assignment on failure. Skipped silently when no known language or
     # toolchain is detected. Disable globally with DISABLE_SMOKE_TEST=true.
     smoke_result = None
-    if (
-        working_directory
-        and os.environ.get("DISABLE_SMOKE_TEST", "").lower() != "true"
-    ):
+    if working_directory and os.environ.get("DISABLE_SMOKE_TEST", "").lower() != "true":
         from ..core.smoke_tester import run_smoke_test, suggest_agent_for_language
 
         smoke_result = await run_smoke_test(working_directory)

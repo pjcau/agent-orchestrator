@@ -96,12 +96,8 @@ class TestSearch:
         assert results[0].name == "a"
 
     async def test_search_and_intersection(self, registry):
-        await registry.register(
-            PromptTemplate(name="a", content="c", tags=["python", "testing"])
-        )
-        await registry.register(
-            PromptTemplate(name="b", content="c", tags=["python"])
-        )
+        await registry.register(PromptTemplate(name="a", content="c", tags=["python", "testing"]))
+        await registry.register(PromptTemplate(name="b", content="c", tags=["python"]))
         results = await registry.search(tags=["python", "testing"])
         assert len(results) == 1
         assert results[0].name == "a"
@@ -114,12 +110,8 @@ class TestSearch:
         assert results[0].name == "a"
 
     async def test_search_combined_tags_and_category(self, registry):
-        await registry.register(
-            PromptTemplate(name="a", content="c", tags=["x"], category="sw")
-        )
-        await registry.register(
-            PromptTemplate(name="b", content="c", tags=["x"], category="fin")
-        )
+        await registry.register(PromptTemplate(name="a", content="c", tags=["x"], category="sw"))
+        await registry.register(PromptTemplate(name="b", content="c", tags=["x"], category="fin"))
         results = await registry.search(tags=["x"], category="sw")
         assert len(results) == 1
         assert results[0].name == "a"
@@ -152,9 +144,7 @@ class TestMetrics:
         assert misses == 1
 
     async def test_search_records_lookup(self, registry_with_metrics, metrics_registry):
-        await registry_with_metrics.register(
-            PromptTemplate(name="x", content="c", tags=["a"])
-        )
+        await registry_with_metrics.register(PromptTemplate(name="x", content="c", tags=["a"]))
         await registry_with_metrics.search(tags=["a"])
         await registry_with_metrics.search(tags=["unknown"])
 
@@ -164,9 +154,7 @@ class TestMetrics:
     async def test_latency_histogram_records(self, registry_with_metrics, metrics_registry):
         await registry_with_metrics.register(PromptTemplate(name="x", content="c"))
         await registry_with_metrics.get("x")
-        hist = metrics_registry.histogram(
-            "prompt_registry_lookup_duration_seconds", ""
-        )
+        hist = metrics_registry.histogram("prompt_registry_lookup_duration_seconds", "")
         assert hist.get_count() == 1
 
 

@@ -45,10 +45,7 @@ class TestDetectModality:
         assert detect_modality("Solve $x^2 + 2x = 0$ for x.") == Modality.EQUATION
 
     def test_latex_macro_detected(self):
-        assert (
-            detect_modality("The integral is \\int_0^1 f(x) dx")
-            == Modality.EQUATION
-        )
+        assert detect_modality("The integral is \\int_0^1 f(x) dx") == Modality.EQUATION
 
     def test_png_bytes_detected_as_image(self):
         png_magic = b"\x89PNG\r\n\x1a\n" + b"rest..."
@@ -82,12 +79,8 @@ class TestModalityMetrics:
         record_detection(Modality.CODE, metrics=reg)
         record_detection(Modality.IMAGE, metrics=reg)
 
-        code_counter = reg.counter(
-            "modality_detected_total", "", labels={"modality": "code"}
-        )
-        image_counter = reg.counter(
-            "modality_detected_total", "", labels={"modality": "image"}
-        )
+        code_counter = reg.counter("modality_detected_total", "", labels={"modality": "code"})
+        image_counter = reg.counter("modality_detected_total", "", labels={"modality": "image"})
         assert code_counter.get() == 2
         assert image_counter.get() == 1
 

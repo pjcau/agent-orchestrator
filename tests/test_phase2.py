@@ -1,7 +1,6 @@
 """Tests for Phase 2: verification gate, atomic decomp, context loader,
 hierarchical namespaces, verbatim checkpoint log (PRs #59, #61, #81)."""
 
-
 from agent_orchestrator.core.atomic_tasks import (
     validate_atomic_tasks,
 )
@@ -89,12 +88,8 @@ class TestVerificationMiddleware:
         reg.use(verification_middleware({"stub": lambda r: True}, metrics=metrics))
         await reg.execute("stub", {})
 
-        total = metrics.counter(
-            "verification_total", "", labels={"skill": "stub"}
-        ).get()
-        passes = metrics.counter(
-            "verification_pass_total", "", labels={"skill": "stub"}
-        ).get()
+        total = metrics.counter("verification_total", "", labels={"skill": "stub"}).get()
+        passes = metrics.counter("verification_pass_total", "", labels={"skill": "stub"}).get()
         assert total == 1
         assert passes == 1
 
@@ -112,25 +107,19 @@ class TestAtomicTaskValidator:
 
     def test_task_too_long_flagged(self):
         long_task = "x" * 801
-        issues = validate_atomic_tasks(
-            [{"agent": "a", "task": long_task}], max_chars=800
-        )
+        issues = validate_atomic_tasks([{"agent": "a", "task": long_task}], max_chars=800)
         assert len(issues) == 1
         assert "too long" in issues[0].reason
 
     def test_too_many_imperatives_flagged(self):
         task = "add test build update deploy release document"
-        issues = validate_atomic_tasks(
-            [{"agent": "a", "task": task}], max_imperatives=3
-        )
+        issues = validate_atomic_tasks([{"agent": "a", "task": task}], max_imperatives=3)
         assert len(issues) == 1
         assert "imperatives" in issues[0].reason
 
     def test_conjunction_detection(self):
         task = "Build the API and then add tests and also deploy"
-        issues = validate_atomic_tasks(
-            [{"agent": "a", "task": task}], max_conjunctions=1
-        )
+        issues = validate_atomic_tasks([{"agent": "a", "task": task}], max_conjunctions=1)
         assert len(issues) == 1
         assert "conjunction" in issues[0].reason.lower()
 
@@ -162,9 +151,7 @@ class TestContextLoaderMiddleware:
         # Execute — no way to read request.metadata from inside StubSkill,
         # but we can verify the counters fired.
         await reg.execute("stub", {})
-        loaded = metrics.counter(
-            "context_files_loaded_total", "", labels={"skill": "stub"}
-        ).get()
+        loaded = metrics.counter("context_files_loaded_total", "", labels={"skill": "stub"}).get()
         assert loaded == 2  # two .md files
 
     async def test_skill_filter_respected(self, tmp_path):
@@ -172,15 +159,9 @@ class TestContextLoaderMiddleware:
         metrics = MetricsRegistry()
         reg = SkillRegistry()
         reg.register(_StubSkill("ok"))
-        reg.use(
-            context_loader_middleware(
-                tmp_path, target_skills={"other"}, metrics=metrics
-            )
-        )
+        reg.use(context_loader_middleware(tmp_path, target_skills={"other"}, metrics=metrics))
         await reg.execute("stub", {})
-        loaded = metrics.counter(
-            "context_files_loaded_total", "", labels={"skill": "stub"}
-        ).get()
+        loaded = metrics.counter("context_files_loaded_total", "", labels={"skill": "stub"}).get()
         assert loaded == 0  # skipped: stub is not in target set
 
     async def test_missing_directory_is_noop(self, tmp_path):

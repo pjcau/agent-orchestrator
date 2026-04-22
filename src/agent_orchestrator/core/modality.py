@@ -71,7 +71,8 @@ def _is_image_bytes(data: Any) -> bool:
         or head.startswith(b"\xff\xd8\xff")  # JPEG
         or head.startswith(b"GIF87a")
         or head.startswith(b"GIF89a")
-        or head.startswith(b"RIFF") and b"WEBP" in head  # WebP
+        or head.startswith(b"RIFF")
+        and b"WEBP" in head  # WebP
     )
 
 
@@ -104,9 +105,7 @@ def detect_modality(task_input: Any) -> Modality:
 
     # Dict with explicit image field (base64, url, bytes)
     if isinstance(task_input, dict):
-        has_image = any(
-            k in task_input for k in ("image", "image_url", "vision", "attachment")
-        )
+        has_image = any(k in task_input for k in ("image", "image_url", "vision", "attachment"))
         has_text = bool(task_input.get("text") or task_input.get("prompt"))
         if has_image and has_text:
             return Modality.MIXED
