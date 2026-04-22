@@ -38,7 +38,26 @@ jobs:
 
       - name: Request instance restart
         run: |
-          aws ec2 reboot-instances --instance-ids "${{ steps.find.outputs.instance_id }}"
+          ID="${{ steps.find.outputs.instance_id }}"
+          STATE=$(aws ec2 describe-instances --instance-ids "$ID" \
+            --query 'Reservations[0].Instances[0].State.Name' --output text)
+          echo "Current state: $STATE"
+          case "$STATE" in
+            stopped|stopping)
+              # Wait for stop to complete if still stopping, then start.
+              if [ "$STATE" = "stopping" ]; then
+                aws ec2 wait instance-stopped --instance-ids "$ID"
+              fi
+              aws ec2 start-instances --instance-ids "$ID"
+              ;;
+            running)
+              aws ec2 reboot-instances --instance-ids "$ID"
+              ;;
+            *)
+              echo "Unexpected state: $STATE — aborting"
+              exit 1
+              ;;
+          esac
           echo "Restart requested. Waiting for instance to come back online..."
 
       - name: Wait for SSH
