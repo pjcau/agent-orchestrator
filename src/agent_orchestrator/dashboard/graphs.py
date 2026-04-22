@@ -49,6 +49,11 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
             "provider": "openrouter",
         },
         {
+            "name": "qwen/qwen3.6-plus",
+            "size": "$0.325/$1.95 · Plus · 1M",
+            "provider": "openrouter",
+        },
+        {
             "name": "qwen/qwen3.5-397b-a17b",
             "size": "$0.39/$2.34 · 397B MoE · 262K",
             "provider": "openrouter",
