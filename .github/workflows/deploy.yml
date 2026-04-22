@@ -353,17 +353,16 @@ jobs:
           # internal docker inspect health check misses.
           DOMAIN="agents-orchestrator.com"
           OK_CODES='^(200|301|302|401|403)$'
+          # '|| echo 000' is required: bash -e (GitHub default) aborts the
+          # script on any non-zero exit, so an SSL/connect failure from curl
+          # would kill the job before the insecure retry ever runs.
           for i in $(seq 1 6); do
-            # Strict TLS probe first. If this passes we are fully healthy.
-            CODE=$(curl -sSI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}")
+            CODE=$(curl -sSI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}" || echo 000)
             if echo "$CODE" | grep -qE "$OK_CODES"; then
               echo "Public probe OK: HTTP $CODE on attempt $i"
               exit 0
             fi
-            # Strict failed — check whether HTTP is alive with cert validation
-            # disabled. Deploy should not be blocked by a temporary cert issue
-            # (e.g. LE rate limit) as long as the service itself is serving.
-            INSECURE=$(curl -skSI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}")
+            INSECURE=$(curl -skSI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}" || echo 000)
             if echo "$INSECURE" | grep -qE "$OK_CODES"; then
               echo "Public probe DEGRADED: HTTP $INSECURE with untrusted cert (attempt $i) — deploy continues"
               exit 0
