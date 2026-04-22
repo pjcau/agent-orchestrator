@@ -262,3 +262,65 @@ jobs:
 
           echo "Health check failed after 8 attempts"
           exit 1
+
+      - name: Public HTTPS probe
+        run: |
+          # Verify the service is reachable from the public internet, not just
+          # healthy inside the box. Catches nginx/cert/DNS issues that the
+          # internal docker inspect health check misses.
+          DOMAIN="agents-orchestrator.com"
+          for i in $(seq 1 6); do
+            CODE=$(curl -sSfI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}" || echo 000)
+            if echo "$CODE" | grep -qE '^(200|301|302|401|403)$'; then
+              echo "Public probe OK: HTTP $CODE on attempt $i"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $CODE — retrying in 10s..."
+            sleep 10
+          done
+          echo "Public HTTPS probe failed for $DOMAIN"
+          exit 1
+
+      - name: Open issue on deploy failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = `[deploy] Production deploy failed (run ${context.runId})`;
+            const body = [
+              `Deploy workflow failed on commit ${context.sha}.`,
+              ``,
+              `Run: ${runUrl}`,
+              `Branch: ${context.ref}`,
+              ``,
+              `This issue was opened automatically by the Deploy workflow.`,
+              `Close it once the deploy is back to green.`,
+            ].join('\n');
+
+            // Avoid issue spam: reuse an open deploy-failure issue if one exists.
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'deploy-failure',
+              per_page: 5,
+            });
+            if (existing.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing[0].number,
+                body,
+              });
+              core.info(`Commented on existing issue #${existing[0].number}`);
+            } else {
+              const { data: issue } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['deploy-failure', 'automated', 'needs-triage'],
+              });
+              core.info(`Opened issue #${issue.number}`);
+            }

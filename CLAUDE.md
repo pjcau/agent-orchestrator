@@ -532,6 +532,17 @@ When Grafana alerts fire (severity warning or critical):
 
 New Prometheus alerts added with this feature: `GraphNodeHung`, `LLMCallSlow`, `FrontendErrorSpike`, `ProviderDegraded`.
 
+## Uptime Monitoring
+
+External HTTPS probes for `agents-orchestrator.com` and `monitoring.agents-orchestrator.com` run from GitHub-hosted runners — independent from the EC2 host so an EC2 outage cannot also disable the alert path.
+
+- **Schedule**: `.github/workflows/uptime-check.yml` runs every 10 min (`*/10 * * * *`) plus `workflow_dispatch`.
+- **Probe**: 3 curl attempts with 15 s backoff; accepts HTTP 200/301/302/401/403 as "up" (the landing page redirects to OAuth login).
+- **Incident issue**: on failure, opens a `uptime-incident` GitHub issue per domain, or appends a timeline comment to the existing open one (dedup by title).
+- **Deploy-time probe**: the `Deploy` workflow now ends with a public HTTPS probe to catch nginx/cert/DNS issues that container-level health checks miss, and opens a `deploy-failure` issue when anything in the deploy job fails.
+- **Emergency restart**: `.github/workflows/ec2-restart.yml` (manual dispatch) reboots or starts the EC2 instance by resolving its EIP → instance-id → `reboot-instances`/`start-instances` depending on state. Use when the host becomes unreachable.
+- **Tests**: `tests/test_ci_workflows.py` asserts schedule, permissions, matrix, and issue-creation wiring stay intact.
+
 ## Job Log Archiving
 
 Session logs (`jobs/job_<session_id>/`) are created lazily (only on first file write) and empty dirs are auto-cleaned after 30s. Archived to S3 with metadata in PostgreSQL.
