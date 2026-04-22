@@ -177,11 +177,18 @@ jobs:
             done
           "
 
-          # Build and restart services (stop old containers first to avoid name conflicts)
+          # Pre-clean: remove any stale agent-orchestrator containers left over
+          # from a previously interrupted deploy (e.g. OOM freeze). Must run
+          # BEFORE build/down because such containers are not always visible to
+          # docker compose if the previous compose session left inconsistent
+          # state. Safe no-op when there are none.
+          $SSH_CMD "docker ps -aq --filter 'name=agent-orchestrator' | xargs -r docker rm -f" || true
+
+          # Build and restart services
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans --timeout 30"
-          # Remove any stale containers with prefixed names that docker compose misses
-          $SSH_CMD "docker ps -a --filter 'name=agent-orchestrator' --format '{{.ID}}' | xargs -r docker rm -f" || true
+          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans --timeout 30" || true
+          # Second sweep after compose down — catches anything compose missed.
+          $SSH_CMD "docker ps -aq --filter 'name=agent-orchestrator' | xargs -r docker rm -f" || true
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
 
           # Ensure postgres password matches .env.prod (fixes first-init mismatch)
