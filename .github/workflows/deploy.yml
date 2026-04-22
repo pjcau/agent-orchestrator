@@ -160,7 +160,11 @@ jobs:
           $SSH_CMD "
             for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
               CERT_DIR=$APP_DIR/certs/live/\$DOMAIN
-              if [ -f \$CERT_DIR/fullchain.pem ] && openssl x509 -in \$CERT_DIR/fullchain.pem -checkend 0 -noout 2>/dev/null; then
+              # Use sudo: after a successful LE issuance, fullchain.pem
+              # symlinks into archive/ (root-only). Without sudo, openssl
+              # fails with permission-denied and we'd wipe the real LE cert
+              # with a fresh self-signed bootstrap on every deploy.
+              if sudo test -f \$CERT_DIR/fullchain.pem && sudo openssl x509 -in \$CERT_DIR/fullchain.pem -checkend 0 -noout 2>/dev/null; then
                 echo \"Valid cert exists for \$DOMAIN — not touching it\"
               else
                 echo \"No valid cert for \$DOMAIN — generating self-signed bootstrap cert\"
@@ -204,11 +208,15 @@ jobs:
           $SSH_CMD "
             for DOMAIN in agents-orchestrator.com monitoring.agents-orchestrator.com; do
               LE_DIR=$APP_DIR/certs/live/\$DOMAIN
-              ISSUER=\$(openssl x509 -in \$LE_DIR/fullchain.pem -issuer -noout 2>/dev/null || echo '')
+              # Use sudo — LE fullchain.pem symlinks into root-only archive/;
+              # plain openssl as ec2-user would fail and we'd misclassify every
+              # valid LE cert as self-signed/expiring, re-running certbot and
+              # burning rate-limit budget on every deploy.
+              ISSUER=\$(sudo openssl x509 -in \$LE_DIR/fullchain.pem -issuer -noout 2>/dev/null || echo '')
               IS_SELF_SIGNED=false
               echo \"\$ISSUER\" | grep -qiE \"CN\\s*=\\s*\$DOMAIN\" && IS_SELF_SIGNED=true
               EXPIRING_SOON=false
-              openssl x509 -in \$LE_DIR/fullchain.pem -checkend 2592000 -noout 2>/dev/null || EXPIRING_SOON=true
+              sudo openssl x509 -in \$LE_DIR/fullchain.pem -checkend 2592000 -noout 2>/dev/null || EXPIRING_SOON=true
 
               if [ \"\$IS_SELF_SIGNED\" = true ] || [ \"\$EXPIRING_SOON\" = true ]; then
                 echo \"Requesting Let's Encrypt cert for \$DOMAIN (self_signed=\$IS_SELF_SIGNED, expiring_soon=\$EXPIRING_SOON)\"
