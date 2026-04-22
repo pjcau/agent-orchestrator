@@ -211,6 +211,14 @@ jobs:
 
               if [ \"\$IS_SELF_SIGNED\" = true ] || [ \"\$EXPIRING_SOON\" = true ]; then
                 echo \"Requesting Let's Encrypt cert for \$DOMAIN (self_signed=\$IS_SELF_SIGNED, expiring_soon=\$EXPIRING_SOON)\"
+                # When the current cert is self-signed (bootstrap), wipe the
+                # existing lineage so certbot doesn't refuse with 'live directory
+                # exists'. Safe: self-signed has no LE archive to preserve.
+                if [ \"\$IS_SELF_SIGNED\" = true ]; then
+                  sudo rm -rf $APP_DIR/certs/live/\$DOMAIN \
+                              $APP_DIR/certs/archive/\$DOMAIN \
+                              $APP_DIR/certs/renewal/\$DOMAIN.conf
+                fi
                 cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
                   run --rm --entrypoint certbot certbot \
                   certonly --webroot -w /var/www/certbot \
@@ -219,6 +227,19 @@ jobs:
                   -d \$DOMAIN \
                   --non-interactive \
                   --keep-until-expiring 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal, using existing cert)\"
+                # Re-create the self-signed bootstrap if certbot failed (avoids
+                # nginx failing to start because cert files went missing).
+                if [ ! -f $APP_DIR/certs/live/\$DOMAIN/fullchain.pem ]; then
+                  echo \"LE issuance failed — restoring self-signed bootstrap for \$DOMAIN\"
+                  sudo mkdir -p $APP_DIR/certs/live/\$DOMAIN
+                  TMP2=\$(mktemp -d)
+                  sudo openssl req -x509 -nodes -days 90 -newkey rsa:2048 \
+                    -keyout \$TMP2/privkey.pem -out \$TMP2/fullchain.pem \
+                    -subj \"/CN=\$DOMAIN\" 2>/dev/null
+                  sudo cp \$TMP2/fullchain.pem $APP_DIR/certs/live/\$DOMAIN/fullchain.pem
+                  sudo cp \$TMP2/privkey.pem $APP_DIR/certs/live/\$DOMAIN/privkey.pem
+                  rm -rf \$TMP2
+                fi
               else
                 echo \"Valid LE cert for \$DOMAIN — skipping certbot\"
               fi
