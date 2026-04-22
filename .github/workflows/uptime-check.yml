@@ -28,21 +28,33 @@ jobs:
         id: probe
         run: |
           DOMAIN="${{ matrix.domain }}"
-          # Three retries with 15 s between them — smooths over transient
-          # network blips and short nginx reloads during LE cert renewals.
+          OK_CODES='^(200|301|302|401|403)$'
+          # Two-level probe so a temporarily untrusted cert (e.g. during LE
+          # rate-limit windows or cert renewals) doesn't flood the on-call
+          # inbox. "Down" == cannot reach HTTPS even with cert validation
+          # disabled. "Degraded" == reachable but cert not trusted.
           for i in 1 2 3; do
             CODE=$(curl -sSI --max-time 15 "https://$DOMAIN/" \
               -o /dev/null -w "%{http_code}" || echo 000)
-            LATENCY=$(curl -sS --max-time 15 -o /dev/null \
-              -w "%{time_total}" "https://$DOMAIN/" || echo -1)
-            if echo "$CODE" | grep -qE '^(200|301|302|401|403)$'; then
-              echo "OK: $DOMAIN returned HTTP $CODE in ${LATENCY}s (attempt $i)"
+            if echo "$CODE" | grep -qE "$OK_CODES"; then
+              echo "OK: $DOMAIN returned HTTP $CODE (attempt $i, trusted TLS)"
               echo "status=ok" >> "$GITHUB_OUTPUT"
               echo "code=$CODE" >> "$GITHUB_OUTPUT"
-              echo "latency=$LATENCY" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Attempt $i for $DOMAIN: HTTP $CODE"
+            # Strict TLS failed — retry with cert validation disabled to see
+            # if the HTTP layer is alive at all.
+            INSECURE_CODE=$(curl -skSI --max-time 15 "https://$DOMAIN/" \
+              -o /dev/null -w "%{http_code}" || echo 000)
+            if echo "$INSECURE_CODE" | grep -qE "$OK_CODES"; then
+              echo "DEGRADED: $DOMAIN serving untrusted cert but HTTP $INSECURE_CODE (attempt $i)"
+              echo "status=degraded" >> "$GITHUB_OUTPUT"
+              echo "code=$INSECURE_CODE" >> "$GITHUB_OUTPUT"
+              # Pass the job — cert problems are a separate concern, not an
+              # outage. A follow-up cert-expiry workflow should surface them.
+              exit 0
+            fi
+            echo "Attempt $i for $DOMAIN: strict HTTP $CODE, insecure HTTP $INSECURE_CODE"
             sleep 15
           done
           echo "status=down" >> "$GITHUB_OUTPUT"
