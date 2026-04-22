@@ -324,7 +324,11 @@ jobs:
           # internal docker inspect health check misses.
           DOMAIN="agents-orchestrator.com"
           for i in $(seq 1 6); do
-            CODE=$(curl -sSfI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}" || echo 000)
+            # Do NOT use curl -f — it exits non-zero on HTTP >= 400 and pollutes
+            # %{http_code} by concatenating with the fallback. Without -f curl
+            # only fails on connection/TLS errors (where http_code stays 000),
+            # which is exactly the signal we want for an uptime probe.
+            CODE=$(curl -sSI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}")
             if echo "$CODE" | grep -qE '^(200|301|302|401|403)$'; then
               echo "Public probe OK: HTTP $CODE on attempt $i"
               exit 0
