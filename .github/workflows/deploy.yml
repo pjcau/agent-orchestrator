@@ -218,13 +218,17 @@ jobs:
                 # if one exists, so we don't blow away a cert we already paid the
                 # rate-limit cost to issue.
                 ADOPTED=false
-                for CAND in \$(ls -1d $APP_DIR/certs/live/\${DOMAIN}-* 2>/dev/null | sort -r); do
-                  if openssl x509 -in \$CAND/fullchain.pem -checkend 2592000 -noout 2>/dev/null; then
-                    CAND_ISSUER=\$(openssl x509 -in \$CAND/fullchain.pem -issuer -noout 2>/dev/null)
+                # Use sudo for openssl — the cert lives behind root-only archive/,
+                # and ec2-user's plain openssl would report 'permission denied'
+                # on a perfectly valid LE cert, making adoption impossible.
+                for CAND in \$(sudo ls -1d $APP_DIR/certs/live/\${DOMAIN}-* 2>/dev/null | sort -r); do
+                  if sudo openssl x509 -in \$CAND/fullchain.pem -checkend 2592000 -noout 2>/dev/null; then
+                    CAND_ISSUER=\$(sudo openssl x509 -in \$CAND/fullchain.pem -issuer -noout 2>/dev/null)
                     if ! echo \"\$CAND_ISSUER\" | grep -qiE \"CN\\s*=\\s*\$DOMAIN\"; then
                       echo \"Adopting existing LE lineage \$CAND into \$DOMAIN\"
                       sudo rm -rf $APP_DIR/certs/live/\$DOMAIN
                       sudo cp -rL \$CAND $APP_DIR/certs/live/\$DOMAIN
+                      sudo chmod -R a+rX $APP_DIR/certs/live/\$DOMAIN
                       ADOPTED=true
                       break
                     fi
@@ -234,9 +238,13 @@ jobs:
                   # No valid LE lineage available and current cert is self-signed:
                   # wipe everything related to this domain so certbot can issue
                   # into the canonical \$DOMAIN lineage without numeric suffixes.
-                  sudo rm -rf $APP_DIR/certs/live/\${DOMAIN}* \
-                              $APP_DIR/certs/archive/\${DOMAIN}* \
-                              $APP_DIR/certs/renewal/\${DOMAIN}*.conf
+                  # IMPORTANT: the glob must be expanded inside the sudo shell,
+                  # otherwise ec2-user's shell cannot list archive/ (drwx------)
+                  # and passes the literal string to rm, which silently matches
+                  # nothing. Use sudo sh -c so globbing happens as root.
+                  sudo sh -c \"rm -rf $APP_DIR/certs/live/\${DOMAIN}* \
+                                       $APP_DIR/certs/archive/\${DOMAIN}* \
+                                       $APP_DIR/certs/renewal/\${DOMAIN}*.conf\"
                 fi
                 if [ \"\$ADOPTED\" = false ]; then
                   cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
