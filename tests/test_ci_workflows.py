@@ -88,6 +88,12 @@ class TestDeployWorkflowAlerts:
         assert probe is not None, "Missing 'Public HTTPS probe' step"
         assert "agents-orchestrator.com" in probe["run"], "Probe must target the production domain"
 
+    def test_has_issues_write_permission(self, wf: dict) -> None:
+        perms = wf.get("permissions", {})
+        assert perms.get("issues") == "write", (
+            "deploy.yml must have issues:write so the failure hook can open issues"
+        )
+
     def test_opens_issue_on_deploy_failure(self, wf: dict) -> None:
         steps = wf["jobs"]["deploy"]["steps"]
         issue_step = next(

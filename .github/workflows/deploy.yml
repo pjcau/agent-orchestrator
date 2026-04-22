@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 env:
   APP_DIR: /opt/agent-orchestrator
@@ -211,22 +212,43 @@ jobs:
 
               if [ \"\$IS_SELF_SIGNED\" = true ] || [ \"\$EXPIRING_SOON\" = true ]; then
                 echo \"Requesting Let's Encrypt cert for \$DOMAIN (self_signed=\$IS_SELF_SIGNED, expiring_soon=\$EXPIRING_SOON)\"
-                # When the current cert is self-signed (bootstrap), wipe the
-                # existing lineage so certbot doesn't refuse with 'live directory
-                # exists'. Safe: self-signed has no LE archive to preserve.
-                if [ \"\$IS_SELF_SIGNED\" = true ]; then
-                  sudo rm -rf $APP_DIR/certs/live/\$DOMAIN \
-                              $APP_DIR/certs/archive/\$DOMAIN \
-                              $APP_DIR/certs/renewal/\$DOMAIN.conf
+                # If certbot previously emitted a lineage with a numeric suffix
+                # (agents-orchestrator.com-0001), nginx may still be serving the
+                # self-signed at the base path. Adopt the newest valid LE lineage
+                # if one exists, so we don't blow away a cert we already paid the
+                # rate-limit cost to issue.
+                ADOPTED=false
+                for CAND in \$(ls -1d $APP_DIR/certs/live/\${DOMAIN}-* 2>/dev/null | sort -r); do
+                  if openssl x509 -in \$CAND/fullchain.pem -checkend 2592000 -noout 2>/dev/null; then
+                    CAND_ISSUER=\$(openssl x509 -in \$CAND/fullchain.pem -issuer -noout 2>/dev/null)
+                    if ! echo \"\$CAND_ISSUER\" | grep -qiE \"CN\\s*=\\s*\$DOMAIN\"; then
+                      echo \"Adopting existing LE lineage \$CAND into \$DOMAIN\"
+                      sudo rm -rf $APP_DIR/certs/live/\$DOMAIN
+                      sudo cp -rL \$CAND $APP_DIR/certs/live/\$DOMAIN
+                      ADOPTED=true
+                      break
+                    fi
+                  fi
+                done
+                if [ \"\$ADOPTED\" = false ] && [ \"\$IS_SELF_SIGNED\" = true ]; then
+                  # No valid LE lineage available and current cert is self-signed:
+                  # wipe everything related to this domain so certbot can issue
+                  # into the canonical \$DOMAIN lineage without numeric suffixes.
+                  sudo rm -rf $APP_DIR/certs/live/\${DOMAIN}* \
+                              $APP_DIR/certs/archive/\${DOMAIN}* \
+                              $APP_DIR/certs/renewal/\${DOMAIN}*.conf
                 fi
-                cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                  run --rm --entrypoint certbot certbot \
-                  certonly --webroot -w /var/www/certbot \
-                  --email admin@\$DOMAIN \
-                  --agree-tos --no-eff-email \
-                  -d \$DOMAIN \
-                  --non-interactive \
-                  --keep-until-expiring 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal, using existing cert)\"
+                if [ \"\$ADOPTED\" = false ]; then
+                  cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                    run --rm --entrypoint certbot certbot \
+                    certonly --webroot -w /var/www/certbot \
+                    --cert-name \$DOMAIN \
+                    --email admin@\$DOMAIN \
+                    --agree-tos --no-eff-email \
+                    -d \$DOMAIN \
+                    --non-interactive \
+                    --keep-until-expiring 2>&1 || echo \"Certbot failed for \$DOMAIN (non-fatal, using existing cert)\"
+                fi
                 # Re-create the self-signed bootstrap if certbot failed (avoids
                 # nginx failing to start because cert files went missing).
                 if [ ! -f $APP_DIR/certs/live/\$DOMAIN/fullchain.pem ]; then
