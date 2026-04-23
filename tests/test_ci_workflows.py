@@ -88,6 +88,32 @@ class TestDeployWorkflowAlerts:
         assert probe is not None, "Missing 'Public HTTPS probe' step"
         assert "agents-orchestrator.com" in probe["run"], "Probe must target the production domain"
 
+    def test_probe_fails_on_untrusted_cert(self, wf: dict) -> None:
+        """Regression guard: an untrusted cert must fail the deploy, not pass as DEGRADED.
+
+        An earlier version of the probe accepted any HTTP 200/301/302/401/403
+        response over an untrusted cert and exited 0 with a "DEGRADED — deploy
+        continues" message. That hid a self-signed fallback being shipped to
+        real users (ERR_CERT_AUTHORITY_INVALID in browsers).
+        """
+        steps = wf["jobs"]["deploy"]["steps"]
+        probe = next((s for s in steps if "public" in s.get("name", "").lower()), None)
+        run = probe["run"]
+        assert "deploy continues" not in run, (
+            "Untrusted-cert branch must no longer silently continue the deploy"
+        )
+        assert "openssl s_client" in run, (
+            "Probe must read the served cert's issuer to diagnose failures"
+        )
+        assert "Self-signed certificate detected" in run, (
+            "Probe must explicitly flag self-signed certs for debuggability"
+        )
+        # The untrusted-cert branch must terminate with a failure, not success.
+        untrusted_branch = run.split("Public probe FAILED", 1)[1]
+        assert "exit 1" in untrusted_branch, (
+            "The untrusted-cert branch must exit non-zero to fail the deploy"
+        )
+
     def test_has_issues_write_permission(self, wf: dict) -> None:
         perms = wf.get("permissions", {})
         assert perms.get("issues") == "write", (

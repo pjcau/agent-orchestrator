@@ -351,6 +351,14 @@ jobs:
           # Verify the service is reachable from the public internet, not just
           # healthy inside the box. Catches nginx/cert/DNS issues that the
           # internal docker inspect health check misses.
+          #
+          # Untrusted-cert policy: the probe FAILS when the strict TLS handshake
+          # fails but the insecure handshake succeeds. That combination means
+          # the site is up but serving a cert browsers reject (self-signed or
+          # other CA chain issue) — users see ERR_CERT_AUTHORITY_INVALID. An
+          # earlier version of this probe treated that case as DEGRADED and
+          # exited 0, which masked a self-signed fallback being shipped to
+          # production.
           DOMAIN="agents-orchestrator.com"
           OK_CODES='^(200|301|302|401|403)$'
           # '|| echo 000' is required: bash -e (GitHub default) aborts the
@@ -364,13 +372,21 @@ jobs:
             fi
             INSECURE=$(curl -skSI --max-time 10 "https://$DOMAIN/" -o /dev/null -w "%{http_code}" || echo 000)
             if echo "$INSECURE" | grep -qE "$OK_CODES"; then
-              echo "Public probe DEGRADED: HTTP $INSECURE with untrusted cert (attempt $i) — deploy continues"
-              exit 0
+              ISSUER=$(echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN:443" 2>/dev/null \
+                       | openssl x509 -noout -issuer 2>/dev/null || echo "")
+              echo "Public probe FAILED: HTTP $INSECURE with untrusted cert for $DOMAIN"
+              echo "Served cert issuer: $ISSUER"
+              if echo "$ISSUER" | grep -qiE "CN\s*=\s*$DOMAIN"; then
+                echo "Self-signed certificate detected — browsers show ERR_CERT_AUTHORITY_INVALID."
+              else
+                echo "Certificate not trusted by the default CA bundle."
+              fi
+              exit 1
             fi
             echo "Attempt $i: strict HTTP $CODE, insecure HTTP $INSECURE — retrying in 10s..."
             sleep 10
           done
-          echo "Public HTTPS probe failed for $DOMAIN"
+          echo "Public HTTPS probe failed for $DOMAIN (no valid response after 6 attempts)"
           exit 1
 
       - name: Open issue on deploy failure
