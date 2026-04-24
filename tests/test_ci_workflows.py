@@ -130,9 +130,7 @@ class TestDeployWorkflowAlerts:
         deploy keeps failing until the stale container is manually cleared.
         """
         concurrency = wf.get("concurrency")
-        assert concurrency is not None, (
-            "deploy.yml must declare a top-level `concurrency:` block"
-        )
+        assert concurrency is not None, "deploy.yml must declare a top-level `concurrency:` block"
         assert concurrency.get("group"), "concurrency.group must be set"
         assert concurrency.get("cancel-in-progress") is False, (
             "cancel-in-progress must be false — cancelling a mid-flight deploy "
