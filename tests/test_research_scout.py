@@ -77,7 +77,7 @@ class TestParseImprovements:
         result = scout._parse_improvements(llm_output)
         assert result == []
 
-    def test_max_3_improvements(self, scout):
+    def test_max_30_improvements(self, scout):
         items = [
             {
                 "component": f"comp{i}",
@@ -86,11 +86,76 @@ class TestParseImprovements:
                 "file": f"file{i}.py",
                 "code": "",
                 "benefit": "",
+                "value_score": 5,
             }
-            for i in range(10)
+            for i in range(50)
         ]
         result = scout._parse_improvements(json.dumps(items))
-        assert len(result) <= 3
+        assert len(result) == scout.MAX_IMPROVEMENTS == 30
+
+    def test_ranks_by_value_score_desc(self, scout):
+        items = [
+            {
+                "component": "a",
+                "title": "Low value",
+                "description": "desc",
+                "value_score": 2,
+            },
+            {
+                "component": "b",
+                "title": "High value",
+                "description": "desc",
+                "value_score": 9,
+            },
+            {
+                "component": "c",
+                "title": "Mid value",
+                "description": "desc",
+                "value_score": 5,
+            },
+        ]
+        result = scout._parse_improvements(json.dumps(items))
+        assert [imp["title"] for imp in result] == ["High value", "Mid value", "Low value"]
+
+    def test_missing_value_score_derived_from_components(self, scout):
+        # impact 9, effort 2, risk 1 -> derived value_score ≈ 9 - 0.6 - 0.5 = 7.9
+        items = [
+            {
+                "component": "a",
+                "title": "Only impact fields",
+                "description": "desc",
+                "impact": 9,
+                "effort": 2,
+                "risk": 1,
+            },
+        ]
+        result = scout._parse_improvements(json.dumps(items))
+        assert len(result) == 1
+        assert 7.5 < result[0]["value_score"] < 8.5
+
+    def test_non_numeric_score_falls_back_to_default(self, scout):
+        items = [
+            {
+                "component": "a",
+                "title": "Bad score",
+                "description": "desc",
+                "value_score": "not a number",
+            },
+        ]
+        result = scout._parse_improvements(json.dumps(items))
+        assert len(result) == 1
+        # Default value for malformed score is the mid-range default (5.0)
+        assert result[0]["value_score"] == 5.0
+
+    def test_score_clamped_to_0_10_range(self, scout):
+        items = [
+            {"component": "a", "title": "Over", "description": "d", "value_score": 999},
+            {"component": "b", "title": "Under", "description": "d", "value_score": -5},
+        ]
+        result = scout._parse_improvements(json.dumps(items))
+        scores = {imp["title"]: imp["value_score"] for imp in result}
+        assert scores["Over"] == 10.0
+        assert scores["Under"] == 0.0
 
     def test_surrounding_text_ignored(self, scout):
         llm_output = (

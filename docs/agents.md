@@ -148,7 +148,8 @@ The `research-scout` analyzes **GitHub starred repos** (one per run) via LLM and
 - **Source**: GitHub starred repos (fetched via `scripts/fetch_github_stars.py`)
 - **Lookback**: 30 days (stars older than 30 days are ignored)
 - **LLM backend**: `claude` CLI locally, OpenRouter (`qwen/qwen3.5-flash-02-23`) on CI
-- **Analysis**: LLM compares repo's patterns against our codebase, proposes 1-3 improvements with code
+- **Analysis**: LLM compares repo's patterns against our codebase, proposes up to **30** improvements with code, each scored on `impact` / `effort` / `risk` and a composite `value_score` (0–10). Parser sorts by `value_score` desc and caps at `MAX_IMPROVEMENTS` (30), so the highest-value items always surface first. See `scripts/run_research_scout.py::_parse_improvements`.
+- **Reprocessing existing PRs**: `python scripts/run_research_scout.py --url <github-repo-url>` re-runs the analysis for a specific repo (bypasses bookmarks). Add `--skip-state` to leave the state file untouched (useful for regenerating findings for an open research-scout PR)
 - **State tracking**: `.claude/research-scout-state.json` (tracks processed URLs)
 - **Findings file**: `.claude/research-scout-findings.md` (ephemeral, gitignored — used only as PR body, never committed)
 - **GitHub Actions**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC), `.github/workflows/alert-analysis.yml` (automated root-cause analysis on alert issues)
