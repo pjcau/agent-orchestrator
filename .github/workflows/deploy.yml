@@ -14,6 +14,15 @@ permissions:
   contents: read
   issues: write
 
+# Serialize deploys: if two commits land back-to-back (or workflow_dispatch
+# overlaps with a push), queue them instead of running in parallel. Concurrent
+# deploys race on shared EC2 state (docker networks, certbot container name)
+# and leave the site down when the second one's `up -d` collides with the
+# first's mid-flight containers.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 env:
   APP_DIR: /opt/agent-orchestrator
 

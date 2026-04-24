@@ -120,6 +120,26 @@ class TestDeployWorkflowAlerts:
             "deploy.yml must have issues:write so the failure hook can open issues"
         )
 
+    def test_serializes_concurrent_deploys(self, wf: dict) -> None:
+        """Regression guard: two back-to-back pushes must not race on EC2.
+
+        Two deploys racing on the same EC2 host collide on shared state (docker
+        networks and container names like `agent-orchestrator-certbot-1`) and
+        leave the site down — the second deploy's `up -d` fails on a container
+        the first deploy just created. Once that happens, every subsequent
+        deploy keeps failing until the stale container is manually cleared.
+        """
+        concurrency = wf.get("concurrency")
+        assert concurrency is not None, (
+            "deploy.yml must declare a top-level `concurrency:` block"
+        )
+        assert concurrency.get("group"), "concurrency.group must be set"
+        assert concurrency.get("cancel-in-progress") is False, (
+            "cancel-in-progress must be false — cancelling a mid-flight deploy "
+            "leaves EC2 in an inconsistent state (half-created containers, "
+            "partial cert provisioning)."
+        )
+
     def test_opens_issue_on_deploy_failure(self, wf: dict) -> None:
         steps = wf["jobs"]["deploy"]["steps"]
         issue_step = next(

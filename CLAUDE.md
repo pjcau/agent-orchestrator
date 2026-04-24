@@ -493,6 +493,7 @@ GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_K
 Automated deploy to EC2 on every push to `main`. Config: `.github/workflows/deploy.yml`.
 
 - **Trigger**: push to main (ignores `docs/`, `*.md`, `terraform/`)
+- **Concurrency**: serialized via `concurrency: deploy-production` (no `cancel-in-progress`). Two back-to-back pushes queue instead of racing — concurrent deploys collide on shared EC2 state (docker networks, container names like `agent-orchestrator-certbot-1`) and leave the site down.
 - **Steps**: test → lint → rsync code → inject secrets → build → deploy → health check
 - **Secret injection**: all GitHub Secrets are injected into `.env.prod` on EC2 via `_inject()` helper (idempotent upsert)
 - **Secrets managed**: `AWS_*`, `OPENROUTER_API_KEY`, `JWT_SECRET_KEY`, `OAUTH_CLIENT_ID/SECRET`, `GRAFANA_SMTP_*`, `POSTGRES_PASSWORD`, `BASE_URL`, `GITHUB_USERNAME`
