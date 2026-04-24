@@ -6,6 +6,15 @@ Real-time monitoring UI for the orchestrator. Shows agent interactions, technica
 docker compose up dashboard    # https://localhost:5005
 ```
 
+## Layout
+
+The dashboard body is a flex row with (left → right):
+
+1. **Left rail** (`.left-rail`, ~88 px) — always-visible narrow column. Hosts **History**, **Prompts**, **Sandbox** toggle buttons stacked at the bottom. Replaced the previous `position: fixed` floating-actions pattern that overlapped the agent selector and prompt input.
+2. **Left panel** (conditional) — `HistorySidebar` or `PromptsPanel`, shown when the matching button is active.
+3. **Main** (`.dashboard__main`) — Agent Interactions (graph), Chat, optional Sandbox workspace.
+4. **Right panel** (`.sidebar`, conditional) — event logs, activity, cache stats.
+
 ## Modular Architecture
 
 `app.py` is a composition root (~282 lines) that includes two routers. Can run as single process or split.
