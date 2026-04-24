@@ -19,6 +19,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          # .claude/agents/* are symlinks into the .claude-kit submodule.
+          # Without submodules the symlinks dangle and the agent registry
+          # loads zero agents, breaking tests/test_agents_registry.py.
+          submodules: true
 
       - uses: actions/setup-python@v6
         with:

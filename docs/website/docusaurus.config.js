@@ -7,10 +7,6 @@ const config = {
   tagline: 'Provider-agnostic AI agent orchestration framework',
   favicon: 'img/favicon.ico',
 
-  future: {
-    v4: true,
-  },
-
   markdown: {
     mermaid: true,
   },

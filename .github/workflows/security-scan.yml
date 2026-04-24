@@ -31,7 +31,10 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit
-        run: pip-audit --desc --ignore-vuln CVE-2026-4539  # pygments <=2.19.2 ReDoS (local only, no fix released)
+        # CVE-2026-4539: pygments <=2.19.2 ReDoS (local only, no fix released upstream)
+        # CVE-2026-3219: pip <26.x tar/ZIP confusion on concatenated archives. pip 26.0.1 is
+        #   the latest release as of this ignore — no fixed version is yet published on PyPI.
+        run: pip-audit --desc --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3219
 
   # --- CodeQL static analysis ---
   codeql:
