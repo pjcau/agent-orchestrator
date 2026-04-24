@@ -518,8 +518,10 @@ value_score. If nothing is worth applying, return an empty array: []
             improvements=[imp["title"] for imp in improvements],
         )
 
-        # Create PR locally; on CI the workflow step handles this
-        if not os.environ.get("CI"):
+        # Create PR locally; on CI the workflow step handles this.
+        # --skip-state disables PR creation too (used for regenerating findings
+        # for an existing PR — the caller updates the PR body themselves).
+        if not os.environ.get("CI") and not args.skip_state:
             print("\nCreating PR...")
             if _create_pr(FINDINGS_FILE):
                 print("PR created successfully.")
