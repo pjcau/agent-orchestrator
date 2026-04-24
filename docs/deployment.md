@@ -166,6 +166,8 @@ The deploy pipeline (`.github/workflows/deploy.yml`) auto-deploys on push to `ma
 1. **Test Suite** — Install deps (Python 3.12), run `pytest`, lint with `ruff`
 2. **Deploy to EC2** — rsync code, inject secrets into `.env.prod`, rebuild containers, health check
 
+Full chain: `test → lint → rsync code → inject secrets → build → deploy → health check`.
+
 ### Deploy Strategy
 
 The deploy uses `docker compose down` (full teardown) instead of selective `rm` to prevent stale container name conflicts. An additional cleanup step force-removes any orphaned containers with the `agent-orchestrator` prefix before starting services fresh.
@@ -173,6 +175,26 @@ The deploy uses `docker compose down` (full teardown) instead of selective `rm` 
 ```
 rsync code → inject secrets → build images → down (full stop) → rm stale containers → up -d → health check
 ```
+
+### Secret Injection
+
+All GitHub Secrets are injected into `.env.prod` on EC2 via the `_inject()` helper (idempotent upsert). Secrets managed:
+
+- `AWS_*`, `OPENROUTER_API_KEY`, `JWT_SECRET_KEY`, `OAUTH_CLIENT_ID/SECRET`
+- `GRAFANA_SMTP_*`, `POSTGRES_PASSWORD`, `BASE_URL`, `GITHUB_USERNAME`
+
+### Force-Recreate Scope
+
+Only `dashboard` and `aws-cost-exporter` are force-recreated on deploy. Stateful services (postgres, redis, nginx, tempo) are preserved between deploys to keep data/TLS state.
+
+### Operational Notes
+
+- **Tempo**: trace backend container (ports 3200 Tempo API, 4318 OTLP HTTP, 7-day retention). Defined in `docker-compose.prod.yml`.
+- **`OTEL_EXPORTER_OTLP_ENDPOINT`**: set on the `dashboard` container (e.g. `http://tempo:4318`) to enable trace export. Omit to disable tracing (graceful no-op).
+- **Postgres password sync**: `ALTER USER` runs on every deploy to fix first-init password mismatch.
+- **Nginx timeout**: 600 s (10 min) for long team runs.
+- **`BASE_URL`**: `https://agents-orchestrator.com` (domain, not IP — required for OAuth callbacks).
+- **Static cache busting**: bump `?v=NNN` in `index.html` on every frontend change.
 
 ### Required GitHub Secrets
 
@@ -277,6 +299,15 @@ Per-session isolated Docker containers for agent-generated code. Each session ge
 - `WS /ws/sandbox/{id}/terminal` — interactive shell
 
 **Security note**: The Docker socket grants root-equivalent access to the host. In production, ensure the EC2 instance is properly isolated and only trusted users have dashboard access. See `docs/security.md` for details.
+
+## Container Runtime: OrbStack
+
+Docker containers (Postgres, dashboard, docs) run on **OrbStack** — not Docker Desktop. Same `docker` / `docker compose` CLI. Tests and linting run locally via Python venv.
+
+- Container startup: **0.2 s** (vs 3.2 s Docker Desktop) — **16× faster**
+- Idle RAM: ~180 MB (vs 2+ GB) — **11× less memory**
+
+All environments (local dev, CI, production) use OrbStack. Never fall back to Docker Desktop.
 
 ## Troubleshooting
 

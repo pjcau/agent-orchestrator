@@ -337,6 +337,20 @@ Before deploying to AWS with the frontend exposed:
 | SSRF via Ollama URL | Internal network scanning | URL prefix allowlist |
 | XSS in dashboard | Cookie theft, session hijack | httponly cookies, CSP headers (TODO) |
 
+## Security Scanning (CI)
+
+Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC). Results appear in GitHub's Security tab.
+
+| Tool | What it scans | Config |
+|------|--------------|--------|
+| **Dependabot** | Python, npm, Docker, GitHub Actions deps | `.github/dependabot.yml` |
+| **pip-audit** | Python packages for known CVEs | `security-scan.yml` |
+| **CodeQL** | Python & JS static analysis (SAST) | `security-scan.yml` |
+| **Trivy** | Docker image vulnerabilities | `security-scan.yml` |
+| **TruffleHog** | Leaked secrets in git history | `security-scan.yml` |
+
+Dependabot opens PRs automatically for outdated/vulnerable dependencies.
+
 ## Automated Security Fixes
 
 A daily GitHub Action (`.github/workflows/security-autofix.yml`) runs at 03:00 UTC:
