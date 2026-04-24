@@ -53,6 +53,38 @@ export function DashboardPage() {
       />
 
       <div className="dashboard__body">
+        {/* Left rail — always visible, buttons in a column at the bottom */}
+        <aside className="left-rail">
+          <div className="left-rail__bottom">
+            <button
+              className={`btn-sidebar-toggle ${leftPanel === "history" ? "active" : ""}`}
+              onClick={handleToggleHistory}
+              title="Job history"
+            >
+              History
+            </button>
+            <button
+              className={`btn-sidebar-toggle ${leftPanel === "prompts" ? "active" : ""}`}
+              onClick={handleTogglePrompts}
+              title="Prompt registry"
+            >
+              Prompts
+            </button>
+            {sandboxStatus?.enabled && (
+              <button
+                className={`btn-sidebar-toggle ${sandboxOpen ? "active" : ""}`}
+                onClick={() => setSandboxOpen(!sandboxOpen)}
+                title="Sandbox workspace"
+              >
+                Sandbox
+                {sandboxStatus.active_sessions > 0 && (
+                  <span className="sandbox-badge">{sandboxStatus.active_sessions}</span>
+                )}
+              </button>
+            )}
+          </div>
+        </aside>
+
         {/* Left panel — History or Prompts */}
         {leftPanel === "history" && <HistorySidebar />}
         {leftPanel === "prompts" && <PromptsPanel />}
@@ -96,35 +128,6 @@ export function DashboardPage() {
         {sidebarOpen && <Sidebar />}
       </div>
 
-      {/* Floating action buttons */}
-      <div className="floating-actions">
-        <button
-          className={`btn-sidebar-toggle ${leftPanel === "history" ? "active" : ""}`}
-          onClick={handleToggleHistory}
-          title="Job history"
-        >
-          History
-        </button>
-        <button
-          className={`btn-sidebar-toggle ${leftPanel === "prompts" ? "active" : ""}`}
-          onClick={handleTogglePrompts}
-          title="Prompt registry"
-        >
-          Prompts
-        </button>
-        {sandboxStatus?.enabled && (
-          <button
-            className={`btn-sidebar-toggle ${sandboxOpen ? "active" : ""}`}
-            onClick={() => setSandboxOpen(!sandboxOpen)}
-            title="Sandbox workspace"
-          >
-            Sandbox
-            {sandboxStatus.active_sessions > 0 && (
-              <span className="sandbox-badge">{sandboxStatus.active_sessions}</span>
-            )}
-          </button>
-        )}
-      </div>
     </div>
   );
 }
