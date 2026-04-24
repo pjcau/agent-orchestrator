@@ -134,12 +134,15 @@ def _call_claude(prompt: str) -> dict:
     """Call claude CLI in non-interactive mode. Returns {"content": str} or {"error": str}."""
     # Remove CLAUDECODE env var to allow nested invocation
     env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
+    # 300 s: scoring up to MAX_IMPROVEMENTS=30 proposals on a 10k-char README
+    # doesn't fit in 120 s for sonnet-level prompts.
+    timeout_s = int(os.environ.get("RESEARCH_SCOUT_CLAUDE_TIMEOUT", "300"))
     try:
         result = subprocess.run(
             ["claude", "-p", prompt, "--output-format", "text"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout_s,
             env=env,
         )
         if result.returncode != 0:
@@ -154,7 +157,7 @@ def _call_claude(prompt: str) -> dict:
             "error": "claude CLI not found — install with: npm install -g @anthropic-ai/claude-code"
         }
     except subprocess.TimeoutExpired:
-        return {"error": "claude CLI timed out after 120s"}
+        return {"error": f"claude CLI timed out after {timeout_s}s"}
 
 
 def _call_openrouter(prompt: str) -> dict:
