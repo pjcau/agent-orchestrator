@@ -208,5 +208,11 @@
     "added": "2026-03-27T11:57:00Z",
     "source": "github-star",
     "notes": "Real-time architectural sensor that helps AI agents close the feedback loop, enabling recursive self-improvement of code quality. Pure Rust. | Language: Rust | Topics: agentharness, architecture, cobol, cobol-language, code-quality"
+  },
+  {
+    "url": "https://github.com/espressif/esp-drone",
+    "added": "2026-04-27T14:14:52Z",
+    "source": "github-star",
+    "notes": "Mini Drone/Quadcopter Firmware for ESP32 and ESP32-S Series SoCs. | Language: C | Topics: drone, esp32, quadcopter"
   }
 ]
