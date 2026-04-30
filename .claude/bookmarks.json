@@ -226,5 +226,11 @@
     "added": "2026-04-28T11:52:41Z",
     "source": "github-star",
     "notes": "KiCAD MCP is a Model Context Protocol (MCP) implementation that enables Large Language Models (LLMs) like Claude to directly interact with KiCAD for printed circuit board design. | Language: Python"
+  },
+  {
+    "url": "https://github.com/ministackorg/ministack",
+    "added": "2026-04-29T14:06:51Z",
+    "source": "github-star",
+    "notes": "Ministack: Free, open-source local AWS emulator - 40+ services, Terraform compatible, real databases. Free forever. MIT   licensed. | Language: Python | Topics: aws, aws-emulator, aws-local, aws-sdk, devtools"
   }
 ]
