@@ -232,5 +232,11 @@
     "added": "2026-04-29T14:06:51Z",
     "source": "github-star",
     "notes": "Ministack: Free, open-source local AWS emulator - 40+ services, Terraform compatible, real databases. Free forever. MIT   licensed. | Language: Python | Topics: aws, aws-emulator, aws-local, aws-sdk, devtools"
+  },
+  {
+    "url": "https://github.com/autorope/donkeycar",
+    "added": "2026-04-30T21:52:38Z",
+    "source": "github-star",
+    "notes": "Open source hardware and software platform to build a small scale self driving car. | Language: Python | Topics: cv2, donkeycar, jetson-nano, keras, python"
   }
 ]
