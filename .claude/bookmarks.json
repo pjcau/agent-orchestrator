@@ -238,5 +238,23 @@
     "added": "2026-04-30T21:52:38Z",
     "source": "github-star",
     "notes": "Open source hardware and software platform to build a small scale self driving car. | Language: Python | Topics: cv2, donkeycar, jetson-nano, keras, python"
+  },
+  {
+    "url": "https://github.com/pracdata/awesome-open-source-data-engineering",
+    "added": "2026-05-01T19:12:48Z",
+    "source": "github-star",
+    "notes": "A curated list of open source tools used in analytics platforms and data engineering ecosystem | Topics: analytics, awesome, awesome-list, data, data-analytics"
+  },
+  {
+    "url": "https://github.com/evangelosmeklis/deepdrone",
+    "added": "2026-05-01T13:05:20Z",
+    "source": "github-star",
+    "notes": "Control drones with natural language | Language: Python | Topics: agentic-ai, agents, drone, drones, dronesimulator"
+  },
+  {
+    "url": "https://github.com/lance0/ttl",
+    "added": "2026-05-01T12:39:44Z",
+    "source": "github-star",
+    "notes": "Fast, modern traceroute with real-time TUI, per-hop stats, ASN/geo lookup, ECMP detection, and MPLS label parsing. A better mtr. | Language: Rust | Topics: asn-lookup, cli, geolocation, icmp, latency"
   }
 ]
