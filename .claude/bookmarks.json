@@ -256,5 +256,11 @@
     "added": "2026-05-01T12:39:44Z",
     "source": "github-star",
     "notes": "Fast, modern traceroute with real-time TUI, per-hop stats, ASN/geo lookup, ECMP detection, and MPLS label parsing. A better mtr. | Language: Rust | Topics: asn-lookup, cli, geolocation, icmp, latency"
+  },
+  {
+    "url": "https://github.com/PegorK/f32",
+    "added": "2026-05-02T19:21:02Z",
+    "source": "github-star",
+    "notes": ""
   }
 ]
