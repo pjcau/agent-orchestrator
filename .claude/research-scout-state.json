@@ -81,7 +81,12 @@
       "processed_at": "2026-05-07T03:12:16.434498+00:00",
       "summary": "addyosmani/agent-skills",
       "improvements": []
+    },
+    "https://github.com/espressif/esp-drone": {
+      "processed_at": "2026-05-08T03:08:54.481823+00:00",
+      "summary": "low-relevance: espressif/esp-drone",
+      "improvements": []
     }
   },
-  "last_run": "2026-05-07T03:12:16.434554+00:00"
+  "last_run": "2026-05-08T03:08:54.481915+00:00"
 }
