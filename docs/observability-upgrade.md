@@ -380,7 +380,7 @@ async def report_client_error(payload: dict):
     ...
 ```
 
-**Frontend hook (5 lines in app.js):**
+**Frontend hook (in `frontend/src/App.tsx`, `AppBootstrap` component):**
 
 ```javascript
 window.addEventListener('error', (e) => {

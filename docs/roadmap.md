@@ -487,7 +487,7 @@ async def smart_route(request) -> str:
 | SSE streaming endpoint | New | **Critical** | `GET /api/runs/{run_id}/stream` returning `text/event-stream`. Wires `CompiledGraph.astream()` to HTTP. Supports `stream_mode` param (events/values/messages). No persistent WebSocket required. |
 | HITL resume endpoint | New | **Critical** | `POST /api/runs/{run_id}/resume` accepting `{human_input: {...}}`. Resumes interrupted graphs from checkpoint. Returns new SSE stream for continued execution. |
 | Run management | New | High | `POST /api/runs` to create a run, `GET /api/runs/{run_id}` for status. Run registry with TTL eviction. |
-| Frontend SSE client | New | High | `EventSource` in app.js consuming SSE stream. Fallback to existing WebSocket for browsers without SSE. |
+| Frontend SSE client | New | High | `EventSource` consumer in `frontend/src/hooks/useSSE.ts` and `useWebSocket.ts`. Falls back to WebSocket for browsers without SSE. |
 | Configurable HITL | New | Medium | `hitl_config` parameter: enable/disable HITL per graph, configurable timeout, auto-approve option. |
 
 ### Sprint 2: UI Components (DeepFlow-Inspired)
