@@ -157,6 +157,7 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 - **LLM cache, tool cache, compaction** → [docs/cache-strategy.md](docs/cache-strategy.md)
 - **Frontend React component map** → [docs/components.md](docs/components.md)
 - **Roadmap** → [docs/roadmap.md](docs/roadmap.md)
+- **Unified roadmap (priorities + dependency graph + benefits)** → [docs/unified-roadmap.md](docs/unified-roadmap.md)
 - **Phase 2 (verification gate, atomic task validator)** → [docs/phase2.md](docs/phase2.md)
 - **Phase 3 (modality detection)** → [docs/phase3.md](docs/phase3.md)
 
