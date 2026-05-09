@@ -540,7 +540,7 @@ async def smart_route(request) -> str:
 |------|--------|----------|--------|
 | Extract `agent_runtime.py` module | New | High | Move WebSocket streaming, `run_agent()`, `run_team()`, graph execution into a separate FastAPI router module. |
 | Extract `gateway_api.py` module | New | High | Move REST management endpoints (config, users, jobs, MCP, metrics) into a separate router module. |
-| Static file serving separation | New | Medium | Serve `dashboard/static/` via nginx directly in production (bypass FastAPI for static assets). |
+| Static file serving separation | New | Medium | Serve `frontend/dist/` via nginx directly in production (bypass FastAPI for static assets). |
 | Multi-process docker-compose | New | Medium | Optional `docker-compose.split.yml` with agent-runtime, gateway-api, and nginx as separate services. |
 | Shared state via Redis | New | Low | When running as separate processes, share event bus and session state via Redis pub/sub. |
 

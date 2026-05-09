@@ -25,11 +25,10 @@
 
 ### What Exists (Dashboard UI)
 
-**File**: `src/agent_orchestrator/dashboard/static/index.html` (lines 208-242)
+**Files**: `frontend/src/components/layout/Sidebar.tsx` (Cache section) and `frontend/src/components/metrics/MetricsBar.tsx` (header badge).
 
 - Cache panel with: Hits, Misses, Evictions, Hit Rate
 - Cache bar (visual fill)
-- Cache log area
 - Header: cache hit rate badge
 
 ### What Exists (Event Types)

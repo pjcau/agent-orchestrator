@@ -150,9 +150,9 @@ The dashboard header shows two metric groups:
 - **DB indicator**: green dot = PostgreSQL connected, metrics persisted; red = in-memory only
 - **Debug**: `GET /auth/debug` — shows OAuth config (base_url, redirect_uri, client_id prefix)
 
-## Ported features (parity with vanilla UI)
+## Ported features (parity with vanilla UI, removed)
 
-The following components were ported from `src/agent_orchestrator/dashboard/static/app.js` to bring the React frontend to feature parity before removing the vanilla UI.
+The vanilla JS dashboard at `src/agent_orchestrator/dashboard/static/` was removed once the React frontend reached feature parity. The following components were ported from the legacy `app.js` to React; they are listed here so the surface area is documented in one place.
 
 | Component | File | Rendered in | Description |
 |-----------|------|-------------|-------------|
@@ -167,10 +167,10 @@ New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `f
 
 ## UI Enhancements (DeepFlow-Inspired)
 
-Rich rendering capabilities in the vanilla JS dashboard (no framework, CDN-only):
+Rich rendering capabilities in the React dashboard (Mermaid loaded from CDN, KaTeX via `rehype-katex`):
 
-- **Mermaid.js** — renders ` ```mermaid ` code blocks as SVG diagrams in chat messages (CDN: `mermaid@11`)
-- **KaTeX** — renders `$...$` (inline) and `$$...$$` (block) LaTeX math formulas (CDN: `katex@0.16`)
+- **Mermaid.js** — renders ` ```mermaid ` code blocks as SVG diagrams in chat messages (CDN `mermaid@11`, wired in `frontend/src/components/common/MarkdownRenderer.tsx`)
+- **KaTeX** — renders `$...$` (inline) and `$$...$$` (block) LaTeX math formulas via `rehype-katex` + `remark-math`
 - **Progressive markdown streaming** — buffers streaming chunks and re-renders full markdown on each chunk, fixing broken code blocks and tables mid-stream
 - **Reasoning/thinking accordion** — extracts `<thinking>` / `<reasoning>` tags into collapsible `<details>` blocks (auto-collapsed, purple left border)
 - **Task Plan panel** — right sidebar section showing real-time graph execution progress (pending/in_progress/completed/failed) with elapsed time per node

@@ -8,7 +8,7 @@ Serves:
 - WebSocket at /ws for real-time events
 - WebSocket at /ws/stream for streaming LLM responses
 - REST APIs for models, agents, prompt, files, conversations, presets
-- Static files for the dashboard UI
+- React frontend from frontend/dist/ (built by docker/dashboard/Dockerfile)
 """
 
 from __future__ import annotations
@@ -46,8 +46,6 @@ from .agent_runtime_router import runtime_router
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
-
-STATIC_DIR = Path(__file__).parent / "static"
 
 # Module-level counter kept for backward compatibility — tests that import
 # _frontend_error_count directly from app will get the counter used by the
@@ -312,28 +310,37 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             logger.info("Sandbox manager: all sessions cleaned up")
 
     # -----------------------------------------------------------------------
-    # Static files and root HTML (React frontend preferred, vanilla JS fallback)
+    # Static files and root HTML — React frontend from frontend/dist/
+    # In production the Docker build always populates frontend/dist/. In test
+    # or dev environments without a build, we serve a placeholder page rather
+    # than crashing so backend-only tests can still create the app.
     # -----------------------------------------------------------------------
 
     react_dist = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
+    react_index = react_dist / "index.html"
 
-    if react_dist.is_dir() and (react_dist / "index.html").exists():
+    if react_dist.is_dir() and react_index.exists():
         logger.info("Serving React frontend from %s", react_dist)
         app.mount("/assets", StaticFiles(directory=str(react_dist / "assets")), name="assets")
-        # Keep legacy static mount for backward compatibility
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-        @app.get("/", response_class=HTMLResponse)
-        async def index():
-            return HTMLResponse(content=(react_dist / "index.html").read_text())
+        _index_html = react_index.read_text()
     else:
-        logger.info("React frontend not found, serving vanilla JS from %s", STATIC_DIR)
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+        logger.warning(
+            "React frontend build not found at %s. The dashboard UI will not "
+            "be served. Run `cd frontend && npm install && npm run build` to "
+            "build it.",
+            react_dist,
+        )
+        _index_html = (
+            "<!doctype html><meta charset=utf-8>"
+            "<title>Agent Orchestrator</title>"
+            "<h1>React frontend not built</h1>"
+            "<p>Run <code>cd frontend && npm install && npm run build</code> "
+            "and restart the dashboard.</p>"
+        )
 
-        @app.get("/", response_class=HTMLResponse)
-        async def index():
-            index_file = STATIC_DIR / "index.html"
-            return HTMLResponse(content=index_file.read_text())
+    @app.get("/", response_class=HTMLResponse)
+    async def index():
+        return HTMLResponse(content=_index_html)
 
     # -----------------------------------------------------------------------
     # Include modular routers
