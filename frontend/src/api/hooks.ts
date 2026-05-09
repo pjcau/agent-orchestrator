@@ -28,6 +28,10 @@ import type {
   PromptListResponse,
   PromptTemplate,
   CompactionStats,
+  PresetsResponse,
+  FilesResponse,
+  FileContentResponse,
+  PricingResponse,
 } from "./types";
 
 // Query keys — centralised for cache invalidation
@@ -48,6 +52,9 @@ export const queryKeys = {
   promptSearch: (tags: string[], category: string | null) =>
     ["prompts", "search", tags.join(","), category ?? ""] as const,
   compactionStats: ["compaction", "stats"] as const,
+  presets: ["presets"] as const,
+  files: (path: string) => ["files", path] as const,
+  pricing: ["pricing"] as const,
 };
 
 // --- Queries ---
@@ -299,6 +306,67 @@ export function useDeletePrompt() {
       return resp.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.prompts }),
+  });
+}
+
+// ── Presets (parity with vanilla UI) ──────────────────────────────────
+
+export function usePresets(
+  options?: Partial<UseQueryOptions<PresetsResponse>>
+) {
+  return useQuery<PresetsResponse>({
+    queryKey: queryKeys.presets,
+    queryFn: async () => {
+      const resp = await apiClient.get<PresetsResponse>("/api/presets");
+      return resp.data;
+    },
+    staleTime: 5 * 60 * 1000,
+    ...options,
+  });
+}
+
+// ── Files browser (parity with vanilla UI) ────────────────────────────
+
+export function useFiles(
+  path: string,
+  options?: Partial<UseQueryOptions<FilesResponse>>
+) {
+  return useQuery<FilesResponse>({
+    queryKey: queryKeys.files(path),
+    queryFn: async () => {
+      const resp = await apiClient.get<FilesResponse>(
+        `/api/files?path=${encodeURIComponent(path)}`
+      );
+      return resp.data;
+    },
+    enabled: path !== undefined,
+    staleTime: 10 * 1000,
+    ...options,
+  });
+}
+
+/** Thin async helper to fetch a single file's content. */
+export async function fetchFileContent(path: string): Promise<FileContentResponse> {
+  const resp = await apiClient.get<FileContentResponse>(
+    `/api/file?path=${encodeURIComponent(path)}`
+  );
+  return resp.data;
+}
+
+// ── Pricing (parity with vanilla UI) ──────────────────────────────────
+
+export function usePricing(
+  options?: Partial<UseQueryOptions<PricingResponse>>
+) {
+  return useQuery<PricingResponse>({
+    queryKey: queryKeys.pricing,
+    queryFn: async () => {
+      const resp = await apiClient.get<PricingResponse>("/api/openrouter/pricing");
+      return resp.data;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    ...options,
   });
 }
 

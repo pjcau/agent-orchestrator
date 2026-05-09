@@ -150,6 +150,21 @@ The dashboard header shows two metric groups:
 - **DB indicator**: green dot = PostgreSQL connected, metrics persisted; red = in-memory only
 - **Debug**: `GET /auth/debug` — shows OAuth config (base_url, redirect_uri, client_id prefix)
 
+## Ported features (parity with vanilla UI)
+
+The following components were ported from `src/agent_orchestrator/dashboard/static/app.js` to bring the React frontend to feature parity before removing the vanilla UI.
+
+| Component | File | Rendered in | Description |
+|-----------|------|-------------|-------------|
+| **PresetsBar** | `frontend/src/components/prompts/PresetsBar.tsx` | Above `ChatInput` inside `ChatPanel` | Fetches `GET /api/presets` and renders pill buttons. Clicking a preset substitutes `{context}` with the current attached-file context and calls `onApply` to set the textarea. Shows an inline notice if a file is required but not attached. |
+| **ComparePanel** | `frontend/src/components/compare/ComparePanel.tsx` | Right `Sidebar`, "Compare Models" section | Two model selects + a "Go" button. POSTs the last user message to `/api/prompt` twice in parallel and shows side-by-side outputs with tok/s and elapsed time. |
+| **PricingPanel** | `frontend/src/components/pricing/PricingPanel.tsx` | Right `Sidebar`, "Pricing" section | Fetches `GET /api/openrouter/pricing` (staleTime 60 s, no auto-refetch). Search input filters by model id/name; shows up to 50 rows; free models are highlighted. |
+| **WorkspaceFilePicker** | `frontend/src/components/files/WorkspaceFilePicker.tsx` | Modal opened from `ChatInput` "Browse" button | Browses server-side workspace via `GET /api/files?path=...`. Breadcrumb navigation into directories; clicking a file fetches `GET /api/file?path=...` and pushes it into `attachedFiles`. |
+| **InteractionTimeline** | `frontend/src/components/graph/InteractionTimeline.tsx` | Inside `graph-section` in `DashboardPage`, below `GraphVisualizer` | Renders `interactions` from the Zustand store (populated by `useWebSocket.ts`). Auto-scrolls to bottom on new items. Status dot coloured by status (pending/running/completed/failed). Shows "No interactions yet" empty state. |
+| **Fallback log** | `frontend/src/hooks/useWebSocket.ts`, `team.complete` handler | As a system message in the chat | When `result.fallback_log` is non-empty, adds a system message before the assistant reply listing each entry as `✓ agent → model [ok] detail` or `✗ ... [failed] detail`. |
+
+New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `fetchFileContent` (async helper), `usePricing`. Query keys added: `presets`, `files`, `pricing`.
+
 ## UI Enhancements (DeepFlow-Inspired)
 
 Rich rendering capabilities in the vanilla JS dashboard (no framework, CDN-only):

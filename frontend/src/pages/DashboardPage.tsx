@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { HistorySidebar } from "@/components/layout/HistorySidebar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { GraphVisualizer } from "@/components/graph/GraphVisualizer";
+import { InteractionTimeline } from "@/components/graph/InteractionTimeline";
 import { AgentSelector } from "@/components/agents/AgentSelector";
 import { SandboxPanel } from "@/components/sandbox/SandboxPanel";
 import { PromptsPanel } from "@/components/prompts/PromptsPanel";
@@ -109,6 +110,7 @@ export function DashboardPage() {
               </div>
             </div>
             <GraphVisualizer />
+            <InteractionTimeline />
           </section>
 
           {/* Center: Chat */}

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import type { ModelsResponse } from "@/api/types";
+import { WorkspaceFilePicker } from "@/components/files/WorkspaceFilePicker";
 
 export type ExecMode = "multi-agent" | "agent" | "prompt";
 
@@ -15,6 +16,12 @@ interface ChatInputProps {
     fileContext: string;
   }) => void;
   onNewChat: () => void;
+  /** When non-null, ChatInput sets its textarea to this value (from preset). */
+  presetText?: string | null;
+  /** Called after the preset text has been consumed so parent can clear it. */
+  onPresetConsumed?: () => void;
+  /** Notifies parent whenever the derived fileContext string changes. */
+  onFileContextChange?: (ctx: string) => void;
 }
 
 /** Detect provider from model name */
@@ -28,13 +35,22 @@ interface AttachedFile {
   content: string;
 }
 
-export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputProps) {
+export function ChatInput({
+  models,
+  isDisabled,
+  onSend,
+  onNewChat,
+  presetText,
+  onPresetConsumed,
+  onFileContextChange,
+}: ChatInputProps) {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<ExecMode>("multi-agent");
   const [provider, setProvider] = useState<"openrouter" | "ollama">("openrouter");
   const [model, setModel] = useState("");
   const [useStreaming, setUseStreaming] = useState(true);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first available model when provider changes or models load
@@ -45,6 +61,23 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
       setModel(list[0].name);
     }
   }, [models, provider, model]);
+
+  // Apply preset text into textarea when parent sets it
+  useEffect(() => {
+    if (presetText != null) {
+      setText(presetText);
+      onPresetConsumed?.();
+      textareaRef.current?.focus();
+    }
+  }, [presetText, onPresetConsumed]);
+
+  // Notify parent whenever the derived fileContext changes
+  useEffect(() => {
+    const ctx = attachedFiles
+      .map((f) => `--- ${f.path} ---\n${f.content}`)
+      .join("\n\n");
+    onFileContextChange?.(ctx);
+  }, [attachedFiles, onFileContextChange]);
 
   const handleProviderChange = (p: "openrouter" | "ollama") => {
     setProvider(p);
@@ -215,10 +248,18 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
         <button
           className="btn-icon"
           onClick={handleFileAttach}
-          title="Attach file"
+          title="Upload file"
           disabled={isDisabled}
         >
           +
+        </button>
+        <button
+          className="btn-icon"
+          onClick={() => setBrowseOpen(true)}
+          title="Browse workspace files"
+          disabled={isDisabled}
+        >
+          B
         </button>
         <textarea
           ref={textareaRef}
@@ -259,6 +300,18 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
           New Chat
         </button>
       </div>
+
+      {/* Workspace file picker modal */}
+      <WorkspaceFilePicker
+        open={browseOpen}
+        onClose={() => setBrowseOpen(false)}
+        onPick={(file) => {
+          setAttachedFiles((prev) => [
+            ...prev.filter((f) => f.path !== file.path),
+            file,
+          ]);
+        }}
+      />
     </div>
   );
 }

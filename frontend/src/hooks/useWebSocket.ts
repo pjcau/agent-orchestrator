@@ -126,6 +126,21 @@ export function useWebSocket() {
           const model = state.pendingTeamModel ?? "";
           setPendingTeamJob(null, null);
 
+          // Render fallback_log entries as a system message before the result.
+          // Each entry: "✓ agent → model [status] detail" or "✗ ..." (mirrors vanilla UI).
+          const fbLog = result.fallback_log ?? [];
+          if (fbLog.length > 0) {
+            const lines = fbLog.map((f) => {
+              const icon = f.status === "ok" ? "✓" : "✗";
+              return `${icon} ${f.agent} → ${f.model} [${f.status}] ${f.detail}`;
+            });
+            addMessage({
+              role: "system",
+              content: `Fallback log:\n${lines.join("\n")}`,
+              timestamp: Date.now(),
+            });
+          }
+
           if (result.success) {
             const steps: Array<{ node: string; output: string }> = [];
             if (result.plan) {

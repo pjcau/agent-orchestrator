@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useAppStore } from "@/stores/useAppStore";
 import type { OrchestratorEvent } from "@/api/types";
 import { useClearCache } from "@/api/hooks";
+import { ComparePanel } from "@/components/compare/ComparePanel";
+import { PricingPanel } from "@/components/pricing/PricingPanel";
 
 type EventFilter = "all" | "agent" | "graph" | "cooperation" | "cache";
 
@@ -243,6 +245,18 @@ export function Sidebar() {
             ))
           )}
         </div>
+      </section>
+
+      {/* Compare */}
+      <section className="sidebar-section">
+        <h2 className="sidebar-section__title">Compare Models</h2>
+        <ComparePanel />
+      </section>
+
+      {/* Pricing */}
+      <section className="sidebar-section">
+        <h2 className="sidebar-section__title">Pricing</h2>
+        <PricingPanel />
       </section>
     </aside>
   );

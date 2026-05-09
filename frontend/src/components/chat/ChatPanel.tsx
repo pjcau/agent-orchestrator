@@ -1,10 +1,11 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useAppStore } from "@/stores/useAppStore";
 import { useModels, useNewConversation } from "@/api/hooks";
 import { useWebSocketContext } from "@/hooks/useWebSocketContext";
 import { ChatMessageItem } from "./ChatMessage";
 import { StreamingMessage } from "./StreamingMessage";
 import { ChatInput, type ExecMode } from "./ChatInput";
+import { PresetsBar } from "@/components/prompts/PresetsBar";
 import apiClient from "@/api/client";
 import type { ChatMessage } from "@/api/types";
 
@@ -24,6 +25,12 @@ export function ChatPanel() {
   const { sendStreamPrompt, isStreamWsReady } = useWebSocketContext();
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const isRunning = useAppStore((s) => s.isStreaming);
+
+  // Preset text injection: when a preset is applied, we store it and pass it
+  // down to ChatInput so it can set its textarea value.
+  const [presetText, setPresetText] = useState<string | null>(null);
+  // fileContext is tracked here so PresetsBar can use it for {context} substitution.
+  const [fileContext, setFileContext] = useState("");
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -193,11 +200,16 @@ export function ChatPanel() {
         <div ref={chatBottomRef} />
       </div>
 
+      <PresetsBar onApply={setPresetText} fileContext={fileContext} />
+
       <ChatInput
         models={models}
         isDisabled={isRunning}
         onSend={handleSend}
         onNewChat={handleNewChat}
+        presetText={presetText}
+        onPresetConsumed={() => setPresetText(null)}
+        onFileContextChange={setFileContext}
       />
     </div>
   );
