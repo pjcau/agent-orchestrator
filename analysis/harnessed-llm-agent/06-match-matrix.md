@@ -24,7 +24,7 @@ One-shot view of every component in the diagram vs the current `agent-orchestrat
 | 10 | Memory | Episodic Experience | ✅ | `core/store.py`, `store_postgres.py` | 30-day TTL, injection into prompt |
 | 11 | Memory | Personalized Memory | ⚠️ | `core/users.py`, `store.py` | No `("user", id)` namespace, no injection |
 | 12 | Protocols | Agent ↔ User | ✅ | `core/clarification.py`, `dashboard/sse.py` | 5 typed categories, SSE HITL |
-| 13 | Protocols | Agent ↔ Agent | ⚠️ | `core/cooperation.py`, `mcp_server.py`, `mcp_client.py` | No A2A formalization |
+| 13 | Protocols | Agent ↔ Agent | ✅ | `core/cooperation.py`, `core/cooperation_messages.py`, `docs/cooperation-protocol.md`, `mcp_server.py`, `mcp_client.py` | Documented + typed messages (P5a). A2A adapter (P5b) still deferred. |
 | 14 | Orbital | Sub-Agent Orchestration | ✅ | `core/orchestrator.py`, team-lead, `graph_patterns.py` | 30 agents, 5 categories |
 | 15 | Orbital | Sandbox | ✅ | `core/sandbox.py`, `dashboard/sandbox_manager.py` | Docker + local, port pool |
 | 16 | Orbital | Observability | ✅ | `core/tracing.py`, `metrics.py`, `audit.py`, Tempo | OTel + Prometheus + Grafana |
@@ -35,8 +35,8 @@ One-shot view of every component in the diagram vs the current `agent-orchestrat
 ## Scoreboard
 
 - **Total components**: 19
-- **✅ HAVE**: 14 (74%)
-- **⚠️ PARTIAL**: 4 (21%)
+- **✅ HAVE**: 15 (79%)
+- **⚠️ PARTIAL**: 3 (16%)
 - **❌ MISSING**: 1 (5%)
 
 ## Biggest gaps, ranked by unlock
@@ -45,4 +45,4 @@ One-shot view of every component in the diagram vs the current `agent-orchestrat
 2. **#19 Evaluator** — without this, quality improvement is guesswork. Blocks any serious prompt/model A/B testing. High.
 3. **#6 Guardrails** — prerequisite for multi-tenant, untrusted, or regulated workloads. Medium-High.
 4. **#11 Personalized Memory** — tiny diff on top of the existing store. Low effort, decent UX win. Medium.
-5. **#13 Agent-Agent protocol formalization** — strategic, wait-and-see on A2A. Low urgency.
+5. **#13 Agent-Agent protocol formalization** — tactical part shipped (typed messages + spec, P5a). Strategic A2A adapter (P5b) still wait-and-see. Low urgency.

@@ -140,6 +140,7 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 ### Agents, Skills, Dashboard
 - **30 agents by category, cross-dependencies, skills map, research scout workflow** → [docs/agents.md](docs/agents.md)
 - **Dashboard UI: routing, conversation persistence, MCP server/client, SSE streaming, async team run, session explorer, memory, metrics, modular architecture** → [docs/dashboard.md](docs/dashboard.md)
+- **Agent ↔ Agent cooperation protocol: typed messages, state machine, error semantics** → [docs/cooperation-protocol.md](docs/cooperation-protocol.md)
 
 ### Build, Deploy, Operate
 - **Production deployment (EC2, SSL, Nginx), CI/CD pipeline, OrbStack runtime, secrets, troubleshooting** → [docs/deployment.md](docs/deployment.md)
