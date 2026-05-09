@@ -45,6 +45,7 @@ from .gateway_api import gateway_router, health_router, metrics_router
 from .agent_runtime_router import runtime_router
 from .knowledge_routes import knowledge_router
 from .evals_routes import evals_router
+from .personalized_memory_routes import memory_router
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
@@ -263,6 +264,19 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     app.state.run_manager = run_manager
     app.state.mcp_client_manager = mcp_client_manager
 
+    # ── Personalized Memory (P4) ────────────────────────────────────────
+    # Constructed eagerly using the initial store (InMemory or None).
+    # Startup replaces it with the Postgres-backed instance when DATABASE_URL
+    # is set.  Routes read from app.state.personalized_memory at request time
+    # so they always see the latest store.
+    from ..core.personalized_memory import PersonalizedMemory as _PM
+
+    app.state.personalized_memory = (
+        _PM(store_holder[0], memory_filter=_memory_filter)
+        if store_holder[0] is not None
+        else None
+    )
+
     # ── Knowledge / RAG (P1) ────────────────────────────────────────────
     # The knowledge subsystem is a single shared (embedder, store) pair
     # plus the Ingester / Retriever orchestrators. Defaults are dependency
@@ -357,6 +371,10 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             app.state.store = store_holder[0]
         # Rebuild PromptRegistry against the resolved store (Postgres or InMemory).
         app.state.prompt_registry = PromptRegistry(app.state.store, metrics=metrics_registry)
+        # Rebuild PersonalizedMemory against the resolved store.
+        from ..core.personalized_memory import PersonalizedMemory as _PM
+
+        app.state.personalized_memory = _PM(app.state.store, memory_filter=_memory_filter)
 
         if _sandbox_enabled:
             logger.info("Sandbox system enabled (SANDBOX_ENABLED=true)")
@@ -416,6 +434,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Evaluator endpoints (/api/evals/*) — P2
     app.include_router(evals_router)
+
+    # Personalized memory endpoints (/api/user-memory/users/*) — P4
+    app.include_router(memory_router)
 
     # Agent execution, WebSocket streaming, SSE (/api/prompt, /api/agent/run,
     # /api/team/*, /ws, /ws/stream)

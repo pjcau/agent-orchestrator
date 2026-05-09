@@ -22,7 +22,7 @@ One-shot view of every component in the diagram vs the current `agent-orchestrat
 | 8 | Memory | Working Context | ✅ | `core/conversation.py`, `checkpoint_postgres.py` | Threads, fork, restore |
 | 9 | Memory | Semantic Knowledge (RAG) | ❌ | — | No vector store, no embeddings, no retriever |
 | 10 | Memory | Episodic Experience | ✅ | `core/store.py`, `store_postgres.py` | 30-day TTL, injection into prompt |
-| 11 | Memory | Personalized Memory | ⚠️ | `core/users.py`, `store.py` | No `("user", id)` namespace, no injection |
+| 11 | Memory | Personalized Memory | ✅ | `core/personalized_memory.py`, `skills/profile_extractor_skill.py`, `dashboard/personalized_memory_routes.py` | `("user", id)` namespace, `<user_profile>` injection, GDPR wipe, HTTP API |
 | 12 | Protocols | Agent ↔ User | ✅ | `core/clarification.py`, `dashboard/sse.py` | 5 typed categories, SSE HITL |
 | 13 | Protocols | Agent ↔ Agent | ✅ | `core/cooperation.py`, `core/cooperation_messages.py`, `docs/cooperation-protocol.md`, `mcp_server.py`, `mcp_client.py` | Documented + typed messages (P5a). A2A adapter (P5b) still deferred. |
 | 14 | Orbital | Sub-Agent Orchestration | ✅ | `core/orchestrator.py`, team-lead, `graph_patterns.py` | 30 agents, 5 categories |

@@ -284,6 +284,39 @@ EvalCase ──► agent_callable ──► EvalRun
 | `CLAUDE.md` | Project config YAML | Not tied to Claude namespace |
 | Memory (`MEMORY.md`) | `ContextStore` | Persistent cross-session state |
 
+## Personalized Memory — User Profile Injection Lifecycle (P4)
+
+User preferences are accumulated across sessions via the `PersonalizedMemory` facade
+(namespace `("user", user_id)`) and surfaced in every agent turn as a `<user_profile>`
+XML block inside the system prompt.
+
+```
+[Session start]
+  Agent.__init__(personalized_memory=pm, user_id="alice")
+    → await agent.prefetch_user_profile()   # async store read, populates _user_profile_cache
+
+[Each provider call]
+  agent.build_system_prompt()
+    → inject_marker_sections(config.role, _prompt_sections)
+    → _build_user_profile_block()           # sync, reads _user_profile_cache
+    → returns: "You are … <user_profile>\n  [profile]: {preferences: ['dark-mode']}\n</user_profile>"
+
+[Background: ProfileExtractorSkill]
+  skill.execute({user_id, recent_messages})
+    → provider.complete(extraction_prompt)  # best-effort, catches all exceptions
+    → PersonalizedMemory.put(user_id, "profile", {...})
+    → agent.prefetch_user_profile()         # optional refresh for next turn
+```
+
+Key design properties:
+- **Import boundary safe** — `core/personalized_memory.py` and `skills/profile_extractor_skill.py`
+  never import from `dashboard/`. The HTTP layer in `dashboard/personalized_memory_routes.py`
+  depends on the harness, not vice-versa.
+- **Best-effort** — the extractor skill catches all provider and persistence failures and
+  returns a `SkillResult(success=False)` so the main agent flow is never blocked.
+- **Filter-safe** — every write passes through `MemoryFilter`, keeping session artefacts
+  (tmp paths, job dirs) out of long-term user profiles.
+
 ## Anti-Stall Protocol (Built Into Core)
 
 Every agent enforces:

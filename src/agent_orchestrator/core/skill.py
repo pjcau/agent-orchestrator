@@ -40,6 +40,7 @@ class SkillResult:
     success: bool
     output: Any
     error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
         if self.success:

@@ -167,6 +167,7 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 - **Unified roadmap (priorities + dependency graph + benefits)** → [docs/unified-roadmap.md](docs/unified-roadmap.md)
 - **Phase 2 (verification gate, atomic task validator)** → [docs/phase2.md](docs/phase2.md)
 - **Phase 3 (modality detection)** → [docs/phase3.md](docs/phase3.md)
+- **Personalized Memory (P4): `PersonalizedMemory`, `ProfileExtractorSkill`, `<user_profile>` injection, `/api/user-memory/*`** → [docs/abstractions.md#memory--state](docs/abstractions.md) · [docs/architecture.md](docs/architecture.md) · [docs/dashboard.md](docs/dashboard.md)
 
 ### Learning Path
 - **Dated test logs from `/orchestrator-learning-path-test` with confidence scores** → [docs/learning-path-tests/](docs/learning-path-tests/)

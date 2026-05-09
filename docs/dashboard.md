@@ -58,6 +58,22 @@ The dashboard exposes all agents and skills as MCP (Model Context Protocol) tool
 - **Orchestrator bridge**: `Orchestrator.register_mcp_tools()` populates an `MCPServerRegistry` from all configured agents and skills
 - **UI**: MCP tool count shown in dashboard header
 
+## Personalized Memory API (P4)
+
+Per-user long-term memory CRUD, scoped to namespace `("user", user_id)` in the shared store.
+All writes pass through `MemoryFilter` before persistence.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/user-memory/users/{user_id}` | List all entries for a user (query param `limit`, default 50, max 500). Returns `{user_id, count, entries}`. |
+| `GET` | `/api/user-memory/users/{user_id}/{key}` | Single entry. Returns `{user_id, key, value}` or 404. |
+| `DELETE` | `/api/user-memory/users/{user_id}/{key}` | Remove a single entry. Returns `{success, user_id, key}` or 404. |
+| `DELETE` | `/api/user-memory/users/{user_id}` | GDPR erasure — wipe **all** entries for the user. Returns `{success, user_id, removed}`. |
+
+The `PersonalizedMemory` instance is attached to `app.state.personalized_memory` at startup and
+rebuilt when the store switches from InMemory to Postgres. Implemented in
+`dashboard/personalized_memory_routes.py`.
+
 ## MCP Client — connecting to external servers
 
 The dashboard also acts as an MCP **client**, connecting outbound to external MCP servers.
