@@ -165,6 +165,7 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 - **Frontend React component map** → [docs/components.md](docs/components.md)
 - **Roadmap** → [docs/roadmap.md](docs/roadmap.md)
 - **Unified roadmap (priorities + dependency graph + benefits)** → [docs/unified-roadmap.md](docs/unified-roadmap.md)
+- **Hands-on quickstart for sprint features (curl + Python recipes per priority)** → [docs/quickstart-features.md](docs/quickstart-features.md)
 - **Phase 2 (verification gate, atomic task validator)** → [docs/phase2.md](docs/phase2.md)
 - **Phase 3 (modality detection)** → [docs/phase3.md](docs/phase3.md)
 - **Personalized Memory (P4): `PersonalizedMemory`, `ProfileExtractorSkill`, `<user_profile>` injection, `/api/user-memory/*`** → [docs/abstractions.md#memory--state](docs/abstractions.md) · [docs/architecture.md](docs/architecture.md) · [docs/dashboard.md](docs/dashboard.md)

@@ -5,6 +5,23 @@ Consolidates the 5 deep-dive analyses under `analysis/` (deepflow, langgraph, pa
 
 This file replaces fragmented per-analysis roadmaps for prioritisation purposes; the per-analysis files remain as research notes.
 
+> **Want to try the new features instead of just reading?**
+> Hands-on quickstart with copy-pasteable commands → [docs/quickstart-features.md](quickstart-features.md)
+
+## Table of contents
+
+| Section | What's in it |
+|---|---|
+| [TL;DR](#tldr) | One-screen sprint summary + numbers |
+| [Why RAG matters](#why-rag-matters-for-every-execution-mode) | Misconception-buster: RAG benefits ALL execution modes |
+| [Status snapshot](#status-snapshot-today) | Mermaid graph of what exists today (clickable nodes) |
+| [Growth graph](#growth-graph-how-the-system-grew-this-sprint) | What this sprint added and what each unlocks |
+| [Improvement graph (archived)](#improvement-graph-original-priority-order-now-archived-for-reference) | Original P1–P6 dependency view |
+| [Priority cards](#priority-cards) | Collapsible per-priority cards with try-it examples |
+| [Items already shipped](#items-already-shipped-dont-re-do) | Cross-reference of older roadmap items now in main |
+| [Sprint history](#sprint-history-what-actually-happened) | Gantt of the actual parallel sprint |
+| [What's next](#whats-next) | Concrete follow-ups after this sprint |
+
 ---
 
 ## TL;DR
@@ -89,9 +106,17 @@ graph TD
         R5["D File transparency"]:::done
         R6["Removed vanilla UI<br/>(React-only)"]:::done
     end
+
+    %% Clickable nodes — open source files in GitHub-rendered Markdown.
+    click M4 "../src/agent_orchestrator/core/knowledge/__init__.py" "RAG knowledge subsystem"
+    click M3 "../src/agent_orchestrator/core/personalized_memory.py" "Personalized memory facade"
+    click S3 "../src/agent_orchestrator/core/guardrails.py" "Guardrail layer"
+    click O3 "../src/agent_orchestrator/core/observability/__init__.py" "Optional observability exporters"
+    click O6 "../src/agent_orchestrator/core/evaluator.py" "Evaluator framework"
+    click Pa "../docs/cooperation-protocol.md" "Cooperation protocol spec"
 ```
 
-Legend: green = ✅ done before this sprint, blue = ✅ shipped in this Q1+Q2 sprint.
+Legend: green = ✅ done before this sprint, blue = ✅ shipped in this Q1+Q2 sprint. **Click any blue node** to jump to its source file (works in GitHub-rendered view).
 
 Legend: green = ✅ done, yellow = ⚠️ partial, red = ❌ missing.
 
@@ -194,137 +219,294 @@ graph LR
 
 ## Priority cards
 
-### P1 — Semantic Knowledge / RAG  🔥🔥🔥
+> Each card is collapsed by default. Click the title to expand. Status badge in the summary.
+
+<details>
+<summary><strong>P1 — Semantic Knowledge / RAG</strong> &nbsp; ✅ <em>shipped</em> &nbsp; · &nbsp; Impact: 🔥🔥🔥 &nbsp; · &nbsp; Effort: M</summary>
 
 | | |
 |---|---|
-| **Effort** | M (1–2 weeks) |
-| **Risk** | Low (additive; no existing feature depends on it) |
-| **Source** | `analysis/harnessed-llm-agent/07-roadmap.md` §P1 |
-| **Status** | ❌ Not started |
+| **Status** | ✅ Shipped — commits `3c1cac5` (core), `fda8bb5` (skill+API), `39d9cc1` (UI) |
+| **Source design** | `analysis/harnessed-llm-agent/07-roadmap.md` §P1 |
+| **Where it lives** | `core/knowledge/`, `skills/retrieval_skill.py`, `dashboard/knowledge_routes.py`, `frontend/src/...` |
 
 **What it adds**
-- `core/knowledge.py`: `EmbeddingProvider` ABC + `OpenAIEmbeddings`, `LocalEmbeddings`, `ClaudeEmbeddings`; `KnowledgeStore` ABC + `PgVectorStore` impl; namespaces `("agent", name)`, `("shared",)`, `("user", id)`.
-- `skills/retrieval_skill.py`: `retrieve(query, namespace, k=5)` tool wired into the skill middleware chain.
-- Ingestion pipeline: existing `core/document_converter.py` → chunks → embeddings → store.
-- API: `POST /api/knowledge/ingest`, `POST /api/knowledge/search`, `GET /api/knowledge/namespaces`.
-- Dashboard: knowledge tab — list namespaces, upload docs, test retrieval.
+- `core/knowledge/`: `EmbeddingProvider` ABC + `HashEmbedder` (dev), `LocalEmbeddingProvider` (sentence-transformers, opt-in), `OpenAIEmbeddingProvider`. `KnowledgeStore` ABC + `InMemoryKnowledgeStore`. `Chunker` ABC + `MarkdownChunker` (header-aware) + `TextChunker`. `Ingester` and `Retriever` orchestrators. Namespaces: `("shared",)`, `("agent", name)`, `("user", id)`.
+- `skills/retrieval_skill.py`: agents call `knowledge_retrieve` to fetch top-k chunks; result is a Markdown block with citations.
+- `dashboard/knowledge_routes.py`: `POST /api/knowledge/ingest`, `POST /api/knowledge/search`, `GET /api/knowledge/namespaces`, `DELETE /api/knowledge/namespaces/{ns}`, `GET /api/knowledge/health`.
+- Frontend: RAG checkbox + namespace input next to the Stream toggle in `ChatInput`. System bubble "RAG: \<namespace\> · N chunks retrieved (\<model\>)" before each assistant reply when enabled. Knowledge category in the event log with a distinct K icon.
 
-**Benefits**
-- Unlocks **every agent category**: code-reviewer searches the codebase, finance pulls filings, data-scientist looks up schemas, marketer queries brand docs.
-- Removes the context-window ceiling that today caps how much an agent can "know about" a project.
-- Combined with P4 namespaces, gives per-user personalisation for free.
+**Try it (60-second walkthrough)**
 
-**Reference repos**: `pgvector/pgvector`, `run-llama/llama_index`, `chroma-core/chroma`.
+```bash
+# 1. Ingest a doc into the "shared" namespace (works against the in-memory store
+#    that ships by default — no infra needed).
+curl -sX POST http://localhost:5005/api/knowledge/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source_id": "auth-doc",
+    "namespace": "shared",
+    "text": "# Auth\n\nUse JWT tokens. Sessions are stateless. Tokens expire after 24h."
+  }'
+# → {"success": true, "chunks_added": 1, ...}
 
----
+# 2. Search:
+curl -sX POST http://localhost:5005/api/knowledge/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "how do auth tokens work?", "namespace": "shared", "k": 3}'
+# → {"hits":[{"score":..., "text":"# Auth\n\nUse JWT tokens..."}]}
 
-### P2 — Evaluator framework  🔥🔥🔥  *(cross-cutting)*
+# 3. Send a chat with RAG turned on (the toggle is the "RAG" checkbox in
+#    ChatInput; or via API:)
+curl -sX POST http://localhost:5005/api/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "How do auth tokens work?",
+    "model": "openai/gpt-4o",
+    "provider": "openrouter",
+    "rag_enabled": true,
+    "rag_namespace": "shared"
+  }'
+# → response includes a `rag` summary; an event "knowledge.retrieved" is emitted.
+```
+
+**Benefits unlocked**
+- Code-reviewer searches the codebase, finance pulls filings, data-science looks up schemas — every agent category gains retrieval.
+- Removes the context-window ceiling.
+- Same store powers per-user personalisation (P4) for free via the `("user", id)` namespace.
+
+**Production swap-in (one-liner each)**
+- Sentence-transformers embedder: `RAG_EMBEDDING_PROVIDER=local RAG_LOCAL_MODEL=all-MiniLM-L6-v2`
+- OpenAI embedder: `RAG_EMBEDDING_PROVIDER=openai RAG_OPENAI_MODEL=text-embedding-3-small`
+
+</details>
+
+<details>
+<summary><strong>P2 — Evaluator framework</strong> &nbsp; ✅ <em>shipped</em> &nbsp; · &nbsp; Impact: 🔥🔥🔥 (cross-cutting) &nbsp; · &nbsp; Effort: M</summary>
 
 | | |
 |---|---|
-| **Effort** | M |
-| **Risk** | Low (new subsystem, opt-in in CI) |
-| **Source** | `analysis/harnessed-llm-agent/07-roadmap.md` §P2 |
-| **Status** | ⚠️ Partial — `core/benchmark.py`, `conformance.py`, `smoke_tester.py` exist but no LLM-judge, no datasets, no CI gate. |
+| **Status** | ✅ Shipped — commit `ca57ba0` |
+| **Source design** | `analysis/harnessed-llm-agent/07-roadmap.md` §P2 |
+| **Where it lives** | `core/evaluator.py`, `evals/`, `dashboard/evals_routes.py` |
 
 **What it adds**
-- `core/evaluator.py`: `Evaluator` ABC, `LLMJudge`, `RubricEvaluator` (regex / contains / JSON schema / length), `EvalSuite`.
-- `evals/` directory with YAML/JSON golden datasets and CLI runners.
-- API + dashboard tab: score-over-time, side-by-side diffs.
-- CI: GitHub Action that runs a smoke eval on every PR; fail if any metric regresses > 5 %.
+- `core/evaluator.py`: `Evaluator` ABC, `RubricEvaluator` (deterministic checks: regex, contains, JSON schema, min/max length, with weights), `LLMJudge` (Provider-injected, robust JSON extraction), `EvalSuite` end-to-end runner, `JsonDataset` loader, `EvalReport` with pass_rate / mean_score summary.
+- `evals/datasets/smoke.json`: 5 hand-picked smoke cases (code summary, math reasoning, JSON output, safety refusal, conversational).
+- `evals/runners/cli.py`: `python -m evals.runners.cli --suite evals/datasets/smoke.json --agent team-lead --provider openrouter --model openai/gpt-4o` — coloured table, `--dry-run`, `--json` output, HTTP agent mode.
+- REST: `POST /api/evals/run`, `GET /api/evals/runs`, `GET /api/evals/runs/{id}`, `GET /api/evals/compare?a=&b=`.
 
-**Benefits**
-- Closes the feedback loop. Without it, P1 retrieval quality, P3 false-positive rate, prompt-tuning experiments, model swaps — **all are blind flights**.
-- Makes "did this PR make the agent smarter or dumber?" a yes/no answer.
+**Try it**
 
-**Why labelled cross-cutting**: P2 is independent of P1/P3/P4 to *build*, but it MEASURES them. You can ship it before, after, or in parallel with the others; the impact compounds.
+```bash
+# Run the smoke suite locally with the dry-run agent (no LLM call).
+python -m evals.runners.cli --suite evals/datasets/smoke.json --dry-run
 
-**Reference repos**: `openai/evals`, `confident-ai/deepeval` (pytest-friendly, drop-in), `explodinggradients/ragas` (best paired with P1).
+# Output (truncated):
+#   case_id     | passed | mean_score | detail
+#   ----------- | ------ | ---------- | -----------------------------
+#   code-001    |   ✓    |    1.00    | rubric: contains "summary" OK
+#   math-001    |   ✗    |    0.00    | rubric: contains "42" failed
+#   ...
+#   pass_rate=0.60 mean_score=0.65
 
----
+# Compare two runs over HTTP (after running two suites):
+curl -s 'http://localhost:5005/api/evals/compare?a=run-1&b=run-2'
+# → {"delta_pass_rate": +0.10, "delta_mean_score": +0.07, ...}
+```
 
-### P3 — Guardrails layer  🔥🔥
+**Benefits unlocked**
+- Closes the feedback loop. Without P2, P1 retrieval quality, P3 false-positive rate, prompt-tuning experiments, model swaps — all are blind flights.
+- Drop-in CI gate: a GitHub Action can fail PRs whose pass_rate regresses > 5%.
+
+**Cross-cutting**: P2 is independent of P1/P3/P4 to build, but it *measures* their quality. Build it any time; impact compounds.
+
+</details>
+
+<details>
+<summary><strong>P3 — Guardrails layer</strong> &nbsp; ✅ <em>shipped</em> &nbsp; · &nbsp; Impact: 🔥🔥 &nbsp; · &nbsp; Effort: S</summary>
 
 | | |
 |---|---|
-| **Effort** | S (< 1 week) |
-| **Risk** | Medium (wraps `Agent.execute()`) |
-| **Source** | `analysis/harnessed-llm-agent/07-roadmap.md` §P3 |
-| **Status** | ⚠️ Partial — input/output filtering exists in `audit.py`, `loop_detection.py`, `memory_filter.py`, but no unified pre/post layer. |
+| **Status** | ✅ Shipped — commit `3fee888` |
+| **Source design** | `analysis/harnessed-llm-agent/07-roadmap.md` §P3 |
+| **Where it lives** | `core/guardrails.py`, `core/agent.py` (integration), `dashboard/events.py`, `orchestrator.yaml.example` |
 
 **What it adds**
-- `core/guardrails.py`: `Guardrail` ABC + `GuardrailManager` + built-ins:
-  - `PIIScanner`, `SecretsScanner`, `PromptInjectionDetector`, `OutputSchemaGuard`, `CostGuard`.
-- Integration in `Agent.execute()`: pre-LLM input check, post-LLM output check, `guardrail.blocked` event.
-- YAML config per-agent.
+- `core/guardrails.py`: `Guardrail` ABC + `GuardrailResult(passed, reason, action: allow|block|redact)` + `GuardrailManager`. Built-ins:
+  - `PIIScanner` — email / phone / SSN / IBAN / credit cards (default: redact)
+  - `SecretsScanner` — AWS keys, GitHub tokens, generic API keys (default: block)
+  - `PromptInjectionDetector` — heuristic for "ignore previous instructions", "system prompt", "you are now" (default: block)
+  - `OutputSchemaGuard(schema)` — JSON Schema validation on assistant output (default: block)
+  - `CostGuard(budget_usd, get_current_cost)` — kill the run if projected cost exceeds budget (default: block)
+- Integration in `Agent.execute()`: pre-LLM `run_input(messages)` check; post-LLM `run_output(response)` check. On block → `GuardrailBlocked` exception; on redact → messages substituted.
+- Events: `guardrail.checked`, `guardrail.blocked`, `guardrail.redacted`. Counters: `guardrail_checks_total{type,side}`, `guardrail_blocks_total{type}`, `guardrail_redactions_total{type}`.
+- YAML config:
+  ```yaml
+  guardrails:
+    input:
+      - type: pii_scanner
+        action: redact
+      - type: secrets_scanner
+        action: block
+    output:
+      - type: output_schema
+        schema_path: ./schemas/response.json
+        action: block
+  ```
 
-**Benefits**
-- Required for **multi-tenant** deployment or **untrusted user input** in any production scenario.
-- Cheap to add now (S effort), painful to retrofit once agents are wired into customer paths.
-- Independent of P1: deploy as soon as the team has a free week.
+**Try it (Python)**
 
-**Reference repos**: `guardrails-ai/guardrails`, `NVIDIA/NeMo-Guardrails`, `protectai/llm-guard`.
+```python
+from agent_orchestrator.core.guardrails import (
+    GuardrailManager, PIIScanner, SecretsScanner,
+)
+from agent_orchestrator.core.provider import Message, Role
 
----
+mgr = GuardrailManager()
+mgr.register(PIIScanner(action="redact"))
+mgr.register(SecretsScanner(action="block"))
 
-### P4 — Personalized Memory  🔥🔥
+result = await mgr.run_input([
+    Message(role=Role.USER, content="My email is alice@example.com"),
+])
+print(result.action, "→", result.redacted_text)
+# allow → "My email is [EMAIL_REDACTED]"
+
+result = await mgr.run_input([
+    Message(role=Role.USER, content="My AWS key is AKIA1234567890ABCDEF"),
+])
+print(result.action, "→", result.reason)
+# block → "Detected AWS access key"
+```
+
+**Benefits unlocked**
+- Required for multi-tenant deployment or untrusted user input.
+- Cheap now (S effort), painful to retrofit once agents are wired into customer paths.
+- Each guardrail is independent: pick & choose.
+
+</details>
+
+<details>
+<summary><strong>P4 — Personalized Memory</strong> &nbsp; ✅ <em>shipped</em> &nbsp; · &nbsp; Impact: 🔥🔥 &nbsp; · &nbsp; Effort: S</summary>
 
 | | |
 |---|---|
-| **Effort** | S |
-| **Risk** | Very Low (additive namespace in existing store) |
-| **Source** | `analysis/harnessed-llm-agent/07-roadmap.md` §P4 |
-| **Status** | ⚠️ Partial — `core/users.py` and `store.py` exist; no `("user", id)` namespace, no auto-injection into system prompt. |
+| **Status** | ✅ Shipped — commit `b945312` |
+| **Source design** | `analysis/harnessed-llm-agent/07-roadmap.md` §P4 |
+| **Where it lives** | `core/personalized_memory.py`, `skills/profile_extractor_skill.py`, `dashboard/personalized_memory_routes.py`, `core/agent.py` (system prompt) |
 
 **What it adds**
-- Extend `store_postgres.py` write paths to accept `user_id`.
-- In `Agent._build_system_prompt()`: append `<user_profile>` block with top-N user memories.
-- Async `profile_extractor` skill: scans recent messages, persists preferences.
-- API: `GET /api/memory/users/{user_id}`, `DELETE /api/memory/users/{user_id}/{key}`.
+- `core/personalized_memory.py`: `PersonalizedMemory` facade over `BaseStore` with user-scoped helpers (`put`, `get`, `list`, `delete`, `wipe`). Honours the existing `MemoryFilter` rules.
+- `skills/profile_extractor_skill.py`: extracts preferences/style/recurring topics from recent messages and persists them. Best-effort: a Provider failure does NOT break the agent flow.
+- `core/agent.py`: optional `personalized_memory` and `user_id` kwargs. `build_system_prompt` appends a `<user_profile>` block when both are set.
+- REST: `GET /api/user-memory/users/{user_id}`, `GET /api/user-memory/users/{user_id}/{key}`, `DELETE /api/user-memory/users/{user_id}/{key}`, `DELETE /api/user-memory/users/{user_id}` (GDPR-style wipe).
 
-**Benefits**
-- Per-user style/preferences without manual prompt engineering.
+**Try it**
+
+```bash
+# Save a user preference
+curl -sX PUT http://localhost:5005/api/user-memory/users/u-123/style \
+  -H 'Content-Type: application/json' \
+  -d '{"value": {"prefers": "concise answers, code blocks over prose"}}'
+
+# Read it back
+curl -s http://localhost:5005/api/user-memory/users/u-123
+# → {"items":[{"key":"style","value":{"prefers":"..."}}, ...]}
+
+# GDPR wipe
+curl -sX DELETE http://localhost:5005/api/user-memory/users/u-123
+# → {"success": true, "removed": 1}
+```
+
+**Benefits unlocked**
+- Per-user style / preferences without manual prompt engineering.
 - Foundation for any "recall what we discussed last week" UX.
-- Cheap; reuses the storage you already have.
+- Reuses the existing `BaseStore` — no new infra.
 
-**Reference repos**: `mem0ai/mem0`, `letta-ai/letta`.
+</details>
 
----
-
-### P5 — Agent ↔ Agent protocol  🔥
-
-| | |
-|---|---|
-| **Effort** | S (5a — docs) / L (5b — A2A adapter) |
-| **Risk** | Low |
-| **Source** | `analysis/harnessed-llm-agent/07-roadmap.md` §P5 |
-| **Status** | ⚠️ Partial — `core/cooperation.py` works but is undocumented. |
-
-**5a — Tactical (recommended now)**: write the spec for the existing `cooperation.py` — message types (`delegate`, `result`, `conflict`, `capability_query`), state transitions, error handling. Add typed message classes. 2–3 days.
-
-**5b — Strategic (Q3 2026 at earliest)**: build an adapter that exposes our agents over Google's [A2A](https://github.com/google/A2A) protocol once the spec stabilises. **Not recommended yet** — protocol still moving as of April 2026.
-
-**Benefits**
-- 5a immediately reduces onboarding cost for new agents.
-- 5b enables cross-system agent delegation (later).
-
----
-
-### P6 — Observability polish  🔥
+<details>
+<summary><strong>P5a — Agent ↔ Agent typed messages + spec</strong> &nbsp; ✅ <em>shipped</em> &nbsp; · &nbsp; P5b deferred &nbsp; · &nbsp; Effort: S</summary>
 
 | | |
 |---|---|
-| **Effort** | S |
-| **Risk** | None |
-| **Source** | `analysis/harnessed-llm-agent/07-roadmap.md` §P6 |
-| **Status** | ⚠️ Polish on top of solid OTel/Prometheus/Grafana foundation. |
+| **Status** | ✅ Tactical (P5a) shipped — commit `e7dbfa0`. Strategic (P5b A2A) deferred to Q3. |
+| **Source design** | `analysis/harnessed-llm-agent/07-roadmap.md` §P5 |
+| **Where it lives** | `core/cooperation_messages.py`, `docs/cooperation-protocol.md` |
 
-- Add **Langfuse** exporter alongside OTel — nicer LLM-native trace viewer for prompt/completion pairs.
-- Add **Phoenix** (Arize) exporter — free hosted alternative.
-- Document the trace schema (span attributes, event naming).
+**What it adds**
+- Frozen typed dataclasses: `CooperationMessage` (base), `DelegateMessage`, `ResultMessage`, `CapabilityQueryMessage`, `CapabilityResponseMessage`, `ConflictMessage`. Each round-trips with the existing dict shape (`from_dict` / `to_dict`).
+- `parse_message(d) -> CooperationMessage` dispatcher on the `kind` field.
+- `docs/cooperation-protocol.md` — protocol spec with mermaid sequence + state diagrams, error handling, migration path.
+- Backwards-compatible: existing dict callers in `cooperation.py` keep working.
 
-**Benefits**: better UX for debugging individual agent runs. Pure additive; no risk.
+**Try it (Python)**
+
+```python
+from agent_orchestrator.core.cooperation_messages import (
+    DelegateMessage, ResultMessage, parse_message,
+)
+
+msg = DelegateMessage(
+    message_id="m-1",
+    from_agent="team-lead",
+    to_agent="backend",
+    timestamp=1234,
+    kind="delegate",
+    task_id="t-1",
+    description="Build the JWT login endpoint",
+    priority="high",
+    payload={"due": "tomorrow"},
+)
+d = msg.to_dict()
+parsed = parse_message(d)
+assert isinstance(parsed, DelegateMessage)
+```
+
+**P5b status**: parked. Google's A2A spec is still moving (April 2026). Re-evaluate in Q3.
+
+</details>
+
+<details>
+<summary><strong>P6 — Observability polish</strong> &nbsp; ✅ <em>shipped</em> &nbsp; · &nbsp; Impact: 🔥 &nbsp; · &nbsp; Effort: S</summary>
+
+| | |
+|---|---|
+| **Status** | ✅ Shipped — commit `ca57ba0` |
+| **Source design** | `analysis/harnessed-llm-agent/07-roadmap.md` §P6 |
+| **Where it lives** | `core/observability/`, `core/tracing.py`, `docs/trace-schema.md` |
+
+**What it adds**
+- `core/observability/langfuse_exporter.py` — registers a Langfuse span processor. Configured by `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`. Optional dep: `pip install 'agent-orchestrator[langfuse]'`.
+- `core/observability/phoenix_exporter.py` — registers a Phoenix (Arize) OTLP HTTP exporter. Configured by `PHOENIX_COLLECTOR_ENDPOINT`, `PHOENIX_API_KEY`. Optional dep: `pip install 'agent-orchestrator[phoenix]'`.
+- Both exporters degrade gracefully when their package is missing or env vars aren't set.
+- `docs/trace-schema.md` — full inventory of every span emitted (name, attributes, events, source location) plus how to view traces in Tempo / Langfuse / Phoenix.
+
+**Try it**
+
+```bash
+# Langfuse (cloud or self-hosted)
+export LANGFUSE_PUBLIC_KEY=pk-…
+export LANGFUSE_SECRET_KEY=sk-…
+export LANGFUSE_HOST=https://cloud.langfuse.com
+pip install -e ".[langfuse]"
+docker compose up dashboard
+# → traces flow to Langfuse alongside Tempo. Existing OTel pipeline unaffected.
+
+# Phoenix (local)
+docker run -d -p 6006:6006 arizephoenix/phoenix:latest
+export PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006
+pip install -e ".[phoenix]"
+docker compose up dashboard
+# → http://localhost:6006 shows LLM traces with prompt/completion pairs.
+```
+
+**Benefits unlocked**
+- LLM-native trace UI (prompt/completion pairs, eval scores) for debugging individual agent runs.
+- Pure additive — no risk to the existing Tempo/Prometheus pipeline.
+
+</details>
 
 ---
 
