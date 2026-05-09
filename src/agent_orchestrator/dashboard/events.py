@@ -64,6 +64,11 @@ class EventType(str, Enum):
     COST_UPDATE = "metrics.cost_update"
     TOKEN_UPDATE = "metrics.token_update"
 
+    # Knowledge / RAG (P1)
+    KNOWLEDGE_INGESTED = "knowledge.ingested"
+    KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
+    KNOWLEDGE_RETRIEVAL_SKIPPED = "knowledge.retrieval_skipped"
+
 
 @dataclass
 class Event:
