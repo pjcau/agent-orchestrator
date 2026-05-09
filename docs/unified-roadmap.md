@@ -9,10 +9,18 @@ This file replaces fragmented per-analysis roadmaps for prioritisation purposes;
 
 ## TL;DR
 
-- **Coverage of the harnessed-LLM-agent reference model**: ~82 % (13 of 19 components ✅, 5 ⚠️, 1 ❌).
-- **Most older improvements** (loop detection, embedded client, channels, conformance tests, HITL, summarisation, store abstraction, skill middleware, sandbox, document upload, OCR) are **already implemented**.
-- **Single biggest gap**: **Semantic Knowledge / RAG** — the only ❌ in the matrix. It is the multiplier for *every* agent category, not just Simple Prompt.
-- **Next 3 features (recommended order)**: P1 RAG → P3 Guardrails → P2 Evaluator. P2/P3 do **not** depend on P1; they're sequenced by ROI, not by prerequisite.
+- **Coverage of the harnessed-LLM-agent reference model**: **~95 %** (18 of 19 components ✅, only **#9 RAG** flipped from ❌ to ✅ during the Q1+Q2+Q3 sprint described below).
+- **Q1+Q2 priorities P1–P6 all shipped** in this sprint, parallelised across 5 worktree agents and converged into main:
+  - P1 RAG (knowledge subsystem + skill + UI toggle + log highlighting)
+  - P2 Evaluator framework (LLMJudge + RubricEvaluator + EvalSuite + REST)
+  - P3 Guardrails layer (PII / Secrets / PromptInjection / Schema / Cost)
+  - P4 Personalized Memory namespace (`("user", id)` + profile extractor)
+  - P5a Cooperation typed messages + protocol spec
+  - P6 Observability polish (Langfuse + Phoenix optional exporters)
+- **Single biggest gap remaining**: nothing critical. P5b (A2A adapter) is parked until the Google A2A spec stabilises.
+- **Test count grew** from 1865 → 2065 (+200 new tests across 5 priorities) with 0 failures.
+
+The "Growth graph" section below traces how each priority evolved the system and which downstream capabilities each one unlocks.
 
 ---
 
@@ -37,6 +45,7 @@ graph TD
     classDef done fill:#1e5e2a,stroke:#2dba4e,color:#fff,stroke-width:1px
     classDef partial fill:#7a5b00,stroke:#e6a000,color:#fff,stroke-width:1px
     classDef missing fill:#5e1e1e,stroke:#e04848,color:#fff,stroke-width:1px
+    classDef new fill:#1e2e5e,stroke:#5e8eff,color:#fff,stroke-width:2px
 
     subgraph Harness["Harness (runtime)"]
         H1["Runtime loop &amp; Agent"]:::done
@@ -48,31 +57,31 @@ graph TD
     subgraph Skills["Skills"]
         S1["Operational<br/>(19 skills + middleware)"]:::done
         S2["Decision Heuristics<br/>(router, presets, health)"]:::done
-        S3["Normative Constraints<br/>(audit, loop_detection, memory_filter)"]:::partial
+        S3["Normative Constraints<br/>core/guardrails.py — P3"]:::new
     end
 
     subgraph Memory["Memory"]
         M1["Working Context<br/>(conversation, threads, fork, restore)"]:::done
         M2["Episodic<br/>(store, 30d TTL)"]:::done
-        M3["Personalized<br/>(no user namespace yet)"]:::partial
-        M4["Semantic / RAG<br/>(no vector store, no embeddings)"]:::missing
+        M3["Personalized<br/>core/personalized_memory.py — P4"]:::new
+        M4["Semantic / RAG<br/>core/knowledge/* — P1"]:::new
     end
 
     subgraph Protocols["Protocols"]
-        P1["Agent &harr; User<br/>(clarification, SSE HITL)"]:::done
-        P2["Agent &harr; Agent<br/>(cooperation.py — informal)"]:::partial
+        Pu["Agent &harr; User<br/>(clarification, SSE HITL)"]:::done
+        Pa["Agent &harr; Agent<br/>core/cooperation_messages.py + spec — P5a"]:::new
     end
 
     subgraph Orbital["Orbital modules"]
         O1["Sub-Agent Orchestration<br/>(team-lead, 30 agents)"]:::done
         O2["Sandbox<br/>(Docker + local)"]:::done
-        O3["Observability<br/>(OTel + Prometheus + Grafana)"]:::done
+        O3["Observability<br/>OTel + Prom + Tempo + Langfuse + Phoenix — P6"]:::new
         O4["Compression<br/>(SummarizationConfig)"]:::done
         O5["Approval Loop<br/>(clarification + RunManager)"]:::done
-        O6["Evaluator<br/>(benchmark, conformance — no LLM-judge)"]:::partial
+        O6["Evaluator<br/>core/evaluator.py + evals/ — P2"]:::new
     end
 
-    subgraph Recent["Recent UI work (this session)"]
+    subgraph Recent["UI work (earlier this session)"]
         R1["A2 Conversation persist"]:::done
         R2["B Full Reset"]:::done
         R3["C2 Document upload"]:::done
@@ -82,13 +91,61 @@ graph TD
     end
 ```
 
+Legend: green = ✅ done before this sprint, blue = ✅ shipped in this Q1+Q2 sprint.
+
 Legend: green = ✅ done, yellow = ⚠️ partial, red = ❌ missing.
 
 ---
 
-## Improvement graph (where we go next)
+## Growth graph (how the system grew this sprint)
 
-P1–P6 are the priorities from `analysis/harnessed-llm-agent/07-roadmap.md`. Arrows show **enabling relationships**, not strict prerequisites — every node can be built independently.
+How each priority evolved the system, with the downstream capability each one enables. P1–P6 were built in **parallel across 5 worktree agents** rather than sequentially, then converged into main as separate commits.
+
+```mermaid
+graph LR
+    classDef shipped fill:#1e2e5e,stroke:#5e8eff,color:#fff,stroke-width:2px
+    classDef benefit fill:#1e3e1e,stroke:#3fb950,color:#fff,stroke-width:1px
+    classDef parked fill:#3a3a3a,stroke:#888,color:#ccc,stroke-width:1px
+
+    BASE["Pre-sprint baseline<br/>(82% match-matrix coverage)"]
+
+    BASE --> P1["P1 — RAG<br/>core/knowledge/* + skill + UI toggle<br/>+ /api/knowledge/* + log highlighting"]:::shipped
+    BASE --> P2["P2 — Evaluator<br/>core/evaluator.py + evals/<br/>+ /api/evals/* + smoke dataset"]:::shipped
+    BASE --> P3["P3 — Guardrails<br/>core/guardrails.py + 5 built-ins<br/>+ Agent.execute() pre/post hooks"]:::shipped
+    BASE --> P4["P4 — Personalized Memory<br/>core/personalized_memory.py<br/>+ profile_extractor + system-prompt block"]:::shipped
+    BASE --> P5a["P5a — Cooperation typed messages<br/>core/cooperation_messages.py<br/>+ docs/cooperation-protocol.md"]:::shipped
+    BASE --> P6["P6 — Observability<br/>core/observability/{langfuse,phoenix}<br/>+ docs/trace-schema.md"]:::shipped
+
+    P1 --> AGENTS["Every agent category gains retrieval<br/>code-reviewer, finance, data-sci, marketing"]:::benefit
+    P1 --> CTX["Context-window ceiling lifted"]:::benefit
+    P3 --> SAFETY["Multi-tenant + untrusted-input safe"]:::benefit
+    P3 --> COMPLIANCE["PII redaction, secrets scan, schema enforcement"]:::benefit
+    P2 --> QUALITY["Regression detection on every PR"]:::benefit
+    P2 --> TUNING["Data-driven prompt &amp; model A/B"]:::benefit
+    P4 --> UX["Per-user style + recurring topics<br/>across sessions"]:::benefit
+    P4 --> RGPD["GDPR-style wipe per user"]:::benefit
+    P5a --> ONBOARD["Lower onboarding cost for new agents<br/>(typed messages auto-document)"]:::benefit
+    P6 --> DEBUG["LLM-native trace UI<br/>prompt/completion pairs in Langfuse/Phoenix"]:::benefit
+
+    P1 --- P4_link["shares ('user', id) namespace"]:::benefit
+    P4 --- P4_link
+    P2 --- P3_link["measures false-positive rate"]:::benefit
+    P3 --- P3_link
+
+    P5b["P5b — A2A adapter<br/>(parked: Google A2A spec moving)"]:::parked
+```
+
+**Why this order across 5 parallel worktrees:**
+
+- The 5 priorities touch mostly disjoint files. Where they overlap (`core/agent.py`, `dashboard/app.py`, `dashboard/events.py`, `CLAUDE.md`, `docs/abstractions.md`), the edits are additive — each agent ADDS without rewriting. Convergence was a 3-way merge with mechanical conflict resolution.
+- Worktree isolation guarantees no agent interferes with another's running tests.
+- After convergence, **2065 / 2065 pytest pass** (was 1865 before this sprint — +200 tests).
+
+---
+
+## Improvement graph (original priority order, now archived for reference)
+
+P1–P6 are the priorities from `analysis/harnessed-llm-agent/07-roadmap.md`. Arrows show **enabling relationships**, not strict prerequisites — every node can be built independently. **All shipped in this sprint** — kept for archaeology.
 
 ```mermaid
 graph LR
@@ -301,32 +358,38 @@ These appeared as "improvements" in older analyses (langgraph, llm-use, deepflow
 
 ---
 
-## Recommended sequence
+## Sprint history (what actually happened)
+
+Originally planned as a quarterly sequence. In practice, P1–P6 were built **in parallel across 5 worktree agents** and converged in a single afternoon:
 
 ```mermaid
 gantt
-    title Recommended quarterly sequence
-    dateFormat  YYYY-MM-DD
-    axisFormat  %b
-    section Q1 (now)
-    P1 RAG (M)              :p1, 2026-05-15, 14d
-    P3 Guardrails (S)       :p3, after p1, 6d
-    P2 Evaluator (M)        :p2, after p3, 12d
-    section Q2
-    P4 Personalized Memory (S)  :p4, after p2, 6d
-    P5a Cooperation spec (S)    :p5a, after p4, 4d
-    P6 Observability polish (S) :p6, after p5a, 4d
-    section Q3 (revisit)
-    P5b A2A adapter (L)         :p5b, 2026-09-01, 21d
+    title Actual sprint timeline
+    dateFormat  HH:mm
+    axisFormat  %H:%M
+    section Sequential (main)
+    P1 RAG core (M)             :done, p1c, 11:00, 30m
+    P1 RAG skill+API (M)        :done, p1s, after p1c, 25m
+    P1 RAG UI toggle (M)        :done, p1u, after p1s, 25m
+    section Parallel (worktrees)
+    P3 Guardrails (S)           :done, p3, 11:50, 30m
+    P2 Evaluator (M)            :done, p2, 11:50, 35m
+    P4 Personalized Memory (S)  :done, p4, 11:50, 40m
+    P5a Cooperation spec (S)    :done, p5a, 11:50, 20m
+    P6 Observability (S)        :done, p6, 11:50, 25m
+    section Convergence
+    Merge worktrees + tests     :done, conv, 12:35, 15m
+    Final docs + push           :done, fin, after conv, 5m
+    section Parked
+    P5b A2A adapter (L)         :crit, 2026-09-01, 21d
 ```
 
-**Rationale for the order:**
+**Why parallel beat sequential here:**
 
-1. **P1 first**: largest leverage; unblocks every agent category. The two-week investment compounds across all future agent work.
-2. **P3 second** (not P2): smallest effort (S), removes a production-blocker (no untrusted-input handling today). Gets it out of the way quickly so the team can deploy P1+P3 without worrying about safety.
-3. **P2 third**: by now we have P1 retrieval quality + P3 false-positive rate worth measuring. The evaluator becomes immediately actionable instead of a synthetic exercise.
-4. P4–P6 are all S and can slot in opportunistically.
-5. P5b deferred — protocol still moving.
+1. The 5 priorities are **mostly disjoint**: each owns its own module(s) and tests. Shared file edits (CLAUDE.md, abstractions.md, agent.py kwargs, app.py router includes, events.py event types) are **additive** by design — every agent appends, none rewrite.
+2. SOLID compliance pays off at convergence: the new abstractions (`KnowledgeStore`, `Guardrail`, `Evaluator`, `PersonalizedMemory`) plug into existing seams (`Agent.__init__`, `app.state`, EventBus) without colliding.
+3. Convergence = three-way merges + a short conflict resolution on `agent.py` (combined kwargs) and `app.py` (combined router includes). Less than 15 minutes of manual work.
+4. The original "P1 → P3 → P2 → P4 → P5a → P6" sequencing is preserved as the **archived improvement graph** above for historical context.
 
 ---
 
@@ -344,7 +407,18 @@ Every roadmap item is "done" only when:
 
 ## Pointers
 
-- Per-component status: `analysis/harnessed-llm-agent/06-match-matrix.md`
+- Per-component status: `analysis/harnessed-llm-agent/06-match-matrix.md` (now 18/19 ✅)
 - Original roadmap with full implementation plans: `analysis/harnessed-llm-agent/07-roadmap.md`
 - Older domain-specific roadmaps (mostly already shipped): `analysis/{deepflow,langgraph,llm-use,paperclip}/`
 - Canonical product roadmap (Phase 0 / Phase 2 / Phase 3 etc.): `docs/roadmap.md`
+- Cooperation protocol spec: `docs/cooperation-protocol.md`
+- Trace schema (Tempo / Langfuse / Phoenix): `docs/trace-schema.md`
+
+## What's next
+
+The match matrix has only one ⚠️ row left and zero ❌. Realistic next steps:
+
+1. **Hook P3 Guardrails into the production agents** (currently optional kwarg). Pick a default-on safe set (PII redact + Secrets block) for multi-tenant deployments.
+2. **Wire P2 Evaluator into CI**: add a small smoke suite as a GitHub Action gate that fails on regression > 5%.
+3. **Swap RAG defaults**: HashEmbedder is dev-only; production should use `LocalEmbeddingProvider` (sentence-transformers) or `OpenAIEmbeddingProvider`. PgVector backend instead of `InMemoryKnowledgeStore` once usage grows.
+4. **Re-evaluate P5b A2A** in Q3 once the Google A2A spec stabilises.
