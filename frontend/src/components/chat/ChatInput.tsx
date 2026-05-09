@@ -17,6 +17,8 @@ interface ChatInputProps {
     provider: "openrouter" | "ollama";
     useStreaming: boolean;
     fileContext: string;
+    ragEnabled: boolean;
+    ragNamespace: string;
   }) => void;
   onNewChat: () => void;
   /** When non-null, ChatInput sets its textarea to this value (from preset). */
@@ -75,6 +77,11 @@ export function ChatInput({
   const addAttachedFile = useAppStore((s) => s.addAttachedFile);
   const removeAttachedFileAt = useAppStore((s) => s.removeAttachedFileAt);
   const clearAttachedFiles = useAppStore((s) => s.clearAttachedFiles);
+  // RAG preferences live in the store and survive Reset.
+  const ragEnabled = useAppStore((s) => s.ragEnabled);
+  const ragNamespace = useAppStore((s) => s.ragNamespace);
+  const setRagEnabled = useAppStore((s) => s.setRagEnabled);
+  const setRagNamespace = useAppStore((s) => s.setRagNamespace);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadingName, setUploadingName] = useState<string | null>(null);
@@ -133,12 +140,12 @@ export function ChatInput({
       .map((f) => `--- ${f.path} ---\n${f.content}`)
       .join("\n\n");
 
-    onSend({ text: trimmed, mode, model, provider, useStreaming, fileContext });
+    onSend({ text: trimmed, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace });
     setText("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming]);
+  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming, ragEnabled, ragNamespace]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -358,6 +365,27 @@ export function ChatInput({
             />
             <span>Stream</span>
           </label>
+        )}
+
+        <label className="stream-toggle">
+          <input
+            type="checkbox"
+            checked={ragEnabled}
+            onChange={(e) => setRagEnabled(e.target.checked)}
+          />
+          <span>RAG</span>
+        </label>
+
+        {ragEnabled && (
+          <input
+            className="chat-input__rag-ns"
+            type="text"
+            value={ragNamespace}
+            onChange={(e) => setRagNamespace(e.target.value)}
+            placeholder="namespace"
+            aria-label="RAG namespace"
+            title="RAG namespace"
+          />
         )}
       </div>
 

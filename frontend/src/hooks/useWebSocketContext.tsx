@@ -8,6 +8,9 @@ interface WebSocketContextValue {
     provider: string;
     conversation_id?: string | null;
     file_context?: string;
+    rag_enabled?: boolean;
+    rag_namespace?: string;
+    rag_k?: number;
   }) => boolean;
   isStreamWsReady: () => boolean;
 }

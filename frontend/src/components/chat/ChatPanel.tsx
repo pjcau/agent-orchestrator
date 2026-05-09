@@ -56,8 +56,10 @@ export function ChatPanel() {
       provider: "openrouter" | "ollama";
       useStreaming: boolean;
       fileContext: string;
+      ragEnabled: boolean;
+      ragNamespace: string;
     }) => {
-      const { text, mode, model, provider, useStreaming, fileContext } = opts;
+      const { text, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace } = opts;
 
       // Auto-create a conversation on first send so multi-turn memory works
       // without the user having to click "New Chat" first. The id is then
@@ -161,13 +163,14 @@ export function ChatPanel() {
         } else {
           // Simple prompt
           if (useStreaming && isStreamWsReady()) {
-            // WebSocket streaming
+            // WebSocket streaming — RAG fields forwarded to backend
             sendStreamPrompt({
               prompt: fileContext ? `${text}\n\n\`\`\`\n${fileContext}\n\`\`\`` : text,
               model,
               provider,
               conversation_id: activeConvId,
               file_context: fileContext,
+              ...(ragEnabled ? { rag_enabled: true, rag_namespace: ragNamespace, rag_k: 5 } : {}),
             });
             // isStreaming stays true until stream finishes
           } else {
@@ -178,6 +181,13 @@ export function ChatPanel() {
               error?: string;
               usage?: { input_tokens?: number; output_tokens?: number; model?: string };
               elapsed_s?: number;
+              rag?: {
+                namespace: string;
+                hits: number;
+                embedding_model: string;
+                scores: number[];
+                error?: string;
+              };
             }>("/api/prompt", {
               prompt: fileContext ? `${text}\n\n\`\`\`\n${fileContext}\n\`\`\`` : text,
               model,
@@ -185,7 +195,26 @@ export function ChatPanel() {
               graph_type: "chat",
               conversation_id: activeConvId,
               file_context: fileContext,
+              ...(ragEnabled ? { rag_enabled: true, rag_namespace: ragNamespace, rag_k: 5 } : {}),
             });
+
+            // Show RAG system bubble before the assistant reply
+            if (resp.data.rag) {
+              const r = resp.data.rag;
+              if (r.error) {
+                addMessage({
+                  role: "system",
+                  content: `RAG skipped: ${r.error}`,
+                  timestamp: Date.now(),
+                });
+              } else {
+                addMessage({
+                  role: "system",
+                  content: `RAG: ${r.namespace} · ${r.hits} chunk(s) retrieved (${r.embedding_model})`,
+                  timestamp: Date.now(),
+                });
+              }
+            }
 
             if (resp.data.success) {
               addMessage({
@@ -219,6 +248,7 @@ export function ChatPanel() {
       isStreamWsReady,
       setPendingTeamJob,
     ]
+    // ragEnabled and ragNamespace come from opts parameter, not closure
   );
 
   return (

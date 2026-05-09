@@ -32,6 +32,11 @@ import type {
   FilesResponse,
   FileContentResponse,
   PricingResponse,
+  KnowledgeIngestRequest,
+  KnowledgeSearchRequest,
+  KnowledgeSearchResponse,
+  NamespacesResponse,
+  KnowledgeHealthResponse,
 } from "./types";
 
 // Query keys — centralised for cache invalidation
@@ -55,6 +60,8 @@ export const queryKeys = {
   presets: ["presets"] as const,
   files: (path: string) => ["files", path] as const,
   pricing: ["pricing"] as const,
+  knowledgeHealth: ["knowledge", "health"] as const,
+  knowledgeNamespaces: ["knowledge", "namespaces"] as const,
 };
 
 // --- Queries ---
@@ -481,6 +488,61 @@ export function useGraphReset() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.usage });
+    },
+  });
+}
+
+// ── Knowledge / RAG (P1) ──────────────────────────────────────────────
+
+export function useKnowledgeHealth(
+  options?: Partial<UseQueryOptions<KnowledgeHealthResponse>>
+) {
+  return useQuery<KnowledgeHealthResponse>({
+    queryKey: queryKeys.knowledgeHealth,
+    queryFn: async () => {
+      const resp = await apiClient.get<KnowledgeHealthResponse>("/api/knowledge/health");
+      return resp.data;
+    },
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function useKnowledgeNamespaces(
+  options?: Partial<UseQueryOptions<NamespacesResponse>>
+) {
+  return useQuery<NamespacesResponse>({
+    queryKey: queryKeys.knowledgeNamespaces,
+    queryFn: async () => {
+      const resp = await apiClient.get<NamespacesResponse>("/api/knowledge/namespaces");
+      return resp.data;
+    },
+    staleTime: 15 * 1000,
+    ...options,
+  });
+}
+
+export function useKnowledgeIngest() {
+  const queryClient = useQueryClient();
+  return useMutation<{ success: boolean; chunk_id?: string }, Error, KnowledgeIngestRequest>({
+    mutationFn: async (req) => {
+      const resp = await apiClient.post<{ success: boolean; chunk_id?: string }>(
+        "/api/knowledge/ingest",
+        req
+      );
+      return resp.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeNamespaces });
+    },
+  });
+}
+
+export function useKnowledgeSearch() {
+  return useMutation<KnowledgeSearchResponse, Error, KnowledgeSearchRequest>({
+    mutationFn: async (req) => {
+      const resp = await apiClient.post<KnowledgeSearchResponse>("/api/knowledge/search", req);
+      return resp.data;
     },
   });
 }

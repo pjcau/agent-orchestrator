@@ -91,6 +91,10 @@ interface AppState {
   pendingTeamJobId: string | null;
   pendingTeamModel: string | null;
 
+  // RAG preferences (persisted in localStorage, survive Reset)
+  ragEnabled: boolean;
+  ragNamespace: string;
+
   // Actions
   setWsConnected: (connected: boolean) => void;
   setSseMode: (mode: boolean) => void;
@@ -136,8 +140,11 @@ interface AppState {
   addAttachedFile: (file: AttachedFile) => void;
   removeAttachedFileAt: (index: number) => void;
   clearAttachedFiles: () => void;
+  setRagEnabled: (b: boolean) => void;
+  setRagNamespace: (s: string) => void;
   /** Full Reset: graph + chat + attachments + conversation id (caller is
-   *  responsible for the server-side DELETE /api/conversation/{id}). */
+   *  responsible for the server-side DELETE /api/conversation/{id}).
+   *  RAG preferences are intentionally NOT cleared — they are user settings. */
   reset: () => void;
 }
 
@@ -147,6 +154,12 @@ const MAX_INTERACTIONS = 50;
 
 /** localStorage key used to persist the active conversation id across reloads. */
 export const STORAGE_KEY_CONVERSATION_ID = "ao_conv_id";
+
+/** localStorage key used to persist the RAG enabled preference. */
+export const STORAGE_KEY_RAG_ENABLED = "ao_rag_enabled";
+
+/** localStorage key used to persist the RAG namespace preference. */
+export const STORAGE_KEY_RAG_NAMESPACE = "ao_rag_namespace";
 
 /** Read the persisted conversation id from localStorage, or null. */
 function readPersistedConversationId(): string | null {
@@ -167,6 +180,24 @@ function writePersistedConversationId(id: string | null): void {
     }
   } catch {
     /* localStorage unavailable (private mode, SSR) — fail silently */
+  }
+}
+
+/** Read the persisted RAG enabled flag from localStorage, or false. */
+function readPersistedRagEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_RAG_ENABLED) === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Read the persisted RAG namespace from localStorage, or "shared". */
+function readPersistedRagNamespace(): string {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_RAG_NAMESPACE) ?? "shared";
+  } catch {
+    return "shared";
   }
 }
 
@@ -233,6 +264,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Pending team job
   pendingTeamJobId: null,
   pendingTeamModel: null,
+
+  // RAG preferences (persisted, survive Reset)
+  ragEnabled: readPersistedRagEnabled(),
+  ragNamespace: readPersistedRagNamespace(),
 
   // --- Actions ---
 
@@ -567,6 +602,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       attachedFiles: state.attachedFiles.filter((_, i) => i !== index),
     })),
   clearAttachedFiles: () => set({ attachedFiles: [] }),
+
+  setRagEnabled: (b) => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY_RAG_ENABLED, String(b));
+    } catch {
+      /* fail silently */
+    }
+    set({ ragEnabled: b });
+  },
+
+  setRagNamespace: (s) => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY_RAG_NAMESPACE, s);
+    } catch {
+      /* fail silently */
+    }
+    set({ ragNamespace: s });
+  },
 
   reset: () => {
     // Persist: clear localStorage too

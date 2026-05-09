@@ -308,9 +308,29 @@ export function useWebSocket() {
           elapsed_s?: number;
           speed?: number;
           error?: string;
+          // RAG frame fields
+          namespace?: string;
+          hits?: number;
+          embedding_model?: string;
+          scores?: number[];
         };
 
-        if (data.type === "token") {
+        if (data.type === "rag") {
+          // Render a system bubble before the first token arrives
+          if (data.error) {
+            addMessage({
+              role: "system",
+              content: `RAG skipped: ${data.error}`,
+              timestamp: Date.now(),
+            });
+          } else {
+            addMessage({
+              role: "system",
+              content: `RAG: ${data.namespace ?? "shared"} · ${data.hits ?? 0} chunk(s) retrieved (${data.embedding_model ?? ""})`,
+              timestamp: Date.now(),
+            });
+          }
+        } else if (data.type === "token") {
           appendStreamChunk(data.content ?? "");
         } else if (data.type === "done") {
           finalizeStream(data);
@@ -339,6 +359,9 @@ export function useWebSocket() {
       provider: string;
       conversation_id?: string | null;
       file_context?: string;
+      rag_enabled?: boolean;
+      rag_namespace?: string;
+      rag_k?: number;
     }) => {
       if (streamWsRef.current?.readyState === WebSocket.OPEN) {
         streamWsRef.current.send(JSON.stringify(payload));

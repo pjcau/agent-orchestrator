@@ -239,3 +239,43 @@ Rich rendering capabilities in the React dashboard (Mermaid loaded from CDN, KaT
 - **Task Plan panel** — right sidebar section showing real-time graph execution progress (pending/in_progress/completed/failed) with elapsed time per node
 - **HITL option buttons** — renders clarification options as clickable pill buttons; interrupt events show Approve/Reject buttons; clicks POST to `/api/runs/{run_id}/resume`
 - **SSE toggle** — switch between WebSocket and EventSource for event streaming; indicator dot in header
+
+## RAG (P1)
+
+Retrieval-Augmented Generation support integrated into the chat input and event log.
+
+### Toggle location
+
+The RAG checkbox (`label.stream-toggle`) lives in the controls row of `ChatInput`, immediately to the right of the **Stream** toggle. It is visible in all execution modes (Multi-Agent, Single Agent, Simple Prompt).
+
+### Namespace
+
+When RAG is enabled, a small text field (`chat-input__rag-ns`) appears beside the checkbox. The default value is `"shared"`. Type any string to switch namespaces; the value is persisted to `localStorage` (key `ao_rag_namespace`) and restored on reload.
+
+### System bubble
+
+After each RAG-enabled turn the chat shows a system bubble **before** the assistant reply:
+
+```
+RAG: <namespace> · <hits> chunk(s) retrieved (<embedding_model>)
+```
+
+If the backend skipped retrieval (e.g. the knowledge store is unavailable), a yellow system bubble is shown instead:
+
+```
+RAG skipped: <reason>
+```
+
+Both the non-streaming path (`POST /api/prompt` → `data.rag`) and the streaming WebSocket path (`{type: "rag", ...}` frame) produce identical bubbles.
+
+### Event log highlight
+
+Knowledge events (`knowledge.retrieved`, `knowledge.ingested`, `knowledge.retrieval_skipped`, etc.) appear in the event log with:
+
+- Icon **K** in a purple/lavender badge (`.event-icon--knowledge`)
+- A **Knowledge** option in the filter `<select>` (class `logs-filter`) so users can isolate RAG activity from agent/graph noise.
+
+### Persistence
+
+Both preferences are stored in `localStorage` and survive page reloads, tab closes, and the full **Reset** action (Reset intentionally does NOT clear user settings — only session state).
+

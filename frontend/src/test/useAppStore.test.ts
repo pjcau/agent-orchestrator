@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useAppStore } from "@/stores/useAppStore";
+import { useAppStore, STORAGE_KEY_RAG_ENABLED, STORAGE_KEY_RAG_NAMESPACE } from "@/stores/useAppStore";
 import type { OrchestratorEvent, Snapshot } from "@/api/types";
 
 describe("useAppStore", () => {
@@ -324,6 +324,59 @@ describe("useAppStore", () => {
       expect(after.streamBuffer).toBe("");
       expect(after.isStreaming).toBe(false);
       expect(window.localStorage.getItem("ao_conv_id")).toBeNull();
+    });
+  });
+
+  describe("RAG preferences (P1)", () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+      // Force store to a known RAG state by calling setters
+      useAppStore.getState().setRagEnabled(false);
+      useAppStore.getState().setRagNamespace("shared");
+    });
+
+    it("STORAGE_KEY_RAG_ENABLED and STORAGE_KEY_RAG_NAMESPACE are exported and stable", () => {
+      expect(STORAGE_KEY_RAG_ENABLED).toBe("ao_rag_enabled");
+      expect(STORAGE_KEY_RAG_NAMESPACE).toBe("ao_rag_namespace");
+    });
+
+    it("setRagEnabled(true) writes 'true' to localStorage", () => {
+      useAppStore.getState().setRagEnabled(true);
+      expect(window.localStorage.getItem("ao_rag_enabled")).toBe("true");
+      expect(useAppStore.getState().ragEnabled).toBe(true);
+    });
+
+    it("setRagEnabled(false) writes 'false' to localStorage", () => {
+      useAppStore.getState().setRagEnabled(true);
+      useAppStore.getState().setRagEnabled(false);
+      expect(window.localStorage.getItem("ao_rag_enabled")).toBe("false");
+      expect(useAppStore.getState().ragEnabled).toBe(false);
+    });
+
+    it("setRagNamespace writes to localStorage", () => {
+      useAppStore.getState().setRagNamespace("my-project");
+      expect(window.localStorage.getItem("ao_rag_namespace")).toBe("my-project");
+      expect(useAppStore.getState().ragNamespace).toBe("my-project");
+    });
+
+    it("reset does NOT clear ragEnabled or ragNamespace", () => {
+      useAppStore.getState().setRagEnabled(true);
+      useAppStore.getState().setRagNamespace("project-docs");
+
+      // Also set some session state that SHOULD be cleared
+      useAppStore.getState().addMessage({ role: "user", content: "hi", timestamp: 1 });
+
+      useAppStore.getState().reset();
+
+      const after = useAppStore.getState();
+      // Session state cleared
+      expect(after.messages).toEqual([]);
+      // RAG prefs preserved
+      expect(after.ragEnabled).toBe(true);
+      expect(after.ragNamespace).toBe("project-docs");
+      // localStorage still has RAG values
+      expect(window.localStorage.getItem("ao_rag_enabled")).toBe("true");
+      expect(window.localStorage.getItem("ao_rag_namespace")).toBe("project-docs");
     });
   });
 });
