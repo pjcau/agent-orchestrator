@@ -193,7 +193,7 @@ Connect to the real world.
 ### Both
 - [x] **Plugin system**: drop-in skills/providers without modifying core code
 - [ ] **Provider marketplace**: browse and add new OpenRouter models or Ollama model configs
-- [ ] **Unified RAG**: combine local embeddings with cloud reranking for best results
+- [x] **Unified RAG**: combine local embeddings with cloud reranking for best results — **shipped in v1.3.0 P1** (HashEmbedder dev default, sentence-transformers via `[rag]`, OpenAI via `[openai]`)
 
 ## Completed (v1.0.0 — General Availability)
 
@@ -205,6 +205,70 @@ Connect to the real world.
 - [x] **Provider presets**: 4 built-in presets (local_only, cloud_only, hybrid, high_quality) + custom
 - [x] **Documentation site**: Docusaurus site with roadmap docs for every version
 - [x] **Migration wizard**: import from LangGraph, CrewAI, AutoGen configs with auto-detection
+
+---
+
+## Completed (v1.3.0 — Q1+Q2 Sprint, May 2026)
+
+Six priorities (P1–P6) from the harnessed-LLM-agent reference matrix shipped in a single afternoon: 4 backend agents + 1 architect agent + 1 frontend agent worked in parallel worktrees, then converged into main. Reference-matrix coverage went from ~82% to **~95%** (18/19 ✅, 1 ⚠, 0 ❌). Tests: 1865 → **2065** (+200).
+
+Live deep-dive (mermaid graphs + try-it commands per priority):
+**[https://pjcau.github.io/agent-orchestrator/docs/roadmap/q1q2-sprint](https://pjcau.github.io/agent-orchestrator/docs/roadmap/q1q2-sprint)**
+
+### P1 — Semantic Knowledge / RAG (the only ❌ flipped to ✅)
+- [x] **Knowledge subsystem**: `core/knowledge/` with `EmbeddingProvider` ABC + 3 impls (`HashEmbedder` for dev, `LocalEmbeddingProvider` via sentence-transformers, `OpenAIEmbeddingProvider`), `Chunker` ABC + `MarkdownChunker` / `TextChunker`, `KnowledgeStore` (ISP-split into `IngestInterface` / `QueryInterface`), `Ingester`, `Retriever`. Namespaces: `("shared",)`, `("agent", name)`, `("user", id)`.
+- [x] **RetrievalSkill**: agents call `knowledge_retrieve` to pull top-k chunks; result rendered as Markdown context block with citations.
+- [x] **REST API**: `POST /api/knowledge/{ingest,search}`, `GET /api/knowledge/{namespaces,health}`, `DELETE /api/knowledge/namespaces/{ns}`.
+- [x] **EventBus**: `KNOWLEDGE_INGESTED`, `KNOWLEDGE_RETRIEVED`, `KNOWLEDGE_RETRIEVAL_SKIPPED`.
+- [x] **Frontend toggle**: RAG checkbox + namespace input next to the Stream toggle in `ChatInput`. Persisted via Zustand + `localStorage` (`ao_rag_enabled` / `ao_rag_namespace`); survives Reset (user preference, not session state).
+- [x] **Frontend log highlighting**: `knowledge.*` events get a "K" icon and a distinct accent in the right-side event log; new "Knowledge" filter option. System bubble "RAG: \<namespace\> · N chunks retrieved (\<embedding_model\>)" before each assistant reply when enabled.
+- [x] **Production swap-in**: env vars `RAG_EMBEDDING_PROVIDER={hash,openai,local}` + `RAG_OPENAI_MODEL` / `RAG_LOCAL_MODEL` pick alternative embedders without code changes (Open/Closed).
+
+### P2 — Evaluator Framework
+- [x] **Core**: `core/evaluator.py` with `Evaluator` ABC, `RubricEvaluator` (regex / contains / JSON-schema / min-max length, weighted), `LLMJudge` (Provider-injected, robust JSON extraction), `EvalSuite`, `EvalReport`, `JsonDataset`.
+- [x] **Smoke dataset**: `evals/datasets/smoke.json` (5 hand-picked cases: code summary, math reasoning, JSON output, safety refusal, conversational).
+- [x] **CLI runner**: `python -m evals.runners.cli --suite … --agent … --provider … --model …` with coloured table, `--dry-run`, `--json` output, HTTP agent mode.
+- [x] **REST**: `POST /api/evals/run`, `GET /api/evals/runs`, `GET /api/evals/runs/{id}`, `GET /api/evals/compare?a=&b=` with delta on pass_rate + mean_score.
+
+### P3 — Guardrails Layer
+- [x] **Unified `GuardrailManager`**: aggregates redacts and short-circuits on first block.
+- [x] **Built-ins**: `PIIScanner` (email / phone / SSN / IBAN / credit cards — redact), `SecretsScanner` (AWS keys, GitHub tokens, generic API keys — block), `PromptInjectionDetector` (heuristic — block), `OutputSchemaGuard` (JSON Schema validation — block), `CostGuard` (per-call budget cap — block).
+- [x] **Agent integration**: `Agent.execute()` calls `run_input(messages)` pre-LLM and `run_output(response)` post-LLM. Block raises `GuardrailBlocked` (`RuntimeError` subclass); redact substitutes messages.
+- [x] **Events + metrics**: `guardrail.checked / blocked / redacted` events; counters `guardrail_checks_total{type,side}`, `guardrail_blocks_total{type}`, `guardrail_redactions_total{type}`.
+- [x] **YAML config**: `orchestrator.yaml` `guardrails:` block with `input:` and `output:` lists; `guardrail_manager_from_config(yaml_dict)` loader.
+
+### P4 — Personalized Memory
+- [x] **`PersonalizedMemory`** facade over `BaseStore`: `put`, `get`, `list`, `delete`, `wipe` scoped to `("user", user_id)` namespace.
+- [x] **MemoryFilter integration**: blacklisted paths never persist (RGPD-friendly defaults).
+- [x] **`ProfileExtractorSkill`**: scans recent messages, calls a `Provider` to extract preferences/style/recurring topics, persists best-effort (Provider failure does NOT block the agent flow).
+- [x] **System-prompt injection**: `Agent` `__init__` accepts `personalized_memory` + `user_id`; `build_system_prompt()` appends a `<user_profile>` block when both are set. `prefetch_user_profile()` async method warms the cache before the synchronous prompt-build path.
+- [x] **REST**: `/api/user-memory/users/{user_id}` (GET list / DELETE wipe), `/api/user-memory/users/{user_id}/{key}` (GET single / DELETE single). Prefix `/api/user-memory/` chosen to avoid the existing `/api/memory/{namespace:path}` catch-all.
+
+### P5a — Agent ↔ Agent typed messages + spec
+- [x] **Typed dataclasses** in `core/cooperation_messages.py`: `CooperationMessage` (base), `DelegateMessage`, `ResultMessage`, `CapabilityQueryMessage`, `CapabilityResponseMessage`, `ConflictMessage`. Each has `from_dict` / `to_dict` round-trips.
+- [x] **`parse_message(d)`** dispatcher on the `kind` field. Tolerant: missing optional fields default to None / [].
+- [x] **Backwards-compatible**: existing dict-based callers in `core/cooperation.py` keep working — the typed module is additive.
+- [x] **Protocol spec**: [`docs/cooperation-protocol.md`](../docs/cooperation-protocol.md) with mermaid sequence diagram + state-transition diagram (`TaskAssigned → InProgress → Completed/Failed/Conflicted`) + error-handling rules + migration path.
+- [ ] **P5b — A2A adapter** (parked). Google A2A spec still moving as of April 2026; revisit Q3.
+
+### P6 — Observability sinks (Langfuse + Phoenix)
+- [x] **`core/observability/langfuse_exporter.py`**: registers a Langfuse span processor. Env: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`. Optional dep: `pip install -e ".[langfuse]"`.
+- [x] **`core/observability/phoenix_exporter.py`**: registers a Phoenix (Arize) OTLP HTTP exporter. Env: `PHOENIX_COLLECTOR_ENDPOINT`, `PHOENIX_API_KEY`. Optional dep: `pip install -e ".[phoenix]"`.
+- [x] **Both opt-in + graceful degradation**: importing without the optional package logs a warning and no-ops. Existing Tempo / OTel / Prometheus pipeline keeps working alongside.
+- [x] **Trace schema doc**: [`docs/trace-schema.md`](../docs/trace-schema.md) with span inventory (`agent.run`, `llm.call` with `gen_ai.*` attributes, `graph.node`, `skill.execute`, `agent.message`) and how to view traces in each backend.
+
+### Pre-sprint UI improvements (also landed today)
+- [x] **A2 — Conversation persistence**: `conversationId` auto-created on first send, persisted via `localStorage` (`ao_conv_id`), chat replays at boot.
+- [x] **B — Full Reset**: button at the top of Agent Interactions wipes graph + chat + attached files + conversation memory + `localStorage`. Best-effort: UI clears even on network failure.
+- [x] **C2 — Real document upload**: `POST /api/upload` (multipart) with `DocumentConverter` server-side. Replaces the previous `file.text()` flow that silently corrupted binary files.
+- [x] **C2.1 — Image OCR**: `_convert_image` via `pytesseract` + `Pillow` + `tesseract` system binary. PNG / JPG / etc. now produce real markdown via OCR instead of being rejected as "unsupported".
+- [x] **D — File context transparency**: each chip carries a kind badge (PDF/CSV/IMG/…), byte size, source colour (upload vs workspace), truncation indicator. System bubble at send time: `Sent with N files: a.pdf (3.2 KB) [upload], b.csv (12 KB) [workspace]`.
+- [x] **Vanilla UI removed**: 5198 lines deleted from `dashboard/static/`. Production has always served React from `frontend/dist/` via the Docker build; the vanilla fallback was dead code.
+
+### CI / pipelines fixed in the same day
+- [x] **Code-scanning alerts**: 11 CodeQL errors closed (8 log-injection via `_safe_log` helper, 3 stack-trace-exposure by replacing `str(exc)` with canonical messages).
+- [x] **pip-audit**: 4 vulnerable transitive deps upgraded (`authlib >= 1.6.11`, `PyJWT >= 2.12.0`, `cryptography >= 46.0.7`, `pytest >= 9.0.3`); 3 unfixable pip CVEs ignored with `--ignore-vuln` (pip itself comes from the runner image).
+- [x] **Deploy + Security Scan + Deploy Docusaurus**: all three pipelines green again. Deploy Docusaurus had been red since 2026-04-21 because no commit had touched `docs/website/**`; that's now fixed and the published site reflects the sprint.
 
 ---
 
@@ -231,8 +295,8 @@ Multi-turn conversation memory for iterative multi-agent interactions.
 - [x] **24 tests**: Core manager, agent integration, graph integration, persistence, fork, clear, metadata.
 
 ### Planned
-- [ ] **Store-based semantic memory** (Solution 2): Use `BaseStore` to persist conversation summaries cross-thread. Before each graph run, query store for relevant prior context and inject into system prompt. Enables long-running project memory without context window overflow. Requires LLM summarization step.
-- [ ] **PostgreSQL conversation store**: `ConversationManager` backed by `PostgresCheckpointer` for production persistence.
+- [x] **Store-based semantic memory** (Solution 2): **shipped in v1.3.0 P1+P4**. `core/knowledge` provides retrieval over the same `BaseStore`; `core/personalized_memory` handles per-user namespace; the `Retriever.retrieve()` call returns a Markdown context block that the agent can prepend to its system prompt. RAG handles the embedding + chunking; LLM summarisation is reserved for the existing `SummarizationConfig` path on long conversation histories.
+- [x] **PostgreSQL conversation store**: `PostgresCheckpointer(_db_url, table_name="conversation_checkpoints")` already wired in `dashboard/app.py` startup; falls back to `InMemoryCheckpointer` when `DATABASE_URL` is not set.
 
 ---
 
