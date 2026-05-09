@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 memory_router = APIRouter(prefix="/api/user-memory")
 
 
+def _safe_log(value: str) -> str:
+    """Strip CR/LF/TAB from values before they reach the logger.
+
+    Mirrors ``dashboard.app._sanitize_log`` — kept local to dodge cycles.
+    """
+    return str(value).replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
 def _get_pm(request: Request):
     """Return the PersonalizedMemory from app state or None."""
     return getattr(request.app.state, "personalized_memory", None)
@@ -42,8 +50,8 @@ async def list_user_entries(user_id: str, request: Request, limit: int = 50):
         )
     try:
         entries = await pm.list(user_id, limit=max(1, min(500, limit)))
-    except Exception as exc:
-        logger.error("list_user_entries failed for user=%s: %s", user_id, exc, exc_info=True)
+    except Exception:
+        logger.exception("list_user_entries failed for user=%r", _safe_log(user_id))
         return JSONResponse(content={"error": "Internal error"}, status_code=500)
 
     return JSONResponse(
@@ -65,16 +73,16 @@ async def get_user_entry(user_id: str, key: str, request: Request):
         )
     try:
         value = await pm.get(user_id, key)
-    except Exception as exc:
-        logger.error(
-            "get_user_entry failed for user=%s key=%s: %s", user_id, key, exc, exc_info=True
+    except Exception:
+        logger.exception(
+            "get_user_entry failed for user=%r key=%r",
+            _safe_log(user_id),
+            _safe_log(key),
         )
         return JSONResponse(content={"error": "Internal error"}, status_code=500)
 
     if value is None:
-        return JSONResponse(
-            content={"error": f"No entry '{key}' for user '{user_id}'"}, status_code=404
-        )
+        return JSONResponse(content={"error": "No such entry"}, status_code=404)
     return JSONResponse(content={"user_id": user_id, "key": key, "value": value})
 
 
@@ -91,16 +99,16 @@ async def delete_user_entry(user_id: str, key: str, request: Request):
         )
     try:
         deleted = await pm.delete(user_id, key)
-    except Exception as exc:
-        logger.error(
-            "delete_user_entry failed for user=%s key=%s: %s", user_id, key, exc, exc_info=True
+    except Exception:
+        logger.exception(
+            "delete_user_entry failed for user=%r key=%r",
+            _safe_log(user_id),
+            _safe_log(key),
         )
         return JSONResponse(content={"error": "Internal error"}, status_code=500)
 
     if not deleted:
-        return JSONResponse(
-            content={"error": f"No entry '{key}' for user '{user_id}'"}, status_code=404
-        )
+        return JSONResponse(content={"error": "No such entry"}, status_code=404)
     return JSONResponse(content={"success": True, "user_id": user_id, "key": key})
 
 
@@ -117,8 +125,8 @@ async def wipe_user_memory(user_id: str, request: Request):
         )
     try:
         count = await pm.wipe(user_id)
-    except Exception as exc:
-        logger.error("wipe_user_memory failed for user=%s: %s", user_id, exc, exc_info=True)
+    except Exception:
+        logger.exception("wipe_user_memory failed for user=%r", _safe_log(user_id))
         return JSONResponse(content={"error": "Internal error"}, status_code=500)
 
     return JSONResponse(content={"success": True, "user_id": user_id, "removed": count})

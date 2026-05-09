@@ -130,10 +130,7 @@ class InMemoryKnowledgeStore(KnowledgeStore):
         bucket = self._data.get(namespace, [])
         if not bucket or k <= 0:
             return []
-        scored = [
-            SearchHit(chunk=c, score=_cosine(query_embedding, c.embedding))
-            for c in bucket
-        ]
+        scored = [SearchHit(chunk=c, score=_cosine(query_embedding, c.embedding)) for c in bucket]
         scored.sort(key=lambda h: h.score, reverse=True)
         return scored[:k]
 

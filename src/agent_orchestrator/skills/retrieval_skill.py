@@ -153,9 +153,7 @@ def parse_namespace(s: str) -> tuple[str, ...]:
         return agent_namespace(s[len("agent:") :])
     if s.startswith("user:") and len(s) > len("user:"):
         return user_namespace(s[len("user:") :])
-    raise ValueError(
-        f"Unknown namespace '{s}'. Use 'shared', 'agent:<name>' or 'user:<id>'."
-    )
+    raise ValueError(f"Unknown namespace '{s}'. Use 'shared', 'agent:<name>' or 'user:<id>'.")
 
 
 def render_namespace(ns: tuple[str, ...]) -> str:

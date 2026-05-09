@@ -1937,9 +1937,7 @@ class TestConversationEndpoints:
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             new_resp = await client.post("/api/conversation/new")
             assert new_resp.status_code == 200
             conv_id = new_resp.json()["conversation_id"]
@@ -1962,13 +1960,9 @@ class TestConversationEndpoints:
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.delete("/api/conversation/does-not-exist")
-            assert resp.status_code in (200, 404), (
-                f"expected 200 or 404, got {resp.status_code}"
-            )
+            assert resp.status_code in (200, 404), f"expected 200 or 404, got {resp.status_code}"
 
 
 class TestUploadEndpoint:
@@ -1983,9 +1977,7 @@ class TestUploadEndpoint:
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             files = {"file": ("note.txt", b"hello world\n", "text/plain")}
             resp = await client.post("/api/upload", files=files)
 
@@ -2008,9 +2000,7 @@ class TestUploadEndpoint:
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             files = {"file": ("archive.zip", b"PK\x03\x04", "application/zip")}
             resp = await client.post("/api/upload", files=files)
 
@@ -2029,9 +2019,7 @@ class TestUploadEndpoint:
         oversize = b"x" * (MAX_FILE_SIZE_BYTES + 1)
 
         app = create_dashboard_app()
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             files = {"file": ("big.txt", oversize, "text/plain")}
             resp = await client.post("/api/upload", files=files)
 
@@ -2048,9 +2036,7 @@ class TestUploadEndpoint:
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(
                 "/api/upload", files={"not_file": ("x.txt", b"hi", "text/plain")}
             )

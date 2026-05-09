@@ -173,11 +173,13 @@ class TestInMemoryKnowledgeStore:
     async def test_search_ranks_by_cosine(self, chunk_factory):
         store = InMemoryKnowledgeStore()
         ns = SHARED_NAMESPACE
-        await store.add([
-            chunk_factory(ns, "a:0", "near", [1.0, 0.0]),
-            chunk_factory(ns, "b:0", "orthogonal", [0.0, 1.0]),
-            chunk_factory(ns, "c:0", "opposite", [-1.0, 0.0]),
-        ])
+        await store.add(
+            [
+                chunk_factory(ns, "a:0", "near", [1.0, 0.0]),
+                chunk_factory(ns, "b:0", "orthogonal", [0.0, 1.0]),
+                chunk_factory(ns, "c:0", "opposite", [-1.0, 0.0]),
+            ]
+        )
         hits = await store.search(ns, [1.0, 0.0], k=3)
         assert [h.chunk.chunk_id for h in hits] == ["a:0", "b:0", "c:0"]
         assert hits[0].score > hits[1].score > hits[2].score
@@ -194,10 +196,12 @@ class TestInMemoryKnowledgeStore:
     async def test_delete_namespace_removes_all(self, chunk_factory):
         store = InMemoryKnowledgeStore()
         ns = SHARED_NAMESPACE
-        await store.add([
-            chunk_factory(ns, "a:0", "x", [1.0]),
-            chunk_factory(ns, "b:0", "y", [0.0, 1.0]),
-        ])
+        await store.add(
+            [
+                chunk_factory(ns, "a:0", "x", [1.0]),
+                chunk_factory(ns, "b:0", "y", [0.0, 1.0]),
+            ]
+        )
         removed = await store.delete_namespace(ns)
         assert removed == 2
         assert await store.count(ns) == 0
@@ -352,9 +356,7 @@ async def test_alternative_embedder_satisfies_pipeline():
     store = InMemoryKnowledgeStore()
     ingester = Ingester(TextChunker(window=200), StubEmbedder(), store)
 
-    await ingester.ingest(
-        IngestRequest(text="anything", namespace=SHARED_NAMESPACE, source_id="d")
-    )
+    await ingester.ingest(IngestRequest(text="anything", namespace=SHARED_NAMESPACE, source_id="d"))
     retriever = Retriever(StubEmbedder(), store)
     result = await retriever.retrieve("anything", SHARED_NAMESPACE, k=1)
 

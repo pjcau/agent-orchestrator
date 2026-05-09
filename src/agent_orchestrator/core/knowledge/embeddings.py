@@ -174,9 +174,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             ) from exc
         key = api_key or os.environ.get("OPENAI_API_KEY")
         if not key:
-            raise RuntimeError(
-                "OpenAIEmbeddingProvider requires an API key (OPENAI_API_KEY)"
-            )
+            raise RuntimeError("OpenAIEmbeddingProvider requires an API key (OPENAI_API_KEY)")
         self._client = AsyncOpenAI(api_key=key)
         self._model = model
         self._dim = self._DEFAULT_DIMS.get(model, 1536)

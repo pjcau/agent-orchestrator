@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 
@@ -53,7 +51,11 @@ async def test_ingest_then_search_round_trips():
 
         search = await c.post(
             "/api/knowledge/search",
-            json={"query": "Use JWT tokens for stateless sessions.", "namespace": "agent:backend", "k": 3},
+            json={
+                "query": "Use JWT tokens for stateless sessions.",
+                "namespace": "agent:backend",
+                "k": 3,
+            },
         )
         assert search.status_code == 200
         sbody = search.json()
@@ -151,9 +153,7 @@ async def test_prompt_with_rag_enabled_emits_event_and_attaches_summary(monkeypa
 
     task = asyncio.create_task(collector())
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as c:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             # Ingest something so the retriever has hits
             await c.post(
                 "/api/knowledge/ingest",

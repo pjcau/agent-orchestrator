@@ -31,12 +31,8 @@ def _reset_exporter_state() -> None:
     """Reset module-level registration flags between tests."""
     # Import with importlib to handle the case where the modules are not yet
     # in sys.modules.
-    langfuse_mod = sys.modules.get(
-        "agent_orchestrator.core.observability.langfuse_exporter"
-    )
-    phoenix_mod = sys.modules.get(
-        "agent_orchestrator.core.observability.phoenix_exporter"
-    )
+    langfuse_mod = sys.modules.get("agent_orchestrator.core.observability.langfuse_exporter")
+    phoenix_mod = sys.modules.get("agent_orchestrator.core.observability.phoenix_exporter")
     if langfuse_mod is not None:
         langfuse_mod._registered = False
     if phoenix_mod is not None:
@@ -63,9 +59,11 @@ class TestModuleImportability:
     def test_langfuse_exporter_importable_without_langfuse_pkg(self, monkeypatch):
         """Simulate langfuse not installed; module must still import cleanly."""
         # Remove langfuse from sys.modules if present, then hide it.
-        with patch.dict(sys.modules, {"langfuse": None, "langfuse.otel": None,
-                                       "langfuse.decorators": None}):
+        with patch.dict(
+            sys.modules, {"langfuse": None, "langfuse.otel": None, "langfuse.decorators": None}
+        ):
             import agent_orchestrator.core.observability.langfuse_exporter as mod
+
             importlib.reload(mod)
             assert not mod._LANGFUSE_SDK_AVAILABLE
 
@@ -73,6 +71,7 @@ class TestModuleImportability:
         """Simulate arize-phoenix-otel not installed; module must still import cleanly."""
         with patch.dict(sys.modules, {"phoenix": None, "phoenix.otel": None}):
             import agent_orchestrator.core.observability.phoenix_exporter as mod
+
             importlib.reload(mod)
             assert not mod._PHOENIX_SDK_AVAILABLE
 
@@ -118,7 +117,9 @@ class TestLangfuseExporterConfig:
 
         monkeypatch.setattr(mod, "_LANGFUSE_SDK_AVAILABLE", False)
 
-        with caplog.at_level(logging.WARNING, logger="agent_orchestrator.core.observability.langfuse_exporter"):
+        with caplog.at_level(
+            logging.WARNING, logger="agent_orchestrator.core.observability.langfuse_exporter"
+        ):
             result = mod.register_langfuse_exporter()
 
         assert result is False

@@ -314,6 +314,7 @@ class Agent:
                     for i in range(len(self._messages) - 1, -1, -1):
                         if self._messages[i].role == Role.USER:
                             from dataclasses import replace as _dc_replace
+
                             self._messages[i] = _dc_replace(
                                 self._messages[i], content=gr_in.redacted_text
                             )
@@ -341,6 +342,7 @@ class Agent:
                     )
                 if gr_out.action == "redact" and gr_out.redacted_text is not None:
                     from dataclasses import replace as _dc_replace
+
                     completion = _dc_replace(completion, content=gr_out.redacted_text)
 
             # No tool calls — agent is done

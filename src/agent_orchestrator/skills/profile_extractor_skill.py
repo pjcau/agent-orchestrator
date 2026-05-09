@@ -112,15 +112,11 @@ class ProfileExtractorSkill(Skill):
         """
         user_id = str(params.get("user_id", "")).strip()
         if not user_id:
-            return SkillResult(
-                success=False, output=None, error="user_id is required"
-            )
+            return SkillResult(success=False, output=None, error="user_id is required")
 
         raw_messages: list[Any] = params.get("recent_messages", [])
         if not isinstance(raw_messages, list):
-            return SkillResult(
-                success=False, output=None, error="recent_messages must be a list"
-            )
+            return SkillResult(success=False, output=None, error="recent_messages must be a list")
 
         # Trim to max_messages (keep most recent)
         messages = raw_messages[-self._max_messages :]

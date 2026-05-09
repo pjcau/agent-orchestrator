@@ -31,6 +31,16 @@ from .graphs import _make_provider, run_graph
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_log(value: str) -> str:
+    """Strip CR/LF/TAB from values before they reach the logger.
+
+    Mirrors ``dashboard.app._sanitize_log``; duplicated to avoid an import
+    cycle between this router and ``app.py``.
+    """
+    return str(value).replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
 runtime_router = APIRouter(tags=["runtime"])
 
 # Allowed Ollama URL prefixes (SSRF protection)
@@ -107,10 +117,10 @@ async def prompt(body: dict, request: Request):
                     "scores": [h.score for h in rag_result.hits],
                 }
                 logger.info(
-                    "RAG retrieved %d chunks from %s for prompt (model=%s)",
+                    "RAG retrieved %d chunks from %r for prompt (model=%r)",
                     len(rag_result.hits),
-                    render_namespace(ns),
-                    rag_result.embedding_model,
+                    _safe_log(render_namespace(ns)),
+                    _safe_log(rag_result.embedding_model),
                 )
                 await bus.emit(
                     Event(
@@ -519,13 +529,11 @@ async def stream_endpoint(ws: WebSocket):
                         ns = parse_namespace(rag_namespace)
                         rag_result = await retriever.retrieve(prompt_text, ns, k=rag_k)
                         if not rag_result.is_empty:
-                            full_prompt = (
-                                f"{rag_result.as_context_block()}\n{full_prompt}"
-                            )
+                            full_prompt = f"{rag_result.as_context_block()}\n{full_prompt}"
                         logger.info(
-                            "RAG (stream) retrieved %d chunks from %s",
+                            "RAG (stream) retrieved %d chunks from %r",
                             len(rag_result.hits),
-                            render_namespace(ns),
+                            _safe_log(render_namespace(ns)),
                         )
                         await bus.emit(
                             Event(
@@ -543,13 +551,15 @@ async def stream_endpoint(ws: WebSocket):
                             )
                         )
                         # Notify the client so it can render a "RAG used" chip.
-                        await ws.send_json({
-                            "type": "rag",
-                            "namespace": render_namespace(ns),
-                            "hits": len(rag_result.hits),
-                            "embedding_model": rag_result.embedding_model,
-                            "scores": [h.score for h in rag_result.hits],
-                        })
+                        await ws.send_json(
+                            {
+                                "type": "rag",
+                                "namespace": render_namespace(ns),
+                                "hits": len(rag_result.hits),
+                                "embedding_model": rag_result.embedding_model,
+                                "scores": [h.score for h in rag_result.hits],
+                            }
+                        )
                     except ValueError as exc:
                         await bus.emit(
                             Event(

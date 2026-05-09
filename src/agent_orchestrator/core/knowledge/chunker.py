@@ -110,11 +110,13 @@ class MarkdownChunker(Chunker):
             path_stack.append((depth, title))
             start = m.start()
             end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-            sections.append((
-                [t for _, t in path_stack],
-                start,
-                end,
-            ))
+            sections.append(
+                (
+                    [t for _, t in path_stack],
+                    start,
+                    end,
+                )
+            )
 
         chunks: list[Chunk] = []
         for path, start, end in sections:
@@ -127,7 +129,5 @@ class MarkdownChunker(Chunker):
             else:
                 # Large section — sub-chunk and tag with the header path.
                 for sub in self._fallback.chunk(body):
-                    chunks.append(
-                        Chunk(text=sub.text, location=f"{location} ({sub.location})")
-                    )
+                    chunks.append(Chunk(text=sub.text, location=f"{location} ({sub.location})"))
         return chunks

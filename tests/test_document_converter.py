@@ -313,10 +313,24 @@ async def test_md_file_written(converter: DocumentConverter, tmp_csv: Path):
 def test_supported_types_include_expected_extensions():
     """SUPPORTED_TYPES should include all documented extensions."""
     expected = {
-        ".pdf", ".xlsx", ".xls", ".csv", ".docx", ".pptx",
-        ".html", ".htm", ".txt",
+        ".pdf",
+        ".xlsx",
+        ".xls",
+        ".csv",
+        ".docx",
+        ".pptx",
+        ".html",
+        ".htm",
+        ".txt",
         # Image OCR (solution 1)
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".tiff",
+        ".tif",
     }
     assert expected.issubset(set(DocumentConverter.SUPPORTED_TYPES.keys()))
 
@@ -392,9 +406,7 @@ async def test_image_ocr_missing_tesseract_binary_raises_dependency_error(
     reason="tesseract system binary is not installed",
 )
 @pytest.mark.asyncio
-async def test_image_ocr_extracts_text_from_image(
-    converter: DocumentConverter, tmp_path: Path
-):
+async def test_image_ocr_extracts_text_from_image(converter: DocumentConverter, tmp_path: Path):
     """End-to-end OCR test: render text into an image and verify it's extracted.
 
     Skipped when the tesseract binary is not on PATH (e.g. some CI runners).

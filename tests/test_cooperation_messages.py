@@ -181,9 +181,7 @@ class TestTolerance:
         assert msg.capabilities == []
 
     def test_conflict_optional_resolution_can_be_none(self):
-        msg = ConflictMessage.from_dict(
-            {"kind": KIND_CONFLICT, "task_id": "t1", "reason": "boom"}
-        )
+        msg = ConflictMessage.from_dict({"kind": KIND_CONFLICT, "task_id": "t1", "reason": "boom"})
         assert msg.proposed_resolution is None
 
 
@@ -255,9 +253,7 @@ class TestIntegrationWithProtocol:
         """A typed ResultMessage maps cleanly to TaskReport.complete()."""
         proto = CooperationProtocol()
         proto.assign(
-            TaskAssignment(
-                task_id="t1", from_agent="lead", to_agent="backend", description="x"
-            )
+            TaskAssignment(task_id="t1", from_agent="lead", to_agent="backend", description="x")
         )
         result = ResultMessage(
             from_agent="backend",

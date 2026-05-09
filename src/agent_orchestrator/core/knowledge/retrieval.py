@@ -35,12 +35,8 @@ class RetrievalResult:
         parts: list[str] = ["## Retrieved context\n"]
         budget = max_chars
         for hit in self.hits:
-            loc = hit.chunk.metadata.get("location") or hit.chunk.metadata.get(
-                "source_id", "?"
-            )
-            block = (
-                f"\n### {loc} (score={hit.score:.2f})\n\n{hit.chunk.text.strip()}\n"
-            )
+            loc = hit.chunk.metadata.get("location") or hit.chunk.metadata.get("source_id", "?")
+            block = f"\n### {loc} (score={hit.score:.2f})\n\n{hit.chunk.text.strip()}\n"
             if budget is not None:
                 if budget <= 0:
                     break

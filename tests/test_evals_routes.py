@@ -29,9 +29,7 @@ def _write_suite(cases: list[dict] | None = None) -> Path:
             {"prompt": "What is 2+2?", "expected": "4", "metadata": {"case_id": "math"}},
             {"prompt": "Capital of France?", "expected": "Paris", "metadata": {"case_id": "geo"}},
         ]
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False, encoding="utf-8"
-    )
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
     json.dump({"cases": cases}, tmp)
     tmp.close()
     return Path(tmp.name)

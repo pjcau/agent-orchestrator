@@ -240,9 +240,7 @@ async def compare_runs(request: Request):
     store = _ensure_store(request.app.state)
     missing = [rid for rid in (a_id, b_id) if rid not in store]
     if missing:
-        return JSONResponse(
-            content={"error": f"run(s) not found: {missing}"}, status_code=404
-        )
+        return JSONResponse(content={"error": f"run(s) not found: {missing}"}, status_code=404)
 
     report_a = store[a_id]
     report_b = store[b_id]

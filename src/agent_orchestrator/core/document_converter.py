@@ -427,9 +427,7 @@ class DocumentConverter:
                 "or brew install tesseract (macOS)."
             ) from exc
         except Exception as exc:  # pragma: no cover — defensive
-            raise DocumentConversionError(
-                f"Failed to OCR image: {exc}"
-            ) from exc
+            raise DocumentConversionError(f"Failed to OCR image: {exc}") from exc
 
         if not text:
             md_content = (

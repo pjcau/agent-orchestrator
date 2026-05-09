@@ -351,8 +351,14 @@ def default_metrics(registry: MetricsRegistry | None = None) -> MetricsRegistry:
     )
 
     # Guardrail metrics (P3)
-    for guardrail_type in ["PIIScanner", "SecretsScanner", "PromptInjectionDetector",
-                           "OutputSchemaGuard", "CostGuard", "GuardrailManager"]:
+    for guardrail_type in [
+        "PIIScanner",
+        "SecretsScanner",
+        "PromptInjectionDetector",
+        "OutputSchemaGuard",
+        "CostGuard",
+        "GuardrailManager",
+    ]:
         for side in ["input", "output"]:
             reg.counter(
                 "guardrail_checks_total",

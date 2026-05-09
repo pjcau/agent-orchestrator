@@ -303,9 +303,7 @@ class SecretsScanner(Guardrail):
         if not found:
             return _ALLOW
         if self._action == "block":
-            return GuardrailResult(
-                passed=False, reason="Secret detected in input", action="block"
-            )
+            return GuardrailResult(passed=False, reason="Secret detected in input", action="block")
         return GuardrailResult(
             passed=True,
             reason="Secret redacted from input",
@@ -318,9 +316,7 @@ class SecretsScanner(Guardrail):
         if not found:
             return _ALLOW
         if self._action == "block":
-            return GuardrailResult(
-                passed=False, reason="Secret detected in output", action="block"
-            )
+            return GuardrailResult(passed=False, reason="Secret detected in output", action="block")
         return GuardrailResult(
             passed=True,
             reason="Secret redacted from output",
@@ -395,6 +391,7 @@ class PromptInjectionDetector(Guardrail):
 
 
 # --- Output Schema Guard ---
+
 
 class OutputSchemaGuard(Guardrail):
     """Validate assistant output against a JSON Schema.

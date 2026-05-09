@@ -77,7 +77,9 @@ class _MockProvider(Provider):
             usage=Usage(input_tokens=10, output_tokens=20, cost_usd=0.0),
         )
 
-    async def stream(self, messages, tools=None, system=None, **kwargs) -> AsyncIterator[StreamChunk]:
+    async def stream(
+        self, messages, tools=None, system=None, **kwargs
+    ) -> AsyncIterator[StreamChunk]:
         yield StreamChunk(content=self._response, is_final=True)
 
 
@@ -278,7 +280,7 @@ class TestLLMJudgeMalformedResponse:
     @pytest.mark.asyncio
     async def test_code_fenced_json_extracted(self):
         provider = _MockProvider(
-            "Here is the verdict:\n```json\n{\"passed\": true, \"score\": 0.8, \"detail\": \"ok\"}\n```"
+            'Here is the verdict:\n```json\n{"passed": true, "score": 0.8, "detail": "ok"}\n```'
         )
         judge = LLMJudge(provider)
         score = await judge.evaluate(_case(), _run("answer"))
@@ -327,7 +329,7 @@ class TestExtractJson:
         assert result == {"a": 1}
 
     def test_strips_code_fence(self):
-        result = _extract_json("```json\n{\"x\": 2}\n```")
+        result = _extract_json('```json\n{"x": 2}\n```')
         assert result == {"x": 2}
 
     def test_extracts_from_prose(self):
@@ -434,9 +436,7 @@ class TestEvalSuiteEndToEnd:
                 raise RuntimeError("evaluator broke")
 
         cases = [EvalCase(prompt="p", metadata={"case_id": "0"})]
-        suite = EvalSuite(
-            name="broken", cases=cases, evaluators=[_BrokenEvaluator(checks=[])]
-        )
+        suite = EvalSuite(name="broken", cases=cases, evaluators=[_BrokenEvaluator(checks=[])])
 
         async def agent(case: EvalCase) -> EvalRun:
             return EvalRun(case_id="0", agent_output="hi", ok=True)
@@ -466,9 +466,7 @@ class TestEvalSuiteEndToEnd:
 
 class TestJsonDataset:
     def _write(self, data: str, suffix: str = ".json") -> Path:
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=suffix, delete=False, encoding="utf-8"
-        )
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8")
         tmp.write(data)
         tmp.close()
         return Path(tmp.name)

@@ -48,8 +48,7 @@ def _filter_value(value: dict[str, Any], memory_filter: "MemoryFilter | None") -
             filtered[k] = memory_filter.filter_message(v)
         elif isinstance(v, list):
             filtered[k] = [
-                memory_filter.filter_message(item) if isinstance(item, str) else item
-                for item in v
+                memory_filter.filter_message(item) if isinstance(item, str) else item for item in v
             ]
         else:
             filtered[k] = v

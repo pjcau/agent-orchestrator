@@ -113,8 +113,7 @@ def _validate_check(check: dict[str, Any]) -> None:
         raise ValueError(f"Check dict missing 'type' key: {check!r}")
     if check["type"] not in _SUPPORTED_CHECK_TYPES:
         raise ValueError(
-            f"Unknown check type {check['type']!r}. "
-            f"Supported: {sorted(_SUPPORTED_CHECK_TYPES)}"
+            f"Unknown check type {check['type']!r}. Supported: {sorted(_SUPPORTED_CHECK_TYPES)}"
         )
     if check["type"] in {"contains", "not_contains", "regex"} and "value" not in check:
         raise ValueError(f"Check type {check['type']!r} requires a 'value' key: {check!r}")

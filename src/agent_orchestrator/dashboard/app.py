@@ -272,9 +272,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     from ..core.personalized_memory import PersonalizedMemory as _PM
 
     app.state.personalized_memory = (
-        _PM(store_holder[0], memory_filter=_memory_filter)
-        if store_holder[0] is not None
-        else None
+        _PM(store_holder[0], memory_filter=_memory_filter) if store_holder[0] is not None else None
     )
 
     # ── Knowledge / RAG (P1) ────────────────────────────────────────────

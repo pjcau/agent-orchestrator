@@ -243,9 +243,7 @@ class TestProfileExtractorSkill:
     @pytest.mark.asyncio
     async def test_result_metadata_has_saved_keys(self, store):
         pm = PersonalizedMemory(store)
-        profile_json = json.dumps(
-            {"preferences": [], "style_notes": [], "recurring_topics": []}
-        )
+        profile_json = json.dumps({"preferences": [], "style_notes": [], "recurring_topics": []})
         skill = self._skill(_make_mock_provider(profile_json), pm)
         result = await skill.execute(
             {"user_id": "bob", "recent_messages": [{"role": "user", "content": "hi"}]}
@@ -286,9 +284,11 @@ class TestProfileExtractorSkill:
     @pytest.mark.asyncio
     async def test_markdown_fenced_json_is_parsed_correctly(self, store):
         pm = PersonalizedMemory(store)
-        fenced = "```json\n" + json.dumps(
-            {"preferences": ["p1"], "style_notes": [], "recurring_topics": []}
-        ) + "\n```"
+        fenced = (
+            "```json\n"
+            + json.dumps({"preferences": ["p1"], "style_notes": [], "recurring_topics": []})
+            + "\n```"
+        )
         skill = self._skill(_make_mock_provider(fenced), pm)
         result = await skill.execute(
             {"user_id": "eve", "recent_messages": [{"role": "user", "content": "hi"}]}
@@ -306,7 +306,9 @@ class TestAgentUserProfileInjection:
         from agent_orchestrator.core.agent import Agent, AgentConfig
         from agent_orchestrator.core.skill import SkillRegistry
 
-        config = AgentConfig(name="test-agent", role="You are a helpful assistant.", provider_key="mock")
+        config = AgentConfig(
+            name="test-agent", role="You are a helpful assistant.", provider_key="mock"
+        )
         provider = MagicMock()
         registry = SkillRegistry()
         return Agent(

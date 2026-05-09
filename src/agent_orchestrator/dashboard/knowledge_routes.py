@@ -65,16 +65,17 @@ async def ingest(body: dict, request: Request):
     ns_str = str(body.get("namespace", "shared")).strip() or "shared"
     try:
         namespace = parse_namespace(ns_str)
-    except ValueError as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except ValueError:
+        return JSONResponse(
+            content={"error": "Unknown namespace. Use 'shared', 'agent:<name>' or 'user:<id>'."},
+            status_code=400,
+        )
 
     metadata = body.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
 
     result = await ingester.ingest(
-        IngestRequest(
-            text=text, namespace=namespace, source_id=source_id, metadata=metadata
-        )
+        IngestRequest(text=text, namespace=namespace, source_id=source_id, metadata=metadata)
     )
 
     bus: EventBus | None = getattr(request.app.state, "bus", None)
@@ -117,8 +118,11 @@ async def search(body: dict, request: Request):
     ns_str = str(body.get("namespace", "shared")).strip() or "shared"
     try:
         namespace = parse_namespace(ns_str)
-    except ValueError as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except ValueError:
+        return JSONResponse(
+            content={"error": "Unknown namespace. Use 'shared', 'agent:<name>' or 'user:<id>'."},
+            status_code=400,
+        )
     try:
         k = max(1, min(20, int(body.get("k", 5))))
     except (TypeError, ValueError):
@@ -189,8 +193,11 @@ async def delete_namespace(namespace: str, request: Request):
         )
     try:
         ns = parse_namespace(namespace)
-    except ValueError as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except ValueError:
+        return JSONResponse(
+            content={"error": "Unknown namespace. Use 'shared', 'agent:<name>' or 'user:<id>'."},
+            status_code=400,
+        )
 
     removed = await ingester._store.delete_namespace(ns)  # noqa: SLF001
     return JSONResponse(

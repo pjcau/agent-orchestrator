@@ -207,8 +207,7 @@ def parse_message(d: dict[str, Any]) -> CooperationMessage:
     cls = _KIND_TO_CLASS.get(kind)
     if cls is None:
         raise ValueError(
-            f"unknown cooperation message kind: {kind!r} "
-            f"(known: {sorted(_KIND_TO_CLASS)})"
+            f"unknown cooperation message kind: {kind!r} (known: {sorted(_KIND_TO_CLASS)})"
         )
     return cls.from_dict(d)
 
