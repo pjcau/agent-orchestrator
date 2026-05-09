@@ -30,6 +30,14 @@ const sidebars = {
     'roadmap/overview',
     {
       type: 'category',
+      label: 'Latest sprint',
+      collapsed: false,
+      items: [
+        'roadmap/q1q2-sprint',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Phases',
       collapsed: false,
       items: [
