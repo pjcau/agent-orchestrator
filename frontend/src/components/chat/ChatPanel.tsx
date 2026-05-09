@@ -59,6 +59,20 @@ export function ChatPanel() {
     }) => {
       const { text, mode, model, provider, useStreaming, fileContext } = opts;
 
+      // Auto-create a conversation on first send so multi-turn memory works
+      // without the user having to click "New Chat" first. The id is then
+      // persisted in localStorage by setConversationId.
+      let activeConvId = conversationId;
+      if (!activeConvId) {
+        try {
+          const created = await newConversation.mutateAsync();
+          activeConvId = created.conversation_id;
+          setConversationId(activeConvId);
+        } catch (err) {
+          console.warn("Auto-create conversation failed; sending without persistence", err);
+        }
+      }
+
       // Add user message to chat
       addMessage({ role: "user", content: text, timestamp: Date.now() });
       useAppStore.setState({ isStreaming: true });
@@ -72,7 +86,7 @@ export function ChatPanel() {
               task: text,
               model,
               provider,
-              conversation_id: conversationId,
+              conversation_id: activeConvId,
             }
           );
           if (resp.data.job_id) {
@@ -128,7 +142,7 @@ export function ChatPanel() {
               prompt: fileContext ? `${text}\n\n\`\`\`\n${fileContext}\n\`\`\`` : text,
               model,
               provider,
-              conversation_id: conversationId,
+              conversation_id: activeConvId,
               file_context: fileContext,
             });
             // isStreaming stays true until stream finishes
@@ -145,7 +159,7 @@ export function ChatPanel() {
               model,
               provider,
               graph_type: "chat",
-              conversation_id: conversationId,
+              conversation_id: activeConvId,
               file_context: fileContext,
             });
 
@@ -172,7 +186,15 @@ export function ChatPanel() {
         useAppStore.setState({ isStreaming: false });
       }
     },
-    [addMessage, conversationId, sendStreamPrompt, isStreamWsReady, setPendingTeamJob]
+    [
+      addMessage,
+      conversationId,
+      newConversation,
+      setConversationId,
+      sendStreamPrompt,
+      isStreamWsReady,
+      setPendingTeamJob,
+    ]
   );
 
   return (

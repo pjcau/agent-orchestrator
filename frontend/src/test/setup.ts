@@ -66,3 +66,6 @@ class MockEventSource {
 }
 
 vi.stubGlobal("EventSource", MockEventSource);
+
+// jsdom does not implement scrollIntoView; ChatPanel uses it on mount.
+Element.prototype.scrollIntoView = vi.fn();

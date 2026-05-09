@@ -119,6 +119,31 @@ const MAX_EVENTS = 500;
 const MAX_ACTIVITY = 200;
 const MAX_INTERACTIONS = 50;
 
+/** localStorage key used to persist the active conversation id across reloads. */
+export const STORAGE_KEY_CONVERSATION_ID = "ao_conv_id";
+
+/** Read the persisted conversation id from localStorage, or null. */
+function readPersistedConversationId(): string | null {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_CONVERSATION_ID);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist (or clear) the conversation id in localStorage. */
+function writePersistedConversationId(id: string | null): void {
+  try {
+    if (id) {
+      window.localStorage.setItem(STORAGE_KEY_CONVERSATION_ID, id);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEY_CONVERSATION_ID);
+    }
+  } catch {
+    /* localStorage unavailable (private mode, SSR) — fail silently */
+  }
+}
+
 const initialCacheState: CacheStats = {
   hits: 0,
   misses: 0,
@@ -155,7 +180,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   isStreaming: false,
   streamBuffer: "",
-  conversationId: null,
+  // Hydrate conversationId from localStorage so a reload preserves the thread.
+  conversationId: readPersistedConversationId(),
   lastTokenSpeed: 0,
 
   // UI state
@@ -443,7 +469,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearStreamBuffer: () => set({ streamBuffer: "", isStreaming: false }),
 
-  setConversationId: (id) => set({ conversationId: id }),
+  setConversationId: (id) => {
+    writePersistedConversationId(id);
+    set({ conversationId: id });
+  },
 
   setLastTokenSpeed: (speed) => set({ lastTokenSpeed: speed }),
 

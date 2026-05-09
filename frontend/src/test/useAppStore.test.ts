@@ -248,4 +248,29 @@ describe("useAppStore", () => {
     useAppStore.getState().setWsConnected(true);
     expect(useAppStore.getState().wsConnected).toBe(true);
   });
+
+  describe("conversation id persistence (A2)", () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+      useAppStore.getState().setConversationId(null);
+    });
+
+    it("setConversationId writes to localStorage", () => {
+      useAppStore.getState().setConversationId("conv-abc");
+      expect(window.localStorage.getItem("ao_conv_id")).toBe("conv-abc");
+      expect(useAppStore.getState().conversationId).toBe("conv-abc");
+    });
+
+    it("setConversationId(null) clears localStorage", () => {
+      window.localStorage.setItem("ao_conv_id", "stale-id");
+      useAppStore.getState().setConversationId(null);
+      expect(window.localStorage.getItem("ao_conv_id")).toBeNull();
+      expect(useAppStore.getState().conversationId).toBeNull();
+    });
+
+    it("STORAGE_KEY_CONVERSATION_ID is exported and stable", async () => {
+      const { STORAGE_KEY_CONVERSATION_ID } = await import("@/stores/useAppStore");
+      expect(STORAGE_KEY_CONVERSATION_ID).toBe("ao_conv_id");
+    });
+  });
 });

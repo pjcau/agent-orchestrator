@@ -165,6 +165,17 @@ The vanilla JS dashboard at `src/agent_orchestrator/dashboard/static/` was remov
 
 New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `fetchFileContent` (async helper), `usePricing`. Query keys added: `presets`, `files`, `pricing`.
 
+## Conversation persistence (A2)
+
+The Simple Prompt mode keeps multi-turn memory automatically.
+
+- The Zustand store (`frontend/src/stores/useAppStore.ts`) hydrates `conversationId` from `localStorage` (key `ao_conv_id`) when the app boots.
+- `setConversationId(id)` mirrors changes back to `localStorage`; calling it with `null` clears the key.
+- `ChatPanel.handleSend` lazily creates a conversation on the first send: if `conversationId` is null, it calls `POST /api/conversation/new`, persists the returned id, and only then issues the prompt request — so the very first turn is also recorded.
+- At boot, `App.tsx` reads the persisted id and fetches `GET /api/conversation/{id}` to replay messages back into the chat. If the server no longer knows the id (404), the local id is cleared and the next send starts fresh.
+
+This means a page reload, a new tab, or a server restart no longer drops the conversation thread.
+
 ## UI Enhancements (DeepFlow-Inspired)
 
 Rich rendering capabilities in the React dashboard (Mermaid loaded from CDN, KaTeX via `rehype-katex`):
