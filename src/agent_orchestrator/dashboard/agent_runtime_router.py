@@ -70,6 +70,12 @@ async def prompt(body: dict, request: Request):
     graph_type = body.get("graph_type", "auto")
     conv_id = body.get("conversation_id")
     file_context = body.get("file_context", "")
+    # P1 RAG: optional toggle. When true the dashboard fetches relevant
+    # chunks from the configured namespace before calling the LLM and
+    # prepends them to the prompt as a "Retrieved context" block.
+    rag_enabled = bool(body.get("rag_enabled", False))
+    rag_namespace = str(body.get("rag_namespace", "shared")).strip() or "shared"
+    rag_k = int(body.get("rag_k", 5) or 5)
 
     if not user_prompt:
         return JSONResponse(content={"success": False, "error": "Empty prompt"}, status_code=400)
@@ -81,6 +87,61 @@ async def prompt(body: dict, request: Request):
     full_prompt = user_prompt
     if file_context:
         full_prompt = f"{user_prompt}\n\n```\n{file_context}\n```"
+
+    # ── RAG injection (P1) ────────────────────────────────────────────
+    rag_summary: dict | None = None
+    if rag_enabled:
+        retriever = getattr(request.app.state, "knowledge_retriever", None)
+        if retriever is not None:
+            try:
+                from ..skills.retrieval_skill import parse_namespace, render_namespace
+
+                ns = parse_namespace(rag_namespace)
+                rag_result = await retriever.retrieve(user_prompt, ns, k=rag_k)
+                if not rag_result.is_empty:
+                    full_prompt = f"{rag_result.as_context_block()}\n{full_prompt}"
+                rag_summary = {
+                    "namespace": render_namespace(ns),
+                    "hits": len(rag_result.hits),
+                    "embedding_model": rag_result.embedding_model,
+                    "scores": [h.score for h in rag_result.hits],
+                }
+                logger.info(
+                    "RAG retrieved %d chunks from %s for prompt (model=%s)",
+                    len(rag_result.hits),
+                    render_namespace(ns),
+                    rag_result.embedding_model,
+                )
+                await bus.emit(
+                    Event(
+                        event_type=EventType.KNOWLEDGE_RETRIEVED,
+                        data={
+                            "namespace": list(ns),
+                            "namespace_label": render_namespace(ns),
+                            "query": user_prompt,
+                            "k": rag_k,
+                            "hits": len(rag_result.hits),
+                            "embedding_model": rag_result.embedding_model,
+                            "scores": [h.score for h in rag_result.hits],
+                            "trigger": "auto",
+                        },
+                    )
+                )
+            except ValueError as exc:
+                rag_summary = {"error": str(exc)}
+                await bus.emit(
+                    Event(
+                        event_type=EventType.KNOWLEDGE_RETRIEVAL_SKIPPED,
+                        data={"reason": str(exc), "namespace": rag_namespace},
+                    )
+                )
+        else:
+            await bus.emit(
+                Event(
+                    event_type=EventType.KNOWLEDGE_RETRIEVAL_SKIPPED,
+                    data={"reason": "knowledge subsystem not configured"},
+                )
+            )
 
     ollama_url = _get_ollama_url()
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -125,6 +186,12 @@ async def prompt(body: dict, request: Request):
         await usage_db.append_message(conv_id, "user", user_prompt)
         if result.get("success"):
             await usage_db.append_message(conv_id, "assistant", result.get("output", ""))
+
+    if rag_summary is not None:
+        # Surface RAG details in the response so the UI can show "RAG used"
+        # bubbles, scores, and the namespace that was searched.
+        result = dict(result)
+        result["rag"] = rag_summary
 
     return JSONResponse(content=result)
 
@@ -425,6 +492,9 @@ async def stream_endpoint(ws: WebSocket):
             system = data.get("system", "You are a helpful AI assistant. Be concise and direct.")
             conv_id = data.get("conversation_id")
             file_context = data.get("file_context", "")
+            rag_enabled = bool(data.get("rag_enabled", False))
+            rag_namespace = str(data.get("rag_namespace", "shared")).strip() or "shared"
+            rag_k = int(data.get("rag_k", 5) or 5)
 
             if not prompt_text or not model:
                 await ws.send_json({"type": "error", "error": "Missing prompt or model"})
@@ -435,6 +505,58 @@ async def stream_endpoint(ws: WebSocket):
             full_prompt = prompt_text
             if file_context:
                 full_prompt = f"{prompt_text}\n\n```\n{file_context}\n```"
+
+            # ── RAG injection (P1) for streaming path ──────────────────
+            if rag_enabled:
+                retriever = getattr(ws.app.state, "knowledge_retriever", None)
+                if retriever is not None:
+                    try:
+                        from ..skills.retrieval_skill import (
+                            parse_namespace,
+                            render_namespace,
+                        )
+
+                        ns = parse_namespace(rag_namespace)
+                        rag_result = await retriever.retrieve(prompt_text, ns, k=rag_k)
+                        if not rag_result.is_empty:
+                            full_prompt = (
+                                f"{rag_result.as_context_block()}\n{full_prompt}"
+                            )
+                        logger.info(
+                            "RAG (stream) retrieved %d chunks from %s",
+                            len(rag_result.hits),
+                            render_namespace(ns),
+                        )
+                        await bus.emit(
+                            Event(
+                                event_type=EventType.KNOWLEDGE_RETRIEVED,
+                                data={
+                                    "namespace": list(ns),
+                                    "namespace_label": render_namespace(ns),
+                                    "query": prompt_text,
+                                    "k": rag_k,
+                                    "hits": len(rag_result.hits),
+                                    "embedding_model": rag_result.embedding_model,
+                                    "scores": [h.score for h in rag_result.hits],
+                                    "trigger": "auto-stream",
+                                },
+                            )
+                        )
+                        # Notify the client so it can render a "RAG used" chip.
+                        await ws.send_json({
+                            "type": "rag",
+                            "namespace": render_namespace(ns),
+                            "hits": len(rag_result.hits),
+                            "embedding_model": rag_result.embedding_model,
+                            "scores": [h.score for h in rag_result.hits],
+                        })
+                    except ValueError as exc:
+                        await bus.emit(
+                            Event(
+                                event_type=EventType.KNOWLEDGE_RETRIEVAL_SKIPPED,
+                                data={"reason": str(exc), "namespace": rag_namespace},
+                            )
+                        )
 
             if conv_id:
                 recent = await usage_db.get_recent_messages(conv_id, limit=6)

@@ -43,6 +43,7 @@ from .usage_db import UsageDB
 from .alert_webhook import AlertHandler
 from .gateway_api import gateway_router, health_router, metrics_router
 from .agent_runtime_router import runtime_router
+from .knowledge_routes import knowledge_router
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
@@ -261,6 +262,62 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     app.state.run_manager = run_manager
     app.state.mcp_client_manager = mcp_client_manager
 
+    # ── Knowledge / RAG (P1) ────────────────────────────────────────────
+    # The knowledge subsystem is a single shared (embedder, store) pair
+    # plus the Ingester / Retriever orchestrators. Defaults are dependency
+    # free (HashEmbedder + InMemoryKnowledgeStore) so /api/knowledge/* is
+    # always available — production deployments swap these via env vars.
+    from ..core.knowledge import (
+        HashEmbedder,
+        InMemoryKnowledgeStore,
+        Ingester,
+        MarkdownChunker,
+        Retriever,
+    )
+
+    _embedding_provider = os.environ.get("RAG_EMBEDDING_PROVIDER", "hash").lower()
+    if _embedding_provider == "openai":
+        try:
+            from ..core.knowledge import OpenAIEmbeddingProvider
+
+            _embedder = OpenAIEmbeddingProvider(
+                model=os.environ.get("RAG_OPENAI_MODEL", "text-embedding-3-small")
+            )
+        except Exception:
+            logger.warning(
+                "OpenAI embedder unavailable — falling back to HashEmbedder",
+                exc_info=True,
+            )
+            _embedder = HashEmbedder(dim=64)
+    elif _embedding_provider == "local":
+        try:
+            from ..core.knowledge import LocalEmbeddingProvider
+
+            _embedder = LocalEmbeddingProvider(
+                model_name=os.environ.get("RAG_LOCAL_MODEL", "all-MiniLM-L6-v2")
+            )
+        except Exception:
+            logger.warning(
+                "Local embedder unavailable — falling back to HashEmbedder",
+                exc_info=True,
+            )
+            _embedder = HashEmbedder(dim=64)
+    else:
+        _embedder = HashEmbedder(dim=64)
+
+    _knowledge_store = InMemoryKnowledgeStore()
+    _chunker = MarkdownChunker(max_section_chars=2000, overlap=200)
+    app.state.knowledge_store = _knowledge_store
+    app.state.knowledge_embedder = _embedder
+    app.state.knowledge_ingester = Ingester(_chunker, _embedder, _knowledge_store)
+    app.state.knowledge_retriever = Retriever(_embedder, _knowledge_store)
+    logger.info(
+        "Knowledge subsystem ready (provider=%s, model=%s, dim=%d)",
+        _embedder.info.provider,
+        _embedder.info.name,
+        _embedder.dim,
+    )
+
     # -----------------------------------------------------------------------
     # Startup / shutdown lifecycle
     # -----------------------------------------------------------------------
@@ -352,6 +409,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # REST management endpoints (/api/*)
     app.include_router(gateway_router)
+
+    # Knowledge / RAG endpoints (/api/knowledge/*) — P1
+    app.include_router(knowledge_router)
 
     # Agent execution, WebSocket streaming, SSE (/api/prompt, /api/agent/run,
     # /api/team/*, /ws, /ws/stream)
