@@ -2,6 +2,8 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import type { ModelsResponse } from "@/api/types";
 import { WorkspaceFilePicker } from "@/components/files/WorkspaceFilePicker";
 import { useAppStore } from "@/stores/useAppStore";
+import apiClient from "@/api/client";
+import type { AxiosError } from "axios";
 
 export type ExecMode = "multi-agent" | "agent" | "prompt";
 
@@ -50,6 +52,8 @@ export function ChatInput({
   const removeAttachedFileAt = useAppStore((s) => s.removeAttachedFileAt);
   const clearAttachedFiles = useAppStore((s) => s.clearAttachedFiles);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadingName, setUploadingName] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first available model when provider changes or models load
@@ -119,23 +123,64 @@ export function ChatInput({
     }
   };
 
-  const handleFileAttach = async () => {
-    // Simple file input trigger — text-only fallback (replaced by C2 upload).
+  /**
+   * Upload a local file to /api/upload (multipart). The server runs the file
+   * through DocumentConverter and returns markdown text suitable for the LLM
+   * (PDFs, CSVs, .docx, .xlsx, …). Replaces the previous file.text() path
+   * which was binary-unsafe.
+   */
+  const uploadFile = useCallback(async (file: File) => {
+    setUploadError(null);
+    setUploadingName(file.name);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const resp = await apiClient.post<{
+        success: boolean;
+        filename: string;
+        file_type?: string;
+        markdown_content?: string;
+        markdown_path?: string;
+        page_count?: number | null;
+        row_count?: number | null;
+        error?: string;
+      }>("/api/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const data = resp.data;
+      if (!data.success) {
+        setUploadError(data.error ?? "Upload failed");
+        return;
+      }
+      addAttachedFile({
+        path: data.filename ?? file.name,
+        content: data.markdown_content ?? "",
+        source: "upload",
+        kind: data.file_type ?? file.type,
+        bytes: file.size,
+        truncated: false,
+      });
+    } catch (err) {
+      const ax = err as AxiosError<{ error?: string }>;
+      const serverMsg =
+        (ax.response?.data && (ax.response.data as { error?: string }).error) ||
+        ax.message ||
+        String(err);
+      setUploadError(serverMsg);
+    } finally {
+      setUploadingName(null);
+    }
+  }, [addAttachedFile]);
+
+  const handleFileAttach = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
-      if (!file) return;
-      const content = await file.text();
-      addAttachedFile({
-        path: file.name,
-        content,
-        source: "upload",
-        bytes: file.size,
-      });
+      if (file) uploadFile(file);
     };
     input.click();
-  };
+  }, [uploadFile]);
 
   const paidModels = models?.openrouter.filter((m) => !m.name.includes(":free")) ?? [];
   const freeModels = models?.openrouter.filter((m) => m.name.includes(":free")) ?? [];
@@ -144,7 +189,7 @@ export function ChatInput({
   return (
     <div className="chat-input">
       {/* File context bar */}
-      {attachedFiles.length > 0 && (
+      {(attachedFiles.length > 0 || uploadingName || uploadError) && (
         <div className="chat-input__files">
           <span className="chat-input__files-label">Files</span>
           {attachedFiles.map((f, i) => (
@@ -153,17 +198,45 @@ export function ChatInput({
               <button
                 className="attached-file__remove"
                 onClick={() => removeAttachedFileAt(i)}
+                aria-label={`Remove ${f.path}`}
               >
                 &times;
               </button>
             </span>
           ))}
-          <button
-            className="btn-text"
-            onClick={clearAttachedFiles}
-          >
-            Clear
-          </button>
+          {uploadingName && (
+            <span
+              className="attached-file attached-file--uploading"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="attached-file__spinner" />
+              <span className="attached-file__name">{uploadingName}</span>
+            </span>
+          )}
+          {uploadError && (
+            <span
+              className="attached-file attached-file--error"
+              role="alert"
+            >
+              <span className="attached-file__name">Upload failed: {uploadError}</span>
+              <button
+                className="attached-file__remove"
+                onClick={() => setUploadError(null)}
+                aria-label="Dismiss error"
+              >
+                &times;
+              </button>
+            </span>
+          )}
+          {attachedFiles.length > 0 && (
+            <button
+              className="btn-text"
+              onClick={clearAttachedFiles}
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
 
@@ -247,8 +320,8 @@ export function ChatInput({
         <button
           className="btn-icon"
           onClick={handleFileAttach}
-          title="Upload file"
-          disabled={isDisabled}
+          title="Upload local file (PDF, DOCX, XLSX, CSV, HTML, TXT)"
+          disabled={isDisabled || uploadingName !== null}
         >
           +
         </button>

@@ -165,6 +165,17 @@ The vanilla JS dashboard at `src/agent_orchestrator/dashboard/static/` was remov
 
 New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `fetchFileContent` (async helper), `usePricing`. Query keys added: `presets`, `files`, `pricing`.
 
+## Local file upload (C2)
+
+The "+" button in `ChatInput` uploads the selected file to `POST /api/upload` (multipart) instead of reading it as UTF-8 in the browser.
+
+- Backend (`gateway_api.py`) runs the file through `core.document_converter.DocumentConverter`, which converts PDF, DOCX, PPTX, XLSX/XLS, CSV, HTML/HTM, TXT to Markdown. Returns `{success, filename, file_type, markdown_content, markdown_path, page_count, row_count}`.
+- The returned `markdown_content` is what gets attached and sent to the LLM — **no more binary-as-UTF-8 garbage** when an image is attached.
+- Unsupported formats (`.jpg`, `.png`, `.zip`, …) get a 400 with `{"error":"Unsupported file format"}`. The UI surfaces the message in a red `attached-file--error` chip; the file is **not** attached.
+- During the round-trip, an `attached-file--uploading` chip with a spinner is shown.
+
+The "Browse" button next to it still browses the server-side workspace via `/api/files` + `/api/file` and adds the picked file with `source: "workspace"`.
+
 ## Reset behaviour (B)
 
 The Reset button at the top right of the Agent Interactions section performs a **full** reset, not just the graph.
