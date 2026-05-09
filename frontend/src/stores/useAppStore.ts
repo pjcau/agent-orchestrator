@@ -23,6 +23,25 @@ export interface ActivityItem {
   time: number;
 }
 
+export interface AttachedFile {
+  /** Display label (filename or workspace path). */
+  path: string;
+  /** Markdown / text content sent to the model. */
+  content: string;
+  /**
+   * Origin: where the file came from.
+   * - "upload": local file uploaded via /api/upload (text or document → markdown).
+   * - "workspace": picked from the server-side workspace via /api/file.
+   */
+  source?: "upload" | "workspace";
+  /** MIME type or file extension category (for the UI badge). */
+  kind?: string;
+  /** Original byte size, when known. */
+  bytes?: number;
+  /** True when content was clipped by a server-side limit. */
+  truncated?: boolean;
+}
+
 interface AppState {
   // Connection state
   wsConnected: boolean;
@@ -47,6 +66,7 @@ interface AppState {
   streamBuffer: string;
   conversationId: string | null;
   lastTokenSpeed: number;
+  attachedFiles: AttachedFile[];
 
   // UI state
   sidebarOpen: boolean;
@@ -112,6 +132,12 @@ interface AppState {
     status: InteractionItem["status"]
   ) => void;
   setPendingTeamJob: (jobId: string | null, model: string | null) => void;
+  setAttachedFiles: (files: AttachedFile[]) => void;
+  addAttachedFile: (file: AttachedFile) => void;
+  removeAttachedFileAt: (index: number) => void;
+  clearAttachedFiles: () => void;
+  /** Full Reset: graph + chat + attachments + conversation id (caller is
+   *  responsible for the server-side DELETE /api/conversation/{id}). */
   reset: () => void;
 }
 
@@ -183,6 +209,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Hydrate conversationId from localStorage so a reload preserves the thread.
   conversationId: readPersistedConversationId(),
   lastTokenSpeed: 0,
+  attachedFiles: [],
 
   // UI state
   sidebarOpen: true,
@@ -528,7 +555,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingTeamJob: (jobId, model) =>
     set({ pendingTeamJobId: jobId, pendingTeamModel: model }),
 
-  reset: () =>
+  setAttachedFiles: (files) => set({ attachedFiles: files }),
+  addAttachedFile: (file) =>
+    set((state) => {
+      // De-duplicate by path
+      const filtered = state.attachedFiles.filter((f) => f.path !== file.path);
+      return { attachedFiles: [...filtered, file] };
+    }),
+  removeAttachedFileAt: (index) =>
+    set((state) => ({
+      attachedFiles: state.attachedFiles.filter((_, i) => i !== index),
+    })),
+  clearAttachedFiles: () => set({ attachedFiles: [] }),
+
+  reset: () => {
+    // Persist: clear localStorage too
+    writePersistedConversationId(null);
     set({
       orchestratorStatus: "idle",
       agents: {},
@@ -546,5 +588,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       interactions: [],
       pendingTeamJobId: null,
       pendingTeamModel: null,
-    }),
+      // Chat-related state
+      messages: [],
+      isStreaming: false,
+      streamBuffer: "",
+      conversationId: null,
+      attachedFiles: [],
+    });
+  },
 }));

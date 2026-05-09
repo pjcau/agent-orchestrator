@@ -165,6 +165,18 @@ The vanilla JS dashboard at `src/agent_orchestrator/dashboard/static/` was remov
 
 New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `fetchFileContent` (async helper), `usePricing`. Query keys added: `presets`, `files`, `pricing`.
 
+## Reset behaviour (B)
+
+The Reset button at the top right of the Agent Interactions section performs a **full** reset, not just the graph.
+
+What it clears, in order:
+
+1. `DELETE /api/conversation/{id}` — drops conversation memory on the server (best-effort; UI clears even on failure).
+2. `POST /api/graph/reset` — clears the server-side graph snapshot.
+3. `useAppStore.reset()` — wipes client state: messages, attached files, conversation id, graph nodes/edges, events, activity, interactions, task plan, stream buffer, pending team job. Also removes the `ao_conv_id` key from `localStorage` so the next send starts fresh.
+
+`attachedFiles` is part of the store (not local to `ChatInput`) for exactly this reason — Reset can centrally clear them. `ChatInput` reads/writes through `useAppStore`'s `attachedFiles` slice (`addAttachedFile`, `removeAttachedFileAt`, `clearAttachedFiles`).
+
 ## Conversation persistence (A2)
 
 The Simple Prompt mode keeps multi-turn memory automatically.

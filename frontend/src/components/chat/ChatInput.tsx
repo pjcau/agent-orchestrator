@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import type { ModelsResponse } from "@/api/types";
 import { WorkspaceFilePicker } from "@/components/files/WorkspaceFilePicker";
+import { useAppStore } from "@/stores/useAppStore";
 
 export type ExecMode = "multi-agent" | "agent" | "prompt";
 
@@ -29,12 +30,6 @@ function detectProvider(modelName: string): "openrouter" | "ollama" {
   return modelName.includes("/") ? "openrouter" : "ollama";
 }
 
-/** Attached file state */
-interface AttachedFile {
-  path: string;
-  content: string;
-}
-
 export function ChatInput({
   models,
   isDisabled,
@@ -49,7 +44,11 @@ export function ChatInput({
   const [provider, setProvider] = useState<"openrouter" | "ollama">("openrouter");
   const [model, setModel] = useState("");
   const [useStreaming, setUseStreaming] = useState(true);
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  // attachedFiles lives in the store so the global Reset action can clear it.
+  const attachedFiles = useAppStore((s) => s.attachedFiles);
+  const addAttachedFile = useAppStore((s) => s.addAttachedFile);
+  const removeAttachedFileAt = useAppStore((s) => s.removeAttachedFileAt);
+  const clearAttachedFiles = useAppStore((s) => s.clearAttachedFiles);
   const [browseOpen, setBrowseOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -121,17 +120,19 @@ export function ChatInput({
   };
 
   const handleFileAttach = async () => {
-    // Simple file input trigger
+    // Simple file input trigger — text-only fallback (replaced by C2 upload).
     const input = document.createElement("input");
     input.type = "file";
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
       const content = await file.text();
-      setAttachedFiles((prev) => [
-        ...prev.filter((f) => f.path !== file.name),
-        { path: file.name, content },
-      ]);
+      addAttachedFile({
+        path: file.name,
+        content,
+        source: "upload",
+        bytes: file.size,
+      });
     };
     input.click();
   };
@@ -151,9 +152,7 @@ export function ChatInput({
               <span className="attached-file__name">{f.path}</span>
               <button
                 className="attached-file__remove"
-                onClick={() =>
-                  setAttachedFiles((prev) => prev.filter((_, j) => j !== i))
-                }
+                onClick={() => removeAttachedFileAt(i)}
               >
                 &times;
               </button>
@@ -161,7 +160,7 @@ export function ChatInput({
           ))}
           <button
             className="btn-text"
-            onClick={() => setAttachedFiles([])}
+            onClick={clearAttachedFiles}
           >
             Clear
           </button>
@@ -305,12 +304,7 @@ export function ChatInput({
       <WorkspaceFilePicker
         open={browseOpen}
         onClose={() => setBrowseOpen(false)}
-        onPick={(file) => {
-          setAttachedFiles((prev) => [
-            ...prev.filter((f) => f.path !== file.path),
-            file,
-          ]);
-        }}
+        onPick={(file) => addAttachedFile({ ...file, source: "workspace" })}
       />
     </div>
   );

@@ -273,4 +273,57 @@ describe("useAppStore", () => {
       expect(STORAGE_KEY_CONVERSATION_ID).toBe("ao_conv_id");
     });
   });
+
+  describe("attached files slice (B)", () => {
+    beforeEach(() => useAppStore.getState().clearAttachedFiles());
+
+    it("addAttachedFile appends and de-duplicates by path", () => {
+      const store = useAppStore.getState();
+      store.addAttachedFile({ path: "a.txt", content: "1", source: "upload" });
+      store.addAttachedFile({ path: "b.txt", content: "2", source: "upload" });
+      store.addAttachedFile({ path: "a.txt", content: "1-updated", source: "upload" });
+
+      const files = useAppStore.getState().attachedFiles;
+      expect(files).toHaveLength(2);
+      expect(files.find((f) => f.path === "a.txt")?.content).toBe("1-updated");
+    });
+
+    it("removeAttachedFileAt removes by index", () => {
+      const store = useAppStore.getState();
+      store.addAttachedFile({ path: "a.txt", content: "1" });
+      store.addAttachedFile({ path: "b.txt", content: "2" });
+      store.removeAttachedFileAt(0);
+      expect(useAppStore.getState().attachedFiles).toEqual([
+        { path: "b.txt", content: "2" },
+      ]);
+    });
+
+    it("clearAttachedFiles empties the list", () => {
+      const store = useAppStore.getState();
+      store.addAttachedFile({ path: "a.txt", content: "1" });
+      store.clearAttachedFiles();
+      expect(useAppStore.getState().attachedFiles).toEqual([]);
+    });
+  });
+
+  describe("full reset (B)", () => {
+    it("reset clears chat, attachedFiles, conversationId, and localStorage", () => {
+      window.localStorage.setItem("ao_conv_id", "to-be-cleared");
+      const store = useAppStore.getState();
+      store.setConversationId("to-be-cleared");
+      store.addMessage({ role: "user", content: "hi", timestamp: 1 });
+      store.addAttachedFile({ path: "a.txt", content: "x" });
+      store.appendStreamChunk("partial");
+
+      store.reset();
+
+      const after = useAppStore.getState();
+      expect(after.messages).toEqual([]);
+      expect(after.attachedFiles).toEqual([]);
+      expect(after.conversationId).toBeNull();
+      expect(after.streamBuffer).toBe("");
+      expect(after.isStreaming).toBe(false);
+      expect(window.localStorage.getItem("ao_conv_id")).toBeNull();
+    });
+  });
 });
