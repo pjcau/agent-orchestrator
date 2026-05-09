@@ -44,6 +44,7 @@ from .alert_webhook import AlertHandler
 from .gateway_api import gateway_router, health_router, metrics_router
 from .agent_runtime_router import runtime_router
 from .knowledge_routes import knowledge_router
+from .evals_routes import evals_router
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
@@ -412,6 +413,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Knowledge / RAG endpoints (/api/knowledge/*) — P1
     app.include_router(knowledge_router)
+
+    # Evaluator endpoints (/api/evals/*) — P2
+    app.include_router(evals_router)
 
     # Agent execution, WebSocket streaming, SSE (/api/prompt, /api/agent/run,
     # /api/team/*, /ws, /ws/stream)

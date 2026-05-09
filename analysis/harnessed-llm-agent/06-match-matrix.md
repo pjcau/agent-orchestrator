@@ -27,22 +27,21 @@ One-shot view of every component in the diagram vs the current `agent-orchestrat
 | 13 | Protocols | Agent ↔ Agent | ⚠️ | `core/cooperation.py`, `mcp_server.py`, `mcp_client.py` | No A2A formalization |
 | 14 | Orbital | Sub-Agent Orchestration | ✅ | `core/orchestrator.py`, team-lead, `graph_patterns.py` | 30 agents, 5 categories |
 | 15 | Orbital | Sandbox | ✅ | `core/sandbox.py`, `dashboard/sandbox_manager.py` | Docker + local, port pool |
-| 16 | Orbital | Observability | ✅ | `core/tracing.py`, `metrics.py`, `audit.py`, Tempo | OTel + Prometheus + Grafana |
+| 16 | Orbital | Observability | ✅ | `core/tracing.py`, `metrics.py`, `audit.py`, Tempo, `core/observability/` | OTel + Prometheus + Grafana + Langfuse (opt-in) + Phoenix (opt-in) |
 | 17 | Orbital | Compression | ✅ | `SummarizationConfig`, progressive skill loading | Trigger 50, retain 10 |
 | 18 | Orbital | Approval Loop | ✅ | `clarification.py`, SSE `RunManager` | Blocking + non-blocking |
-| 19 | Orbital | Evaluator | ⚠️ | `core/benchmark.py`, `conformance.py`, `smoke_tester.py` | No LLM-judge, no eval datasets |
+| 19 | Orbital | Evaluator | ✅ | `core/evaluator.py`, `evals/datasets/smoke.json`, `evals/runners/cli.py`, `dashboard/evals_routes.py` | RubricEvaluator + LLMJudge + EvalSuite + REST API — P2 complete |
 
 ## Scoreboard
 
 - **Total components**: 19
-- **✅ HAVE**: 14 (74%)
-- **⚠️ PARTIAL**: 4 (21%)
+- **✅ HAVE**: 15 (79%)
+- **⚠️ PARTIAL**: 3 (16%)
 - **❌ MISSING**: 1 (5%)
 
 ## Biggest gaps, ranked by unlock
 
 1. **#9 Semantic Knowledge (RAG)** — the only ❌. Unlocks document Q&A, code search, domain knowledge for every agent. High.
-2. **#19 Evaluator** — without this, quality improvement is guesswork. Blocks any serious prompt/model A/B testing. High.
-3. **#6 Guardrails** — prerequisite for multi-tenant, untrusted, or regulated workloads. Medium-High.
-4. **#11 Personalized Memory** — tiny diff on top of the existing store. Low effort, decent UX win. Medium.
-5. **#13 Agent-Agent protocol formalization** — strategic, wait-and-see on A2A. Low urgency.
+2. **#6 Guardrails** — prerequisite for multi-tenant, untrusted, or regulated workloads. Medium-High.
+3. **#11 Personalized Memory** — tiny diff on top of the existing store. Low effort, decent UX win. Medium.
+4. **#13 Agent-Agent protocol formalization** — strategic, wait-and-see on A2A. Low urgency.

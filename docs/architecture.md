@@ -240,6 +240,37 @@ The following abstractions were added based on analysis of the ByteDance DeerFlo
 - **MCPClientManager** — Connect to external MCP servers (stdio/SSE). Tool discovery + injection into SkillRegistry. `core/mcp_client.py`.
 - **Modular Dashboard** — `app.py` composes `gateway_api.py` (REST) + `agent_runtime_router.py` (execution/streaming). Split-process mode via `--mode gateway|runtime`.
 
+## 8. Evaluator Pipeline (P2)
+
+The Evaluator Framework closes the feedback loop: every agent run can be graded by
+deterministic rubric checks and/or an LLM judge, producing data-driven quality metrics.
+
+```
+EvalCase ──► agent_callable ──► EvalRun
+                                   │
+                        ┌──────────▼──────────┐
+                        │  RubricEvaluator     │  deterministic (no LLM)
+                        │  LLMJudge            │  strong-model judge (DIP)
+                        └──────────┬──────────┘
+                                   │ list[EvalScore]
+                        ┌──────────▼──────────┐
+                        │     EvalReport       │
+                        │  summary: pass_rate  │
+                        │          mean_score  │
+                        └─────────────────────┘
+```
+
+**Key design decisions**:
+- `Evaluator` is an ABC with a single async method — trivially extensible (O in SOLID).
+- `LLMJudge` accepts the abstract `Provider` interface, never a concrete vendor class (D in SOLID).
+- `EvalSuite.run()` catches evaluator exceptions and converts them to failed `EvalScore` objects — the suite never crashes on a broken evaluator.
+- JSON extraction uses a three-stage fallback (direct parse → code-fence strip → regex brace extraction) to handle the full range of LLM formatting quirks.
+
+**Entrypoints**:
+- `core/evaluator.py` — harness layer (no dashboard imports, import-boundary safe).
+- `evals/` — standalone datasets and CLI runner.
+- `dashboard/evals_routes.py` — REST API (`/api/evals/*`), background execution, in-memory report store.
+
 ## Mapping from Claude Code Concepts
 
 | Claude Code | This Framework | Notes |

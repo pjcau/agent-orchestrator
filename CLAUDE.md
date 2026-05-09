@@ -150,7 +150,12 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 ### Security, Observability, Monitoring
 - **Auth (OAuth2, JWT, API keys), RBAC, secrets, network, sandbox isolation, AWS checklist, CI security scanning** → [docs/security.md](docs/security.md)
 - **Alert pipeline (Grafana → GitHub issues → LLM RCA), uptime probes, emergency restart, job log archiving to S3** → [docs/monitoring.md](docs/monitoring.md)
-- **Prometheus, Grafana, Tempo, OpenTelemetry setup** → [docs/observability-upgrade.md](docs/observability-upgrade.md)
+- **Prometheus, Grafana, Tempo, OpenTelemetry setup, Langfuse + Phoenix optional sinks** → [docs/observability-upgrade.md](docs/observability-upgrade.md)
+- **Span inventory (agent.run, llm.call, graph.node, agent.message), attribute tables, how to view traces in Tempo/Langfuse/Phoenix** → [docs/trace-schema.md](docs/trace-schema.md)
+
+### Quality & Evaluation
+- **P2 Evaluator Framework: EvalCase/Run/Score/Report, RubricEvaluator, LLMJudge, EvalSuite, CLI runner, REST API** → [docs/abstractions.md § Quality](docs/abstractions.md) and [docs/architecture.md § Evaluator Pipeline](docs/architecture.md)
+- **Bundled smoke dataset + CLI** → `evals/datasets/smoke.json`, `evals/runners/cli.py`
 
 ### Engineering Practices
 - **Marker-based prompt injection, PromptRegistry** → [docs/prompt-engineering.md](docs/prompt-engineering.md)

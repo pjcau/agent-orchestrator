@@ -461,3 +461,78 @@ and triggers LLM-powered root-cause analysis:
 6. Issue gets `needs-triage` label for human review
 
 New alerts added alongside this pipeline: `GraphNodeHung`, `LLMCallSlow`, `FrontendErrorSpike`, `ProviderDegraded` (see section 6 for full alert definitions).
+
+---
+
+## 12. Langfuse + Phoenix (Optional LLM-native Sinks)
+
+> **Status: Implemented.** Both exporters are wired as opt-in `BatchSpanProcessor`s on the existing `TracerProvider`.  Enabling either one does NOT disable Tempo or the Prometheus bridge.
+
+### Overview
+
+The Tempo → Grafana pipeline is excellent for infrastructure-level diagnostics but is generic.  Two additional sinks provide LLM-native trace UIs:
+
+| Sink | Package | What it adds |
+|------|---------|--------------|
+| **Langfuse** | `langfuse>=2.0` | Prompt/completion pairs, eval scores, prompt versioning, cost tracking |
+| **Phoenix** | `arize-phoenix-otel>=0.5` | LLM latency heatmaps, hallucination scoring, prompt playground |
+
+Both use the same OTel span data already emitted — no new instrumentation is required.
+
+### Architecture
+
+```
+TracerProvider (existing)
+  ├── BatchSpanProcessor → OTLPSpanExporter → Tempo    (always active when OTEL_EXPORTER_OTLP_ENDPOINT set)
+  ├── BatchSpanProcessor → LangfuseSpanExporter        (opt-in via LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY)
+  └── BatchSpanProcessor → PhoenixSpanExporter         (opt-in via PHOENIX_COLLECTOR_ENDPOINT)
+```
+
+`register_optional_exporters()` is called at the end of `setup_tracing()`.  It reads env vars and calls `register_langfuse_exporter()` and `register_phoenix_exporter()`.  Both registration functions are idempotent and degrade gracefully when the optional package is absent.
+
+### Enabling Langfuse
+
+```bash
+pip install "agent-orchestrator[langfuse]"
+```
+
+```env
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com   # optional; default shown
+```
+
+### Enabling Phoenix
+
+```bash
+pip install "agent-orchestrator[phoenix]"
+```
+
+```env
+PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006   # optional; default shown
+PHOENIX_API_KEY=<key>                              # optional; Arize cloud only
+```
+
+Run Phoenix locally (no cloud account needed for development):
+
+```bash
+pip install arize-phoenix
+python -m phoenix.server.main
+# or
+docker run -p 6006:6006 arizephoenix/phoenix:latest
+```
+
+### Code locations
+
+| File | Purpose |
+|------|---------|
+| `src/agent_orchestrator/core/observability/__init__.py` | Package + `register_optional_exporters()` |
+| `src/agent_orchestrator/core/observability/langfuse_exporter.py` | `LangfuseSpanExporter`, `register_langfuse_exporter()` |
+| `src/agent_orchestrator/core/observability/phoenix_exporter.py` | `PhoenixSpanExporter`, `register_phoenix_exporter()` |
+| `src/agent_orchestrator/core/tracing.py` | `setup_tracing()` calls `register_optional_exporters()` at the end |
+| `tests/test_observability_exporters.py` | 25 tests covering both exporters |
+| `docs/trace-schema.md` | Span inventory + "How to view traces" with all three backends |
+
+### Trace schema
+
+See [docs/trace-schema.md](trace-schema.md) for the full span inventory and attribute tables.

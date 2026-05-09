@@ -99,6 +99,19 @@ Exhaustive list of every abstraction in the codebase, grouped by concern. For co
 - **TelegramBot** — Telegram integration using long-polling (no public IP required). Maps Telegram chats to conversation_ids and routes free-text to agents. Commands: `/start`, `/new`, `/status`, `/agents`, `/help`. Auth via `allowed_user_ids`. Install: `pip install agent-orchestrator[telegram]`. `integrations/telegram_bot.py`
 - **SlackBot** — Slack integration via Socket Mode (no public IP). Maps Slack threads to orchestrator conversations (`slack-{channel}-{thread_ts}`). Handles `@bot` mentions, `/agent` and `/team` commands. Auto-detects task category for agent routing. Install: `pip install agent-orchestrator[slack]`. `integrations/slack_bot.py`
 
+## Quality
+
+- **Evaluator Framework (P2)** — LLM-judge + rubric-based quality measurement for agents. `core/evaluator.py`
+  - `EvalCase` / `EvalRun` / `EvalScore` / `EvalReport` — frozen dataclasses carrying the scenario, the agent response, individual grades, and the aggregated report.
+  - `Evaluator` (ABC) — single-method interface: `async evaluate(case, run) -> EvalScore`. Open/closed: add new strategies without modifying existing code.
+  - `RubricEvaluator` — deterministic checks over agent output: `contains`, `not_contains`, `regex`, `json_schema`, `max_length`, `min_length`. Checks carry optional `weight`; score is the weighted pass fraction.
+  - `LLMJudge` — delegates scoring to a strong `Provider` (DIP: accepts the abstract `Provider`, never a concrete class). Prompts the model with a structured rubric template and expects `{"passed": bool, "score": float, "detail": str}`. Robust JSON extraction: strips code fences, falls back to regex brace-matching, never crashes on malformed output.
+  - `EvalSuite` — binds cases + evaluators + an agent callable. `async run(agent_callable)` executes all cases, applies every evaluator, and computes summary metrics: `pass_rate`, `mean_score`, per-evaluator breakdowns.
+  - `JsonDataset` — loads `EvalCase` lists from a JSON or YAML file (`{"cases": [...]}`). Validates `prompt` (required), auto-assigns `case_id` from index if absent. Raises `ValueError` on structural errors.
+  - **CLI runner** — `python -m evals.runners.cli --suite evals/datasets/smoke.json --agent team-lead --provider openrouter --model openai/gpt-4o`. Coloured summary table; `--dry-run` mode for smoke-testing suites without LLM calls; `--json` for machine output.
+  - **Bundled dataset** — `evals/datasets/smoke.json` — 5 hand-picked cases: code summary, math reasoning, JSON output, safety refusal, conversational.
+  - **REST API** — `dashboard/evals_routes.py` (`/api/evals/run`, `/api/evals/runs`, `/api/evals/runs/{id}`, `/api/evals/compare?a=&b=`). Background execution, in-memory report store (last 50), side-by-side delta comparison.
+
 ## Dashboard Composition
 
 - **Modular Dashboard** — `app.py` is a composition root (~282 lines) that includes `gateway_api.py` (REST management) and `agent_runtime_router.py` (execution + streaming). Can run as single process or split via `--mode gateway|runtime`. Split mode: `docker-compose.split.yml` + `nginx-split.conf`. See `docs/dashboard.md`.
