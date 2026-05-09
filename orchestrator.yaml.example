@@ -62,6 +62,32 @@ budgets:
   alert_threshold_pct: 80
 
 # ---------------------------------------------------------------------------
+# Guardrails — opt-in pre/post LLM-call safety layer (P3)
+# ---------------------------------------------------------------------------
+# Each guardrail runs before (input) or after (output) every LLM call.
+# On "block", Agent.execute() raises GuardrailBlocked (RuntimeError).
+# On "redact", the matched text is masked before the call proceeds.
+#
+guardrails:
+  input:
+    - type: pii_scanner        # Redacts email, phone, SSN, IBAN, credit card
+      action: redact
+    - type: secrets_scanner    # Blocks AWS keys, GitHub tokens, generic API keys
+      action: block
+    - type: prompt_injection   # Blocks "ignore previous instructions" and similar
+      action: block
+  output:
+    - type: output_schema      # Validates assistant output against a JSON Schema
+      schema_path: ./schemas/response.json
+      action: block
+    # - type: output_schema
+    #   schema:                # Inline schema (alternative to schema_path)
+    #     type: object
+    #     required: [answer]
+    #     properties:
+    #       answer: {type: string}
+
+# ---------------------------------------------------------------------------
 # Sandbox — isolated execution environment for agent code
 # ---------------------------------------------------------------------------
 sandbox:

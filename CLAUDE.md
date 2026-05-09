@@ -159,6 +159,7 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 - **Bundled smoke dataset + CLI** → `evals/datasets/smoke.json`, `evals/runners/cli.py`
 
 ### Engineering Practices
+- **P3 Guardrails (PIIScanner, SecretsScanner, PromptInjectionDetector, OutputSchemaGuard, CostGuard, YAML config)** → `src/agent_orchestrator/core/guardrails.py` and `docs/abstractions.md`
 - **Marker-based prompt injection, PromptRegistry** → [docs/prompt-engineering.md](docs/prompt-engineering.md)
 - **LLM cache, tool cache, compaction** → [docs/cache-strategy.md](docs/cache-strategy.md)
 - **Frontend React component map** → [docs/components.md](docs/components.md)

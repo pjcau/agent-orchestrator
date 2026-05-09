@@ -350,6 +350,26 @@ def default_metrics(registry: MetricsRegistry | None = None) -> MetricsRegistry:
         "Total messages folded into summaries",
     )
 
+    # Guardrail metrics (P3)
+    for guardrail_type in ["PIIScanner", "SecretsScanner", "PromptInjectionDetector",
+                           "OutputSchemaGuard", "CostGuard", "GuardrailManager"]:
+        for side in ["input", "output"]:
+            reg.counter(
+                "guardrail_checks_total",
+                "Total guardrail checks performed",
+                labels={"type": guardrail_type, "side": side},
+            )
+        reg.counter(
+            "guardrail_blocks_total",
+            "Total guardrail blocks triggered",
+            labels={"type": guardrail_type},
+        )
+        reg.counter(
+            "guardrail_redactions_total",
+            "Total guardrail redactions applied",
+            labels={"type": guardrail_type},
+        )
+
     return reg
 
 

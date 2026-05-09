@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 
 from .clarification import ClarificationManager
+from .guardrails import GuardrailBlocked, GuardrailManager
 from .loop_detection import LoopDetector, LoopStatus
 from .metrics import MetricsRegistry
 from .prompt_markers import inject_marker_sections
@@ -73,6 +74,8 @@ class Agent:
         loop_detector: LoopDetector | None = None,
         clarification_manager: ClarificationManager | None = None,
         metrics: MetricsRegistry | None = None,
+        guardrails: GuardrailManager | None = None,
+        emit_event: Any | None = None,
     ):
         self.config = config
         self.provider = provider
@@ -81,6 +84,8 @@ class Agent:
         self.loop_detector = loop_detector
         self.clarification_manager = clarification_manager
         self._metrics = metrics
+        self._guardrails = guardrails
+        self._emit_event = emit_event  # optional callable(event_type_str, data_dict)
         self._messages: list[Message] = []
         self._status: TaskStatus = TaskStatus.PENDING
         # Marker-based prompt sections. Applied to `config.role` every time
@@ -227,6 +232,28 @@ class Agent:
                 session_id=self.config.name,
             )
 
+            # --- Guardrail: input check ---
+            if self._guardrails:
+                gr_in = await self._guardrails.run_input(self._messages)
+                self._emit_guardrail_event("input", gr_in)
+                if gr_in.action == "block":
+                    raise GuardrailBlocked(
+                        guardrail_name="GuardrailManager",
+                        reason=gr_in.reason,
+                        side="input",
+                    )
+                if gr_in.action == "redact" and gr_in.redacted_text is not None:
+                    # Replace the last user message content with the redacted version.
+                    # The redacted_text covers the combined content; we patch the last
+                    # user message so the conversation stays structurally valid.
+                    for i in range(len(self._messages) - 1, -1, -1):
+                        if self._messages[i].role == Role.USER:
+                            from dataclasses import replace as _dc_replace
+                            self._messages[i] = _dc_replace(
+                                self._messages[i], content=gr_in.redacted_text
+                            )
+                            break
+
             completion = await provider.traced_complete(
                 messages=self._messages,
                 tools=tool_defs if tool_defs else None,
@@ -236,6 +263,20 @@ class Agent:
             total_tokens += completion.usage.input_tokens + completion.usage.output_tokens
             total_cost += completion.usage.cost_usd
             steps += 1
+
+            # --- Guardrail: output check ---
+            if self._guardrails and completion.content:
+                gr_out = await self._guardrails.run_output(completion.content)
+                self._emit_guardrail_event("output", gr_out)
+                if gr_out.action == "block":
+                    raise GuardrailBlocked(
+                        guardrail_name="GuardrailManager",
+                        reason=gr_out.reason,
+                        side="output",
+                    )
+                if gr_out.action == "redact" and gr_out.redacted_text is not None:
+                    from dataclasses import replace as _dc_replace
+                    completion = _dc_replace(completion, content=gr_out.redacted_text)
 
             # No tool calls — agent is done
             if not completion.tool_calls:
@@ -339,6 +380,30 @@ class Agent:
         span.set_attribute("agent.status", result.status.value)
         span.end()
         return result
+
+    def _emit_guardrail_event(self, side: str, result: Any) -> None:
+        """Emit a guardrail event via the injected emitter (best-effort)."""
+        if self._emit_event is None:
+            return
+        try:
+            action = result.action
+            if action == "block":
+                event_type = "guardrail.blocked"
+            elif action == "redact":
+                event_type = "guardrail.redacted"
+            else:
+                event_type = "guardrail.checked"
+            self._emit_event(
+                event_type,
+                {
+                    "agent": self.config.name,
+                    "side": side,
+                    "action": action,
+                    "reason": result.reason,
+                },
+            )
+        except Exception:
+            pass  # never let event emission break agent execution
 
     def _get_tool_definitions(self) -> list[ToolDefinition]:
         """Get tool definitions for allowed skills only."""

@@ -239,6 +239,7 @@ The following abstractions were added based on analysis of the ByteDance DeerFlo
 - **PostgresStore** — Durable cross-thread key-value store. JSONB values, dot-encoded namespaces, lazy TTL, UPSERT. `core/store_postgres.py`.
 - **MCPClientManager** — Connect to external MCP servers (stdio/SSE). Tool discovery + injection into SkillRegistry. `core/mcp_client.py`.
 - **Modular Dashboard** — `app.py` composes `gateway_api.py` (REST) + `agent_runtime_router.py` (execution/streaming). Split-process mode via `--mode gateway|runtime`.
+- **GuardrailManager (P3)** — opt-in pre/post LLM-call hook layer. `Agent.execute()` now runs `GuardrailManager.run_input(messages)` before every provider call and `run_output(response)` after. A blocking result raises `GuardrailBlocked(RuntimeError)` so the orchestrator can convert it to a clarification or error response. A redact result replaces the last user message (input) or completion content (output) transparently. Event emission is via the injected `emit_event` callable (no hard dep on dashboard). Built-in guardrails: `PIIScanner`, `SecretsScanner`, `PromptInjectionDetector`, `OutputSchemaGuard`, `CostGuard`. Configurable from `orchestrator.yaml` under a `guardrails:` key. `core/guardrails.py`.
 
 ## 8. Evaluator Pipeline (P2)
 

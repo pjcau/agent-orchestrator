@@ -69,6 +69,11 @@ class EventType(str, Enum):
     KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
     KNOWLEDGE_RETRIEVAL_SKIPPED = "knowledge.retrieval_skipped"
 
+    # Guardrail events (P3)
+    GUARDRAIL_CHECKED = "guardrail.checked"
+    GUARDRAIL_BLOCKED = "guardrail.blocked"
+    GUARDRAIL_REDACTED = "guardrail.redacted"
+
 
 @dataclass
 class Event:

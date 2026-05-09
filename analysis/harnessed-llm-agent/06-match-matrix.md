@@ -17,7 +17,7 @@ One-shot view of every component in the diagram vs the current `agent-orchestrat
 | 3 | Harness | Checkpointing | ✅ | `core/checkpoint.py`, `checkpoint_postgres.py` | InMem + Postgres |
 | 4 | Harness | Embedded client | ✅ | `client.py` | No HTTP required |
 | 5 | Skills | Operational Procedure | ✅ | `core/skill.py`, `graph_templates.py`, `skills/*` | 19 skills, middleware chain |
-| 6 | Skills | Normative Constraints | ⚠️ | `core/audit.py`, `loop_detection.py`, `memory_filter.py` | No pre/post guardrails layer |
+| 6 | Skills | Normative Constraints | ✅ | `core/guardrails.py`, `core/audit.py`, `loop_detection.py`, `memory_filter.py` | Unified GuardrailManager with PIIScanner, SecretsScanner, PromptInjectionDetector, OutputSchemaGuard, CostGuard; YAML config; Agent.execute() pre/post hooks |
 | 7 | Skills | Decision Heuristics | ✅ | `core/router.py`, `provider_presets.py`, `health.py` | 6 strategies, category-aware |
 | 8 | Memory | Working Context | ✅ | `core/conversation.py`, `checkpoint_postgres.py` | Threads, fork, restore |
 | 9 | Memory | Semantic Knowledge (RAG) | ❌ | — | No vector store, no embeddings, no retriever |
@@ -41,7 +41,8 @@ One-shot view of every component in the diagram vs the current `agent-orchestrat
 
 ## Biggest gaps, ranked by unlock
 
-1. **#9 Semantic Knowledge (RAG)** — the only ❌. Unlocks document Q&A, code search, domain knowledge for every agent. High.
-2. **#6 Guardrails** — prerequisite for multi-tenant, untrusted, or regulated workloads. Medium-High.
-3. **#11 Personalized Memory** — tiny diff on top of the existing store. Low effort, decent UX win. Medium.
-4. **#13 Agent-Agent protocol formalization** — tactical part shipped (typed messages + spec, P5a). Strategic A2A adapter (P5b) still wait-and-see. Low urgency.
+1. **#9 Semantic Knowledge (RAG)** — the only ❌ remaining. Unlocks document Q&A, code search, and domain knowledge for every agent. High.
+2. **#11 Personalized Memory** — tiny diff on top of the existing store. Low effort, decent UX win. Medium.
+3. **#13 Agent-Agent protocol formalization (strategic)** — tactical part shipped (typed messages + spec, P5a). Strategic A2A adapter (P5b) still wait-and-see. Low urgency.
+
+Already shipped in this round: #6 Guardrails (P3) and #19 Evaluator (P2).
