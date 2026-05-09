@@ -1923,3 +1923,135 @@ class TestClientErrorEndpoint:
         assert "orchestrator_llm_call_duration_seconds" in body
         assert "orchestrator_graph_node_duration_seconds" in body
         assert "orchestrator_agent_stalls_total" in body
+
+
+class TestConversationEndpoints:
+    """HTTP-level tests for conversation lifecycle endpoints used by the
+    dashboard's A2 (auto-create + persistence) and B (full Reset) flows."""
+
+    @pytest.mark.asyncio
+    async def test_new_then_delete_conversation(self, monkeypatch):
+        """POST /api/conversation/new returns an id; DELETE clears it server-side."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            new_resp = await client.post("/api/conversation/new")
+            assert new_resp.status_code == 200
+            conv_id = new_resp.json()["conversation_id"]
+            assert conv_id and isinstance(conv_id, str)
+
+            # The DELETE endpoint must respond OK regardless of whether the
+            # conversation has any messages.
+            del_resp = await client.delete(f"/api/conversation/{conv_id}")
+            assert del_resp.status_code == 200
+            body = del_resp.json()
+            assert body["success"] is True
+            assert body["conversation_id"] == conv_id
+
+    @pytest.mark.asyncio
+    async def test_delete_unknown_conversation_does_not_500(self, monkeypatch):
+        """DELETE on an unknown id is a no-op, not a 5xx — required by B's
+        best-effort cleanup path which must not block the UI reset."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.delete("/api/conversation/does-not-exist")
+            assert resp.status_code in (200, 404), (
+                f"expected 200 or 404, got {resp.status_code}"
+            )
+
+
+class TestUploadEndpoint:
+    """HTTP-level tests for /api/upload — the multipart endpoint that powers
+    the dashboard's C2 (real document upload) flow."""
+
+    @pytest.mark.asyncio
+    async def test_upload_text_file_returns_markdown(self, monkeypatch):
+        """A small .txt file round-trips through DocumentConverter as markdown."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            files = {"file": ("note.txt", b"hello world\n", "text/plain")}
+            resp = await client.post("/api/upload", files=files)
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["success"] is True
+        assert data["filename"] == "note.txt"
+        assert data["file_type"] == "txt"
+        assert "hello world" in data["markdown_content"]
+
+    @pytest.mark.asyncio
+    async def test_upload_unsupported_format_returns_400(self, monkeypatch):
+        """A .png file (no extractor) returns 400 'Unsupported file format'.
+
+        This is exactly the case behind the original bug — we want the user
+        to see a clear error instead of silent garbage."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            files = {"file": ("photo.png", b"\x89PNG\r\n\x1a\n", "image/png")}
+            resp = await client.post("/api/upload", files=files)
+
+        assert resp.status_code == 400
+        assert "Unsupported" in resp.json().get("error", "")
+
+    @pytest.mark.asyncio
+    async def test_upload_rejects_oversize(self, monkeypatch):
+        """Files exceeding MAX_FILE_SIZE_BYTES return 413 Payload Too Large."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+        from agent_orchestrator.core.document_converter import MAX_FILE_SIZE_BYTES
+
+        # 1 byte over the limit so we don't actually allocate huge memory.
+        oversize = b"x" * (MAX_FILE_SIZE_BYTES + 1)
+
+        app = create_dashboard_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            files = {"file": ("big.txt", oversize, "text/plain")}
+            resp = await client.post("/api/upload", files=files)
+
+        assert resp.status_code == 413
+        assert "exceeds maximum" in resp.json().get("error", "").lower() or (
+            "too large" in resp.json().get("error", "").lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_upload_missing_file_field_returns_400(self, monkeypatch):
+        """Multipart body without a 'file' field is rejected cleanly."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/upload", files={"not_file": ("x.txt", b"hi", "text/plain")}
+            )
+
+        assert resp.status_code == 400
