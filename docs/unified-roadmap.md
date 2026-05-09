@@ -297,6 +297,7 @@ These appeared as "improvements" in older analyses (langgraph, llm-use, deepflow
 | Full Reset (chat + memory + files + graph) | this session | B — commit `2a48e43` |
 | File context transparency | this session | D — commit `7736ef5` |
 | Removed dual UI fallback | this session | commit `1719a54` |
+| Agent ↔ Agent cooperation spec + typed messages (P5a) | `analysis/harnessed-llm-agent/07-roadmap.md` §P5a | `core/cooperation_messages.py`, [`docs/cooperation-protocol.md`](cooperation-protocol.md) |
 
 ---
 

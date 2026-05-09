@@ -8,7 +8,7 @@ Exhaustive list of every abstraction in the codebase, grouped by concern. For co
 - **Agent** — Autonomous unit with a role, tools, and a provider. Stateless between tasks. `core/agent.py`
 - **Skill** — Reusable capability with middleware chain (retry, logging, timeout). Provider-independent. `core/skill.py`
 - **Orchestrator** — Coordinates agents, task decomposition, anti-stall enforcement. `core/orchestrator.py`
-- **Cooperation** — Inter-agent messaging: delegation, results, conflict resolution. `core/cooperation.py`
+- **Cooperation** — Inter-agent messaging: delegation, results, conflict resolution. `core/cooperation.py`. Wire-format messages (`DelegateMessage`, `ResultMessage`, `ConflictMessage`, `CapabilityQueryMessage`, `CapabilityResponseMessage`) live in `core/cooperation_messages.py` with a `parse_message` dispatcher. Spec, state machine, and error semantics: [docs/cooperation-protocol.md](cooperation-protocol.md).
 - **OrchestratorClient** — Embedded Python client (`client.py`). Wraps Orchestrator, Agent, SkillRegistry, and StateGraph into a single API. Supports `run_agent()`, `run_team()`, `run_graph()`, `list_agents()`, `list_skills()`, plus sync wrappers. No HTTP server required.
 
 ## Routing & Cost Control

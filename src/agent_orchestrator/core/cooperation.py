@@ -1,4 +1,21 @@
-"""Cooperation — inter-agent communication and coordination protocols."""
+"""Cooperation — inter-agent communication and coordination protocols.
+
+For new code, prefer the typed message classes in
+:mod:`agent_orchestrator.core.cooperation_messages`. They wrap the same
+wire format as the dicts used internally here, but give callers explicit
+``DelegateMessage`` / ``ResultMessage`` / ``ConflictMessage`` /
+``CapabilityQueryMessage`` / ``CapabilityResponseMessage`` types and a
+``parse_message`` dispatcher.
+
+The existing ``TaskAssignment`` / ``TaskReport`` / ``AgentMessage`` /
+``ConflictRecord`` dataclasses are kept as the in-memory store format —
+they are NOT going away. New handlers should accept either the typed
+messages or the legacy dataclasses; round-tripping through ``to_dict`` /
+``from_dict`` is loss-less for the documented payload fields.
+
+See ``docs/cooperation-protocol.md`` for the full message catalogue,
+state diagram, and error semantics.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +24,23 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+# Re-export typed messages so callers can import everything from one place.
+from .cooperation_messages import (  # noqa: F401  (intentional re-export)
+    ALL_KINDS,
+    KIND_CAPABILITY_QUERY,
+    KIND_CAPABILITY_RESPONSE,
+    KIND_CONFLICT,
+    KIND_DELEGATE,
+    KIND_RESULT,
+    CapabilityQueryMessage,
+    CapabilityResponseMessage,
+    ConflictMessage,
+    CooperationMessage,
+    DelegateMessage,
+    ResultMessage,
+    parse_message,
+)
 
 
 class Priority(str, Enum):
