@@ -110,4 +110,26 @@ describe("ChatInput — D file context transparency", () => {
 
     expect(screen.getByText("SVG")).toBeInTheDocument();
   });
+
+  it("renders IMG badge for image kind (OCR pipeline output)", () => {
+    useAppStore.getState().addAttachedFile({
+      path: "screenshot.png",
+      content: "OCR text",
+      source: "upload",
+      kind: "image",
+      bytes: 12000,
+    });
+
+    render(
+      <ChatInput
+        models={baseModels}
+        isDisabled={false}
+        onSend={vi.fn()}
+        onNewChat={vi.fn()}
+      />,
+      { wrapper }
+    );
+
+    expect(screen.getByText("IMG")).toBeInTheDocument();
+  });
 });

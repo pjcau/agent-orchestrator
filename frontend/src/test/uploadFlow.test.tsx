@@ -122,7 +122,7 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
     });
   });
 
-  it("shows an error chip and does not attach the file when /api/upload fails (e.g. unsupported image)", async () => {
+  it("shows an error chip and does not attach the file when /api/upload fails (e.g. truly unsupported format)", async () => {
     vi.mocked(apiClient.post).mockRejectedValueOnce({
       response: { data: { error: "Unsupported file format" }, status: 400 },
       message: "Request failed with status code 400",
@@ -138,8 +138,10 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
       { wrapper }
     );
 
-    const file = new File([new Uint8Array([0xff, 0xd8, 0xff])], "photo.jpg", {
-      type: "image/jpeg",
+    // Use a format that has no extractor (zip, exe, …). Image formats are
+    // now handled by the OCR pipeline, so they reach the success path.
+    const file = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], "data.zip", {
+      type: "application/zip",
     });
     await simulateFileSelect(file);
 
@@ -147,6 +149,44 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(/Unsupported file format/i);
     });
     expect(useAppStore.getState().attachedFiles).toHaveLength(0);
+  });
+
+  it("attaches an image file with file_type=image once OCR extracted text", async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: {
+        success: true,
+        filename: "screenshot.png",
+        file_type: "image",
+        markdown_content: "# OCR text from `screenshot.png`\n\nHello from OCR",
+        markdown_path: "/tmp/screenshot.md",
+      },
+    });
+
+    render(
+      <ChatInput
+        models={baseModels}
+        isDisabled={false}
+        onSend={vi.fn()}
+        onNewChat={vi.fn()}
+      />,
+      { wrapper }
+    );
+
+    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "screenshot.png", {
+      type: "image/png",
+    });
+    await simulateFileSelect(file);
+
+    await waitFor(() => {
+      const files = useAppStore.getState().attachedFiles;
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatchObject({
+        path: "screenshot.png",
+        kind: "image",
+        source: "upload",
+      });
+      expect(files[0].content).toContain("Hello from OCR");
+    });
   });
 
   it("shows error message from server when upload returns success:false", async () => {

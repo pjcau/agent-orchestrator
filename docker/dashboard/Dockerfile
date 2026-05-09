@@ -44,10 +44,18 @@ RUN apt-get update && \
     apt-get purge -y gnupg && \
     rm -rf /var/lib/apt/lists/*
 
+# Tesseract OCR — needed by core.document_converter._convert_image so the
+# /api/upload endpoint can extract text from JPG/PNG/etc. The English
+# language pack is bundled with `tesseract-ocr`; add `tesseract-ocr-ita`
+# or other packs if you need additional languages.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tesseract-ocr && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy source first so editable install works
 COPY pyproject.toml .
 COPY src/ src/
-RUN pip install --no-cache-dir -e ".[dev,dashboard,anthropic,openai,postgres]"
+RUN pip install --no-cache-dir -e ".[dev,dashboard,anthropic,openai,postgres,docs,images]"
 
 # Install Rust extension if built successfully (graceful: no-op if missing)
 COPY --from=rust-build /rust/dist/*.whl /tmp/wheels/

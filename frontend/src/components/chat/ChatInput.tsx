@@ -50,6 +50,7 @@ function fileKindBadge(kind: string | undefined, path: string): string {
   if (k === "pptx") return "PPT";
   if (k === "html") return "HTML";
   if (k === "txt" || k.startsWith("text/")) return "TXT";
+  if (k === "image" || k.startsWith("image/")) return "IMG";
   // Fallback to extension
   const m = path.match(/\.([a-z0-9]{1,5})$/i);
   return m ? m[1].toUpperCase() : "FILE";

@@ -1998,10 +1998,11 @@ class TestUploadEndpoint:
 
     @pytest.mark.asyncio
     async def test_upload_unsupported_format_returns_400(self, monkeypatch):
-        """A .png file (no extractor) returns 400 'Unsupported file format'.
+        """A truly unsupported format (e.g. .zip) returns 400.
 
-        This is exactly the case behind the original bug — we want the user
-        to see a clear error instead of silent garbage."""
+        Note: image formats (.png/.jpg/…) are now handled by the OCR path,
+        so they no longer reach this branch — see the image OCR tests in
+        test_document_converter.py."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
         from agent_orchestrator.dashboard.app import create_dashboard_app
@@ -2010,7 +2011,7 @@ class TestUploadEndpoint:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            files = {"file": ("photo.png", b"\x89PNG\r\n\x1a\n", "image/png")}
+            files = {"file": ("archive.zip", b"PK\x03\x04", "application/zip")}
             resp = await client.post("/api/upload", files=files)
 
         assert resp.status_code == 400

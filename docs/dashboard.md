@@ -187,12 +187,23 @@ This addresses the original confusion ("did the model actually get my photo?") b
 
 The "+" button in `ChatInput` uploads the selected file to `POST /api/upload` (multipart) instead of reading it as UTF-8 in the browser.
 
-- Backend (`gateway_api.py`) runs the file through `core.document_converter.DocumentConverter`, which converts PDF, DOCX, PPTX, XLSX/XLS, CSV, HTML/HTM, TXT to Markdown. Returns `{success, filename, file_type, markdown_content, markdown_path, page_count, row_count}`.
+- Backend (`gateway_api.py`) runs the file through `core.document_converter.DocumentConverter`, which converts PDF, DOCX, PPTX, XLSX/XLS, CSV, HTML/HTM, TXT to Markdown. **Images** (PNG, JPG, JPEG, GIF, WEBP, BMP, TIFF) go through tesseract OCR — see "Image OCR" below. Returns `{success, filename, file_type, markdown_content, markdown_path, page_count, row_count}`.
 - The returned `markdown_content` is what gets attached and sent to the LLM — **no more binary-as-UTF-8 garbage** when an image is attached.
-- Unsupported formats (`.jpg`, `.png`, `.zip`, …) get a 400 with `{"error":"Unsupported file format"}`. The UI surfaces the message in a red `attached-file--error` chip; the file is **not** attached.
+- Truly unsupported formats (`.zip`, `.exe`, …) get a 400 with `{"error":"Unsupported file format"}`. The UI surfaces the message in a red `attached-file--error` chip; the file is **not** attached.
 - During the round-trip, an `attached-file--uploading` chip with a spinner is shown.
 
 The "Browse" button next to it still browses the server-side workspace via `/api/files` + `/api/file` and adds the picked file with `source: "workspace"`.
+
+### Image OCR
+
+Image uploads are handled by `DocumentConverter._convert_image`, which uses `pytesseract` + `Pillow` + the `tesseract` system binary.
+
+- Install on the host: `pip install 'agent-orchestrator[images]'` and `apt install tesseract-ocr` (Linux) or `brew install tesseract` (macOS). The Docker image (`docker/dashboard/Dockerfile`) installs both automatically.
+- Output: a Markdown document with header `# OCR text from <filename>` followed by the extracted text. If no text is recognised, the document explains that visual content (objects, scenes, diagrams) is not interpreted by OCR and points to vision-capable models as the alternative.
+- Missing dependencies surface clearly: a missing Python package or missing binary both raise `DependencyMissingError`, which the UI shows in the red error chip.
+- This is **OCR only** — for "see what's in the picture" semantics use a multimodal model (Claude Sonnet, GPT-4o, Gemini) and the future C3 vision pipeline.
+
+The frontend renders `kind: "image"` with an `IMG` badge in the file chip.
 
 ## Reset behaviour (B)
 
