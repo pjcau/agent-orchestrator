@@ -751,6 +751,39 @@ body {
 .attached-file--error { background: rgba(220,80,80,0.12); border-color: rgba(220,80,80,0.4); }
 .attached-file--error .attached-file__name { color: rgba(255,140,140,0.95); max-width: 320px; }
 
+.attached-file__badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(88,166,255,0.18);
+  color: rgba(180,210,255,0.95);
+}
+.attached-file[data-source="workspace"] .attached-file__badge {
+  background: rgba(160,140,255,0.18);
+  color: rgba(210,200,255,0.95);
+}
+.attached-file__size {
+  font-size: 9px;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+.attached-file__warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255,170,60,0.25);
+  color: rgba(255,200,120,0.95);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: help;
+}
+
 .attached-file__spinner {
   width: 8px;
   height: 8px;

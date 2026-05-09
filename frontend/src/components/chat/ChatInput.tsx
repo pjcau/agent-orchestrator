@@ -32,6 +32,29 @@ function detectProvider(modelName: string): "openrouter" | "ollama" {
   return modelName.includes("/") ? "openrouter" : "ollama";
 }
 
+/** Format a byte count as a short human-readable string. */
+export function formatBytes(n: number | undefined): string {
+  if (!n || n <= 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Single-letter category for the chip badge. */
+function fileKindBadge(kind: string | undefined, path: string): string {
+  const k = (kind ?? "").toLowerCase();
+  if (k === "pdf") return "PDF";
+  if (k === "excel" || k === "xlsx" || k === "xls") return "XLS";
+  if (k === "csv") return "CSV";
+  if (k === "docx") return "DOC";
+  if (k === "pptx") return "PPT";
+  if (k === "html") return "HTML";
+  if (k === "txt" || k.startsWith("text/")) return "TXT";
+  // Fallback to extension
+  const m = path.match(/\.([a-z0-9]{1,5})$/i);
+  return m ? m[1].toUpperCase() : "FILE";
+}
+
 export function ChatInput({
   models,
   isDisabled,
@@ -192,18 +215,40 @@ export function ChatInput({
       {(attachedFiles.length > 0 || uploadingName || uploadError) && (
         <div className="chat-input__files">
           <span className="chat-input__files-label">Files</span>
-          {attachedFiles.map((f, i) => (
-            <span key={f.path} className="attached-file">
-              <span className="attached-file__name">{f.path}</span>
-              <button
-                className="attached-file__remove"
-                onClick={() => removeAttachedFileAt(i)}
-                aria-label={`Remove ${f.path}`}
+          {attachedFiles.map((f, i) => {
+            const sizeLabel = formatBytes(f.bytes);
+            const sourceLabel = f.source === "workspace" ? "ws" : "up";
+            const detail = [sizeLabel, sourceLabel].filter(Boolean).join(" · ");
+            return (
+              <span
+                key={f.path}
+                className="attached-file"
+                title={`${f.path}${detail ? ` (${detail})` : ""}`}
+                data-source={f.source ?? "upload"}
+                data-kind={f.kind ?? ""}
               >
-                &times;
-              </button>
-            </span>
-          ))}
+                <span className="attached-file__badge">{fileKindBadge(f.kind, f.path)}</span>
+                <span className="attached-file__name">{f.path}</span>
+                {sizeLabel && <span className="attached-file__size">{sizeLabel}</span>}
+                {f.truncated && (
+                  <span
+                    className="attached-file__warn"
+                    title="Content was truncated by the server"
+                    aria-label="truncated"
+                  >
+                    !
+                  </span>
+                )}
+                <button
+                  className="attached-file__remove"
+                  onClick={() => removeAttachedFileAt(i)}
+                  aria-label={`Remove ${f.path}`}
+                >
+                  &times;
+                </button>
+              </span>
+            );
+          })}
           {uploadingName && (
             <span
               className="attached-file attached-file--uploading"

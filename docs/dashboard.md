@@ -165,6 +165,24 @@ The vanilla JS dashboard at `src/agent_orchestrator/dashboard/static/` was remov
 
 New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `fetchFileContent` (async helper), `usePricing`. Query keys added: `presets`, `files`, `pricing`.
 
+## File context transparency (D)
+
+To remove ambiguity about what the model is actually receiving, every attached file shows:
+
+- A **kind badge** (`PDF`, `CSV`, `DOC`, `TXT`, …) — derived from `file_type` returned by `/api/upload`, or from the extension as a fallback.
+- The **byte size** in B / KB / MB.
+- A **source colour**: blue (`source: "upload"`) for local uploads, purple (`source: "workspace"`) for files picked from the server-side workspace.
+- A **truncation warning** (`!` chip) when the server clipped the content (e.g. `/api/file` rejects > 100 KB).
+- A `title` attribute combining all of the above for screen readers and hover.
+
+At send time, `ChatPanel` emits a `system` bubble in the chat **before** the user message:
+
+```
+Sent with 2 files: report.pdf (2.0 KB) [upload], data.csv (12.3 KB) [workspace]
+```
+
+This addresses the original confusion ("did the model actually get my photo?") by making the included context visible turn-by-turn.
+
 ## Local file upload (C2)
 
 The "+" button in `ChatInput` uploads the selected file to `POST /api/upload` (multipart) instead of reading it as UTF-8 in the browser.

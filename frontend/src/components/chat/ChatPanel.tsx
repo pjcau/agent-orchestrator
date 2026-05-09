@@ -73,6 +73,30 @@ export function ChatPanel() {
         }
       }
 
+      // Surface the files actually being sent so the user can confirm what
+      // the model is seeing — D (transparency).
+      const filesAtSend = useAppStore.getState().attachedFiles;
+      if (filesAtSend.length > 0) {
+        const summary = filesAtSend
+          .map((f) => {
+            const size = f.bytes
+              ? f.bytes < 1024
+                ? `${f.bytes} B`
+                : f.bytes < 1024 * 1024
+                  ? `${(f.bytes / 1024).toFixed(1)} KB`
+                  : `${(f.bytes / (1024 * 1024)).toFixed(1)} MB`
+              : "";
+            const source = f.source === "workspace" ? "workspace" : "upload";
+            return `${f.path}${size ? ` (${size})` : ""} [${source}]`;
+          })
+          .join(", ");
+        addMessage({
+          role: "system",
+          content: `Sent with ${filesAtSend.length} file${filesAtSend.length > 1 ? "s" : ""}: ${summary}`,
+          timestamp: Date.now(),
+        });
+      }
+
       // Add user message to chat
       addMessage({ role: "user", content: text, timestamp: Date.now() });
       useAppStore.setState({ isStreaming: true });
