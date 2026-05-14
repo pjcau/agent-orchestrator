@@ -272,6 +272,60 @@ Live deep-dive (mermaid graphs + try-it commands per priority):
 
 ---
 
+## Planned (v1.4.0 — External Reference Gap Closure, Q3 2026)
+
+Cross-analysis of three reference projects in `analysis/` — **DeepFlow**, **Harnessed-LLM-Agent**, **LangGraph** — to find features the orchestrator still lacks. Already-shipped items (HITL interrupt/resume, RAG, Evaluator, Langfuse/Phoenix sinks, embedded client, IM channels, YAML config, harness boundary, file upload + OCR, GuardrailManager) are excluded. Each item below is genuinely new work.
+
+### From DeepFlow
+
+#### P1 — Must-have
+- [ ] **Loop detection middleware** — Hash tool calls, warn at 3 repeats, hard-stop at 5. Cheap defence against runaway agents that burn tokens on the same call. New: `core/middleware/loop_guard.py`.
+- [ ] **Sandboxed code execution skill** — Bash / Python execution in an isolated container (Docker exec or firejail). Currently the `shell` skill runs unsandboxed in the host. Needed for letting cloud-routed agents run untrusted snippets safely.
+- [ ] **Progressive skill loading** — Skill instructions loaded on-demand (`load_when_invoked: true`) instead of fully expanded into every system prompt. Cuts the system prompt from ~20K to ~4K tokens once skill catalog grows past 8 entries.
+- [ ] **Structured clarification protocol** — Five clarification types (`missing_info`, `ambiguous`, `approach`, `risk`, `suggestion`) with `CLARIFY → PLAN → ACT` lifecycle, instead of a single generic HITL prompt. Improves UX for ambiguous tasks.
+- [ ] **Dangling tool call recovery** — When a conversation is interrupted mid-tool-call, auto-inject placeholder `ToolMessage` on resume so providers don't reject the history with `tool_call without result`. Wire into `ConversationManager.resume()`.
+
+#### P2 — Nice-to-have
+- [ ] **`tool_description` parameter on every tool call** — Force agents to explain *why* they're calling a tool, not just *what*. Surfaces in audit log + dashboard event row. Cheap to add at the `Skill.invoke()` boundary.
+- [ ] **Configurable context summarization triggers** — Today summarisation kicks in on token threshold only; add `messages` count and `fraction` triggers, plus a per-agent `keep_last_n` retention rule. Extend `SummarizationConfig`.
+
+#### P3 — Optional
+- [ ] **Config versioning with auto-upgrade** — Detect outdated `orchestrator.yaml` schemas (add a `schema_version` field) and auto-merge missing keys with sensible defaults on load. Prevents silent drift after upgrades.
+- [ ] **Memory upload filter** — Strip references to per-session uploaded files from `PersonalizedMemory` so future sessions don't try to re-open temp paths. Extend `MemoryFilter` blacklist.
+
+### From Harnessed-LLM-Agent
+
+#### P1 — Must-have
+- [ ] **A2A adapter (P5b — un-park)** — Google A2A spec is the only ⚠ left in the 19-item match matrix; revisit Q3 2026. Adapter on top of the typed cooperation messages already shipped.
+
+#### P2 — Nice-to-have
+- [ ] **Personalized Memory UI** — REST endpoints exist (`/api/user-memory/*`); add a dashboard page that lists per-user keys, lets the user edit/delete entries, and shows the last `<user_profile>` block injected into the system prompt. Closes the loop on P4 from v1.3.0.
+
+### From LangGraph
+
+#### P1 — Must-have
+- [ ] **Typed channels for concurrent state writes** — Today reducers are `append / replace / merge_dict`. Add LangGraph-style channel types: `LastValue`, `Topic` (pubsub fan-in), `BinaryOperatorAggregate` (e.g. summation), `EphemeralValue` (not checkpointed), `AnyValue`. Removes a class of races in parallel-agent state convergence.
+- [ ] **Per-node `CachePolicy`** — Cache node results by `(node_id, input_hash)` with TTL + invalidation events. Re-runs become free when input is identical (deterministic ETL nodes, retrieval calls, eval rubric scoring).
+
+#### P2 — Nice-to-have
+- [ ] **Managed values (computed state)** — Inject `step_count`, `remaining_steps`, `interrupt_ids`, `is_final_step` into node state without persisting them. Lets nodes implement anti-stall (`if remaining_steps < 2: summarise_and_finish()`) without bookkeeping.
+- [ ] **Skill / middleware chain** — Wrap every `Skill.invoke()` with composable pre/post hooks (audit logger, rate limiter, cache, retry). LangGraph calls this Tool middleware. We have ad-hoc instrumentation; a formal chain makes it pluggable.
+- [ ] **Granular stream modes** — Today the dashboard streams a single event firehose. Add LangGraph's seven modes (`values`, `updates`, `messages`, `tasks`, `debug`, `events`, `custom`) selectable per WebSocket subscription. Reduces frontend filtering load.
+- [ ] **`RetryPolicy` with backoff + jitter** — Today retry is a fixed-count loop. Add exponential backoff, jitter, max_interval, per-exception-class rules at the node and provider level.
+
+#### P3 — Optional
+- [ ] **Content-addressed checkpoint blobs** — In `PostgresCheckpointer`, dedupe large state blobs by SHA-256 hash so repeated values across checkpoints share a single row. Cuts storage by 5-20× on long conversations.
+- [ ] **Conformance test suite for Providers + Checkpointers** — A standardised pytest harness third-party plugins must pass to be marked "compatible". Mirrors LangGraph's `langgraph-checkpoint-tests` package.
+- [ ] **Structured deprecation annotations** — `@deprecated(since="1.4", removed_in="1.6", migration="use X instead")` decorator that emits warnings + powers a `docs/deprecations.md` page generated at release time.
+
+### Sprint shape (suggested)
+- 4 backend agents in parallel worktrees (DeepFlow P1 batch · LangGraph P1 batch · A2A adapter · Personalized Memory UI).
+- 1 architect agent owning the channel-types redesign (touches `core/graph.py` reducers + `state.py`).
+- 1 frontend agent on Personalized Memory UI + granular stream modes UI toggle.
+- Match-matrix target: **19/19 ✅** by end of sprint.
+
+---
+
 ## Provider Matrix
 
 | Provider | Type | Models | Cost | Best For |
