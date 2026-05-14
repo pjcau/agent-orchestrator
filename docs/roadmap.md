@@ -555,6 +555,75 @@ async def smart_route(request) -> str:
 
 ---
 
+## v1.3 — Q1+Q2 Sprint (May 2026, shipped)
+
+Six priorities (P1–P6) from the harnessed-LLM-agent reference matrix, parallelised across 5 worktree agents and converged into `main` in a single afternoon.
+
+| Priority | Status | Where it lives |
+|---|---|---|
+| P1 — Semantic Knowledge / RAG | ✅ shipped | `core/knowledge/`, `skills/retrieval_skill.py`, `dashboard/knowledge_routes.py`, RAG toggle in `frontend/src/components/chat/ChatInput.tsx` |
+| P2 — Evaluator framework | ✅ shipped | `core/evaluator.py`, `evals/datasets/smoke.json`, `evals/runners/cli.py`, `dashboard/evals_routes.py` |
+| P3 — Guardrails layer | ✅ shipped | `core/guardrails.py` (PII / Secrets / PromptInjection / Schema / Cost) |
+| P4 — Personalized Memory | ✅ shipped | `core/personalized_memory.py`, `skills/profile_extractor_skill.py`, `dashboard/personalized_memory_routes.py` |
+| P5a — Cooperation typed messages | ✅ shipped | `core/cooperation_messages.py` + `docs/cooperation-protocol.md` |
+| P5b — A2A adapter | ⚠ parked | spec churn (Apr 2026) — un-parked in v1.4 |
+| P6 — Observability sinks | ✅ shipped | `core/observability/{langfuse_exporter,phoenix_exporter}.py` |
+
+**Numbers**: reference-matrix coverage 82 % → **95 %** (18/19 ✅). Test count 1865 → **2065** (+200).
+
+Full per-priority cards with try-it commands: [website roadmap → Q1+Q2 sprint](https://pjcau.github.io/agent-orchestrator/docs/roadmap/q1q2-sprint).
+
+### v1.3 KPIs
+
+- 18 of 19 reference-matrix components ✅ (only A2A adapter still ⚠)
+- RAG namespaces: `("shared",)`, `("agent", name)`, `("user", id)` all in production
+- 3 new optional extras shipped: `[rag]`, `[langfuse]`, `[phoenix]`
+- 200 new tests passing, zero regressions
+
+---
+
+## v1.4 — External Reference Gap Closure (Q3 2026, planned)
+
+Cross-analysis of `analysis/{deepflow,langgraph,harnessed-llm-agent}` after grep-verifying every candidate against `src/`. The first draft of v1.4 listed 16 items; **10 were already shipped** and pruned. The 6 surviving items below are confirmed missing.
+
+### Confirmed shipped (do NOT re-do)
+
+Audit trail from the pruning pass — these were on the original v1.4 draft but already live on `main`: loop detection (`core/loop_detection.py`), sandboxed execution (`core/sandbox.py` + `skills/sandboxed_shell.py`), progressive skill loading (`skills/skill_loader.py`), structured clarification (`core/clarification.py` + `skills/clarification_skill.py`), dangling tool-call recovery (`core/tool_recovery.py`), typed channels (`core/channels.py`), per-node `CachePolicy` (`core/cache.py`), skill middleware chain (`core/skill.py`), `RetryPolicy` + circuit breaker (`core/resilience.py`), conformance test suite (`core/conformance.py`), `tool_description` parameter (`core/skill.py`), configurable summarisation triggers (`core/conversation.py::SummarizationConfig`), config versioning (`core/yaml_config.py`), memory upload filter (`core/memory_filter.py`).
+
+### Genuinely missing
+
+#### P1 — Must-have
+
+| Item | Why it matters | Where it will live |
+|---|---|---|
+| **A2A adapter (un-park P5b)** | Closes the 19th match-matrix row — bidirectional bridge so Google A2A peers appear as local cooperation agents and vice-versa. Builds on `core/cooperation_messages.py`. | `core/cooperation/a2a_adapter.py` + `/api/a2a/` |
+| **Managed values (computed state)** | LangGraph-style read-only injections (`step_count`, `remaining_steps`, `interrupt_ids`, `is_final_step`) — never checkpointed. Lets nodes self-throttle without polluting `State`. | new `core/managed_values.py` + Pregel-loop hook in `core/graph.py` |
+
+#### P2 — Nice-to-have
+
+| Item | Why it matters | Where it will live |
+|---|---|---|
+| **Personalized Memory dashboard UI** | REST endpoints exist since v1.3.0 P4 but no React page consumes them (verified). Closes the loop on P4. | `frontend/src/components/memory/UserMemoryPanel.tsx` |
+| **Granular stream modes** | `dashboard/sse.py` only ships 2 of LangGraph's 7 modes (`events`, `values`). Add `updates`, `messages`, `tasks`, `debug`, `custom`. Reduces frontend filtering load. | `dashboard/sse.py` + frontend selector |
+
+#### P3 — Optional
+
+| Item | Why it matters | Where it will live |
+|---|---|---|
+| **Content-addressed checkpoint blobs** | Dedupe large state values by SHA-256 in `PostgresCheckpointer`. 5-20× storage reduction on long conversations. | `core/store_postgres.py` |
+| **Structured deprecation annotations** | `@deprecated(since=…, removed_in=…, migration=…)` decorator + auto-generated `docs/deprecations.md`. Pre-requisite for any 2.x cleanup. | new `core/deprecation.py` |
+
+### v1.4 KPIs
+
+- Reference-matrix coverage: 18/19 → **19/19 ✅**
+- LangGraph stream-mode coverage: 2/7 → **7/7**
+- Personalized Memory: REST-only → REST + UI
+- A2A protocol: not supported → bidirectional adapter (round-trip with one external A2A peer)
+
+Full design + sprint shape: [website roadmap → v1.4](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v140-gap-closure).
+
+---
+
 ## Growth Opportunities (Suggestions)
 
 These are high-potential features that could accelerate product growth, based on market trends in the AI agent orchestration space ($8.5B market in 2026).

@@ -603,4 +603,131 @@ The match matrix has only one ⚠️ row left and zero ❌. Realistic next steps
 1. **Hook P3 Guardrails into the production agents** (currently optional kwarg). Pick a default-on safe set (PII redact + Secrets block) for multi-tenant deployments.
 2. **Wire P2 Evaluator into CI**: add a small smoke suite as a GitHub Action gate that fails on regression > 5%.
 3. **Swap RAG defaults**: HashEmbedder is dev-only; production should use `LocalEmbeddingProvider` (sentence-transformers) or `OpenAIEmbeddingProvider`. PgVector backend instead of `InMemoryKnowledgeStore` once usage grows.
-4. **Re-evaluate P5b A2A** in Q3 once the Google A2A spec stabilises.
+4. **v1.4 — Reference-matrix gap closure** — see below.
+
+---
+
+## v1.4 — External Reference Gap Closure (Q3 2026, planned)
+
+Cross-analysis of `analysis/{deepflow,langgraph,harnessed-llm-agent}` to find what the orchestrator still lacks. **Methodology**: every candidate was grep-verified against `src/` before being added — 10 of 16 first-draft items turned out to already be on `main` and were pruned. The 6 surviving items below are the v1.4 scope.
+
+### Verified shipped — pruned from the v1.4 draft
+
+This row extends the [Items already shipped](#items-already-shipped-dont-re-do) table with the audit trail of the v1.4 pruning pass:
+
+| Item | Where it lives now |
+|---|---|
+| Loop detection middleware | `core/loop_detection.py` (+ `tests/test_loop_detection.py`) |
+| Sandboxed code execution | `core/sandbox.py`, `skills/sandboxed_shell.py` |
+| Progressive skill loading | `skills/skill_loader.py` |
+| Structured clarification protocol | `core/clarification.py`, `skills/clarification_skill.py` |
+| Dangling tool-call recovery | `core/tool_recovery.py::recover_dangling_tool_calls` |
+| Typed channels (`LastValue` / `Topic` / …) | `core/channels.py` |
+| Per-node CachePolicy | `core/cache.py` |
+| Skill middleware chain | `core/skill.py` (+ `tests/test_skill_middleware.py`) |
+| RetryPolicy + circuit breaker | `core/resilience.py::RetryPolicy`, `CircuitBreaker`, `resilient_call` |
+| Conformance test suite | `core/conformance.py` |
+| `tool_description` parameter | `core/skill.py` (`SkillRequest.metadata["tool_description"]`) |
+| Configurable summarisation triggers | `core/conversation.py::SummarizationConfig` (TOKEN / MESSAGE / FRACTION + `retain_last`) |
+| Config versioning + auto-upgrade | `core/yaml_config.py` (`config_version`, `_upgrade_v0_to_v1`, `CURRENT_CONFIG_VERSION`) |
+| Memory upload filter | `core/memory_filter.py::MemoryFilter` |
+
+### Genuinely missing — the v1.4 scope
+
+#### P1 — Must-have
+
+<details>
+<summary><strong>A2A adapter (un-park P5b)</strong> &nbsp; ⚠ → ✅ target &nbsp; · &nbsp; Effort: L &nbsp; · &nbsp; Impact: 🔥🔥</summary>
+
+| | |
+|---|---|
+| **Status** | ⚠️ Planned |
+| **Source design** | `analysis/harnessed-llm-agent/07-roadmap.md` §P5b |
+| **Will live in** | `core/cooperation/a2a_adapter.py` + `/api/a2a/` |
+
+**What it adds**
+- Bidirectional bridge with Google's A2A protocol so external A2A agents appear as local cooperation peers and vice-versa.
+- Builds on top of `core/cooperation_messages.py` (already in `main` since v1.3.0 P5a).
+- Closes the only remaining ⚠ on the 19-row reference matrix.
+
+**Why now**: spec churn was the reason for the Q1 park; the April-2026 stabilisation has landed.
+
+</details>
+
+<details>
+<summary><strong>Managed values (computed state)</strong> &nbsp; ⚪ → ✅ target &nbsp; · &nbsp; Effort: M &nbsp; · &nbsp; Impact: 🔥🔥</summary>
+
+| | |
+|---|---|
+| **Status** | 🆕 Planned |
+| **Source design** | `analysis/langgraph/09-managed-values.md` |
+| **Will live in** | new `core/managed_values.py` + Pregel-loop hook in `core/graph.py` |
+
+**What it adds**
+- LangGraph-style read-only injections into node state: `step_count`, `remaining_steps`, `interrupt_ids`, `is_final_step`.
+- Computed at runtime by the engine, **never checkpointed**.
+- Lets nodes self-throttle (`if remaining_steps < 2: summarise_and_finish()`) without polluting `State` schemas.
+
+</details>
+
+#### P2 — Nice-to-have
+
+<details>
+<summary><strong>Personalized Memory dashboard UI</strong> &nbsp; ⚪ → ✅ target &nbsp; · &nbsp; Effort: M &nbsp; · &nbsp; Impact: 🔥</summary>
+
+| | |
+|---|---|
+| **Status** | 🆕 Planned |
+| **Source design** | Closes the loop on v1.3.0 P4 |
+| **Will live in** | `frontend/src/components/memory/UserMemoryPanel.tsx` |
+
+**What it adds**
+- REST endpoints `/api/user-memory/users/*` exist since v1.3.0 P4, but no React page consumes them (verified — `frontend/src/components/` has no `user-memory` references).
+- New page lists per-user keys, lets the user edit / delete entries, shows the last `<user_profile>` block injected into the system prompt, and exposes a GDPR wipe button.
+
+</details>
+
+<details>
+<summary><strong>Granular stream modes (close the gap to LangGraph 7)</strong> &nbsp; ⚪ → ✅ target &nbsp; · &nbsp; Effort: M &nbsp; · &nbsp; Impact: 🔥</summary>
+
+| | |
+|---|---|
+| **Status** | 🆕 Planned |
+| **Source design** | `analysis/langgraph/27-streaming.md` |
+| **Will live in** | `dashboard/sse.py` + new frontend selector |
+
+**What it adds**
+- `dashboard/sse.py` ships 2 of LangGraph's 7 modes today: `events` (default) and `values` (verified at lines 118 and 270).
+- Add the 5 missing modes: `updates` (per-node delta), `messages` (LLM-message stream only), `tasks` (task lifecycle), `debug` (verbose internal), `custom` (user-emitted via `emit()`).
+- Selectable per WebSocket subscription.
+
+</details>
+
+#### P3 — Optional
+
+<details>
+<summary><strong>Content-addressed checkpoint blobs</strong> &nbsp; Effort: S &nbsp; · &nbsp; Impact: 🔥</summary>
+
+In `core/store_postgres.py` / `PostgresCheckpointer`, split large state values into a `blobs(sha256 PRIMARY KEY, payload BYTEA)` table and reference by hash. Repeated values across checkpoints share a single row. **Expected**: 5-20× storage reduction on long conversations where the same RAG context or system prompt repeats.
+
+</details>
+
+<details>
+<summary><strong>Structured deprecation annotations</strong> &nbsp; Effort: S &nbsp; · &nbsp; Impact: 🔥</summary>
+
+`@deprecated(since="1.4", removed_in="1.6", migration="use X instead")` decorator that emits a `DeprecationWarning` + powers a `docs/deprecations.md` page generated at release time. Currently zero `@deprecated` / `DeprecationWarning` hits in `core/`. Pre-requisite for any 2.x cleanup pass.
+
+</details>
+
+### Sprint shape
+
+| Worktree | Owner | Item |
+|---|---|---|
+| 1 | backend | A2A adapter (largest) |
+| 2 | architect | Managed values (Pregel-loop change — needs careful design) |
+| 3 | backend | Content-addressed blobs + deprecation decorator (both small, same dev) |
+| 4 | frontend | Personalized Memory UI + 5 missing stream-modes UI selector |
+
+**Match-matrix target**: **19/19 ✅** by end of sprint.
+
+Full per-item cards: [website roadmap → v1.4](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v140-gap-closure).
