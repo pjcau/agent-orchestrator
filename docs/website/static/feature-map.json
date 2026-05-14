@@ -1,0 +1,2607 @@
+{
+  "generated_from": "scripts/generate_feature_map.py",
+  "github_base": "https://github.com/pjcau/agent-orchestrator/blob/main",
+  "layers": [
+    {
+      "id": "harness",
+      "label": "Harness (library)"
+    },
+    {
+      "id": "app",
+      "label": "App (dashboard + integrations)"
+    }
+  ],
+  "categories": [
+    "Core",
+    "Dashboard",
+    "Integration",
+    "Provider",
+    "Skill"
+  ],
+  "nodes": [
+    {
+      "id": "dashboard.agent_runner",
+      "name": "agent_runner",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/agent_runner.py",
+      "description": "Agent runner for the dashboard.",
+      "classes": [],
+      "in_degree": 2,
+      "out_degree": 14,
+      "lines": 1476,
+      "weight": 8.17
+    },
+    {
+      "id": "dashboard.agent_runtime_router",
+      "name": "agent_runtime_router",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/agent_runtime_router.py",
+      "description": "Agent Runtime router \u2014 execution and streaming endpoints.",
+      "classes": [],
+      "in_degree": 2,
+      "out_degree": 9,
+      "lines": 820,
+      "weight": 7.91
+    },
+    {
+      "id": "dashboard.agents_registry",
+      "name": "agents_registry",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/agents_registry.py",
+      "description": "Agent and skill registry for the dashboard.",
+      "classes": [],
+      "in_degree": 3,
+      "out_degree": 0,
+      "lines": 138,
+      "weight": 9.14
+    },
+    {
+      "id": "dashboard.alert_webhook",
+      "name": "alert_webhook",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/alert_webhook.py",
+      "description": "Alert webhook handler \u2014 receives Grafana alerts and creates GitHub issues for analysis.",
+      "classes": [
+        "AlertHandler"
+      ],
+      "in_degree": 2,
+      "out_degree": 0,
+      "lines": 220,
+      "weight": 8.34
+    },
+    {
+      "id": "dashboard.app",
+      "name": "app",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/app.py",
+      "description": "Dashboard application \u2014 composes gateway and runtime routers.",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 26,
+      "lines": 444,
+      "weight": 5.65
+    },
+    {
+      "id": "dashboard.auth",
+      "name": "auth",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/auth.py",
+      "description": "Authentication module for the FastAPI dashboard.",
+      "classes": [
+        "APIKeyMiddleware"
+      ],
+      "in_degree": 4,
+      "out_degree": 0,
+      "lines": 228,
+      "weight": 12.36
+    },
+    {
+      "id": "dashboard.evals_routes",
+      "name": "evals_routes",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/evals_routes.py",
+      "description": "HTTP API for the P2 Evaluator Framework.",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 268,
+      "weight": 5.43
+    },
+    {
+      "id": "dashboard.events",
+      "name": "events",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/events.py",
+      "description": "Event bus for orchestrator monitoring.",
+      "classes": [
+        "EventType",
+        "Event",
+        "EventBus"
+      ],
+      "in_degree": 9,
+      "out_degree": 0,
+      "lines": 214,
+      "weight": 24.33
+    },
+    {
+      "id": "dashboard.gateway_api",
+      "name": "gateway_api",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/gateway_api.py",
+      "description": "Gateway API router \u2014 REST management endpoints.",
+      "classes": [],
+      "in_degree": 2,
+      "out_degree": 13,
+      "lines": 1978,
+      "weight": 8.3
+    },
+    {
+      "id": "dashboard.graphs",
+      "name": "graphs",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/graphs.py",
+      "description": "Graph execution for the dashboard prompt.",
+      "classes": [],
+      "in_degree": 2,
+      "out_degree": 8,
+      "lines": 1014,
+      "weight": 8.01
+    },
+    {
+      "id": "dashboard.instrument",
+      "name": "instrument",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/instrument.py",
+      "description": "Instrumentation \u2014 monkey-patch the orchestrator, agent, and graph to emit events.",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 8,
+      "lines": 300,
+      "weight": 5.48
+    },
+    {
+      "id": "dashboard.job_logger",
+      "name": "job_logger",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/job_logger.py",
+      "description": "Job logger \u2014 persists all agent/graph task results to disk.",
+      "classes": [
+        "JobLogger"
+      ],
+      "in_degree": 2,
+      "out_degree": 0,
+      "lines": 226,
+      "weight": 8.35
+    },
+    {
+      "id": "dashboard.knowledge_routes",
+      "name": "knowledge_routes",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/knowledge_routes.py",
+      "description": "HTTP API for the knowledge / RAG subsystem (P1).",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 3,
+      "lines": 206,
+      "weight": 5.31
+    },
+    {
+      "id": "dashboard.oauth_routes",
+      "name": "oauth_routes",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/oauth_routes.py",
+      "description": "OAuth2 login/callback routes for the dashboard.",
+      "classes": [],
+      "in_degree": 2,
+      "out_degree": 2,
+      "lines": 336,
+      "weight": 7.53
+    },
+    {
+      "id": "dashboard.personalized_memory_routes",
+      "name": "personalized_memory_routes",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/personalized_memory_routes.py",
+      "description": "HTTP API for per-user personalized memory (P4).",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 133,
+      "weight": 5.12
+    },
+    {
+      "id": "dashboard.sandbox_manager",
+      "name": "sandbox_manager",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/sandbox_manager.py",
+      "description": "Session-scoped sandbox lifecycle management.",
+      "classes": [
+        "SandboxManager"
+      ],
+      "in_degree": 3,
+      "out_degree": 1,
+      "lines": 253,
+      "weight": 10.4
+    },
+    {
+      "id": "dashboard.server",
+      "name": "server",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/server.py",
+      "description": "Dashboard server entrypoint.",
+      "classes": [],
+      "in_degree": 0,
+      "out_degree": 21,
+      "lines": 432,
+      "weight": 3.64
+    },
+    {
+      "id": "dashboard.sse",
+      "name": "sse",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/sse.py",
+      "description": "SSE (Server-Sent Events) streaming for graph execution.",
+      "classes": [
+        "HITLConfig",
+        "RunInfo",
+        "RunManager"
+      ],
+      "in_degree": 3,
+      "out_degree": 2,
+      "lines": 537,
+      "weight": 12.73
+    },
+    {
+      "id": "dashboard.tracing_metrics",
+      "name": "tracing_metrics",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/tracing_metrics.py",
+      "description": "Tracing metrics collector \u2014 lightweight counters for Prometheus export.",
+      "classes": [],
+      "in_degree": 2,
+      "out_degree": 0,
+      "lines": 46,
+      "weight": 6.66
+    },
+    {
+      "id": "dashboard.usage_db",
+      "name": "usage_db",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/usage_db.py",
+      "description": "Persistent usage tracking and conversation storage in PostgreSQL.",
+      "classes": [
+        "UsageDB"
+      ],
+      "in_degree": 2,
+      "out_degree": 0,
+      "lines": 444,
+      "weight": 8.65
+    },
+    {
+      "id": "dashboard.user_store",
+      "name": "user_store",
+      "category": "Dashboard",
+      "layer": "app",
+      "path": "dashboard/user_store.py",
+      "description": "Persistent user store \u2014 PostgreSQL-backed, admin-controlled access.",
+      "classes": [],
+      "in_degree": 3,
+      "out_degree": 1,
+      "lines": 723,
+      "weight": 9.86
+    },
+    {
+      "id": "integrations",
+      "name": "integrations",
+      "category": "Integration",
+      "layer": "app",
+      "path": "integrations/__init__.py",
+      "description": "External integrations \u2014 Slack, Telegram, etc.",
+      "classes": [],
+      "in_degree": 0,
+      "out_degree": 2,
+      "lines": 7,
+      "weight": 1.85
+    },
+    {
+      "id": "integrations.slack_bot",
+      "name": "slack_bot",
+      "category": "Integration",
+      "layer": "app",
+      "path": "integrations/slack_bot.py",
+      "description": "Slack bot integration using Socket Mode (no public IP required).",
+      "classes": [
+        "OrchestratorClient",
+        "SlackBotConfig",
+        "SlackBot"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 435,
+      "weight": 8.64
+    },
+    {
+      "id": "integrations.telegram_bot",
+      "name": "telegram_bot",
+      "category": "Integration",
+      "layer": "app",
+      "path": "integrations/telegram_bot.py",
+      "description": "Telegram bot integration using long-polling (no public IP required).",
+      "classes": [
+        "OrchestratorClient",
+        "TelegramBotConfig",
+        "TelegramBot"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 257,
+      "weight": 8.41
+    },
+    {
+      "id": "core.agent",
+      "name": "agent",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/agent.py",
+      "description": "Agent \u2014 an autonomous unit that receives tasks, uses skills, returns results.",
+      "classes": [
+        "TaskStatus",
+        "AgentConfig",
+        "Task",
+        "TaskResult",
+        "Agent"
+      ],
+      "in_degree": 3,
+      "out_degree": 10,
+      "lines": 486,
+      "weight": 14.69
+    },
+    {
+      "id": "core.alerts",
+      "name": "alerts",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/alerts.py",
+      "description": "Spend alerts \u2014 fire when cumulative cost crosses configurable thresholds.",
+      "classes": [
+        "AlertRule",
+        "Alert",
+        "AlertManager"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 131,
+      "weight": 6.12
+    },
+    {
+      "id": "core.api",
+      "name": "api",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/api.py",
+      "description": "Versioned REST API \u2014 route definitions and response models for /api/v1/.",
+      "classes": [
+        "HTTPMethod",
+        "APIEndpoint",
+        "APIResponse",
+        "APIRegistry"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 396,
+      "weight": 7.6
+    },
+    {
+      "id": "core.atomic_tasks",
+      "name": "atomic_tasks",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/atomic_tasks.py",
+      "description": "Atomic task decomposition validator (PR #59).",
+      "classes": [
+        "AtomicTaskIssue"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 154,
+      "weight": 6.19
+    },
+    {
+      "id": "core.audit",
+      "name": "audit",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/audit.py",
+      "description": "Audit logging \u2014 structured record of every significant agent action.",
+      "classes": [
+        "AuditEntry",
+        "AuditLog"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 147,
+      "weight": 5.17
+    },
+    {
+      "id": "core.benchmark",
+      "name": "benchmark",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/benchmark.py",
+      "description": "Model benchmarking \u2014 compare providers on latency, throughput, and cost.",
+      "classes": [
+        "BenchmarkResult",
+        "BenchmarkSuite"
+      ],
+      "in_degree": 0,
+      "out_degree": 1,
+      "lines": 122,
+      "weight": 5.09
+    },
+    {
+      "id": "core.bookmark_tracker",
+      "name": "bookmark_tracker",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/bookmark_tracker.py",
+      "description": "Bookmark tracker \u2014 JSON-based tracking of processed URLs with 30-day lookback.",
+      "classes": [],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 128,
+      "weight": 3.11
+    },
+    {
+      "id": "core.cache",
+      "name": "cache",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/cache.py",
+      "description": "Task-level result caching for graph nodes and skills.",
+      "classes": [
+        "CachePolicy",
+        "CacheEntry",
+        "CacheStats",
+        "BaseCache",
+        "InMemoryCache"
+      ],
+      "in_degree": 5,
+      "out_degree": 0,
+      "lines": 229,
+      "weight": 18.36
+    },
+    {
+      "id": "core.channels",
+      "name": "channels",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/channels.py",
+      "description": "Typed channels for state management.",
+      "classes": [
+        "EmptyChannelError",
+        "InvalidUpdateError",
+        "BaseChannel",
+        "LastValue",
+        "BinaryOperatorChannel",
+        "TopicChannel"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 296,
+      "weight": 11.47
+    },
+    {
+      "id": "core.checkpoint",
+      "name": "checkpoint",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/checkpoint.py",
+      "description": "Checkpoint \u2014 state persistence for graph execution.",
+      "classes": [
+        "Checkpoint",
+        "Checkpointer",
+        "InMemoryCheckpointer",
+        "SQLiteCheckpointer"
+      ],
+      "in_degree": 6,
+      "out_degree": 0,
+      "lines": 171,
+      "weight": 19.23
+    },
+    {
+      "id": "core.checkpoint_postgres",
+      "name": "checkpoint_postgres",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/checkpoint_postgres.py",
+      "description": "PostgreSQL checkpointer for distributed graph execution.",
+      "classes": [
+        "PostgresCheckpointer"
+      ],
+      "in_degree": 2,
+      "out_degree": 1,
+      "lines": 148,
+      "weight": 8.17
+    },
+    {
+      "id": "core.clarification",
+      "name": "clarification",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/clarification.py",
+      "description": "Structured clarification system for agent-user communication.",
+      "classes": [
+        "ClarificationType",
+        "ClarificationRequest",
+        "ClarificationResponse",
+        "ClarificationManager"
+      ],
+      "in_degree": 2,
+      "out_degree": 0,
+      "lines": 163,
+      "weight": 11.21
+    },
+    {
+      "id": "core.config_manager",
+      "name": "config_manager",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/config_manager.py",
+      "description": "Configuration manager \u2014 load, save, validate orchestrator configuration.",
+      "classes": [
+        "AgentConfigEntry",
+        "ProviderConfigEntry",
+        "OrchestratorConfiguration",
+        "ConfigManager"
+      ],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 279,
+      "weight": 9.45
+    },
+    {
+      "id": "core.conformance",
+      "name": "conformance",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/conformance.py",
+      "description": "Conformance test suites for Provider and Checkpointer interfaces.",
+      "classes": [
+        "TestStatus",
+        "TestResult",
+        "ConformanceReport"
+      ],
+      "in_degree": 1,
+      "out_degree": 2,
+      "lines": 380,
+      "weight": 8.58
+    },
+    {
+      "id": "core.conversation",
+      "name": "conversation",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/conversation.py",
+      "description": "Conversation memory \u2014 thread-based message history for iterative interactions.",
+      "classes": [
+        "SummarizationTrigger",
+        "SummarizationConfig",
+        "ConversationMessage",
+        "ConversationResult",
+        "ConversationManager"
+      ],
+      "in_degree": 5,
+      "out_degree": 4,
+      "lines": 459,
+      "weight": 18.66
+    },
+    {
+      "id": "core.cooperation",
+      "name": "cooperation",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/cooperation.py",
+      "description": "Cooperation \u2014 inter-agent communication and coordination protocols.",
+      "classes": [
+        "Priority",
+        "TaskAssignment",
+        "TaskReport",
+        "Artifact",
+        "AgentMessage",
+        "ConflictRecord"
+      ],
+      "in_degree": 2,
+      "out_degree": 2,
+      "lines": 280,
+      "weight": 13.45
+    },
+    {
+      "id": "core.cooperation_messages",
+      "name": "cooperation_messages",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/cooperation_messages.py",
+      "description": "Typed cooperation messages \u2014 frozen dataclasses for inter-agent communication.",
+      "classes": [
+        "CooperationMessage",
+        "DelegateMessage",
+        "ResultMessage",
+        "CapabilityQueryMessage",
+        "CapabilityResponseMessage",
+        "ConflictMessage"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 230,
+      "weight": 11.36
+    },
+    {
+      "id": "core.document_converter",
+      "name": "document_converter",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/document_converter.py",
+      "description": "Document converter \u2014 transforms uploaded files into Markdown for LLM consumption.",
+      "classes": [
+        "DocumentConversionError",
+        "UnsupportedFormatError",
+        "FileTooLargeError",
+        "DependencyMissingError",
+        "ContentLimitError",
+        "ConvertedDocument"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 498,
+      "weight": 11.7
+    },
+    {
+      "id": "core.evaluator",
+      "name": "evaluator",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/evaluator.py",
+      "description": "P2 Evaluator Framework \u2014 LLM-judge + rubric-based quality measurement.",
+      "classes": [
+        "EvalCase",
+        "EvalRun",
+        "EvalScore",
+        "EvalReport",
+        "Evaluator",
+        "RubricEvaluator"
+      ],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 585,
+      "weight": 11.77
+    },
+    {
+      "id": "core.graph",
+      "name": "graph",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/graph.py",
+      "description": "StateGraph \u2014 LangGraph-inspired graph engine, provider-agnostic.",
+      "classes": [
+        "EdgeType",
+        "Edge",
+        "NodeConfig",
+        "GraphConfig",
+        "InterruptType",
+        "Interrupt"
+      ],
+      "in_degree": 6,
+      "out_degree": 3,
+      "lines": 880,
+      "weight": 21.94
+    },
+    {
+      "id": "core.graph_patterns",
+      "name": "graph_patterns",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/graph_patterns.py",
+      "description": "Advanced graph patterns \u2014 composable utilities on top of StateGraph.",
+      "classes": [
+        "SubGraphNode"
+      ],
+      "in_degree": 1,
+      "out_degree": 2,
+      "lines": 305,
+      "weight": 6.48
+    },
+    {
+      "id": "core.graph_templates",
+      "name": "graph_templates",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/graph_templates.py",
+      "description": "Graph template store \u2014 define, version, and rebuild StateGraphs from data.",
+      "classes": [
+        "NodeTemplate",
+        "EdgeTemplate",
+        "GraphTemplate",
+        "GraphTemplateStore"
+      ],
+      "in_degree": 0,
+      "out_degree": 4,
+      "lines": 402,
+      "weight": 7.6
+    },
+    {
+      "id": "core.guardrails",
+      "name": "guardrails",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/guardrails.py",
+      "description": "Pluggable pre/post LLM-call guardrail layer (P3).",
+      "classes": [
+        "GuardrailResult",
+        "GuardrailBlocked",
+        "Guardrail",
+        "GuardrailManager",
+        "PIIScanner",
+        "SecretsScanner"
+      ],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 599,
+      "weight": 11.78
+    },
+    {
+      "id": "core.health",
+      "name": "health",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/health.py",
+      "description": "Provider health monitoring \u2014 tracks latency, errors, and availability.",
+      "classes": [
+        "ProviderHealth",
+        "HealthMonitor"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 122,
+      "weight": 7.09
+    },
+    {
+      "id": "core.knowledge",
+      "name": "knowledge",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/knowledge/__init__.py",
+      "description": "Semantic knowledge / RAG subsystem (P1).",
+      "classes": [],
+      "in_degree": 3,
+      "out_degree": 5,
+      "lines": 66,
+      "weight": 8.82
+    },
+    {
+      "id": "core.knowledge.chunker",
+      "name": "chunker",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/knowledge/chunker.py",
+      "description": "Document chunkers \u2014 split a document into searchable units.",
+      "classes": [
+        "Chunk",
+        "Chunker",
+        "TextChunker",
+        "MarkdownChunker"
+      ],
+      "in_degree": 2,
+      "out_degree": 0,
+      "lines": 134,
+      "weight": 11.13
+    },
+    {
+      "id": "core.knowledge.embeddings",
+      "name": "embeddings",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/knowledge/embeddings.py",
+      "description": "Embedding providers for the knowledge subsystem.",
+      "classes": [
+        "EmbeddingModelInfo",
+        "EmbeddingProvider",
+        "HashEmbedder",
+        "LocalEmbeddingProvider",
+        "OpenAIEmbeddingProvider"
+      ],
+      "in_degree": 3,
+      "out_degree": 0,
+      "lines": 191,
+      "weight": 14.28
+    },
+    {
+      "id": "core.knowledge.ingestion",
+      "name": "ingestion",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/knowledge/ingestion.py",
+      "description": "Ingestion orchestrator: document \u2192 chunks \u2192 embeddings \u2192 store.",
+      "classes": [
+        "IngestRequest",
+        "IngestResult",
+        "Ingester"
+      ],
+      "in_degree": 1,
+      "out_degree": 3,
+      "lines": 116,
+      "weight": 8.06
+    },
+    {
+      "id": "core.knowledge.retrieval",
+      "name": "retrieval",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/knowledge/retrieval.py",
+      "description": "Retrieval orchestrator: query \u2192 embedding \u2192 store.search.",
+      "classes": [
+        "RetrievalResult",
+        "Retriever"
+      ],
+      "in_degree": 1,
+      "out_degree": 2,
+      "lines": 95,
+      "weight": 6.98
+    },
+    {
+      "id": "core.knowledge.store",
+      "name": "store",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/knowledge/store.py",
+      "description": "Vector store abstractions.",
+      "classes": [
+        "KnowledgeChunk",
+        "SearchHit",
+        "IngestInterface",
+        "QueryInterface",
+        "KnowledgeStore",
+        "InMemoryKnowledgeStore"
+      ],
+      "in_degree": 4,
+      "out_degree": 0,
+      "lines": 159,
+      "weight": 17.2
+    },
+    {
+      "id": "core.llm_nodes",
+      "name": "llm_nodes",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/llm_nodes.py",
+      "description": "LLM node factories \u2014 bridge between Provider and StateGraph.",
+      "classes": [],
+      "in_degree": 3,
+      "out_degree": 2,
+      "lines": 269,
+      "weight": 9.43
+    },
+    {
+      "id": "core.loop_detection",
+      "name": "loop_detection",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/loop_detection.py",
+      "description": "Loop detection middleware for agent tool calls.",
+      "classes": [
+        "LoopStatus",
+        "LoopDetectedError",
+        "LoopDetector"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 130,
+      "weight": 8.11
+    },
+    {
+      "id": "core.mcp_client",
+      "name": "mcp_client",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/mcp_client.py",
+      "description": "MCP client for connecting to external MCP servers.",
+      "classes": [
+        "MCPServerConfig",
+        "ServerCapabilities",
+        "MCPTool",
+        "MCPResource",
+        "MCPTransport",
+        "StdioTransport"
+      ],
+      "in_degree": 4,
+      "out_degree": 0,
+      "lines": 454,
+      "weight": 17.66
+    },
+    {
+      "id": "core.mcp_server",
+      "name": "mcp_server",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/mcp_server.py",
+      "description": "MCP server interface \u2014 expose the orchestrator as a Model Context Protocol server.",
+      "classes": [
+        "MCPTool",
+        "MCPResource",
+        "MCPServerRegistry"
+      ],
+      "in_degree": 2,
+      "out_degree": 0,
+      "lines": 173,
+      "weight": 10.24
+    },
+    {
+      "id": "core.memory_filter",
+      "name": "memory_filter",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/memory_filter.py",
+      "description": "Memory upload filtering \u2014 sanitize session-scoped file paths before persistence.",
+      "classes": [
+        "MemoryFilter"
+      ],
+      "in_degree": 6,
+      "out_degree": 0,
+      "lines": 79,
+      "weight": 15.9
+    },
+    {
+      "id": "core.metrics",
+      "name": "metrics",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/metrics.py",
+      "description": "In-memory metrics collection \u2014 Prometheus-compatible naming, no external deps.",
+      "classes": [
+        "Counter",
+        "Gauge",
+        "Histogram",
+        "MetricsRegistry"
+      ],
+      "in_degree": 5,
+      "out_degree": 0,
+      "lines": 399,
+      "weight": 17.6
+    },
+    {
+      "id": "core.migration",
+      "name": "migration",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/migration.py",
+      "description": "Migration wizard \u2014 import configurations from LangGraph, CrewAI, AutoGen.",
+      "classes": [
+        "MigrationResult",
+        "MigrationManager"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 252,
+      "weight": 5.4
+    },
+    {
+      "id": "core.modality",
+      "name": "modality",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/modality.py",
+      "description": "Modality detection for task inputs (PR #88).",
+      "classes": [
+        "Modality"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 144,
+      "weight": 4.16
+    },
+    {
+      "id": "core.observability",
+      "name": "observability",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/observability/__init__.py",
+      "description": "Optional LLM-native trace exporters for the agent orchestrator.",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 2,
+      "lines": 48,
+      "weight": 4.68
+    },
+    {
+      "id": "core.observability.langfuse_exporter",
+      "name": "langfuse_exporter",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/observability/langfuse_exporter.py",
+      "description": "Langfuse span exporter \u2014 optional OTel sink for LLM-native tracing.",
+      "classes": [
+        "LangfuseSpanExporter"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 192,
+      "weight": 6.28
+    },
+    {
+      "id": "core.observability.phoenix_exporter",
+      "name": "phoenix_exporter",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/observability/phoenix_exporter.py",
+      "description": "Arize Phoenix span exporter \u2014 optional OTel sink for LLM-native tracing.",
+      "classes": [
+        "PhoenixSpanExporter"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 185,
+      "weight": 6.27
+    },
+    {
+      "id": "core.offline",
+      "name": "offline",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/offline.py",
+      "description": "Offline mode \u2014 restrict to local providers when internet is unavailable.",
+      "classes": [
+        "OfflineConfig",
+        "OfflineManager"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 69,
+      "weight": 4.84
+    },
+    {
+      "id": "core.orchestrator",
+      "name": "orchestrator",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/orchestrator.py",
+      "description": "Orchestrator \u2014 coordinates agents, routes tasks, manages lifecycle.",
+      "classes": [
+        "OrchestratorConfig",
+        "OrchestratorResult",
+        "Orchestrator"
+      ],
+      "in_degree": 1,
+      "out_degree": 6,
+      "lines": 439,
+      "weight": 8.64
+    },
+    {
+      "id": "core.personalized_memory",
+      "name": "personalized_memory",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/personalized_memory.py",
+      "description": "Personalized Memory \u2014 per-user namespace facade over BaseStore.",
+      "classes": [
+        "PersonalizedMemory"
+      ],
+      "in_degree": 3,
+      "out_degree": 2,
+      "lines": 157,
+      "weight": 10.2
+    },
+    {
+      "id": "core.plugins",
+      "name": "plugins",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/plugins.py",
+      "description": "Plugin system \u2014 drop-in skills/providers without modifying core code.",
+      "classes": [
+        "PluginManifest",
+        "PluginLoader"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 115,
+      "weight": 5.06
+    },
+    {
+      "id": "core.project",
+      "name": "project",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/project.py",
+      "description": "Multi-project support \u2014 manage multiple codebases from one orchestrator.",
+      "classes": [
+        "ProjectConfig",
+        "ProjectManager"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 113,
+      "weight": 5.05
+    },
+    {
+      "id": "core.prompt_markers",
+      "name": "prompt_markers",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/prompt_markers.py",
+      "description": "Marker-based prompt section injection.",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 96,
+      "weight": 4.98
+    },
+    {
+      "id": "core.prompt_registry",
+      "name": "prompt_registry",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/prompt_registry.py",
+      "description": "Prompt registry \u2014 tagged, metadata-indexed prompt template store.",
+      "classes": [
+        "PromptTemplate",
+        "PromptRegistry"
+      ],
+      "in_degree": 2,
+      "out_degree": 2,
+      "lines": 191,
+      "weight": 9.28
+    },
+    {
+      "id": "core.provider",
+      "name": "provider",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/provider.py",
+      "description": "LLM provider abstraction \u2014 the core interface that makes everything swappable.",
+      "classes": [
+        "Role",
+        "Message",
+        "ToolCall",
+        "ToolDefinition",
+        "ModelCapabilities",
+        "Usage"
+      ],
+      "in_degree": 21,
+      "out_degree": 1,
+      "lines": 172,
+      "weight": 51.24
+    },
+    {
+      "id": "core.provider_presets",
+      "name": "provider_presets",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/provider_presets.py",
+      "description": "Provider presets \u2014 one-click setup for common provider configurations.",
+      "classes": [
+        "ProviderPresetEntry",
+        "ProviderPreset",
+        "ProviderPresetManager"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 205,
+      "weight": 6.31
+    },
+    {
+      "id": "core.rate_limiter",
+      "name": "rate_limiter",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/rate_limiter.py",
+      "description": "Per-provider rate limiting using a sliding window algorithm.",
+      "classes": [
+        "RateLimitConfig",
+        "RateLimitStatus",
+        "_ProviderState",
+        "RateLimiter"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 171,
+      "weight": 7.23
+    },
+    {
+      "id": "core.reducers",
+      "name": "reducers",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/reducers.py",
+      "description": "Built-in reducer functions for state management.",
+      "classes": [],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 62,
+      "weight": 2.79
+    },
+    {
+      "id": "core.resilience",
+      "name": "resilience",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/resilience.py",
+      "description": "Retry with exponential backoff and circuit breaker for provider calls.",
+      "classes": [
+        "CircuitState",
+        "CircuitOpenError",
+        "RetryPolicy",
+        "CircuitBreaker"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 149,
+      "weight": 7.17
+    },
+    {
+      "id": "core.router",
+      "name": "router",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/router.py",
+      "description": "Smart task router \u2014 selects the best provider/model based on complexity, cost, and real-time health data.",
+      "classes": [
+        "TaskComplexity",
+        "TaskComplexityClassifier",
+        "RoutingStrategy",
+        "RouterConfig",
+        "TaskRouter"
+      ],
+      "in_degree": 1,
+      "out_degree": 2,
+      "lines": 426,
+      "weight": 10.63
+    },
+    {
+      "id": "core.sandbox",
+      "name": "sandbox",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/sandbox.py",
+      "description": "Docker sandbox for isolated code execution.",
+      "classes": [
+        "SandboxType",
+        "PortMapping",
+        "SandboxInfo",
+        "SandboxConfig",
+        "SandboxResult",
+        "SandboxError"
+      ],
+      "in_degree": 5,
+      "out_degree": 0,
+      "lines": 614,
+      "weight": 19.79
+    },
+    {
+      "id": "core.skill",
+      "name": "skill",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/skill.py",
+      "description": "Skill \u2014 provider-independent capabilities that agents can invoke.",
+      "classes": [
+        "SkillSummary",
+        "SkillResult",
+        "SkillRequest",
+        "Skill",
+        "SkillRegistry",
+        "_MCPToolSkill"
+      ],
+      "in_degree": 14,
+      "out_degree": 2,
+      "lines": 587,
+      "weight": 37.77
+    },
+    {
+      "id": "core.smoke_tester",
+      "name": "smoke_tester",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/smoke_tester.py",
+      "description": "Smoke tester \u2014 detect a project's language and run a deps-free syntax check.",
+      "classes": [
+        "LanguageSpec",
+        "SmokeResult"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 466,
+      "weight": 7.67
+    },
+    {
+      "id": "core.store",
+      "name": "store",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/store.py",
+      "description": "Store \u2014 cross-thread persistent key-value storage (long-term memory).",
+      "classes": [
+        "Item",
+        "SearchItem",
+        "BaseStore",
+        "InMemoryStore",
+        "SessionStore"
+      ],
+      "in_degree": 6,
+      "out_degree": 2,
+      "lines": 693,
+      "weight": 20.84
+    },
+    {
+      "id": "core.store_postgres",
+      "name": "store_postgres",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/store_postgres.py",
+      "description": "PostgreSQL-backed persistent store for cross-thread memory.",
+      "classes": [
+        "PostgresStore"
+      ],
+      "in_degree": 1,
+      "out_degree": 2,
+      "lines": 347,
+      "weight": 6.54
+    },
+    {
+      "id": "core.task_queue",
+      "name": "task_queue",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/task_queue.py",
+      "description": "Persistent task queue \u2014 in-memory now, Postgres-ready interface for later.",
+      "classes": [
+        "QueuedTask",
+        "QueueStats",
+        "TaskQueue"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 202,
+      "weight": 6.31
+    },
+    {
+      "id": "core.tool_recovery",
+      "name": "tool_recovery",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/tool_recovery.py",
+      "description": "Dangling tool call detection and recovery.",
+      "classes": [],
+      "in_degree": 2,
+      "out_degree": 1,
+      "lines": 90,
+      "weight": 6.95
+    },
+    {
+      "id": "core.tracing",
+      "name": "tracing",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/tracing.py",
+      "description": "OpenTelemetry tracing integration for the agent orchestrator.",
+      "classes": [
+        "_NoOpSpan",
+        "_NoOpTracer"
+      ],
+      "in_degree": 5,
+      "out_degree": 1,
+      "lines": 220,
+      "weight": 15.34
+    },
+    {
+      "id": "core.usage",
+      "name": "usage",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/usage.py",
+      "description": "Usage tracking and budget enforcement \u2014 records token/cost data per call.",
+      "classes": [
+        "UsageRecord",
+        "BudgetConfig",
+        "BudgetStatus",
+        "CostBreakdown",
+        "UsageTracker"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 192,
+      "weight": 8.28
+    },
+    {
+      "id": "core.users",
+      "name": "users",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/users.py",
+      "description": "User management \u2014 multi-user support with role-based access.",
+      "classes": [
+        "UserRole",
+        "User",
+        "UserManager"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 261,
+      "weight": 8.42
+    },
+    {
+      "id": "core.webhook",
+      "name": "webhook",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/webhook.py",
+      "description": "Webhook triggers \u2014 start graphs from external events.",
+      "classes": [
+        "WebhookConfig",
+        "WebhookEvent",
+        "WebhookRegistry"
+      ],
+      "in_degree": 0,
+      "out_degree": 0,
+      "lines": 120,
+      "weight": 6.08
+    },
+    {
+      "id": "core.yaml_config",
+      "name": "yaml_config",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/yaml_config.py",
+      "description": "YAML configuration loader with reflection-based class loading.",
+      "classes": [
+        "YAMLConfigError",
+        "BudgetConfig",
+        "OrchestratorConfig",
+        "YAMLConfigLoader"
+      ],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 496,
+      "weight": 9.7
+    },
+    {
+      "id": "providers",
+      "name": "providers",
+      "category": "Provider",
+      "layer": "harness",
+      "path": "providers/__init__.py",
+      "description": "LLM provider implementations.",
+      "classes": [],
+      "in_degree": 0,
+      "out_degree": 1,
+      "lines": 4,
+      "weight": 1.6
+    },
+    {
+      "id": "providers.anthropic",
+      "name": "anthropic",
+      "category": "Provider",
+      "layer": "harness",
+      "path": "providers/anthropic.py",
+      "description": "Anthropic (Claude) provider implementation.",
+      "classes": [
+        "AnthropicProvider"
+      ],
+      "in_degree": 0,
+      "out_degree": 1,
+      "lines": 198,
+      "weight": 4.3
+    },
+    {
+      "id": "providers.google",
+      "name": "google",
+      "category": "Provider",
+      "layer": "harness",
+      "path": "providers/google.py",
+      "description": "Google (Gemini) provider implementation.",
+      "classes": [
+        "GoogleProvider"
+      ],
+      "in_degree": 0,
+      "out_degree": 1,
+      "lines": 234,
+      "weight": 4.37
+    },
+    {
+      "id": "providers.local",
+      "name": "local",
+      "category": "Provider",
+      "layer": "harness",
+      "path": "providers/local.py",
+      "description": "Local model provider (Ollama, vLLM, or any OpenAI-compatible endpoint).",
+      "classes": [
+        "LocalProvider"
+      ],
+      "in_degree": 2,
+      "out_degree": 2,
+      "lines": 52,
+      "weight": 7.72
+    },
+    {
+      "id": "providers.openai",
+      "name": "openai",
+      "category": "Provider",
+      "layer": "harness",
+      "path": "providers/openai.py",
+      "description": "OpenAI (GPT) provider implementation.",
+      "classes": [
+        "OpenAIProvider"
+      ],
+      "in_degree": 2,
+      "out_degree": 1,
+      "lines": 242,
+      "weight": 8.38
+    },
+    {
+      "id": "providers.openrouter",
+      "name": "openrouter",
+      "category": "Provider",
+      "layer": "harness",
+      "path": "providers/openrouter.py",
+      "description": "OpenRouter provider \u2014 access 200+ models via a single API.",
+      "classes": [
+        "OpenRouterProvider"
+      ],
+      "in_degree": 3,
+      "out_degree": 2,
+      "lines": 421,
+      "weight": 10.62
+    },
+    {
+      "id": "skills",
+      "name": "skills",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/__init__.py",
+      "description": "Built-in skills for the agent orchestrator.",
+      "classes": [],
+      "in_degree": 1,
+      "out_degree": 5,
+      "lines": 18,
+      "weight": 4.26
+    },
+    {
+      "id": "skills.clarification_skill",
+      "name": "clarification_skill",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/clarification_skill.py",
+      "description": "Clarification skill \u2014 agents use this to request human clarification.",
+      "classes": [
+        "ClarificationSkill"
+      ],
+      "in_degree": 1,
+      "out_degree": 2,
+      "lines": 198,
+      "weight": 6.3
+    },
+    {
+      "id": "skills.doc_sync",
+      "name": "doc_sync",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/doc_sync.py",
+      "description": "Doc-sync skill \u2014 keeps documentation in sync with code and project files.",
+      "classes": [
+        "DocSyncSkill"
+      ],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 297,
+      "weight": 6.47
+    },
+    {
+      "id": "skills.filesystem",
+      "name": "filesystem",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/filesystem.py",
+      "description": "Filesystem skills \u2014 read, write, search files.",
+      "classes": [
+        "FileReadSkill",
+        "FileWriteSkill",
+        "GlobSkill"
+      ],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 119,
+      "weight": 8.08
+    },
+    {
+      "id": "skills.github_skill",
+      "name": "github_skill",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/github_skill.py",
+      "description": "GitHub integration skill \u2014 create PRs, review code, manage issues via the gh CLI.",
+      "classes": [
+        "GitHubSkill"
+      ],
+      "in_degree": 0,
+      "out_degree": 1,
+      "lines": 196,
+      "weight": 4.29
+    },
+    {
+      "id": "skills.profile_extractor_skill",
+      "name": "profile_extractor_skill",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/profile_extractor_skill.py",
+      "description": "Profile extractor skill \u2014 distils user preferences from recent messages.",
+      "classes": [
+        "ProfileExtractorSkill"
+      ],
+      "in_degree": 0,
+      "out_degree": 3,
+      "lines": 230,
+      "weight": 4.36
+    },
+    {
+      "id": "skills.retrieval_skill",
+      "name": "retrieval_skill",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/retrieval_skill.py",
+      "description": "Retrieval skill \u2014 agents call this to retrieve from the knowledge store.",
+      "classes": [
+        "RetrievalSkill"
+      ],
+      "in_degree": 2,
+      "out_degree": 3,
+      "lines": 166,
+      "weight": 8.22
+    },
+    {
+      "id": "skills.sandboxed_shell",
+      "name": "sandboxed_shell",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/sandboxed_shell.py",
+      "description": "Sandboxed shell execution skill.",
+      "classes": [
+        "SandboxedShellSkill"
+      ],
+      "in_degree": 2,
+      "out_degree": 2,
+      "lines": 109,
+      "weight": 8.04
+    },
+    {
+      "id": "skills.shell",
+      "name": "shell",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/shell.py",
+      "description": "Shell execution skill.",
+      "classes": [
+        "ShellExecSkill"
+      ],
+      "in_degree": 1,
+      "out_degree": 1,
+      "lines": 71,
+      "weight": 5.85
+    },
+    {
+      "id": "skills.skill_loader",
+      "name": "skill_loader",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/skill_loader.py",
+      "description": "SkillLoaderSkill \u2014 meta-skill that loads full instructions for another skill on demand.",
+      "classes": [
+        "SkillLoaderSkill"
+      ],
+      "in_degree": 0,
+      "out_degree": 2,
+      "lines": 111,
+      "weight": 4.05
+    },
+    {
+      "id": "skills.web_reader",
+      "name": "web_reader",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/web_reader.py",
+      "description": "Web reader skill \u2014 fetch and extract text content from URLs.",
+      "classes": [
+        "WebReaderSkill"
+      ],
+      "in_degree": 0,
+      "out_degree": 1,
+      "lines": 126,
+      "weight": 4.1
+    },
+    {
+      "id": "skills.webhook_skill",
+      "name": "webhook_skill",
+      "category": "Skill",
+      "layer": "harness",
+      "path": "skills/webhook_skill.py",
+      "description": "Webhook trigger skill \u2014 agents use this to send outgoing webhook notifications.",
+      "classes": [
+        "WebhookSkill"
+      ],
+      "in_degree": 0,
+      "out_degree": 1,
+      "lines": 62,
+      "weight": 3.79
+    }
+  ],
+  "edges": [
+    {
+      "source": "core.agent",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.guardrails"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.tool_recovery"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.prompt_markers"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.tracing"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.personalized_memory"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.loop_detection"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.metrics"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.clarification"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.skill"
+    },
+    {
+      "source": "core.benchmark",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.checkpoint_postgres",
+      "target": "core.checkpoint"
+    },
+    {
+      "source": "core.config_manager",
+      "target": "core.yaml_config"
+    },
+    {
+      "source": "core.conformance",
+      "target": "core.checkpoint"
+    },
+    {
+      "source": "core.conformance",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.conversation",
+      "target": "core.checkpoint"
+    },
+    {
+      "source": "core.conversation",
+      "target": "core.tool_recovery"
+    },
+    {
+      "source": "core.conversation",
+      "target": "core.memory_filter"
+    },
+    {
+      "source": "core.conversation",
+      "target": "core.metrics"
+    },
+    {
+      "source": "core.cooperation",
+      "target": "core.cooperation_messages"
+    },
+    {
+      "source": "core.cooperation",
+      "target": "core.tracing"
+    },
+    {
+      "source": "core.evaluator",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.graph",
+      "target": "core.checkpoint"
+    },
+    {
+      "source": "core.graph",
+      "target": "core.channels"
+    },
+    {
+      "source": "core.graph",
+      "target": "core.tracing"
+    },
+    {
+      "source": "core.graph_patterns",
+      "target": "core.graph"
+    },
+    {
+      "source": "core.graph_patterns",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.graph_templates",
+      "target": "core.llm_nodes"
+    },
+    {
+      "source": "core.graph_templates",
+      "target": "core.graph_patterns"
+    },
+    {
+      "source": "core.graph_templates",
+      "target": "core.graph"
+    },
+    {
+      "source": "core.graph_templates",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.guardrails",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.knowledge",
+      "target": "core.knowledge.retrieval"
+    },
+    {
+      "source": "core.knowledge",
+      "target": "core.knowledge.ingestion"
+    },
+    {
+      "source": "core.knowledge",
+      "target": "core.knowledge.embeddings"
+    },
+    {
+      "source": "core.knowledge",
+      "target": "core.knowledge.chunker"
+    },
+    {
+      "source": "core.knowledge",
+      "target": "core.knowledge.store"
+    },
+    {
+      "source": "core.knowledge.ingestion",
+      "target": "core.knowledge.chunker"
+    },
+    {
+      "source": "core.knowledge.ingestion",
+      "target": "core.knowledge.embeddings"
+    },
+    {
+      "source": "core.knowledge.ingestion",
+      "target": "core.knowledge.store"
+    },
+    {
+      "source": "core.knowledge.retrieval",
+      "target": "core.knowledge.embeddings"
+    },
+    {
+      "source": "core.knowledge.retrieval",
+      "target": "core.knowledge.store"
+    },
+    {
+      "source": "core.llm_nodes",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.llm_nodes",
+      "target": "core.cache"
+    },
+    {
+      "source": "core.observability",
+      "target": "core.observability.phoenix_exporter"
+    },
+    {
+      "source": "core.observability",
+      "target": "core.observability.langfuse_exporter"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.mcp_server"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.agent"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.cooperation"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.router"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.skill"
+    },
+    {
+      "source": "core.personalized_memory",
+      "target": "core.store"
+    },
+    {
+      "source": "core.personalized_memory",
+      "target": "core.memory_filter"
+    },
+    {
+      "source": "core.prompt_registry",
+      "target": "core.store"
+    },
+    {
+      "source": "core.prompt_registry",
+      "target": "core.metrics"
+    },
+    {
+      "source": "core.provider",
+      "target": "core.tracing"
+    },
+    {
+      "source": "core.router",
+      "target": "core.health"
+    },
+    {
+      "source": "core.router",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.skill",
+      "target": "core.mcp_client"
+    },
+    {
+      "source": "core.skill",
+      "target": "core.cache"
+    },
+    {
+      "source": "core.store",
+      "target": "core.conformance"
+    },
+    {
+      "source": "core.store",
+      "target": "core.memory_filter"
+    },
+    {
+      "source": "core.store_postgres",
+      "target": "core.store"
+    },
+    {
+      "source": "core.store_postgres",
+      "target": "core.memory_filter"
+    },
+    {
+      "source": "core.tool_recovery",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.tracing",
+      "target": "core.observability"
+    },
+    {
+      "source": "core.yaml_config",
+      "target": "core.config_manager"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.sandbox"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "dashboard.agents_registry"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.provider"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "skills"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.smoke_tester"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.atomic_tasks"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "skills.sandboxed_shell"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.agent"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "dashboard.sandbox_manager"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.store"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.cache"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.skill"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "dashboard.graphs"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "dashboard.agent_runner"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "core.provider"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "providers.local"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "providers.openrouter"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "dashboard.auth"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "skills.retrieval_skill"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "dashboard.agents_registry"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.sandbox"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.evals_routes"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.knowledge"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.mcp_client"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.personalized_memory"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.usage_db"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.metrics"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.checkpoint"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.sse"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.agent_runtime_router"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.checkpoint_postgres"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.knowledge_routes"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.auth"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.user_store"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.job_logger"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.personalized_memory_routes"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.memory_filter"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.alert_webhook"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.prompt_registry"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.gateway_api"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.oauth_routes"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.sandbox_manager"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.store_postgres"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.store"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.evals_routes",
+      "target": "core.evaluator"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.graphs"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.llm_nodes"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.sse"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.mcp_client"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.agent_runner"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.tracing_metrics"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.document_converter"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.graph"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.prompt_registry"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.mcp_server"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.agents_registry"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "core.llm_nodes"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "core.provider"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "core.graph"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "providers.local"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "providers.openrouter"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "core.cache"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.provider"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "dashboard.tracing_metrics"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.graph"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.orchestrator"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.agent"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.cooperation"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.cache"
+    },
+    {
+      "source": "dashboard.knowledge_routes",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.knowledge_routes",
+      "target": "core.knowledge"
+    },
+    {
+      "source": "dashboard.knowledge_routes",
+      "target": "skills.retrieval_skill"
+    },
+    {
+      "source": "dashboard.oauth_routes",
+      "target": "dashboard.user_store"
+    },
+    {
+      "source": "dashboard.oauth_routes",
+      "target": "dashboard.auth"
+    },
+    {
+      "source": "dashboard.sandbox_manager",
+      "target": "core.sandbox"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.sandbox"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.mcp_client"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.usage_db"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.app"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.checkpoint"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.sse"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.instrument"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.agent_runtime_router"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.checkpoint_postgres"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.tracing"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.auth"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.user_store"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.job_logger"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.memory_filter"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.alert_webhook"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.gateway_api"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.oauth_routes"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.sandbox_manager"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.store"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.sse",
+      "target": "core.graph"
+    },
+    {
+      "source": "dashboard.sse",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.user_store",
+      "target": "core.users"
+    },
+    {
+      "source": "integrations",
+      "target": "integrations.slack_bot"
+    },
+    {
+      "source": "integrations",
+      "target": "integrations.telegram_bot"
+    },
+    {
+      "source": "providers",
+      "target": "providers.openrouter"
+    },
+    {
+      "source": "providers.anthropic",
+      "target": "core.provider"
+    },
+    {
+      "source": "providers.google",
+      "target": "core.provider"
+    },
+    {
+      "source": "providers.local",
+      "target": "core.provider"
+    },
+    {
+      "source": "providers.local",
+      "target": "providers.openai"
+    },
+    {
+      "source": "providers.openai",
+      "target": "core.provider"
+    },
+    {
+      "source": "providers.openrouter",
+      "target": "core.provider"
+    },
+    {
+      "source": "providers.openrouter",
+      "target": "providers.openai"
+    },
+    {
+      "source": "skills",
+      "target": "skills.filesystem"
+    },
+    {
+      "source": "skills",
+      "target": "skills.clarification_skill"
+    },
+    {
+      "source": "skills",
+      "target": "skills.doc_sync"
+    },
+    {
+      "source": "skills",
+      "target": "skills.sandboxed_shell"
+    },
+    {
+      "source": "skills",
+      "target": "skills.shell"
+    },
+    {
+      "source": "skills.clarification_skill",
+      "target": "core.clarification"
+    },
+    {
+      "source": "skills.clarification_skill",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.doc_sync",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.filesystem",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.github_skill",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.profile_extractor_skill",
+      "target": "core.personalized_memory"
+    },
+    {
+      "source": "skills.profile_extractor_skill",
+      "target": "core.provider"
+    },
+    {
+      "source": "skills.profile_extractor_skill",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.retrieval_skill",
+      "target": "core.knowledge.store"
+    },
+    {
+      "source": "skills.retrieval_skill",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.retrieval_skill",
+      "target": "core.knowledge"
+    },
+    {
+      "source": "skills.sandboxed_shell",
+      "target": "core.sandbox"
+    },
+    {
+      "source": "skills.sandboxed_shell",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.shell",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.skill_loader",
+      "target": "core.metrics"
+    },
+    {
+      "source": "skills.skill_loader",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.web_reader",
+      "target": "core.skill"
+    },
+    {
+      "source": "skills.webhook_skill",
+      "target": "core.skill"
+    }
+  ],
+  "stats": {
+    "total_modules": 108,
+    "total_edges": 210,
+    "by_category": {
+      "Core": 66,
+      "Dashboard": 21,
+      "Integration": 3,
+      "Provider": 6,
+      "Skill": 12
+    }
+  }
+}

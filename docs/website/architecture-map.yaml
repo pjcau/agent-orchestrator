@@ -1,0 +1,287 @@
+# Logical constellation of Agent Orchestrator features.
+#
+# Curated taxonomy — every `files:` path is verified at build time by
+# `scripts/generate_architecture_map.py`. Add a new feature by listing its
+# source files and a short description; the generator will fail loudly if the
+# path no longer exists, so the map cannot drift away from the codebase.
+#
+# Layout coordinates (cx, cy) are in a 1000x800 viewBox. Clusters are drawn
+# as overlapping ellipses; items are bubbles inside (or on the border of)
+# their cluster.
+
+clusters:
+  - id: harness
+    label: Harness
+    color: "#f59e0b"        # amber  (40°)
+    description: The core engine — provider abstraction, orchestrator, routing, isolation.
+    cx: 500
+    cy: 420
+    rx: 220
+    ry: 180
+    items:
+      - name: Orchestrator
+        files: [core/orchestrator.py]
+        cx: 500
+        cy: 420
+        size: 56
+        description: Top-level entry point. Composes agents, providers and skills into a run.
+      - name: Provider
+        files: [core/provider.py, providers/anthropic.py, providers/openai.py, providers/google.py, providers/openrouter.py, providers/local.py]
+        cx: 380
+        cy: 330
+        size: 40
+        description: Vendor-agnostic LLM interface (Anthropic, OpenAI, Google, OpenRouter, local).
+      - name: Router
+        files: [core/router.py]
+        cx: 620
+        cy: 320
+        size: 38
+        description: Picks a provider per request (cost/latency/capability strategies).
+      - name: Graph
+        files: [core/graph.py, core/graph_patterns.py, core/graph_templates.py, core/llm_nodes.py]
+        cx: 410
+        cy: 510
+        size: 38
+        description: Multi-step execution as a graph (state, edges, patterns).
+      - name: Sandbox
+        files: [core/sandbox.py]
+        cx: 340
+        cy: 420
+        size: 34
+        description: Process/network isolation for untrusted skill code.
+      - name: Cache
+        files: [core/cache.py]
+        cx: 620
+        cy: 510
+        size: 34
+        description: LLM + tool response caching with TTL.
+      - name: Rate Limiter
+        files: [core/rate_limiter.py]
+        cx: 560
+        cy: 560
+        size: 30
+        description: Token / request rate budgets per provider.
+      - name: Resilience
+        files: [core/resilience.py, core/tool_recovery.py]
+        cx: 440
+        cy: 580
+        size: 30
+        description: Retries, circuit breakers, dangling-tool-call recovery.
+
+  - id: skills
+    label: Skills
+    color: "#16a34a"        # forest green  (142°)
+    description: Reusable capabilities an agent can invoke as tools.
+    cx: 180
+    cy: 380
+    rx: 160
+    ry: 220
+    items:
+      - name: Skill Registry
+        files: [core/skill.py, skills/skill_loader.py]
+        cx: 200
+        cy: 280
+        size: 38
+        description: Discovery + registration of skills + permission gating.
+      - name: Filesystem
+        files: [skills/filesystem.py]
+        cx: 100
+        cy: 360
+        size: 32
+        description: Confined read/write/search inside the session workdir.
+      - name: Shell
+        files: [skills/shell.py, skills/sandboxed_shell.py]
+        cx: 200
+        cy: 470
+        size: 32
+        description: Shell execution (plain + sandboxed variant).
+      - name: GitHub
+        files: [skills/github_skill.py]
+        cx: 90
+        cy: 470
+        size: 28
+        description: Issues, PRs, repo metadata via gh API.
+      - name: Web Reader
+        files: [skills/web_reader.py]
+        cx: 230
+        cy: 560
+        size: 28
+        description: Fetch + clean web pages for LLM consumption.
+      - name: Doc Sync
+        files: [skills/doc_sync.py]
+        cx: 130
+        cy: 560
+        size: 26
+        description: Keep on-disk docs in sync with code changes.
+      - name: Retrieval
+        files: [skills/retrieval_skill.py]
+        cx: 80
+        cy: 250
+        size: 28
+        description: Embedding-based retrieval over local corpora.
+
+  - id: memory
+    label: Memory
+    color: "#2563eb"        # royal blue  (220°)
+    description: Persistence of conversation, user profile, and learned context.
+    cx: 780
+    cy: 220
+    rx: 170
+    ry: 180
+    items:
+      - name: Personalized Memory
+        files: [core/personalized_memory.py, skills/profile_extractor_skill.py]
+        cx: 800
+        cy: 180
+        size: 38
+        description: Long-lived user profile injected as <user_profile>.
+      - name: Conversation Store
+        files: [core/conversation.py, core/store.py, core/store_postgres.py]
+        cx: 720
+        cy: 130
+        size: 34
+        description: Message history (in-memory + PostgreSQL).
+      - name: Checkpoint
+        files: [core/checkpoint.py, core/checkpoint_postgres.py]
+        cx: 870
+        cy: 150
+        size: 30
+        description: Resumable graph state for long-running jobs.
+      - name: Knowledge
+        files: [core/knowledge]
+        cx: 850
+        cy: 280
+        size: 32
+        description: Document ingestion + retrieval index.
+      - name: Memory Filter
+        files: [core/memory_filter.py, core/reducers.py]
+        cx: 700
+        cy: 280
+        size: 28
+        description: Compression + summarization of long histories.
+
+  - id: protocols
+    label: Protocols
+    color: "#dc2626"        # red  (0°)
+    description: How agents talk to other agents, tools, and humans.
+    cx: 720
+    cy: 620
+    rx: 180
+    ry: 150
+    items:
+      - name: MCP
+        files: [core/mcp_client.py, core/mcp_server.py]
+        cx: 700
+        cy: 580
+        size: 38
+        description: Model Context Protocol — server + client.
+      - name: Cooperation
+        files: [core/cooperation.py, core/cooperation_messages.py]
+        cx: 800
+        cy: 620
+        size: 34
+        description: Typed messages between agents (state machine).
+      - name: Webhook
+        files: [core/webhook.py, skills/webhook_skill.py]
+        cx: 620
+        cy: 650
+        size: 28
+        description: Outbound HTTP callbacks for external systems.
+      - name: Channels
+        files: [core/channels.py]
+        cx: 770
+        cy: 700
+        size: 26
+        description: Pub/sub abstractions for inter-agent traffic.
+      - name: Clarification
+        files: [core/clarification.py, skills/clarification_skill.py]
+        cx: 660
+        cy: 720
+        size: 28
+        description: Ask-the-user loop when intent is ambiguous.
+
+  - id: observability
+    label: Observability
+    color: "#7c3aed"        # violet  (262°)
+    description: Tracing, metrics, audit, and runtime health.
+    cx: 280
+    cy: 660
+    rx: 180
+    ry: 130
+    items:
+      - name: Tracing
+        files: [core/tracing.py, core/observability]
+        cx: 240
+        cy: 620
+        size: 36
+        description: OpenTelemetry spans for agent.run, llm.call, graph.node.
+      - name: Metrics
+        files: [core/metrics.py]
+        cx: 360
+        cy: 620
+        size: 32
+        description: Prometheus counters + histograms.
+      - name: Audit
+        files: [core/audit.py]
+        cx: 200
+        cy: 700
+        size: 28
+        description: Append-only audit log of agent decisions.
+      - name: Loop Detection
+        files: [core/loop_detection.py]
+        cx: 340
+        cy: 710
+        size: 28
+        description: Detect + break runaway agent loops.
+      - name: Health
+        files: [core/health.py, core/usage.py]
+        cx: 270
+        cy: 740
+        size: 26
+        description: Liveness probes + token-usage accounting.
+      - name: Alerts
+        files: [core/alerts.py]
+        cx: 410
+        cy: 680
+        size: 26
+        description: Webhook alerts on cost / error thresholds.
+
+  - id: quality
+    label: Quality
+    color: "#0891b2"        # cyan  (188°)
+    description: Guardrails, evaluation, and conformance testing.
+    cx: 820
+    cy: 460
+    rx: 150
+    ry: 130
+    items:
+      - name: Guardrails
+        files: [core/guardrails.py, core/prompt_markers.py]
+        cx: 820
+        cy: 420
+        size: 36
+        description: PII / secrets / injection / schema / cost guards.
+      - name: Evaluator
+        files: [core/evaluator.py]
+        cx: 880
+        cy: 480
+        size: 34
+        description: EvalCase / Run / Score / Report pipeline.
+      - name: Conformance
+        files: [core/conformance.py]
+        cx: 760
+        cy: 480
+        size: 28
+        description: Provider conformance test suite.
+      - name: Smoke Tester
+        files: [core/smoke_tester.py]
+        cx: 850
+        cy: 540
+        size: 26
+        description: Quick end-to-end smoke run for CI.
+      - name: Atomic Tasks
+        files: [core/atomic_tasks.py]
+        cx: 790
+        cy: 540
+        size: 26
+        description: Verification gate for atomic-task contracts.
