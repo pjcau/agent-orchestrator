@@ -286,11 +286,11 @@ clusters:
         size: 24
         description: Verification gate for atomic-task contracts.
       - name: VerificationGate
-        files: [core/verification_gate.py, core/verifiers/__init__.py, core/verifiers/syntax.py, core/verifiers/encoding.py, core/verifiers/dependency.py, core/verifiers/imports.py, core/verifiers/coherence.py]
+        files: [core/verification_gate.py, core/verifiers/__init__.py, core/verifiers/syntax.py, core/verifiers/encoding.py, core/verifiers/dependency.py, core/verifiers/imports.py, core/verifiers/coherence.py, core/verifiers/runtime_smoke.py]
         cx: 820
         cy: 470
         size: 32
-        description: Workspace verifier chain (Syntax + Encoding + Dependency + Import + Coherence) — runs after team_run().
+        description: Workspace verifier chain (Syntax + Encoding + Dependency + Import + Coherence + RuntimeSmoke ground-truth tier) — runs after team_run().
       - name: RepairLoop
         files: [core/repair_loop.py]
         cx: 820

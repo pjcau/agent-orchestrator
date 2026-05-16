@@ -757,7 +757,8 @@ A workspace-level verify-and-retry pipeline that wraps `run_team()`. Different s
 | 7.4 | ✅ Done | Default verifier chain extended to 5 | `dashboard/agent_runtime_router.py`, `orchestrator.yaml.example` |
 | 7.5 | ✅ Done | Benchmark re-run with the 5-verifier chain — 71.2/100, +22.2 vs run (b) | `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` |
 | 7.6 | ✅ Done | `ImportVerifier` alias-map fix: psycopg2 ↔ psycopg2-binary (regression from custom-goal weather-portal run) | `core/verifiers/imports.py`, `core/failure_patterns.yaml` |
-| 7.7 | ⏳ Pending | Re-run weather-portal benchmark with the Phase 7.6 fix | `docs/learning-path-tests/2026-05-XX_weather-portal-v2.md` |
+| 7.7 | ✅ Done | Abstraction-level fix: `RuntimeSmokeVerifier` ground-truth tier + post-condition revert guard in `RepairLoop._try_auto_fix` | `core/verifiers/runtime_smoke.py`, `core/repair_loop.py`, `core/failure_patterns.py` |
+| 7.8 | ⏳ Pending | Re-run weather-portal benchmark with the 6-verifier chain + revert guard | `docs/learning-path-tests/2026-05-XX_weather-portal-v2.md` |
 
 ### Configuration
 

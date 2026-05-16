@@ -645,7 +645,8 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learni
 | 7.4 | ✅ Done | Bundled chain extended from 3 → 5 verifiers |
 | 7.5 | ✅ Done | Benchmark re-run with the 5-verifier chain — 71.2/100 (+22.2 vs run (b)), see `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` |
 | 7.6 | ✅ Done | `ImportVerifier` alias-map fix: `psycopg2 ↔ psycopg2-binary` interchangeably (regression from run (d) where the auto-fix appended bare `psycopg2`, breaking pip install) |
-| 7.7 | ⏳ Pending | Re-run weather-portal benchmark with the Phase 7.6 fix to validate the projected runtime recovery |
+| 7.7 | ✅ Done | Abstraction-level fix for the whole "static verifier said passed but workspace doesn't run" class: (a) `RuntimeSmokeVerifier` as ground-truth tier (runs actual `pip install` + `python -c "import X"` in a hashed/cached venv, last in the cheap-first chain so only fires when the static chain is clean), and (b) post-condition guard in `RepairLoop._try_auto_fix` that reverts every touched file if the failure count strictly increases after the fix. |
+| 7.8 | ⏳ Pending | Re-run weather-portal benchmark with the 6-verifier chain + revert guard active |
 
 ### v1.5 P1 KPIs
 
