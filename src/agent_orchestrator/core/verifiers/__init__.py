@@ -10,7 +10,9 @@ inside `verify()`.
 
 from agent_orchestrator.core.verifiers.coherence import WorkspaceCoherenceVerifier
 from agent_orchestrator.core.verifiers.dependency import DependencyVerifier
+from agent_orchestrator.core.verifiers.e2e_smoke import E2ESmokeVerifier
 from agent_orchestrator.core.verifiers.encoding import EncodingVerifier
+from agent_orchestrator.core.verifiers.entrypoint import EntrypointVerifier
 from agent_orchestrator.core.verifiers.imports import ImportVerifier
 from agent_orchestrator.core.verifiers.runtime_smoke import RuntimeSmokeVerifier
 from agent_orchestrator.core.verifiers.syntax import SyntaxVerifier
@@ -22,4 +24,6 @@ __all__ = [
     "ImportVerifier",
     "WorkspaceCoherenceVerifier",
     "RuntimeSmokeVerifier",
+    "EntrypointVerifier",
+    "E2ESmokeVerifier",
 ]

@@ -645,3 +645,118 @@ async def test_runtime_smoke_delta_install_reuses_subset_parent(
     assert "-r" not in install_args_log[1]
     assert "pydantic" in install_args_log[1]
     assert "fastapi" not in install_args_log[1]
+
+
+# ---------------------- EntrypointVerifier (7.11a) ----------------------
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_verifier_skips_when_no_compose_no_dockerfile(tmp_path: Path):
+    from agent_orchestrator.core.verifiers import EntrypointVerifier
+    (tmp_path / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
+    fails = await EntrypointVerifier(cache_root=tmp_path / "cache").verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_verifier_skips_when_smoke_venv_not_provisioned(tmp_path: Path):
+    """Without an existing smoke venv, EntrypointVerifier has nothing to
+    launch against — it must NOT try to spin a fresh venv (that's smoke's job)."""
+    from agent_orchestrator.core.verifiers import EntrypointVerifier
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  backend:\n    build: ./backend\n    command: uvicorn main:app --host 0.0.0.0 --port 8000\n"
+    )
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend" / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
+    (tmp_path / "backend" / "requirements.txt").write_text("fastapi\n")
+    fails = await EntrypointVerifier(cache_root=tmp_path / "cache").verify(tmp_path)
+    assert fails == []  # no venv → no work, no spurious failure
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_verifier_catches_relative_import_crash(tmp_path: Path):
+    """The 2026-05-16(g) failure mode: `from .database` under uvicorn from
+    a non-package dir fails — entrypoint verifier must surface it."""
+    import shutil, sys, venv as _venv
+    from agent_orchestrator.core.verifiers import EntrypointVerifier
+
+    # Build a real backend with the broken relative import.
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "requirements.txt").write_text("fastapi\nuvicorn\n")
+    (backend / "main.py").write_text(
+        "from .database import get_db\nfrom fastapi import FastAPI\napp = FastAPI()\n"
+    )
+    (backend / "database.py").write_text("def get_db(): yield None\n")
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  backend:\n    build: ./backend\n    command: uvicorn main:app --host 0.0.0.0 --port 8000\n"
+    )
+    # Provision a real venv at the smoke-cache location with fastapi+uvicorn.
+    from agent_orchestrator.core.verifiers.runtime_smoke import (
+        _canonical_requirements_set, _hash_set,
+    )
+    cache = tmp_path / "cache"
+    venv_dir = cache / _hash_set(_canonical_requirements_set(backend / "requirements.txt"))
+    venv_dir.parent.mkdir(parents=True, exist_ok=True)
+    _venv.create(str(venv_dir), with_pip=True)
+    pip = venv_dir / "bin" / "pip"
+    res = __import__("subprocess").run(
+        [str(pip), "install", "-q", "fastapi", "uvicorn"], capture_output=True, timeout=120,
+    )
+    if res.returncode != 0:
+        pytest.skip(f"pip install failed in test env: {res.stderr.decode()[:200]}")
+    (venv_dir / ".smoke-ok").write_text("ok")
+
+    fails = await EntrypointVerifier(cache_root=cache, timeout_s=8).verify(tmp_path)
+    # Either entrypoint_crash (process exits at import) or entrypoint_timeout
+    # (uvicorn re-raises but doesn't bind). Both are acceptable.
+    assert len(fails) == 1
+    assert fails[0].category in {"entrypoint_crash", "entrypoint_timeout"}
+    assert fails[0].severity == "error"
+
+
+# ---------------------- E2ESmokeVerifier (7.11b) ----------------------
+
+
+@pytest.mark.asyncio
+async def test_e2e_verifier_disabled_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Without REPAIR_LOOP_E2E_ENABLED, the verifier is a no-op."""
+    from agent_orchestrator.core.verifiers import E2ESmokeVerifier
+    monkeypatch.delenv("REPAIR_LOOP_E2E_ENABLED", raising=False)
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "frontend" / "index.html").write_text("<html><body>hi</body></html>")
+    fails = await E2ESmokeVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_e2e_verifier_skipped_with_no_frontend(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Enabled but no frontend → silent."""
+    from agent_orchestrator.core.verifiers import E2ESmokeVerifier
+    monkeypatch.setenv("REPAIR_LOOP_E2E_ENABLED", "true")
+    (tmp_path / "main.py").write_text("print('hi')\n")
+    fails = await E2ESmokeVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_e2e_verifier_warns_when_playwright_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """If playwright isn't importable, surface a single warning failure
+    (so the operator knows the run was unprotected)."""
+    from agent_orchestrator.core.verifiers import E2ESmokeVerifier
+    monkeypatch.setenv("REPAIR_LOOP_E2E_ENABLED", "true")
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "frontend" / "index.html").write_text("<html><body>hi</body></html>")
+    import sys, builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **kw):
+        if name.startswith("playwright"):
+            raise ImportError("simulated missing playwright")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    fails = await E2ESmokeVerifier().verify(tmp_path)
+    assert len(fails) == 1
+    assert fails[0].severity == "warning"
+    assert fails[0].category == "e2e_infrastructure"
