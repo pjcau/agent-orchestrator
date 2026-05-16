@@ -195,7 +195,7 @@ agent actually finish within 15 steps instead of 30.
 ```bash
 docker compose up -d dashboard postgres
 # with the two prompt patches + confinement fix shipped:
-/orchestrator-learning-path-test "Build a full-stack Task Tracker..."
+/learning "Build a full-stack Task Tracker..."
 ```
 
 This run should copy into a new dated file following the same template. If

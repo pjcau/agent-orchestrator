@@ -649,6 +649,8 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learni
 | 7.8 | ✅ Done | Benchmark re-run (e): **74.2/100 on iter 0 alone** (vs 48.8 in (d) with 6 iters). Runtime 0 → 20/20. Iter 1 hung server-side — surfaced a cache-miss-on-every-retry issue when `requirements.txt` mutates. See `docs/learning-path-tests/2026-05-16e_weather-portal-v2.md`. |
 | 7.9 | ✅ Done | All 3 findings from run (e) addressed: (a) `RepairLoop.max_wall_s` cap + `aborted_time` status + `repair.aborted{reason:"time"}` event; (b) `verifier.finished` event now carries `duration_ms`; (c) smoke verifier cache keyed by canonical normalised package set (formatting/version edits no longer invalidate), with strict-subset delta install via `cp -a --reflink=auto` + `pip install <delta>`. |
 | 7.10 | ✅ Done | Benchmark re-run (f): **82.0/100 — new all-time high** (vs 74.2 in (e), 32.5 in (a)). All 6 iters completed; iter 1 (which hung in (e)) ran cleanly. 1 auto-fix triggered. Validates Phase 7.9 end-to-end. See `docs/learning-path-tests/2026-05-16f_weather-portal-v3.md`. |
+| 7.11 | ✅ Done | Two new verifiers added to address the 2026-05-16(g) three.js-space-app failure class: (a) `EntrypointVerifier` actually launches the Dockerfile CMD / compose `command:` (uvicorn) with a health probe — catches relative-import bugs and startup crashes that bare-import probes miss; (b) `E2ESmokeVerifier` (opt-in via `REPAIR_LOOP_E2E_ENABLED=true`) opens the frontend in headless Chromium via Playwright and captures console errors + failed network requests — catches frontend/backend integration failures by construction. Bundled chain grows 6 → 8. |
+| 7.12 | ⏳ Pending | Re-run the three.js-space-app benchmark with Entrypoint + E2E (env-gated) active |
 
 ### v1.5 P1 KPIs
 

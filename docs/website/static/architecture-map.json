@@ -596,12 +596,14 @@
             "core/verifiers/dependency.py",
             "core/verifiers/imports.py",
             "core/verifiers/coherence.py",
-            "core/verifiers/runtime_smoke.py"
+            "core/verifiers/runtime_smoke.py",
+            "core/verifiers/entrypoint.py",
+            "core/verifiers/e2e_smoke.py"
           ],
           "cx": 820,
           "cy": 470,
           "size": 32,
-          "description": "Workspace verifier chain (Syntax + Encoding + Dependency + Import + Coherence + RuntimeSmoke ground-truth tier) \u2014 runs after team_run().",
+          "description": "8-verifier chain (Syntax + Encoding + Dependency + Import + Coherence + RuntimeSmoke + Entrypoint + E2E) \u2014 runs after team_run().",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verification_gate.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/__init__.py",
@@ -610,7 +612,9 @@
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/dependency.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/imports.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/coherence.py",
-            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/runtime_smoke.py"
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/runtime_smoke.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/entrypoint.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/e2e_smoke.py"
           ]
         },
         {

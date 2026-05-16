@@ -761,6 +761,8 @@ A workspace-level verify-and-retry pipeline that wraps `run_team()`. Different s
 | 7.8 | ✅ Done | Re-run weather-portal benchmark with 6-verifier chain + revert guard — 74.2/100 on iter 0 alone (+25.4 vs (d)); iter 1 hung surfaces cache-miss issue | `docs/learning-path-tests/2026-05-16e_weather-portal-v2.md` |
 | 7.9 | ✅ Done | (a) `max_wall_s` cap in RepairLoop + new `aborted_time` status, (b) per-verifier `duration_ms` in `verifier.finished` events, (c) smoke verifier canonical-set cache + strict-subset delta install | `core/repair_loop.py`, `core/verification_gate.py`, `core/verifiers/runtime_smoke.py` |
 | 7.10 | ✅ Done | Benchmark re-run (f): 82.0/100 — new all-time high. 6/6 iters; iter-1 hang from (e) eliminated. | `docs/learning-path-tests/2026-05-16f_weather-portal-v3.md` |
+| 7.11 | ✅ Done | (a) `EntrypointVerifier` — launches the Dockerfile CMD / compose command (uvicorn) with health probe (catches relative-import + startup crashes the bare-import probe misses); (b) `E2ESmokeVerifier` opt-in via `REPAIR_LOOP_E2E_ENABLED=true` — headless Chromium against the frontend (catches integration bugs like shape mismatches, missing CORS, broken fetches). Bundled chain: 6 → 8. | `core/verifiers/entrypoint.py`, `core/verifiers/e2e_smoke.py` |
+| 7.12 | ⏳ Pending | Re-run three.js-space-app benchmark with Entrypoint + E2E active | `docs/learning-path-tests/2026-05-XX_space-threejs-v2.md` |
 
 ### Configuration
 
