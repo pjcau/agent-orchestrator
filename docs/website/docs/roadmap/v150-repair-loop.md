@@ -1,0 +1,105 @@
+---
+sidebar_position: 0
+title: v1.5 — Workspace Repair Loop
+---
+
+# v1.5 P1 — Workspace Repair Loop (Q3 2026, in progress)
+
+A **workspace-level** verify-and-retry pipeline that wraps `run_team()`. Motivated by `docs/learning-path-tests/2026-05-16_task-tracker.md`: a single `psycopg<3` dep typo cascaded through Build → Runtime → Functional and erased 48 points (confidence 32.5/100 vs the 79.01 baseline). A 5-attempt repair loop fed by the failing tool's stderr would have fixed it in one retry.
+
+Distinct from the existing per-skill `verification_middleware` (PR #59) which validates a single `SkillResult` — the two live side by side.
+
+| Layer | Existing | New (v1.5 P1) |
+|---|---|---|
+| **Skill** (single tool call) | `core/skill.verification_middleware` | — |
+| **Workspace** (after a team run) | — | `core/repair_loop.py` |
+
+Design: [`docs/architecture-repair-loop.md`](https://github.com/pjcau/agent-orchestrator/blob/main/docs/architecture-repair-loop.md).
+
+## Phase plan (7 phases)
+
+| Phase | Status | Deliverable | Files | Tests |
+|---|---|---|---|---|
+| 1 | ✅ Done | Design doc | `docs/architecture-repair-loop.md` | — |
+| 2 | ✅ Done | `VerificationGate` + 3 verifiers (Syntax / Encoding / Dependency) | `core/verification_gate.py`, `core/verifiers/{syntax,encoding,dependency}.py` | `tests/test_verification_gate.py`, `tests/test_verifiers.py` |
+| 3 | ✅ Done | `RepairLoop` (verify-and-retry harness) | `core/repair_loop.py` | `tests/test_repair_loop.py` |
+| 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML | `core/failure_patterns.py`, `core/failure_patterns.yaml` | `tests/test_failure_patterns.py` |
+| 5 | ✅ Done | Wiring into `/api/team/run` (opt-in) | `dashboard/agent_runtime_router.py`, `dashboard/events.py`, `orchestrator.yaml.example` | `tests/test_repair_loop_wiring.py` |
+| 6 | 🟡 In progress | Feature maps + roadmap sync | `docs/website/architecture-map.yaml`, `*-map.json`, this file, `sidebars.js` | — |
+| 7 | ⏳ Pending | Learning-path validation run with `REPAIR_LOOP_ENABLED=true` | `docs/learning-path-tests/2026-05-XX_repair-loop.md` | end-to-end |
+
+## TL;DR architecture
+
+```
+team_run() → VerificationGate
+              │  SyntaxVerifier   (~1s)   py_compile + json.loads
+              │  EncodingVerifier (~1s)   literal-\n heuristic
+              │  DependencyVerifier (~5s) pip dry-run / known-bad pins
+              ▼
+       VerificationReport
+              │  failed?
+              ▼
+   FailurePatternRegistry  ← YAML registry (no LLM call)
+              │  any failure auto-resolved?  → re-verify
+              │  still failing?
+              ▼
+        RepairLoop.retry(task + top-3 failures + history)
+              │  max_attempts=5, max_cost_usd=0.50
+              │  signature memory → escalate when same failure recurs
+              ▼
+   passed | partial | aborted_cost | aborted_budget
+```
+
+## Configuration
+
+Opt-in. Default OFF. Enable for a sprint, watch metrics, promote.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `REPAIR_LOOP_ENABLED` | `false` | Master switch — `true` activates the wrapper |
+| `REPAIR_LOOP_MAX_ATTEMPTS` | `5` | Hard cap on team-run invocations |
+| `REPAIR_LOOP_MAX_COST_USD` | `0.50` | Hard cumulative cost cap |
+
+YAML mirror in `orchestrator.yaml.example`:
+
+```yaml
+repair_loop:
+  enabled: false
+  max_attempts: 5
+  max_cost_usd: 0.50
+  patterns: core/failure_patterns.yaml
+  verifiers: [syntax, encoding, dependency]
+```
+
+## Expected impact on the 2026-05-16 baseline
+
+| Category | Before | After (estimate) | Why |
+|---|---:|---:|---|
+| Structure | 10.0 | 10.0 | unchanged |
+| Syntax | 13.5 | 15.0 | `package.json` literal-`\n` repaired by `EncodingVerifier` + `unicode_unescape` pattern |
+| Build | 0.0 | 20.0 | `psycopg<3` auto-fixed by `pip_pin_repair` pattern → `psycopg2-binary>=2.9` |
+| Runtime | 0.0 | ~15.0 | depends on app booting after the fix |
+| Functional | 0.0 | ~15.0 | endpoints reachable after runtime |
+| LLM-judge | 9.0 | ~10.0 | small bump from a cleaner repo |
+| **Total** | **32.5** | **~85** | **+~52** |
+
+Validated end-to-end in Phase 7.
+
+## Event stream
+
+New `EventType` values surfaced to the dashboard WebSocket:
+
+- `verification.started` / `verifier.started` / `verifier.finished` / `verification.finished`
+- `repair.started` / `repair.attempt_started` / `repair.attempt_finished`
+- `repair.escalated` (same signature recurred → more file context in next prompt)
+- `repair.auto_fixed` (a deterministic pattern resolved the failure — zero LLM cost)
+- `repair.aborted` (cost or attempt cap hit)
+- `repair.finished` (terminal — carries `status` + cumulative cost)
+
+## Related work in this repo
+
+- `core/skill.verification_middleware` — per-skill output validation (PR #59). Complementary, not redundant.
+- `core/resilience.RetryPolicy` — per-LLM-call retry with backoff. The RepairLoop is the same idea **one level up** (per-team-run).
+- `core/loop_detection.py` — anti-loop within a single agent run. Orthogonal: the RepairLoop adds anti-loop across team runs via `signature_set` comparison.
+- `core/tool_recovery.recover_dangling_tool_calls` — already invoked by one of the bundled patterns.
+- `docs/phase2.md` — the older skill-level verification gate; explicitly differentiated above.

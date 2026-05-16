@@ -35,6 +35,7 @@ const sidebars = {
       items: [
         'roadmap/q1q2-sprint',
         'roadmap/v140-gap-closure',
+        'roadmap/v150-repair-loop',
       ],
     },
     {

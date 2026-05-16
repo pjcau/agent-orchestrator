@@ -321,6 +321,30 @@ For traceability — these were on the original draft list but are already on `m
 
 ---
 
+## In Progress (v1.5.0 — Workspace Repair Loop, Q3 2026)
+
+Verify-and-retry pipeline wrapped around `run_team()`. Motivated by the 2026-05-16 baseline run (`docs/learning-path-tests/2026-05-16_task-tracker.md`) where a single `psycopg<3` typo dropped the confidence score from ~79 to 32.5/100. Distinct from the per-skill `verification_middleware` (PR #59): this validates the **whole workspace** after a team run and retries up to 5 times.
+
+### Phase status
+
+- [x] **Phase 1** — Design doc (`docs/architecture-repair-loop.md`)
+- [x] **Phase 2** — `VerificationGate` + 3 verifiers (`core/verification_gate.py`, `core/verifiers/{syntax,encoding,dependency}.py`)
+- [x] **Phase 3** — `RepairLoop` harness (`core/repair_loop.py`) — max 5 attempts, $0.50 cumulative cap, signature memory for anti-loop
+- [x] **Phase 4** — `FailurePatternRegistry` + bundled YAML (`core/failure_patterns.{py,yaml}`) — `pip_pin_repair`, `unicode_unescape`, `noop`
+- [x] **Phase 5** — Opt-in wiring into `/api/team/run` (`dashboard/agent_runtime_router.py`, `dashboard/events.py`, `orchestrator.yaml.example`) — controlled by `REPAIR_LOOP_ENABLED=true`
+- [ ] **Phase 6** — Feature maps + roadmap sync (this file, `docs/website/architecture-map.yaml`, regenerated `*-map.json`, `sidebars.js`, Docusaurus page)
+- [ ] **Phase 7** — `/orchestrator-learning-path-test` validation run with `REPAIR_LOOP_ENABLED=true` — target lift 32.5 → ~85
+
+### KPIs
+
+- Confidence on 2026-05-16 baseline: **32.5 → ~85** (estimate; validated in Phase 7)
+- Median verifier-chain overhead per `team_run`: target **< 15 s**
+- LLM-call-free auto-fix coverage: **≥ 33 %** of first-attempt failures
+
+Full design + per-phase plan: `docs/architecture-repair-loop.md` and [website roadmap → v1.5](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v150-repair-loop).
+
+---
+
 ## Provider Matrix
 
 | Provider | Type | Models | Cost | Best For |

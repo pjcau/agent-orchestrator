@@ -731,3 +731,45 @@ In `core/store_postgres.py` / `PostgresCheckpointer`, split large state values i
 **Match-matrix target**: **19/19 ✅** by end of sprint.
 
 Full per-item cards: [website roadmap → v1.4](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v140-gap-closure).
+
+---
+
+## v1.5 P1 — Workspace Repair Loop (Q3 2026, in progress)
+
+A workspace-level verify-and-retry pipeline that wraps `run_team()`. Different scope from the existing per-skill `verification_middleware` (PR #59): the latter validates a single `SkillResult`; this one validates the **whole filesystem state** after a multi-step team run and re-invokes the team with a structured retry prompt up to 5 times.
+
+**Motivation**: `docs/learning-path-tests/2026-05-16_task-tracker.md` — a single `psycopg<3` dep typo cascaded through Build → Runtime → Functional and erased 48 points (confidence 32.5/100 vs the 79.01 baseline). A 5-attempt repair loop fed by the failing tool's stderr would have fixed it in one retry.
+
+### Phase plan (7 phases)
+
+| Phase | Status | Deliverable | Where it lives |
+|---|---|---|---|
+| 1 | ✅ Done | Design doc | `docs/architecture-repair-loop.md` |
+| 2 | ✅ Done | `VerificationGate` + 3 verifiers | `core/verification_gate.py`, `core/verifiers/{syntax,encoding,dependency}.py` |
+| 3 | ✅ Done | `RepairLoop` harness | `core/repair_loop.py` |
+| 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML | `core/failure_patterns.py`, `core/failure_patterns.yaml` |
+| 5 | ✅ Done | Wire into `/api/team/run` (opt-in) | `dashboard/agent_runtime_router.py`, `dashboard/events.py`, `orchestrator.yaml.example` |
+| 6 | 🟡 In progress | Feature maps + roadmap sync | this file, `docs/website/architecture-map.yaml`, `*-map.json`, `sidebars.js` |
+| 7 | ⏳ Pending | Learning-path validation run | `docs/learning-path-tests/2026-05-XX_repair-loop.md` |
+
+### Configuration (opt-in)
+
+Default **OFF**. Enable for a sprint, watch metrics, then promote.
+
+```bash
+export REPAIR_LOOP_ENABLED=true
+export REPAIR_LOOP_MAX_ATTEMPTS=5      # default 5
+export REPAIR_LOOP_MAX_COST_USD=0.50   # default 0.50
+```
+
+YAML mirror: `repair_loop:` block in `orchestrator.yaml.example`.
+
+### Expected impact (estimate, validated in Phase 7)
+
+| Metric | Before | After (estimate) |
+|---|---:|---:|
+| 2026-05-16 confidence score | 32.5 / 100 | ~85 / 100 |
+| First-attempt failures auto-fixed (no LLM call) | 0 % | ≥ 33 % (targeted by bundled patterns) |
+| `success: true` reported on broken workspaces | possible | gated by verifier chain |
+
+Full design: [`docs/architecture-repair-loop.md`](https://github.com/pjcau/agent-orchestrator/blob/main/docs/architecture-repair-loop.md). Per-phase deliverables: [website roadmap → v1.5](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v150-repair-loop).

@@ -624,6 +624,32 @@ Full design + sprint shape: [website roadmap → v1.4](https://pjcau.github.io/a
 
 ---
 
+## v1.5 P1 — Workspace Repair Loop (Q3 2026, in progress)
+
+Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learning-path-tests/2026-05-16_task-tracker.md` (a single `psycopg<3` typo dropped the score from ~79 to 32.5/100). See `docs/architecture-repair-loop.md` for the full design.
+
+### Phase status (7 phases)
+
+| Phase | Status | What it ships |
+|---|---|---|
+| 1 | ✅ Done | Design doc |
+| 2 | ✅ Done | `VerificationGate` + 3 verifiers (Syntax / Encoding / Dependency) |
+| 3 | ✅ Done | `RepairLoop` harness (max 5 attempts, $0.50 cumulative cap, signature memory) |
+| 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML (`pip_pin_repair`, `unicode_unescape`, `noop`) |
+| 5 | ✅ Done | Wiring into `/api/team/run` (opt-in via `REPAIR_LOOP_ENABLED=true`) |
+| 6 | 🟡 In progress | Feature maps + roadmap sync |
+| 7 | ⏳ Pending | `/orchestrator-learning-path-test` validation run |
+
+### v1.5 P1 KPIs
+
+- Confidence score on the 2026-05-16 baseline: **32.5 → ~85** (estimate; validated in Phase 7).
+- Median overhead per `team_run`: target < 15 s for the verifier chain.
+- LLM-call-free auto-fix coverage: at least 1 in 3 first-attempt failures resolved deterministically by the pattern registry.
+
+Full design + per-phase deliverables: [website roadmap → v1.5](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v150-repair-loop).
+
+---
+
 ## Growth Opportunities (Suggestions)
 
 These are high-potential features that could accelerate product growth, based on market trends in the AI agent orchestration space ($8.5B market in 2026).

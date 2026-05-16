@@ -513,11 +513,11 @@
       "id": "quality",
       "label": "Quality",
       "color": "#0891b2",
-      "description": "Guardrails, evaluation, and conformance testing.",
+      "description": "Guardrails, evaluation, conformance, and workspace self-healing.",
       "cx": 820,
       "cy": 460,
-      "rx": 150,
-      "ry": 130,
+      "rx": 170,
+      "ry": 170,
       "items": [
         {
           "name": "Guardrails",
@@ -526,7 +526,7 @@
             "core/prompt_markers.py"
           ],
           "cx": 820,
-          "cy": 420,
+          "cy": 380,
           "size": 36,
           "description": "PII / secrets / injection / schema / cost guards.",
           "urls": [
@@ -539,9 +539,9 @@
           "files": [
             "core/evaluator.py"
           ],
-          "cx": 880,
-          "cy": 480,
-          "size": 34,
+          "cx": 900,
+          "cy": 440,
+          "size": 32,
           "description": "EvalCase / Run / Score / Report pipeline.",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/evaluator.py"
@@ -552,9 +552,9 @@
           "files": [
             "core/conformance.py"
           ],
-          "cx": 760,
-          "cy": 480,
-          "size": 28,
+          "cx": 740,
+          "cy": 440,
+          "size": 26,
           "description": "Provider conformance test suite.",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/conformance.py"
@@ -565,9 +565,9 @@
           "files": [
             "core/smoke_tester.py"
           ],
-          "cx": 850,
-          "cy": 540,
-          "size": 26,
+          "cx": 900,
+          "cy": 510,
+          "size": 24,
           "description": "Quick end-to-end smoke run for CI.",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/smoke_tester.py"
@@ -578,12 +578,74 @@
           "files": [
             "core/atomic_tasks.py"
           ],
-          "cx": 790,
-          "cy": 540,
-          "size": 26,
+          "cx": 740,
+          "cy": 510,
+          "size": 24,
           "description": "Verification gate for atomic-task contracts.",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/atomic_tasks.py"
+          ]
+        },
+        {
+          "name": "VerificationGate",
+          "files": [
+            "core/verification_gate.py",
+            "core/verifiers/__init__.py",
+            "core/verifiers/syntax.py",
+            "core/verifiers/encoding.py",
+            "core/verifiers/dependency.py"
+          ],
+          "cx": 820,
+          "cy": 470,
+          "size": 32,
+          "description": "Workspace verifier chain (Syntax + Encoding + Dependency) \u2014 runs after team_run().",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verification_gate.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/__init__.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/syntax.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/encoding.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/dependency.py"
+          ]
+        },
+        {
+          "name": "RepairLoop",
+          "files": [
+            "core/repair_loop.py"
+          ],
+          "cx": 820,
+          "cy": 540,
+          "size": 34,
+          "description": "Verify-and-retry harness around team_run() with cost + signature guards.",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/repair_loop.py"
+          ]
+        },
+        {
+          "name": "Failure Patterns",
+          "files": [
+            "core/failure_patterns.py",
+            "core/failure_patterns.yaml"
+          ],
+          "cx": 760,
+          "cy": 580,
+          "size": 28,
+          "description": "YAML registry of deterministic auto-fixes (pip_pin_repair, unicode_unescape).",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/failure_patterns.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/failure_patterns.yaml"
+          ]
+        },
+        {
+          "name": "Repair Wiring",
+          "files": [
+            "dashboard/agent_runtime_router.py"
+          ],
+          "cx": 880,
+          "cy": 580,
+          "size": 24,
+          "description": "Opt-in (REPAIR_LOOP_ENABLED) wrapper around /api/team/run.",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/dashboard/agent_runtime_router.py"
           ]
         }
       ]
@@ -591,6 +653,6 @@
   ],
   "stats": {
     "total_clusters": 6,
-    "total_items": 36
+    "total_items": 40
   }
 }
