@@ -123,3 +123,5 @@ repair_loop:
     - syntax                  # py_compile + json.loads
     - encoding                # catches literal-\n corruption (frontend/package.json case)
     - dependency              # static check against KNOWN_BAD_PINS (e.g. psycopg<3)
+    - imports                 # missing-dep detection (passlib/python-jose case, 2026-05-16b)
+    - coherence               # cross-file contradictions (compose vs database.py DATABASE_URL)

@@ -5,12 +5,15 @@ auto-fix action. When a pattern matches, the `RepairLoop` applies the fix
 without calling an LLM — saving cost, time, and the risk of the agent
 re-introducing the same bug.
 
-Three actions ship in this module:
+Four actions ship in this module:
 
 - `pip_pin_repair`: rewrite a `requirements*.txt` line to a known-good pin
   (e.g. `psycopg<3` → `psycopg2-binary>=2.9`).
 - `unicode_unescape`: rewrite a file whose newlines / quotes were escaped
   one layer too many (the literal-`\\n` corruption mode from 2026-05-16).
+- `requirements_append`: append a missing package to the nearest
+  `requirements*.txt`, parsed out of an `ImportVerifier` failure (the
+  passlib / python-jose mode from 2026-05-16(b)).
 - `noop`: emit an action that records the match but does nothing — useful
   for surfacing known-but-unfixable failures in the dashboard so an
   operator sees them without the loop wasting an LLM call.
@@ -37,6 +40,11 @@ class RepairAction:
     file: str | None
     new_content: str | None
     explanation: str
+    # Optional sidecar pointer at a SECONDARY file the action touched
+    # (e.g. `requirements_append` modifies a requirements file that is NOT
+    # the file the failure originated in). Helps the dashboard render the
+    # actual change site.
+    secondary_file: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,7 +114,7 @@ def _pattern_from_dict(d: dict[str, Any]) -> FailurePattern:
     pattern = re.compile(d["pattern"])
     af = d.get("auto_fix") or {}
     action_type = af.get("type")
-    if action_type not in {"pip_pin_repair", "unicode_unescape", "noop"}:
+    if action_type not in {"pip_pin_repair", "unicode_unescape", "requirements_append", "noop"}:
         raise ValueError(f"unknown auto_fix.type: {action_type!r}")
     return FailurePattern(
         name=name,
@@ -235,9 +243,101 @@ def _action_noop(
     )
 
 
+def _action_requirements_append(
+    failure: VerifierFailure,
+    workdir: Path,
+    params: dict[str, Any],
+) -> RepairAction | None:
+    """Append a missing dep to the nearest `requirements*.txt`.
+
+    Triggered by `ImportVerifier` failures whose ``message`` matches
+    ``No module named 'X'`` and whose ``detail`` line carries
+    ``Expected package on PyPI: 'Y'``. The action:
+
+    1. Parses the package name out of ``detail`` (canonical PyPI name).
+    2. Finds the requirements file closest to the failure's file (walks up
+       toward the workdir root); falls back to ``requirements.txt`` at the
+       workdir root, creating it if necessary.
+    3. Appends ``<package>`` on its own line (no version pin — pip will
+       pick the latest matching). Idempotent: if the package is already
+       declared, returns ``None``.
+
+    `params` schema::
+
+        module_aliases: {jose: python-jose, ...}    # optional fallback
+    """
+    # Parse package out of the verifier's `detail`. Format:
+    # "... Expected package on PyPI: 'python-jose'."
+    detail = failure.detail or ""
+    m = re.search(r"Expected package on PyPI: '([^']+)'", detail)
+    if m:
+        package = m.group(1)
+    else:
+        # Fallback: try to extract the module name from the message and apply
+        # the alias map.
+        m2 = re.search(r"No module named '([^']+)'", failure.message)
+        if not m2:
+            return None
+        module = m2.group(1).split(".", 1)[0]
+        aliases: dict[str, str] = params.get("module_aliases") or {}
+        package = aliases.get(module, module)
+
+    # Find the nearest requirements file.
+    req_path: Path | None = None
+    if failure.file:
+        start = (workdir / failure.file).parent
+        cur = start
+        while True:
+            candidate = cur / "requirements.txt"
+            if candidate.exists():
+                req_path = candidate
+                break
+            if cur == workdir or cur.parent == cur:
+                break
+            cur = cur.parent
+    if req_path is None:
+        req_path = workdir / "requirements.txt"
+        if not req_path.exists():
+            req_path.parent.mkdir(parents=True, exist_ok=True)
+            req_path.write_text("")
+
+    try:
+        existing = req_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    # Idempotency check: normalise the existing names.
+    normalised_existing = set()
+    for raw in existing.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        for sep in ("[", "<", ">", "=", "!", "~", ";", " "):
+            idx = line.find(sep)
+            if idx != -1:
+                line = line[:idx]
+        normalised_existing.add(line.lower().replace("_", "-").replace(".", "-"))
+    if package.lower().replace("_", "-").replace(".", "-") in normalised_existing:
+        return None
+
+    new_content = existing
+    if new_content and not new_content.endswith("\n"):
+        new_content += "\n"
+    new_content += f"{package}\n"
+    req_path.write_text(new_content, encoding="utf-8")
+    return RepairAction(
+        kind="file_rewrite",
+        file=failure.file,
+        new_content=new_content,
+        explanation=f"appended '{package}' to {req_path.relative_to(workdir)}",
+        secondary_file=str(req_path.relative_to(workdir)),
+    )
+
+
 _ACTION_HANDLERS = {
     "pip_pin_repair": _action_pip_pin_repair,
     "unicode_unescape": _action_unicode_unescape,
+    "requirements_append": _action_requirements_append,
     "noop": _action_noop,
 }
 

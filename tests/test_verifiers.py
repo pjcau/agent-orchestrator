@@ -9,7 +9,9 @@ import pytest
 from agent_orchestrator.core.verifiers import (
     DependencyVerifier,
     EncodingVerifier,
+    ImportVerifier,
     SyntaxVerifier,
+    WorkspaceCoherenceVerifier,
 )
 
 
@@ -170,4 +172,226 @@ async def test_dependency_verifier_custom_pin_list(tmp_path: Path):
     # The bundled rule is not active.
     (tmp_path / "requirements.txt").write_text("psycopg<3\n")
     fails = await DependencyVerifier(known_bad_pins=custom).verify(tmp_path)
+    assert fails == []
+
+
+# ---------------------------- ImportVerifier ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_clean_when_all_deps_declared(tmp_path: Path):
+    (tmp_path / "main.py").write_text("import fastapi\nimport pydantic\n")
+    (tmp_path / "requirements.txt").write_text("fastapi>=0.109\npydantic>=2\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_catches_missing_dep(tmp_path: Path):
+    """The 2026-05-16(b) failure mode: passlib imported but never declared."""
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "models.py").write_text(
+        "from passlib.context import CryptContext\n"
+        "pwd_context = CryptContext(schemes=['bcrypt'])\n"
+    )
+    (backend / "requirements.txt").write_text("fastapi>=0.109\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert len(fails) == 1
+    f = fails[0]
+    assert f.category == "missing_dep"
+    assert "passlib" in f.message
+    assert f.file == "backend/models.py"
+    assert f.severity == "error"
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_resolves_module_to_package(tmp_path: Path):
+    """`from jose import jwt` → expected package `python-jose`, not `jose`."""
+    (tmp_path / "crud.py").write_text("from jose import jwt\n")
+    (tmp_path / "requirements.txt").write_text("fastapi>=0.109\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert len(fails) == 1
+    assert "'python-jose'" in fails[0].detail
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_accepts_known_alias_in_requirements(tmp_path: Path):
+    """If requirements declares `python-jose`, then `from jose import x` is fine."""
+    (tmp_path / "crud.py").write_text("from jose import jwt\n")
+    (tmp_path / "requirements.txt").write_text("python-jose>=3.3\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_ignores_stdlib_imports(tmp_path: Path):
+    (tmp_path / "main.py").write_text(
+        "import os\nimport json\nfrom pathlib import Path\nfrom typing import Any\n"
+    )
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_ignores_local_modules(tmp_path: Path):
+    """`from routers import tasks_router` where routers/ is a sibling dir is local."""
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "main.py").write_text(
+        "from routers import tasks_router\nfrom database import get_db\n"
+    )
+    (backend / "database.py").write_text("def get_db(): pass\n")
+    routers = backend / "routers"
+    routers.mkdir()
+    (routers / "__init__.py").write_text("from .tasks import tasks_router\n")
+    (routers / "tasks.py").write_text("tasks_router = object()\n")
+    (backend / "requirements.txt").write_text("")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_ignores_relative_imports(tmp_path: Path):
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "a.py").write_text("from . import b\nfrom ..other import x\n")
+    (pkg / "b.py").write_text("")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_first_occurrence_wins(tmp_path: Path):
+    """Multiple files importing the same missing dep should still produce one failure."""
+    (tmp_path / "a.py").write_text("import passlib\n")
+    (tmp_path / "b.py").write_text("import passlib\n")
+    (tmp_path / "requirements.txt").write_text("")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert len(fails) == 1
+    # Sorted file traversal → a.py wins.
+    assert fails[0].file == "a.py"
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_tolerates_syntax_errors(tmp_path: Path):
+    """Broken .py files are SyntaxVerifier's job; ImportVerifier just skips them."""
+    (tmp_path / "broken.py").write_text("def f(:\n")
+    (tmp_path / "ok.py").write_text("import fastapi\n")
+    (tmp_path / "requirements.txt").write_text("fastapi\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_skips_venv_and_cache(tmp_path: Path):
+    venv = tmp_path / ".venv" / "lib" / "site-packages" / "thirdparty"
+    venv.mkdir(parents=True)
+    (venv / "__init__.py").write_text("import some_internal_dep\n")
+    (tmp_path / "main.py").write_text("import fastapi\n")
+    (tmp_path / "requirements.txt").write_text("fastapi\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_pyproject_toml_counts_as_declaration(tmp_path: Path):
+    (tmp_path / "main.py").write_text("import fastapi\n")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["fastapi>=0.109", "pydantic>=2"]\n'
+    )
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_normalizes_package_names(tmp_path: Path):
+    """`python_jose` in requirements should match `from jose import ...` via the alias."""
+    (tmp_path / "x.py").write_text("from jose import jwt\n")
+    (tmp_path / "requirements.txt").write_text("python_jose>=3\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+# ---------------------- WorkspaceCoherenceVerifier ----------------------
+
+
+@pytest.mark.asyncio
+async def test_coherence_verifier_clean_when_db_urls_match(tmp_path: Path):
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  backend:\n    environment:\n"
+        "      DATABASE_URL: postgresql+psycopg2://u:p@db:5432/x\n"
+    )
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "database.py").write_text(
+        "import os\nDATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://u:p@db/x')\n"
+    )
+    fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_coherence_verifier_catches_sqlite_vs_postgres_split(tmp_path: Path):
+    """The 2026-05-16(b) failure mode."""
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  backend:\n    environment:\n"
+        "      DATABASE_URL: postgresql+psycopg2://tasks:tasks@db:5432/tasks\n"
+    )
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "database.py").write_text(
+        "import os\nDATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./tasks.db')\n"
+    )
+    fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
+    assert len(fails) == 1
+    f = fails[0]
+    assert f.category == "db_url_mismatch"
+    assert "postgresql" in f.message
+    assert "sqlite" in f.message
+    assert f.file == "backend/database.py"
+
+
+@pytest.mark.asyncio
+async def test_coherence_verifier_accepts_environment_as_list(tmp_path: Path):
+    """docker-compose `environment` may be a list of `KEY=value` strings."""
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  backend:\n    environment:\n"
+        "      - DATABASE_URL=postgresql://u:p@db/x\n"
+    )
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "database.py").write_text(
+        "DATABASE_URL = 'postgresql+psycopg2://u:p@db/x'\n"
+    )
+    fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_coherence_verifier_silent_without_compose(tmp_path: Path):
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "database.py").write_text("DATABASE_URL = 'sqlite:///./x.db'\n")
+    fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_coherence_verifier_silent_without_db_url_default(tmp_path: Path):
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  backend:\n    environment:\n      DATABASE_URL: postgresql://u:p@db/x\n"
+    )
+    (tmp_path / "main.py").write_text("def main(): pass\n")
+    fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_coherence_verifier_handles_broken_yaml(tmp_path: Path):
+    (tmp_path / "docker-compose.yml").write_text("services: {\nbroken")
+    (tmp_path / "main.py").write_text("DATABASE_URL = 'sqlite:///x.db'\n")
+    # Broken YAML is SyntaxVerifier's responsibility — coherence stays quiet.
+    fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
     assert fails == []

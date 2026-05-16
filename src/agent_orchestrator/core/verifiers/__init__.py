@@ -8,12 +8,16 @@ Importing this package is cheap — verifiers do all expensive work lazily
 inside `verify()`.
 """
 
+from agent_orchestrator.core.verifiers.coherence import WorkspaceCoherenceVerifier
 from agent_orchestrator.core.verifiers.dependency import DependencyVerifier
 from agent_orchestrator.core.verifiers.encoding import EncodingVerifier
+from agent_orchestrator.core.verifiers.imports import ImportVerifier
 from agent_orchestrator.core.verifiers.syntax import SyntaxVerifier
 
 __all__ = [
     "SyntaxVerifier",
     "DependencyVerifier",
     "EncodingVerifier",
+    "ImportVerifier",
+    "WorkspaceCoherenceVerifier",
 ]

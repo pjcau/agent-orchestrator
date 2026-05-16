@@ -234,3 +234,37 @@ async def test_run_team_with_repair_emits_lifecycle_events(
     assert "repair.attempt_started" in seen
     assert "repair.attempt_finished" in seen
     assert "repair.finished" in seen
+
+
+@pytest.mark.asyncio
+async def test_build_repair_loop_includes_all_five_verifiers(monkeypatch: pytest.MonkeyPatch):
+    """Regression: the v1.5 P1 Phase 7 follow-up added ImportVerifier +
+    WorkspaceCoherenceVerifier to the bundled chain. All five must be
+    present; the gate sorts them cheap-first by ``cost_estimate_s``."""
+    from agent_orchestrator.core.verifiers import (
+        DependencyVerifier,
+        EncodingVerifier,
+        ImportVerifier,
+        SyntaxVerifier,
+        WorkspaceCoherenceVerifier,
+    )
+
+    EventBus.reset()
+    monkeypatch.setenv("REPAIR_LOOP_MAX_ATTEMPTS", "1")
+    monkeypatch.setenv("REPAIR_LOOP_MAX_COST_USD", "1.0")
+
+    async def _runner(task: str, **kw):  # pragma: no cover - never invoked here
+        raise NotImplementedError
+
+    loop = router_mod._build_repair_loop(EventBus.get(), _runner)
+    types = {type(v) for v in loop._gate._verifiers}
+    assert types == {
+        SyntaxVerifier,
+        EncodingVerifier,
+        DependencyVerifier,
+        ImportVerifier,
+        WorkspaceCoherenceVerifier,
+    }
+    # And cheap-first ordering (cost_estimate_s ascending).
+    costs = [v.cost_estimate_s for v in loop._gate._verifiers]
+    assert costs == sorted(costs)

@@ -6,7 +6,7 @@
 #                  Empty / omitted = match any category.
 #   pattern:       Python regex matched against VerifierFailure.message.
 #                  First match wins.
-#   auto_fix.type: one of pip_pin_repair | unicode_unescape | noop
+#   auto_fix.type: one of pip_pin_repair | unicode_unescape | requirements_append | noop
 #   auto_fix.<…>:  type-specific parameters.
 #   llm_required:  documentation flag, default false. When true, the loop
 #                  should still fall through to an LLM repair attempt even
@@ -35,4 +35,27 @@
   pattern: "literal '\\\\n' substrings"
   auto_fix:
     type: unicode_unescape
+  llm_required: false
+
+# 2026-05-16(b) failure mode: ImportVerifier flags `passlib`/`python-jose`
+# that the agent imported without adding to requirements.txt. The action
+# appends the canonical PyPI name to the nearest requirements file.
+- name: missing_dep_in_requirements
+  category: missing_dep
+  pattern: "No module named '.*'"
+  auto_fix:
+    type: requirements_append
+    module_aliases:
+      jose: python-jose
+      bs4: beautifulsoup4
+      cv2: opencv-python
+      PIL: Pillow
+      yaml: PyYAML
+      sklearn: scikit-learn
+      MySQLdb: mysqlclient
+      dotenv: python-dotenv
+      magic: python-magic
+      dateutil: python-dateutil
+      OpenSSL: pyOpenSSL
+      Crypto: pycryptodome
   llm_required: false

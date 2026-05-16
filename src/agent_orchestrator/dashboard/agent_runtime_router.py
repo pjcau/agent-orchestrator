@@ -32,7 +32,9 @@ from agent_orchestrator.core.verification_gate import VerificationGate
 from agent_orchestrator.core.verifiers import (
     DependencyVerifier,
     EncodingVerifier,
+    ImportVerifier,
     SyntaxVerifier,
+    WorkspaceCoherenceVerifier,
 )
 
 from .agent_runner import run_agent, run_team
@@ -126,7 +128,17 @@ def _build_repair_loop(
     invokes `run_team()` and packages the result for the loop."""
     emit = _make_emit_bridge(bus)
     gate = VerificationGate(
-        [SyntaxVerifier(), EncodingVerifier(), DependencyVerifier()],
+        [
+            # Cheap-first ordering: syntactic checks before any AST/IO walk.
+            SyntaxVerifier(),
+            EncodingVerifier(),
+            DependencyVerifier(),
+            # v1.5 P1 Phase 7+ extensions: catch the failure classes the
+            # 2026-05-16(b) benchmark surfaced (missing imports + cross-file
+            # contradictions).
+            ImportVerifier(),
+            WorkspaceCoherenceVerifier(),
+        ],
         emit_event=emit,
     )
     try:

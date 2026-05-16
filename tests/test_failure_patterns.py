@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from agent_orchestrator.core.failure_patterns import (
-    FailurePattern,
     FailurePatternRegistry,
     default_yaml_path,
     load_default_registry,
@@ -251,3 +250,127 @@ def test_from_yaml_loads_explicit_replacements(tmp_path: Path):
     p = registry.patterns[0]
     assert p.action_type == "pip_pin_repair"
     assert p.action_params["replacements"] == {"madeup": "madeup>=5.0"}
+
+
+# ---------------------------- requirements_append ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_apply_requirements_append_for_missing_dep(tmp_path: Path):
+    """ImportVerifier-style failure → action appends the canonical package."""
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    req = backend / "requirements.txt"
+    req.write_text("fastapi>=0.109\n")
+    (backend / "models.py").write_text("from passlib.context import CryptContext\n")
+    failure = VerifierFailure(
+        verifier="imports",
+        severity="error",
+        category="missing_dep",
+        message="No module named 'passlib' (declared by no requirements*.txt)",
+        detail=(
+            "backend/models.py:1: import 'passlib.context' resolves to top-level "
+            "module 'passlib', which is not in the Python stdlib, not a local "
+            "module under the workdir, and has no matching entry in any "
+            "requirements*.txt. Expected package on PyPI: 'passlib'."
+        ),
+        file="backend/models.py",
+    )
+    registry = load_default_registry()
+    action = await registry.apply(failure, tmp_path)
+    assert action is not None
+    assert action.kind == "file_rewrite"
+    assert action.secondary_file == "backend/requirements.txt"
+    text = req.read_text()
+    assert "passlib" in text
+    assert "fastapi" in text  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_apply_requirements_append_uses_alias_for_jose(tmp_path: Path):
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    req = backend / "requirements.txt"
+    req.write_text("fastapi>=0.109\n")
+    (backend / "crud.py").write_text("from jose import jwt\n")
+    failure = VerifierFailure(
+        verifier="imports",
+        severity="error",
+        category="missing_dep",
+        message="No module named 'jose' (declared by no requirements*.txt)",
+        detail=(
+            "backend/crud.py:1: import 'jose' resolves to top-level module 'jose', "
+            "which is not in the Python stdlib, not a local module under the "
+            "workdir, and has no matching entry in any requirements*.txt. "
+            "Expected package on PyPI: 'python-jose'."
+        ),
+        file="backend/crud.py",
+    )
+    registry = load_default_registry()
+    action = await registry.apply(failure, tmp_path)
+    assert action is not None
+    text = req.read_text()
+    assert "python-jose" in text
+
+
+@pytest.mark.asyncio
+async def test_apply_requirements_append_idempotent(tmp_path: Path):
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    req = backend / "requirements.txt"
+    req.write_text("fastapi>=0.109\npasslib\n")
+    failure = VerifierFailure(
+        verifier="imports",
+        severity="error",
+        category="missing_dep",
+        message="No module named 'passlib'",
+        detail="... Expected package on PyPI: 'passlib'.",
+        file="backend/models.py",
+    )
+    registry = load_default_registry()
+    action = await registry.apply(failure, tmp_path)
+    # Already present → action returns None.
+    assert action is None
+    # File untouched.
+    assert req.read_text() == "fastapi>=0.109\npasslib\n"
+
+
+@pytest.mark.asyncio
+async def test_apply_requirements_append_creates_root_file_when_none(tmp_path: Path):
+    (tmp_path / "main.py").write_text("import passlib\n")
+    failure = VerifierFailure(
+        verifier="imports",
+        severity="error",
+        category="missing_dep",
+        message="No module named 'passlib'",
+        detail="... Expected package on PyPI: 'passlib'.",
+        file="main.py",
+    )
+    registry = load_default_registry()
+    action = await registry.apply(failure, tmp_path)
+    assert action is not None
+    created = tmp_path / "requirements.txt"
+    assert created.exists()
+    assert "passlib" in created.read_text()
+
+
+@pytest.mark.asyncio
+async def test_apply_requirements_append_walks_up_to_find_nearest(tmp_path: Path):
+    """Failure file deep in a subdir; nearest requirements.txt is 2 levels up."""
+    deep = tmp_path / "backend" / "routers"
+    deep.mkdir(parents=True)
+    req = tmp_path / "backend" / "requirements.txt"
+    req.write_text("")
+    failure = VerifierFailure(
+        verifier="imports",
+        severity="error",
+        category="missing_dep",
+        message="No module named 'passlib'",
+        detail="... Expected package on PyPI: 'passlib'.",
+        file="backend/routers/auth.py",
+    )
+    registry = load_default_registry()
+    action = await registry.apply(failure, tmp_path)
+    assert action is not None
+    assert action.secondary_file == "backend/requirements.txt"
+    assert "passlib" in req.read_text()
