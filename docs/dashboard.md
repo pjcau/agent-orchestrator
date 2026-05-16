@@ -113,6 +113,7 @@ Multi-agent team runs execute as background tasks to prevent HTTP timeouts:
 - **Graph visualization**: `run_team()` emits `GRAPH_START`/`GRAPH_NODE_ENTER`/`GRAPH_NODE_EXIT`/`GRAPH_END` for 3-phase workflow (plan → sub-agents → review)
 - **Polling fallback**: `GET /api/team/status/{job_id}` returns current status and result
 - **Memory safety**: completed jobs are evicted (keeps last 20) to prevent unbounded growth
+- **Repair loop (opt-in, v1.5 P1 Phase 5)**: setting `REPAIR_LOOP_ENABLED=true` swaps the underlying `run_team()` call for `_run_team_with_repair`, which verifies the produced workdir (Syntax / Encoding / Dependency) and retries the team — with deterministic auto-fixes from `core/failure_patterns.yaml` applied first — up to `REPAIR_LOOP_MAX_ATTEMPTS` (default 5) or until cumulative cost exceeds `REPAIR_LOOP_MAX_COST_USD` (default 0.50). New event types stream to the dashboard: `verification.*`, `verifier.*`, `repair.started/attempt_started/attempt_finished/escalated/auto_fixed/aborted/finished`. The team-run result dict gains a top-level `repair: {status, attempts, cumulative_cost_usd, final_passed, final_failures[], auto_fixed_signatures[]}` block; existing fields (`output`, `plan`, `agent_costs`, `total_tokens`) are preserved. Disabled by default — flip the env var (and optionally the `repair_loop:` block in `orchestrator.yaml.example`) for a sprint, watch the metrics, then promote. See `docs/architecture-repair-loop.md`.
 
 ## Session Explorer
 
