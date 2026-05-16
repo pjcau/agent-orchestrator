@@ -371,3 +371,147 @@ def test_augment_task_no_failures_renders_safe(tmp_path: Path):
         workdir=tmp_path,
     )
     assert "(no failures listed)" in out
+
+
+# ---------------------- Post-condition guard (Phase 7.7) ----------------------
+
+
+@pytest.mark.asyncio
+async def test_post_condition_guard_reverts_when_failure_count_increases(tmp_path: Path):
+    """If an auto-fix makes the report STRICTLY worse, the loop must revert
+    the touched file(s) and proceed as if no fix had run."""
+    from agent_orchestrator.core.failure_patterns import (
+        FailurePattern,
+        FailurePatternRegistry,
+        RepairAction,
+    )
+
+    # 1) Set up a workdir with a known initial state.
+    target = tmp_path / "requirements.txt"
+    target.write_text("fastapi>=0.109\n")
+
+    # 2) Build a fake registry whose action makes things worse.
+    import re as _re
+
+    BAD_PATTERN = FailurePattern(
+        name="evil",
+        category="missing_dep",
+        pattern=_re.compile(r"."),
+        action_type="pip_pin_repair",  # any string, we replace the handler below
+        action_params={},
+    )
+
+    async def evil_apply(self, failure, workdir):
+        # Snapshot + write a destructive change.
+        original_bytes = target.read_bytes()
+        target.write_text("not-a-real-package-that-pip-cannot-resolve\n")
+        return RepairAction(
+            kind="file_rewrite",
+            file="requirements.txt",
+            new_content="not-a-real-package",
+            explanation="evil",
+            changed_path="requirements.txt",
+            original_bytes=original_bytes,
+        )
+
+    registry = FailurePatternRegistry([BAD_PATTERN])
+    registry.apply = evil_apply.__get__(registry, FailurePatternRegistry)
+
+    # 3) A gate that returns MORE failures after the fix.
+    initial = [_failure("missing_dep", file="x.py", msg="No module named 'X'")]
+    after = [
+        _failure("missing_dep", file="x.py", msg="No module named 'X'"),
+        _failure("missing_dep", file="y.py", msg="No module named 'Y'"),
+    ]
+
+    @dataclass
+    class _PoliceGate:
+        verifiers: list = None
+        call: int = 0
+        async def verify(self, workdir):
+            self.call += 1
+            from agent_orchestrator.core.verification_gate import VerificationReport
+            failures = initial if self.call == 1 else (after if self.call == 2 else initial)
+            return VerificationReport(
+                passed=False, failures=tuple(failures), duration_ms=1,
+            )
+
+    gate = _PoliceGate()
+
+    # 4) Drive _try_auto_fix directly.
+    loop = RepairLoop(
+        team_runner=lambda *a, **kw: None,  # never called
+        gate=gate,
+        pattern_registry=registry,
+        max_attempts=1,
+    )
+    report_before = await gate.verify(tmp_path)
+    fixed, new_report = await loop._try_auto_fix(report_before, tmp_path)
+
+    # Guard fired: signatures returned empty, original file content restored.
+    assert fixed == ()
+    assert target.read_text() == "fastapi>=0.109\n"
+
+
+@pytest.mark.asyncio
+async def test_post_condition_guard_does_not_revert_when_fix_helps(tmp_path: Path):
+    """Sanity: when the fix REDUCES failures, the action stands."""
+    from agent_orchestrator.core.failure_patterns import (
+        FailurePattern,
+        FailurePatternRegistry,
+        RepairAction,
+    )
+
+    target = tmp_path / "requirements.txt"
+    target.write_text("fastapi>=0.109\n")
+    original_text = target.read_text()
+
+    import re as _re
+
+    PATTERN = FailurePattern(
+        name="helpful",
+        category="missing_dep",
+        pattern=_re.compile(r"."),
+        action_type="pip_pin_repair",
+        action_params={},
+    )
+
+    async def helpful_apply(self, failure, workdir):
+        original_bytes = target.read_bytes()
+        target.write_text("fastapi>=0.109\npasslib\n")
+        return RepairAction(
+            kind="file_rewrite",
+            file="x.py",
+            new_content="fastapi>=0.109\npasslib\n",
+            explanation="helpful",
+            changed_path="requirements.txt",
+            original_bytes=original_bytes,
+        )
+
+    registry = FailurePatternRegistry([PATTERN])
+    registry.apply = helpful_apply.__get__(registry, FailurePatternRegistry)
+
+    @dataclass
+    class _GoodGate:
+        verifiers: list = None
+        call: int = 0
+        async def verify(self, workdir):
+            self.call += 1
+            from agent_orchestrator.core.verification_gate import VerificationReport
+            if self.call == 1:
+                return VerificationReport(
+                    passed=False,
+                    failures=(_failure("missing_dep", file="x.py", msg="No module named 'passlib'"),),
+                    duration_ms=1,
+                )
+            return VerificationReport(passed=True, failures=(), duration_ms=1)
+
+    gate = _GoodGate()
+    loop = RepairLoop(team_runner=lambda *a, **kw: None, gate=gate, pattern_registry=registry, max_attempts=1)
+    report_before = await gate.verify(tmp_path)
+    fixed, new_report = await loop._try_auto_fix(report_before, tmp_path)
+
+    assert len(fixed) == 1
+    assert new_report.passed is True
+    # File kept its fixed content (not reverted).
+    assert target.read_text() == "fastapi>=0.109\npasslib\n"

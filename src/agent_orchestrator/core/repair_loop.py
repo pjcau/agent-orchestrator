@@ -72,6 +72,32 @@ class RepairResult:
 TeamRunner = Callable[..., Awaitable[TeamRunResult]]
 
 
+@dataclass
+class _ActionRevertInfo:
+    """Pre-action snapshot so RepairLoop can undo a regression."""
+
+    path: str | None
+    original_bytes: bytes | None
+
+    def revert(self, workdir: Path) -> None:
+        if not self.path:
+            return
+        target = workdir / self.path
+        try:
+            if self.original_bytes is None:
+                # File didn't exist pre-action → revert == delete.
+                if target.exists():
+                    target.unlink()
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(self.original_bytes)
+        except OSError:
+            # Best-effort revert; the next gate.verify() will still re-read
+            # whatever is on disk now, so a partial revert is still safer
+            # than no revert.
+            pass
+
+
 class RepairLoop:
     """Verify-and-retry harness around a team runner.
 
@@ -146,13 +172,13 @@ class RepairLoop:
             last_workdir = workdir
 
             # Auto-fix via registry BEFORE escalating to a new LLM attempt.
+            # `_try_auto_fix` handles its own re-verify + post-condition guard:
+            # if the failure count strictly increases after the fix, all touched
+            # files are reverted and the returned signatures list is empty.
             auto_fixed: tuple[str, ...] = ()
             if not report.passed and self._registry is not None:
-                auto_fixed = await self._try_auto_fix(report, workdir)
-                if auto_fixed:
-                    # Re-verify after deterministic fixes.
-                    report = await self._gate.verify(workdir)
-                    last_report = report
+                auto_fixed, report = await self._try_auto_fix(report, workdir)
+                last_report = report
 
             duration = time.perf_counter() - t_attempt
             escalated = bool(report.signature_set() & signatures_seen)
@@ -244,20 +270,30 @@ class RepairLoop:
 
     async def _try_auto_fix(
         self, report: VerificationReport, workdir: Path
-    ) -> tuple[str, ...]:
-        """Phase-4 hook. Calls `registry.apply(failure, workdir)` per failure.
+    ) -> tuple[tuple[str, ...], VerificationReport]:
+        """Apply registry actions, re-verify, revert on regression.
 
-        Returns the set of signatures that were resolved deterministically.
-        Defensive: any exception inside the registry is swallowed so a buggy
-        pattern can never bring down the loop.
+        Returns ``(signatures_fixed, latest_report)``. The contract:
+
+        - Each action is allowed to write file(s) and is expected to expose
+          ``RepairAction.changed_path`` + ``RepairAction.original_bytes`` so
+          this method can revert if needed.
+        - After ALL applied actions, the gate is re-verified ONCE.
+        - **Post-condition guard**: if the post-fix report has strictly more
+          failures than the pre-fix one, every touched file is restored from
+          its snapshot, the signatures list is reset to ``()`` and the
+          ORIGINAL report is returned. The repair loop then proceeds as if
+          no auto-fix had run — preventing a buggy pattern from compounding.
+        - Any exception inside the registry is swallowed (defence in depth).
+
+        Surfaces a ``repair.auto_fixed`` event per applied action and a
+        ``repair.auto_fix_reverted`` event when the guard triggers.
         """
-        if self._registry is None:
-            return ()
-        fixed: list[str] = []
+        applied: list[tuple[str, _ActionRevertInfo]] = []
         for failure in report.top(3):
             try:
                 action = await self._registry.apply(failure, workdir)
-            except Exception:  # noqa: BLE001 — never let a pattern crash the loop
+            except Exception:  # noqa: BLE001
                 action = None
             if action is None:
                 continue
@@ -268,10 +304,42 @@ class RepairLoop:
                     "category": failure.category,
                     "kind": getattr(action, "kind", "unknown"),
                     "file": getattr(action, "file", None),
+                    "changed_path": getattr(action, "changed_path", None),
                 },
             )
-            fixed.append(failure.signature)
-        return tuple(fixed)
+            applied.append(
+                (
+                    failure.signature,
+                    _ActionRevertInfo(
+                        path=getattr(action, "changed_path", None),
+                        original_bytes=getattr(action, "original_bytes", None),
+                    ),
+                )
+            )
+
+        if not applied:
+            return (), report
+
+        new_report = await self._gate.verify(workdir)
+        # Post-condition: failure count must not strictly increase.
+        before = len(report.failures)
+        after = len(new_report.failures)
+        if after > before:
+            for sig, info in applied:
+                info.revert(workdir)
+            self._emit_event(
+                "repair.auto_fix_reverted",
+                {
+                    "reason": "failure_count_increased",
+                    "before": before,
+                    "after": after,
+                    "reverted_signatures": [sig for sig, _ in applied],
+                },
+            )
+            # Revert was destructive — re-verify so the reported state matches disk.
+            new_report = await self._gate.verify(workdir)
+            return (), new_report
+        return tuple(sig for sig, _ in applied), new_report
 
     def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
         if self._emit is None:

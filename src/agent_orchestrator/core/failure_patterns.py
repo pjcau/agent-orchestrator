@@ -45,6 +45,15 @@ class RepairAction:
     # the file the failure originated in). Helps the dashboard render the
     # actual change site.
     secondary_file: str | None = None
+    # --- Revert support (Phase 7.7) ---
+    # `changed_path`: workdir-relative path of the file actually written.
+    # For most actions this equals `file`; for `requirements_append` it
+    # equals `secondary_file` (the requirements file, not the importer).
+    # `original_bytes`: full bytes of `changed_path` BEFORE the write,
+    # or None if the file didn't exist. The RepairLoop uses these to
+    # revert an action whose re-verify shows a strict regression.
+    changed_path: str | None = None
+    original_bytes: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +164,7 @@ def _action_pip_pin_repair(
 
     try:
         original = target.read_text(encoding="utf-8")
+        original_bytes = target.read_bytes()
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -189,6 +199,8 @@ def _action_pip_pin_repair(
         file=failure.file,
         new_content=new_content,
         explanation=f"replaced unresolvable pin(s) in {failure.file}",
+        changed_path=failure.file,
+        original_bytes=original_bytes,
     )
 
 
@@ -211,6 +223,7 @@ def _action_unicode_unescape(
         return None
     try:
         original = target.read_text(encoding="utf-8")
+        original_bytes = target.read_bytes()
     except (OSError, UnicodeDecodeError):
         return None
     if original.count("\n") >= 3 or original.count("\\n") < 4:
@@ -227,6 +240,8 @@ def _action_unicode_unescape(
         file=failure.file,
         new_content=decoded,
         explanation=f"decoded over-escaped newlines in {failure.file}",
+        changed_path=failure.file,
+        original_bytes=original_bytes,
     )
 
 
@@ -295,14 +310,19 @@ def _action_requirements_append(
             if cur == workdir or cur.parent == cur:
                 break
             cur = cur.parent
+    file_created = False
     if req_path is None:
         req_path = workdir / "requirements.txt"
         if not req_path.exists():
             req_path.parent.mkdir(parents=True, exist_ok=True)
             req_path.write_text("")
+            file_created = True
 
     try:
         existing = req_path.read_text(encoding="utf-8")
+        # Snapshot BEFORE the write so the loop can revert. If we just created
+        # the file, the "original" is None so revert == unlink.
+        original_bytes: bytes | None = None if file_created else req_path.read_bytes()
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -325,12 +345,15 @@ def _action_requirements_append(
         new_content += "\n"
     new_content += f"{package}\n"
     req_path.write_text(new_content, encoding="utf-8")
+    secondary = str(req_path.relative_to(workdir))
     return RepairAction(
         kind="file_rewrite",
         file=failure.file,
         new_content=new_content,
-        explanation=f"appended '{package}' to {req_path.relative_to(workdir)}",
-        secondary_file=str(req_path.relative_to(workdir)),
+        explanation=f"appended '{package}' to {secondary}",
+        secondary_file=secondary,
+        changed_path=secondary,
+        original_bytes=original_bytes,
     )
 
 
