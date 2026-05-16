@@ -339,6 +339,8 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by the 2026-05-
 - [x] **Phase 7.3** — React dashboard surfaces the `repair: {…}` summary as a system message
 - [x] **Phase 7.4** — Default verifier chain extended from 3 to 5
 - [x] **Phase 7.5** — Benchmark re-run with the 5-verifier chain. Score **71.2/100** (+22.2 vs run (b); +38.7 vs baseline). Runtime 0 → 20/20. See `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` for the honest partial-run analysis (iter 3+4 hit poll cap → 3/5 iters scored).
+- [x] **Phase 7.6** — Custom-goal weather-portal run + `ImportVerifier` alias-map fix. Run (d) scored 48.8/100; surfaced a second-order bug where the auto-fix added bare `psycopg2` instead of `psycopg2-binary`. Fixed at the verifier (now accepts either form) — see `docs/learning-path-tests/2026-05-16d_weather-portal.md` + commit `edd7f54`.
+- [ ] **Phase 7.7** — Re-run the weather-portal benchmark with the Phase 7.6 fix in place; projected runtime 0 → ~20 (total ~68 / 100).
 
 ### KPIs
 

@@ -644,6 +644,8 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learni
 | 7.3 | ✅ Done | React UI surfaces the `repair: {…}` summary as a system message |
 | 7.4 | ✅ Done | Bundled chain extended from 3 → 5 verifiers |
 | 7.5 | ✅ Done | Benchmark re-run with the 5-verifier chain — 71.2/100 (+22.2 vs run (b)), see `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` |
+| 7.6 | ✅ Done | `ImportVerifier` alias-map fix: `psycopg2 ↔ psycopg2-binary` interchangeably (regression from run (d) where the auto-fix appended bare `psycopg2`, breaking pip install) |
+| 7.7 | ⏳ Pending | Re-run weather-portal benchmark with the Phase 7.6 fix to validate the projected runtime recovery |
 
 ### v1.5 P1 KPIs
 
