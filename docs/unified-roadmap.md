@@ -759,7 +759,8 @@ A workspace-level verify-and-retry pipeline that wraps `run_team()`. Different s
 | 7.6 | ✅ Done | `ImportVerifier` alias-map fix: psycopg2 ↔ psycopg2-binary (regression from custom-goal weather-portal run) | `core/verifiers/imports.py`, `core/failure_patterns.yaml` |
 | 7.7 | ✅ Done | Abstraction-level fix: `RuntimeSmokeVerifier` ground-truth tier + post-condition revert guard in `RepairLoop._try_auto_fix` | `core/verifiers/runtime_smoke.py`, `core/repair_loop.py`, `core/failure_patterns.py` |
 | 7.8 | ✅ Done | Re-run weather-portal benchmark with 6-verifier chain + revert guard — 74.2/100 on iter 0 alone (+25.4 vs (d)); iter 1 hung surfaces cache-miss issue | `docs/learning-path-tests/2026-05-16e_weather-portal-v2.md` |
-| 7.9 | ⏳ Pending | Smoke-verifier delta-install caching + repair-loop `max_wall_s` cap + per-verifier timing | `core/verifiers/runtime_smoke.py`, `core/repair_loop.py`, `core/verification_gate.py` |
+| 7.9 | ✅ Done | (a) `max_wall_s` cap in RepairLoop + new `aborted_time` status, (b) per-verifier `duration_ms` in `verifier.finished` events, (c) smoke verifier canonical-set cache + strict-subset delta install | `core/repair_loop.py`, `core/verification_gate.py`, `core/verifiers/runtime_smoke.py` |
+| 7.10 | ⏳ Pending | Re-run benchmark with the 3 Phase 7.9 features active | `docs/learning-path-tests/2026-05-XX_weather-portal-v3.md` |
 
 ### Configuration
 

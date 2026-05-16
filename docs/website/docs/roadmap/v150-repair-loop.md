@@ -35,7 +35,8 @@ Design: [`docs/architecture-repair-loop.md`](https://github.com/pjcau/agent-orch
 | 7.6 | ✅ Done | `ImportVerifier` alias-map fix (psycopg2 ↔ psycopg2-binary) | `core/verifiers/imports.py`, `core/failure_patterns.yaml` | regression tests in `tests/test_verifiers.py` |
 | 7.7 | ✅ Done | Abstraction-level fix: `RuntimeSmokeVerifier` (ground-truth tier — actual venv + `pip install` + `python -c "import X"`) + post-condition revert guard in `RepairLoop._try_auto_fix` (snapshots + reverts every touched file when failure count strictly increases) | `core/verifiers/runtime_smoke.py`, `core/repair_loop.py`, `core/failure_patterns.py` | `tests/test_verifiers.py` (4) + `tests/test_repair_loop.py` (2) |
 | 7.8 | ✅ Done | Re-run weather-portal benchmark (run e): 74.2/100 on iter 0 alone (+25.4 vs (d)); iter 1 hung — exposes cache-miss-per-retry when requirements.txt mutates | `docs/learning-path-tests/2026-05-16e_weather-portal-v2.md` | end-to-end |
-| 7.9 | ⏳ Pending | Smoke-verifier delta-install cache, `max_wall_s` cap in `RepairLoop`, per-verifier timing telemetry | `core/verifiers/runtime_smoke.py`, `core/repair_loop.py`, `core/verification_gate.py` | end-to-end |
+| 7.9 | ✅ Done | All 3 findings from (e) closed: `max_wall_s` cap + `aborted_time` status (a), per-verifier `duration_ms` telemetry (b), smoke verifier canonical-set cache + strict-subset delta install via `cp -a --reflink=auto` (c) | `core/repair_loop.py`, `core/verification_gate.py`, `core/verifiers/runtime_smoke.py` | `tests/test_repair_loop.py` +2, `tests/test_verification_gate.py` +1, `tests/test_verifiers.py` +3 |
+| 7.10 | ⏳ Pending | Re-run weather-portal benchmark with the 3 Phase 7.9 features active | `docs/learning-path-tests/2026-05-XX_weather-portal-v3.md` | end-to-end |
 
 ## TL;DR architecture
 

@@ -647,7 +647,8 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learni
 | 7.6 | ✅ Done | `ImportVerifier` alias-map fix: `psycopg2 ↔ psycopg2-binary` interchangeably (regression from run (d) where the auto-fix appended bare `psycopg2`, breaking pip install) |
 | 7.7 | ✅ Done | Abstraction-level fix for the whole "static verifier said passed but workspace doesn't run" class: (a) `RuntimeSmokeVerifier` as ground-truth tier (runs actual `pip install` + `python -c "import X"` in a hashed/cached venv, last in the cheap-first chain so only fires when the static chain is clean), and (b) post-condition guard in `RepairLoop._try_auto_fix` that reverts every touched file if the failure count strictly increases after the fix. |
 | 7.8 | ✅ Done | Benchmark re-run (e): **74.2/100 on iter 0 alone** (vs 48.8 in (d) with 6 iters). Runtime 0 → 20/20. Iter 1 hung server-side — surfaced a cache-miss-on-every-retry issue when `requirements.txt` mutates. See `docs/learning-path-tests/2026-05-16e_weather-portal-v2.md`. |
-| 7.9 | ⏳ Pending | Smoke-verifier delta-install cache + repair-loop `max_wall_s` cap + per-verifier timing telemetry (the 3 findings from run (e)) |
+| 7.9 | ✅ Done | All 3 findings from run (e) addressed: (a) `RepairLoop.max_wall_s` cap + `aborted_time` status + `repair.aborted{reason:"time"}` event; (b) `verifier.finished` event now carries `duration_ms`; (c) smoke verifier cache keyed by canonical normalised package set (formatting/version edits no longer invalidate), with strict-subset delta install via `cp -a --reflink=auto` + `pip install <delta>`. |
+| 7.10 | ⏳ Pending | Re-run benchmark with all Phase 7.9 features active |
 
 ### v1.5 P1 KPIs
 
