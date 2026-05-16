@@ -637,8 +637,13 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learni
 | 3 | ✅ Done | `RepairLoop` harness (max 5 attempts, $0.50 cumulative cap, signature memory) |
 | 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML (`pip_pin_repair`, `unicode_unescape`, `noop`) |
 | 5 | ✅ Done | Wiring into `/api/team/run` (**ON by default** since Phase 7 — opt out via `REPAIR_LOOP_ENABLED=false`) |
-| 6 | 🟡 In progress | Feature maps + roadmap sync |
-| 7 | ⏳ Pending | `/orchestrator-learning-path-test` validation run |
+| 6 | ✅ Done | Feature maps + roadmap sync |
+| 7 | ✅ Done | `/orchestrator-learning-path-test` first run (49/100 vs 32.5 baseline; gaps closed in 7.1-7.4 below) |
+| 7.1 | ✅ Done | `ImportVerifier` + `requirements_append` auto-fix (catches `passlib` / `python-jose` style missing-dep failures) |
+| 7.2 | ✅ Done | `WorkspaceCoherenceVerifier` (catches `docker-compose.yml` vs `database.py` `DATABASE_URL` mismatches) |
+| 7.3 | ✅ Done | React UI surfaces the `repair: {…}` summary as a system message |
+| 7.4 | ✅ Done | Bundled chain extended from 3 → 5 verifiers |
+| 7.5 | ⏳ Pending | Benchmark re-run with the 5-verifier chain |
 
 ### v1.5 P1 KPIs
 

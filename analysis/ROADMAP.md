@@ -332,8 +332,13 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by the 2026-05-
 - [x] **Phase 3** — `RepairLoop` harness (`core/repair_loop.py`) — max 5 attempts, $0.50 cumulative cap, signature memory for anti-loop
 - [x] **Phase 4** — `FailurePatternRegistry` + bundled YAML (`core/failure_patterns.{py,yaml}`) — `pip_pin_repair`, `unicode_unescape`, `noop`
 - [x] **Phase 5** — Opt-in wiring into `/api/team/run` (`dashboard/agent_runtime_router.py`, `dashboard/events.py`, `orchestrator.yaml.example`) — controlled by `REPAIR_LOOP_ENABLED=true`
-- [ ] **Phase 6** — Feature maps + roadmap sync (this file, `docs/website/architecture-map.yaml`, regenerated `*-map.json`, `sidebars.js`, Docusaurus page)
-- [ ] **Phase 7** — `/orchestrator-learning-path-test` validation run with `REPAIR_LOOP_ENABLED=true` — target lift 32.5 → ~85
+- [x] **Phase 6** — Feature maps + roadmap sync (this file, `docs/website/architecture-map.yaml`, regenerated `*-map.json`, `sidebars.js`, Docusaurus page)
+- [x] **Phase 7** — `/orchestrator-learning-path-test` validation: 49.0/100 (vs 32.5 baseline, +16.5); what-if with the dep gap patched = 72/100. Surfaced 2 verifier gaps + 1 UI gap, all closed below.
+- [x] **Phase 7.1** — `ImportVerifier` + `requirements_append` auto-fix (catches the passlib/python-jose missing-dep failure mode the original 3-verifier chain missed)
+- [x] **Phase 7.2** — `WorkspaceCoherenceVerifier` (catches `docker-compose.yml::DATABASE_URL` vs `backend/database.py` default scheme mismatches)
+- [x] **Phase 7.3** — React dashboard surfaces the `repair: {…}` summary as a system message
+- [x] **Phase 7.4** — Default verifier chain extended from 3 to 5
+- [ ] **Phase 7.5** — Benchmark re-run with the 5-verifier chain (target: close the +23-point what-if gap)
 
 ### KPIs
 

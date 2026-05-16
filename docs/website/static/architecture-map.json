@@ -593,18 +593,22 @@
             "core/verifiers/__init__.py",
             "core/verifiers/syntax.py",
             "core/verifiers/encoding.py",
-            "core/verifiers/dependency.py"
+            "core/verifiers/dependency.py",
+            "core/verifiers/imports.py",
+            "core/verifiers/coherence.py"
           ],
           "cx": 820,
           "cy": 470,
           "size": 32,
-          "description": "Workspace verifier chain (Syntax + Encoding + Dependency) \u2014 runs after team_run().",
+          "description": "Workspace verifier chain (Syntax + Encoding + Dependency + Import + Coherence) \u2014 runs after team_run().",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verification_gate.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/__init__.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/syntax.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/encoding.py",
-            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/dependency.py"
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/dependency.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/imports.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/verifiers/coherence.py"
           ]
         },
         {

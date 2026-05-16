@@ -749,8 +749,13 @@ A workspace-level verify-and-retry pipeline that wraps `run_team()`. Different s
 | 3 | ✅ Done | `RepairLoop` harness | `core/repair_loop.py` |
 | 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML | `core/failure_patterns.py`, `core/failure_patterns.yaml` |
 | 5 | ✅ Done | Wire into `/api/team/run` (opt-in) | `dashboard/agent_runtime_router.py`, `dashboard/events.py`, `orchestrator.yaml.example` |
-| 6 | 🟡 In progress | Feature maps + roadmap sync | this file, `docs/website/architecture-map.yaml`, `*-map.json`, `sidebars.js` |
-| 7 | ⏳ Pending | Learning-path validation run | `docs/learning-path-tests/2026-05-XX_repair-loop.md` |
+| 6 | ✅ Done | Feature maps + roadmap sync | this file, `docs/website/architecture-map.yaml`, `*-map.json`, `sidebars.js` |
+| 7 | ✅ Done | Learning-path validation run + 4 follow-up patches (7.1–7.4) | `docs/learning-path-tests/2026-05-16b_repair-loop.md` |
+| 7.1 | ✅ Done | `ImportVerifier` (catches missing-dep failures the 3-verifier chain missed) | `core/verifiers/imports.py`, `core/failure_patterns.{py,yaml}` |
+| 7.2 | ✅ Done | `WorkspaceCoherenceVerifier` (cross-file contradictions) | `core/verifiers/coherence.py` |
+| 7.3 | ✅ Done | React dashboard surfaces `repair: {…}` summary | `frontend/src/api/types.ts`, `frontend/src/hooks/useWebSocket.ts` |
+| 7.4 | ✅ Done | Default verifier chain extended to 5 | `dashboard/agent_runtime_router.py`, `orchestrator.yaml.example` |
+| 7.5 | ⏳ Pending | Benchmark re-run with the 5-verifier chain | `docs/learning-path-tests/2026-05-XX_repair-loop-v2.md` |
 
 ### Configuration
 

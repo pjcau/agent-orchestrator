@@ -25,8 +25,13 @@ Design: [`docs/architecture-repair-loop.md`](https://github.com/pjcau/agent-orch
 | 3 | ✅ Done | `RepairLoop` (verify-and-retry harness) | `core/repair_loop.py` | `tests/test_repair_loop.py` |
 | 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML | `core/failure_patterns.py`, `core/failure_patterns.yaml` | `tests/test_failure_patterns.py` |
 | 5 | ✅ Done | Wiring into `/api/team/run` (opt-in) | `dashboard/agent_runtime_router.py`, `dashboard/events.py`, `orchestrator.yaml.example` | `tests/test_repair_loop_wiring.py` |
-| 6 | 🟡 In progress | Feature maps + roadmap sync | `docs/website/architecture-map.yaml`, `*-map.json`, this file, `sidebars.js` | — |
-| 7 | ⏳ Pending | Learning-path validation run with `REPAIR_LOOP_ENABLED=true` | `docs/learning-path-tests/2026-05-XX_repair-loop.md` | end-to-end |
+| 6 | ✅ Done | Feature maps + roadmap sync | `docs/website/architecture-map.yaml`, `*-map.json`, this file, `sidebars.js` | — |
+| 7 | ✅ Done | Learning-path validation run + 3 follow-ups | `docs/learning-path-tests/2026-05-16b_repair-loop.md`; 1st run scored 49/100 (vs 32.5 baseline), exposed gaps closed below | end-to-end |
+| 7.1 | ✅ Done | `ImportVerifier` + `missing_dep_in_requirements` pattern | `core/verifiers/imports.py`, `core/failure_patterns.{py,yaml}` | `tests/test_verifiers.py` + `tests/test_failure_patterns.py` |
+| 7.2 | ✅ Done | `WorkspaceCoherenceVerifier` | `core/verifiers/coherence.py` | `tests/test_verifiers.py` |
+| 7.3 | ✅ Done | Surface `repair: {…}` block in React UI | `frontend/src/api/types.ts`, `frontend/src/hooks/useWebSocket.ts` | `frontend/src/test/teamComplete.test.tsx` |
+| 7.4 | ✅ Done | Default verifier chain: 3 → 5 (Syntax + Encoding + Dependency + Import + Coherence) | `dashboard/agent_runtime_router.py`, `orchestrator.yaml.example` | `tests/test_repair_loop_wiring.py::test_build_repair_loop_includes_all_five_verifiers` |
+| 7.5 | ⏳ Pending | Benchmark re-run with the 5-verifier chain | `docs/learning-path-tests/2026-05-XX_repair-loop-v2.md` | end-to-end |
 
 ## TL;DR architecture
 
