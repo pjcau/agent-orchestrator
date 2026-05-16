@@ -60,6 +60,13 @@ MODULE_TO_PACKAGE: dict[str, str] = {
     "dateutil": "python-dateutil",
     "OpenSSL": "pyOpenSSL",
     "Crypto": "pycryptodome",
+    # Prefer wheel-only variants so `pip install` does not need a compiler.
+    # Found in 2026-05-16(d) — auto-fix added bare `psycopg2`, which needs
+    # libpq-dev headers, breaking the runtime check.
+    "psycopg2": "psycopg2-binary",
+    "MySQLdb_binary": "mysqlclient",
+    "lxml": "lxml",  # no rename, but listed for completeness
+    "ujson": "ujson",
 }
 
 _STDLIB = set(sys.stdlib_module_names) | {
@@ -104,6 +111,12 @@ class ImportVerifier:
                     continue
                 package = self._aliases.get(top, top)
                 if _is_declared(package, declared):
+                    continue
+                # Defence-in-depth: an alias maps `psycopg2` → `psycopg2-binary`,
+                # but a user can also declare the bare module name (`psycopg2`)
+                # directly and pip will still resolve it. Accept either form so
+                # we never flag a usage that pip can actually install.
+                if _normalize(top) in declared:
                     continue
                 if top in seen_missing:
                     continue

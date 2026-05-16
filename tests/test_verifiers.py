@@ -395,3 +395,25 @@ async def test_coherence_verifier_handles_broken_yaml(tmp_path: Path):
     # Broken YAML is SyntaxVerifier's responsibility — coherence stays quiet.
     fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
     assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_psycopg2_binary_satisfies_import(tmp_path: Path):
+    """The 2026-05-16(d) regression: `import psycopg2` was flagged as missing
+    even though `psycopg2-binary` (which provides the same module) was
+    declared. The follow-up auto-fix then added bare `psycopg2`, breaking
+    pip install. Both paths must now be accepted."""
+    (tmp_path / "database.py").write_text("import psycopg2\n")
+    # User declared the wheel-only variant.
+    (tmp_path / "requirements.txt").write_text("psycopg2-binary>=2.9\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_import_verifier_bare_psycopg2_in_requirements_also_accepted(tmp_path: Path):
+    """The inverse: user declared bare `psycopg2`. Still satisfies `import psycopg2`."""
+    (tmp_path / "database.py").write_text("import psycopg2\n")
+    (tmp_path / "requirements.txt").write_text("psycopg2>=2.9\n")
+    fails = await ImportVerifier().verify(tmp_path)
+    assert fails == []

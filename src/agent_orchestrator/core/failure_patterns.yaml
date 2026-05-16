@@ -58,4 +58,7 @@
       dateutil: python-dateutil
       OpenSSL: pyOpenSSL
       Crypto: pycryptodome
+      # 2026-05-16(d) regression — `psycopg2` (bare) needs libpq-dev to build;
+      # prefer the wheel-only -binary distribution.
+      psycopg2: psycopg2-binary
   llm_required: false
