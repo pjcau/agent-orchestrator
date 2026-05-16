@@ -1,0 +1,38 @@
+# Failure-pattern registry — loaded by core.failure_patterns.load_default_registry().
+#
+# Each pattern:
+#   name:          human identifier (must be unique within the file)
+#   category:      string matched against VerifierFailure.category.
+#                  Empty / omitted = match any category.
+#   pattern:       Python regex matched against VerifierFailure.message.
+#                  First match wins.
+#   auto_fix.type: one of pip_pin_repair | unicode_unescape | noop
+#   auto_fix.<…>:  type-specific parameters.
+#   llm_required:  documentation flag, default false. When true, the loop
+#                  should still fall through to an LLM repair attempt even
+#                  if the action ran successfully.
+#
+# Add a new pattern by appending a list entry — no code changes required.
+
+- name: psycopg_v2_pin_against_v3_only_package
+  category: pypi_resolve
+  pattern: "psycopg.*smallest available major is 3"
+  auto_fix:
+    type: pip_pin_repair
+    replacements:
+      psycopg: "psycopg2-binary>=2.9"
+  llm_required: false
+
+- name: literal_backslash_n_in_json
+  category: json_escape
+  pattern: "literal '\\\\n' substrings"
+  auto_fix:
+    type: unicode_unescape
+  llm_required: false
+
+- name: literal_backslash_n_in_source
+  category: literal_newline
+  pattern: "literal '\\\\n' substrings"
+  auto_fix:
+    type: unicode_unescape
+  llm_required: false
