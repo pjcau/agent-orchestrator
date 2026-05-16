@@ -12,6 +12,7 @@ from agent_orchestrator.core.verifiers.coherence import WorkspaceCoherenceVerifi
 from agent_orchestrator.core.verifiers.dependency import DependencyVerifier
 from agent_orchestrator.core.verifiers.encoding import EncodingVerifier
 from agent_orchestrator.core.verifiers.imports import ImportVerifier
+from agent_orchestrator.core.verifiers.runtime_smoke import RuntimeSmokeVerifier
 from agent_orchestrator.core.verifiers.syntax import SyntaxVerifier
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "EncodingVerifier",
     "ImportVerifier",
     "WorkspaceCoherenceVerifier",
+    "RuntimeSmokeVerifier",
 ]

@@ -33,6 +33,7 @@ from agent_orchestrator.core.verifiers import (
     DependencyVerifier,
     EncodingVerifier,
     ImportVerifier,
+    RuntimeSmokeVerifier,
     SyntaxVerifier,
     WorkspaceCoherenceVerifier,
 )
@@ -138,6 +139,12 @@ def _build_repair_loop(
             # contradictions).
             ImportVerifier(),
             WorkspaceCoherenceVerifier(),
+            # v1.5 P1 Phase 7.7: ground-truth tier. cost_estimate_s=30 puts
+            # this last, and fail_fast=True (gate default) means it only
+            # runs when every cheap verifier is already clean. Catches the
+            # entire class of "static check passed but the workspace can't
+            # actually install or import".
+            RuntimeSmokeVerifier(),
         ],
         emit_event=emit,
     )

@@ -237,14 +237,15 @@ async def test_run_team_with_repair_emits_lifecycle_events(
 
 
 @pytest.mark.asyncio
-async def test_build_repair_loop_includes_all_five_verifiers(monkeypatch: pytest.MonkeyPatch):
-    """Regression: the v1.5 P1 Phase 7 follow-up added ImportVerifier +
-    WorkspaceCoherenceVerifier to the bundled chain. All five must be
-    present; the gate sorts them cheap-first by ``cost_estimate_s``."""
+async def test_build_repair_loop_includes_all_six_verifiers(monkeypatch: pytest.MonkeyPatch):
+    """Regression: Phase 7.7 added RuntimeSmokeVerifier as the ground-truth
+    tier. The bundled chain must hold all six verifiers, sorted cheap-first
+    by ``cost_estimate_s`` so the expensive smoke tier runs last."""
     from agent_orchestrator.core.verifiers import (
         DependencyVerifier,
         EncodingVerifier,
         ImportVerifier,
+        RuntimeSmokeVerifier,
         SyntaxVerifier,
         WorkspaceCoherenceVerifier,
     )
@@ -264,7 +265,10 @@ async def test_build_repair_loop_includes_all_five_verifiers(monkeypatch: pytest
         DependencyVerifier,
         ImportVerifier,
         WorkspaceCoherenceVerifier,
+        RuntimeSmokeVerifier,
     }
-    # And cheap-first ordering (cost_estimate_s ascending).
+    # Cheap-first ordering (cost_estimate_s ascending).
     costs = [v.cost_estimate_s for v in loop._gate._verifiers]
     assert costs == sorted(costs)
+    # RuntimeSmokeVerifier is the most expensive, so it lands last.
+    assert isinstance(loop._gate._verifiers[-1], RuntimeSmokeVerifier)

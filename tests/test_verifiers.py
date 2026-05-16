@@ -417,3 +417,121 @@ async def test_import_verifier_bare_psycopg2_in_requirements_also_accepted(tmp_p
     (tmp_path / "requirements.txt").write_text("psycopg2>=2.9\n")
     fails = await ImportVerifier().verify(tmp_path)
     assert fails == []
+
+
+# ---------------------- RuntimeSmokeVerifier ----------------------
+
+
+@pytest.mark.asyncio
+async def test_runtime_smoke_no_requirements_returns_no_failures(tmp_path: Path):
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
+    (tmp_path / "main.py").write_text("print('hi')\n")
+    fails = await RuntimeSmokeVerifier(cache_root=tmp_path / "cache").verify(tmp_path)
+    assert fails == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_smoke_pip_install_failure_surfaces_as_pip_install_category(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """When pip install fails, exactly one failure with category=pip_install."""
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
+    import subprocess
+
+    (tmp_path / "requirements.txt").write_text("not-a-real-package\n")
+
+    original_run = subprocess.run
+
+    def fake_run(cmd, **kw):
+        if "venv" in cmd:
+            # Pretend venv creation succeeded; touch the dirs the verifier expects.
+            venv_dir = Path(cmd[-1])
+            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
+            (venv_dir / "bin" / "pip").touch()
+            (venv_dir / "bin" / "python").touch()
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        if "install" in cmd:
+            return subprocess.CompletedProcess(
+                cmd, 1, b"", b"ERROR: Could not find a version that satisfies the requirement not-a-real-package"
+            )
+        return original_run(cmd, **kw)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    fails = await RuntimeSmokeVerifier(cache_root=tmp_path / "cache").verify(tmp_path)
+    assert len(fails) == 1
+    assert fails[0].category == "pip_install"
+    assert "not-a-real-package" in fails[0].detail
+
+
+@pytest.mark.asyncio
+async def test_runtime_smoke_import_failure_emits_missing_dep_compatible_with_existing_autofix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Smoke failure for `No module named 'passlib'` must match the existing
+    ImportVerifier auto-fix pattern (category=missing_dep, message+detail format)."""
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
+    import subprocess
+
+    (tmp_path / "requirements.txt").write_text("fastapi\n")
+    (tmp_path / "main.py").write_text("from passlib.context import CryptContext\n")
+
+    cache = tmp_path / "cache"
+
+    def fake_run(cmd, **kw):
+        if "venv" in cmd:
+            venv_dir = Path(cmd[-1])
+            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
+            (venv_dir / "bin" / "pip").touch()
+            (venv_dir / "bin" / "python").touch()
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        if "install" in cmd:
+            # Mark venv as cached so subsequent verify() calls skip install.
+            digest_dir = cache / list(cache.iterdir())[0].name if cache.exists() and any(cache.iterdir()) else None
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        # The import probe.
+        if isinstance(cmd, list) and "-c" in cmd:
+            return subprocess.CompletedProcess(
+                cmd, 1, b"",
+                b"Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'passlib'\n",
+            )
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    fails = await RuntimeSmokeVerifier(cache_root=cache).verify(tmp_path)
+    assert len(fails) == 1
+    f = fails[0]
+    assert f.category == "missing_dep"
+    assert "passlib" in f.message
+    assert "Expected package on PyPI: 'passlib'." in f.detail
+
+
+@pytest.mark.asyncio
+async def test_runtime_smoke_caches_venv_by_requirements_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Second verify() with identical requirements must not re-run pip."""
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
+    import subprocess
+
+    (tmp_path / "requirements.txt").write_text("fastapi\n")
+
+    install_calls = {"n": 0}
+
+    def fake_run(cmd, **kw):
+        if "venv" in cmd:
+            venv_dir = Path(cmd[-1])
+            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
+            (venv_dir / "bin" / "pip").touch()
+            (venv_dir / "bin" / "python").touch()
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        if "install" in cmd:
+            install_calls["n"] += 1
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cache = tmp_path / "cache"
+    v = RuntimeSmokeVerifier(cache_root=cache)
+    await v.verify(tmp_path)
+    await v.verify(tmp_path)
+    assert install_calls["n"] == 1  # second run hit the cache
