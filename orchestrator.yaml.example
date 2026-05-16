@@ -128,3 +128,5 @@ repair_loop:
     - imports                 # missing-dep detection (passlib/python-jose case, 2026-05-16b)
     - coherence               # cross-file contradictions (compose vs database.py DATABASE_URL)
     - runtime_smoke           # ground-truth tier: actual pip install + python -c "import X" in a tmp venv (2026-05-16d)
+    - entrypoint              # launches the Dockerfile CMD / compose command (uvicorn) with a health probe (2026-05-16g)
+    - e2e_smoke               # OPT-IN: REPAIR_LOOP_E2E_ENABLED=true. Headless browser test against the live frontend (2026-05-16g)

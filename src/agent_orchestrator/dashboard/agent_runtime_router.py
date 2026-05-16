@@ -31,7 +31,9 @@ from agent_orchestrator.core.repair_loop import RepairLoop
 from agent_orchestrator.core.verification_gate import VerificationGate
 from agent_orchestrator.core.verifiers import (
     DependencyVerifier,
+    E2ESmokeVerifier,
     EncodingVerifier,
+    EntrypointVerifier,
     ImportVerifier,
     RuntimeSmokeVerifier,
     SyntaxVerifier,
@@ -145,6 +147,15 @@ def _build_repair_loop(
             # entire class of "static check passed but the workspace can't
             # actually install or import".
             RuntimeSmokeVerifier(),
+            # Phase 7.11a: actually launch the production entrypoint
+            # (uvicorn / Dockerfile CMD). Catches relative-import bugs and
+            # startup-time crashes that bare-import probes miss.
+            EntrypointVerifier(),
+            # Phase 7.11b: headless browser e2e (opt-in via
+            # REPAIR_LOOP_E2E_ENABLED=true). Catches frontend/backend
+            # integration failures (shape mismatches, console errors,
+            # failed fetches).
+            E2ESmokeVerifier(),
         ],
         emit_event=emit,
     )
