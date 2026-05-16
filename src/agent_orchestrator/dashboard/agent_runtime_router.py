@@ -156,12 +156,14 @@ def _build_repair_loop(
 
     max_attempts = int(os.environ.get("REPAIR_LOOP_MAX_ATTEMPTS", "5"))
     max_cost = float(os.environ.get("REPAIR_LOOP_MAX_COST_USD", "0.50"))
+    max_wall = float(os.environ.get("REPAIR_LOOP_MAX_WALL_S", "1800"))
 
     return RepairLoop(
         team_runner=team_runner,
         gate=gate,
         max_attempts=max_attempts,
         max_cost_usd=max_cost,
+        max_wall_s=max_wall,
         pattern_registry=registry,
         emit_event=emit,
     )

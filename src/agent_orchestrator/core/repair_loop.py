@@ -60,7 +60,7 @@ class RepairResult:
     final_workdir: Path
     final_report: VerificationReport
     attempts: list[RepairAttempt]
-    status: Literal["passed", "partial", "aborted_budget", "aborted_cost"]
+    status: Literal["passed", "partial", "aborted_budget", "aborted_cost", "aborted_time"]
     cumulative_cost_usd: float
     cumulative_duration_s: float
 
@@ -108,6 +108,9 @@ class RepairLoop:
         gate: a configured `VerificationGate`.
         max_attempts: hard cap on team-run invocations (default 5).
         max_cost_usd: hard cap on cumulative cost (default $0.50).
+        max_wall_s: hard cap on cumulative wall-clock seconds across all
+            attempts (default 1800 = 30 min). Surfaced as
+            ``status="aborted_time"`` + ``repair.aborted{reason: "time"}``.
         emit_event: optional `(event_name, data) -> None` sink.
         pattern_registry: optional Phase-4 registry; if set, the loop calls
             ``registry.apply(failure, workdir)`` before invoking the team and
@@ -121,6 +124,7 @@ class RepairLoop:
         gate: VerificationGate,
         max_attempts: int = 5,
         max_cost_usd: float = 0.50,
+        max_wall_s: float = 1800.0,
         emit_event: EmitEvent = None,
         pattern_registry: Any | None = None,
     ) -> None:
@@ -128,10 +132,13 @@ class RepairLoop:
             raise ValueError("max_attempts must be >= 1")
         if max_cost_usd <= 0:
             raise ValueError("max_cost_usd must be > 0")
+        if max_wall_s <= 0:
+            raise ValueError("max_wall_s must be > 0")
         self._team_runner = team_runner
         self._gate = gate
         self._max_attempts = max_attempts
         self._max_cost = max_cost_usd
+        self._max_wall_s = max_wall_s
         self._emit = emit_event
         self._registry = pattern_registry
 
@@ -149,12 +156,15 @@ class RepairLoop:
                 "task": _trunc(task),
                 "max_attempts": self._max_attempts,
                 "max_cost_usd": self._max_cost,
+                "max_wall_s": self._max_wall_s,
             },
         )
 
         last_report: VerificationReport | None = None
         last_workdir: Path | None = None
-        status: Literal["passed", "partial", "aborted_budget", "aborted_cost"] = "partial"
+        status: Literal[
+            "passed", "partial", "aborted_budget", "aborted_cost", "aborted_time"
+        ] = "partial"
 
         for attempt_idx in range(1, self._max_attempts + 1):
             self._emit_event(
@@ -214,6 +224,18 @@ class RepairLoop:
                 self._emit_event(
                     "repair.aborted",
                     {"reason": "cost", "cumulative_cost_usd": cumulative_cost},
+                )
+                break
+
+            # Time guard — same purpose as cost guard but for wall-clock.
+            # Surfaces the 2026-05-16(e) failure mode where one iter hung
+            # >37 min because the smoke verifier cache kept missing.
+            wall_so_far = time.perf_counter() - t0
+            if wall_so_far > self._max_wall_s:
+                status = "aborted_time"
+                self._emit_event(
+                    "repair.aborted",
+                    {"reason": "time", "wall_s": wall_so_far, "max_wall_s": self._max_wall_s},
                 )
                 break
 

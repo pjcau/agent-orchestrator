@@ -515,3 +515,39 @@ async def test_post_condition_guard_does_not_revert_when_fix_helps(tmp_path: Pat
     assert new_report.passed is True
     # File kept its fixed content (not reverted).
     assert target.read_text() == "fastapi>=0.109\npasslib\n"
+
+
+# ---------------------- max_wall_s (Phase 7.9a) ----------------------
+
+
+@pytest.mark.asyncio
+async def test_repair_loop_aborts_on_wall_clock_cap(tmp_path: Path):
+    """A slow team_runner should trigger status='aborted_time' before
+    exhausting max_attempts."""
+    import asyncio as _asyncio
+
+    async def slow_team(task: str, **kw):
+        await _asyncio.sleep(0.3)  # well above max_wall_s
+        return _FakeTeamResult(workdir=tmp_path, cost_usd=0.001)
+
+    failing_v = _FakeVerifier(name="x", cost_estimate_s=0.0, results=[[_failure()]])
+    gate = VerificationGate([failing_v])
+    loop = RepairLoop(
+        team_runner=slow_team,
+        gate=gate,
+        max_attempts=5,
+        max_cost_usd=10.0,
+        max_wall_s=0.2,
+    )
+    result = await loop.run("task")
+    assert result.status == "aborted_time"
+    # Should have tried at least once but well under max_attempts.
+    assert 1 <= result.attempt_count <= 3
+
+
+@pytest.mark.asyncio
+async def test_repair_loop_max_wall_s_validates_positive():
+    failing_v = _FakeVerifier(name="x", cost_estimate_s=0.0, results=[[_failure()]])
+    gate = VerificationGate([failing_v])
+    with pytest.raises(ValueError, match="max_wall_s"):
+        RepairLoop(team_runner=lambda *a, **kw: None, gate=gate, max_wall_s=0)

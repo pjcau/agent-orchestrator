@@ -191,6 +191,30 @@ async def test_events_emitted_in_order(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_verifier_finished_event_carries_duration_ms(tmp_path):
+    """Phase 7.9b: per-verifier timing is observable on the bus so the
+    dashboard can flag a slow verifier (e.g. the smoke tier on a cache miss)."""
+    events: list[tuple[str, dict]] = []
+
+    def emit(t: str, d: dict) -> None:
+        events.append((t, d))
+
+    gate = VerificationGate(
+        [_FakeVerifier(name="syntax", cost_estimate_s=1.0, result=[])],
+        emit_event=emit,
+    )
+    await gate.verify(tmp_path)
+    finished = [d for t, d in events if t == "verifier.finished"]
+    assert len(finished) == 1
+    payload = finished[0]
+    assert payload["name"] == "syntax"
+    assert isinstance(payload["duration_ms"], int)
+    assert payload["duration_ms"] >= 0
+    assert payload["passed"] is True
+    assert payload["failure_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_event_emitter_exception_does_not_break_verify(tmp_path):
     def emit(t: str, d: dict) -> None:
         raise RuntimeError("bad sink")

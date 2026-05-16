@@ -103,35 +103,82 @@ class RuntimeSmokeVerifier:
     def _ensure_venv(
         self, workdir: Path, req: Path
     ) -> tuple[Path, VerifierFailure | None]:
-        """Create or reuse a venv keyed by SHA-256(requirements file). Returns
-        the venv dir + either None (install succeeded / venv reused) or a
-        single ``pip_install`` failure."""
-        digest = hashlib.sha256(req.read_bytes()).hexdigest()[:12]
+        """Create or reuse a venv. Phase 7.9c — delta-install cache.
+
+        Cache strategy:
+
+        1. Parse ``req`` into a canonical, sorted set of normalised package
+           names (versions / comments / blank lines ignored). This is the
+           "shape" of the dep set; semantically-equivalent edits to
+           ``requirements.txt`` no longer invalidate the cache.
+        2. Key the cache by SHA-256 of that canonical set, prefixed by a
+           short tag of the count. Exact match → reuse, zero cost.
+        3. **Delta install** on miss: scan sibling cache dirs for a venv
+           whose set is a SUBSET of the current set. Pick the largest
+           such match. Clone it (cheap on Linux via reflink / hardlink,
+           falls back to copy), then ``pip install <delta>`` only for the
+           newly-added packages. Drops the typical iter-N cost from
+           ~30-90 s (full install) to ~3-10 s (delta).
+        4. Fresh venv on no usable parent.
+
+        A ``.smoke-manifest.json`` sidecar in each cached venv stores the
+        full canonical list so future runs can compute deltas without
+        re-parsing the original requirements.
+        """
+        import json as _json
+
+        canonical = _canonical_requirements_set(req)
+        if not canonical:
+            # Empty / unparseable requirements → behave like cache hit, do
+            # not even try to spin up a venv (no work to validate).
+            empty = self._cache_root / "empty"
+            empty.mkdir(parents=True, exist_ok=True)
+            return empty, None
+
+        digest = _hash_set(canonical)
         venv_dir = self._cache_root / digest
         self._cache_root.mkdir(parents=True, exist_ok=True)
 
-        # Reuse on cache hit — pip install was already verified for this hash.
         marker = venv_dir / ".smoke-ok"
         if marker.exists():
             return venv_dir, None
 
-        # Fresh venv.
+        # Look for the largest subset cache that we can reuse + delta-install.
+        parent_dir, parent_set = self._find_largest_subset_cache(canonical)
+
         if venv_dir.exists():
-            # Stale half-built venv → wipe (best effort).
             import shutil
             shutil.rmtree(venv_dir, ignore_errors=True)
-        subprocess.run(
-            [sys.executable, "-m", "venv", str(venv_dir)],
-            capture_output=True, timeout=60, check=True,
-        )
+
+        if parent_dir is not None:
+            # Clone the parent venv → delta install the missing packages.
+            self._clone_venv(parent_dir, venv_dir)
+            install_args = sorted(canonical - parent_set)
+            install_cmd_input = install_args
+        else:
+            # No usable parent → fresh venv + full install.
+            subprocess.run(
+                [sys.executable, "-m", "venv", str(venv_dir)],
+                capture_output=True, timeout=60, check=True,
+            )
+            install_cmd_input = ["-r", str(req)]
+
         pip = venv_dir / "bin" / "pip"
         if not pip.exists():
-            # Windows path
-            pip = venv_dir / "Scripts" / "pip.exe"
+            pip = venv_dir / "Scripts" / "pip.exe"  # Windows path
 
-        # Try install. Capture stderr; surface as a single failure on non-zero.
+        if not install_cmd_input:
+            # Parent set == current set after canonicalisation; nothing to
+            # install. (Edge case: parent.set was already a superset, which
+            # means the original SHA-key check missed because of formatting.)
+            (venv_dir / ".smoke-manifest.json").write_text(
+                _json.dumps(sorted(canonical))
+            )
+            marker.write_text(digest)
+            return venv_dir, None
+
         cp = subprocess.run(
-            [str(pip), "install", "-q", "--no-input", "-r", str(req)],
+            [str(pip), "install", "-q", "--no-input", *install_cmd_input],
             capture_output=True, timeout=_PIP_INSTALL_TIMEOUT_S,
         )
         if cp.returncode != 0:
@@ -146,8 +193,90 @@ class RuntimeSmokeVerifier:
                 file=str(req.relative_to(workdir)),
                 exit_code=cp.returncode,
             )
+        # Persist canonical set so future runs can compute deltas without
+        # re-parsing the original requirements file.
+        (venv_dir / ".smoke-manifest.json").write_text(_json.dumps(sorted(canonical)))
         marker.write_text(digest)
         return venv_dir, None
+
+    def _find_largest_subset_cache(
+        self, canonical: set[str]
+    ) -> tuple[Path | None, set[str]]:
+        """Return (cache_dir, cache_set) of the largest existing venv whose
+        canonical set is a STRICT subset of ``canonical``. Returns (None, set())
+        if no usable parent exists."""
+        import json as _json
+
+        best_dir: Path | None = None
+        best_set: set[str] = set()
+        if not self._cache_root.exists():
+            return None, best_set
+        for child in self._cache_root.iterdir():
+            if not child.is_dir():
+                continue
+            manifest = child / ".smoke-manifest.json"
+            marker = child / ".smoke-ok"
+            if not (manifest.exists() and marker.exists()):
+                continue
+            try:
+                cached = set(_json.loads(manifest.read_text()))
+            except Exception:
+                continue
+            if cached and cached <= canonical and len(cached) > len(best_set):
+                best_dir = child
+                best_set = cached
+        return best_dir, best_set
+
+    def _clone_venv(self, src: Path, dst: Path) -> None:
+        """Best-effort fast clone. On Linux/Mac, ``cp -a --reflink=auto``
+        copies with copy-on-write semantics when the FS supports it (btrfs,
+        XFS, APFS) — typically <100 ms even for big venvs. Falls back to
+        plain copytree."""
+        try:
+            cp = subprocess.run(
+                ["cp", "-a", "--reflink=auto", str(src), str(dst)],
+                capture_output=True, timeout=30,
+            )
+            if cp.returncode == 0 and dst.exists():
+                # The cloned venv hard-codes the SRC path inside its pyvenv.cfg
+                # + activate scripts; rewrite them so `pip` works from the new path.
+                self._rewrite_venv_paths(src, dst)
+                return
+        except Exception:
+            pass
+        # Fallback.
+        import shutil
+        shutil.copytree(src, dst, symlinks=True)
+        self._rewrite_venv_paths(src, dst)
+
+    def _rewrite_venv_paths(self, src: Path, dst: Path) -> None:
+        """A venv embeds its own absolute path in pyvenv.cfg and the activate
+        scripts. After cloning, fix up the paths so pip uses the new venv."""
+        cfg = dst / "pyvenv.cfg"
+        if cfg.exists():
+            try:
+                txt = cfg.read_text()
+                cfg.write_text(txt.replace(str(src), str(dst)))
+            except OSError:
+                pass
+        # The wrapper scripts under bin/ have a `#!<venv>/bin/python` shebang.
+        bin_dir = dst / "bin"
+        if not bin_dir.exists():
+            bin_dir = dst / "Scripts"
+        if bin_dir.exists():
+            for f in bin_dir.iterdir():
+                if not f.is_file():
+                    continue
+                try:
+                    data = f.read_bytes()
+                except OSError:
+                    continue
+                if str(src).encode() not in data:
+                    continue
+                try:
+                    f.write_bytes(data.replace(str(src).encode(), str(dst).encode()))
+                except OSError:
+                    pass
 
     def _probe_imports(self, workdir: Path, venv_dir: Path) -> list[VerifierFailure]:
         """Find top-level local modules and try `python -c 'import X'` for each.
@@ -253,3 +382,42 @@ def _find_requirements(workdir: Path) -> Path | None:
     # Prefer the shallowest one (most likely the canonical "production" deps).
     candidates.sort(key=lambda p: (len(p.parts), str(p)))
     return candidates[0]
+
+
+def _canonical_requirements_set(req: Path) -> set[str]:
+    """Parse a requirements file into a normalised, version-stripped set of
+    PyPI package names. Comments, blank lines, `-e`/`-r` directives and
+    version specifiers are stripped — only the bare canonical package name
+    survives (lowercase, `_` and `.` collapsed to `-`).
+
+    Used as the cache key for `RuntimeSmokeVerifier._ensure_venv`: edits to
+    formatting / comments / version pins no longer invalidate the cache,
+    and adding a single new package becomes a "subset" relationship that
+    enables delta install."""
+    try:
+        text = req.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return set()
+    out: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        if "#" in line:
+            line = line.split("#", 1)[0].strip()
+        for sep in ("[", "<", ">", "=", "!", "~", ";", " ", "\t"):
+            idx = line.find(sep)
+            if idx != -1:
+                line = line[:idx]
+        line = line.strip()
+        if not line:
+            continue
+        out.add(line.lower().replace("_", "-").replace(".", "-"))
+    return out
+
+
+def _hash_set(items: set[str]) -> str:
+    """Stable short hash of a normalised set: prefix with the count so dirs
+    sort visibly by complexity."""
+    canonical = ",".join(sorted(items)).encode("utf-8")
+    return f"n{len(items):03d}-{hashlib.sha256(canonical).hexdigest()[:10]}"

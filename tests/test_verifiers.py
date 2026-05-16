@@ -535,3 +535,113 @@ async def test_runtime_smoke_caches_venv_by_requirements_hash(
     await v.verify(tmp_path)
     await v.verify(tmp_path)
     assert install_calls["n"] == 1  # second run hit the cache
+
+
+# ---------------------- RuntimeSmokeVerifier — delta cache (7.9c) ----------------------
+
+
+def test_canonical_requirements_set_strips_versions_and_comments(tmp_path: Path):
+    from agent_orchestrator.core.verifiers.runtime_smoke import (
+        _canonical_requirements_set, _hash_set,
+    )
+    req = tmp_path / "requirements.txt"
+    req.write_text(
+        "# top-level comment\n\n"
+        "fastapi>=0.109,<1     # web framework\n"
+        "pydantic >= 2\n"
+        "psycopg2-binary>=2.9\n"
+        "-e git+https://example.com/repo  # editable\n"
+        "Python_Jose==3.3.0\n"
+    )
+    s = _canonical_requirements_set(req)
+    assert s == {"fastapi", "pydantic", "psycopg2-binary", "python-jose"}
+    # Hash is stable on reorderings + reformats.
+    req.write_text("pydantic==2.5\nfastapi>=0.109\npsycopg2-binary\npython-jose==3.3\n")
+    assert _hash_set(_canonical_requirements_set(req)) == _hash_set(s)
+
+
+@pytest.mark.asyncio
+async def test_runtime_smoke_canonical_set_cache_survives_formatting_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Editing comments/versions/whitespace in requirements.txt must NOT
+    invalidate the cache. Regression for 2026-05-16(e) where every byte
+    change in requirements.txt forced a fresh `pip install`."""
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
+    import subprocess
+
+    cache = tmp_path / "cache"
+    (tmp_path / "main.py").write_text("import fastapi\n")
+    (tmp_path / "requirements.txt").write_text("fastapi>=0.109\n# todo: pin tighter\n")
+    install_calls = {"n": 0}
+
+    def fake_run(cmd, **kw):
+        if "venv" in cmd:
+            venv_dir = Path(cmd[-1])
+            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
+            (venv_dir / "bin" / "pip").touch()
+            (venv_dir / "bin" / "python").touch()
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        if "install" in cmd:
+            install_calls["n"] += 1
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    v = RuntimeSmokeVerifier(cache_root=cache)
+    await v.verify(tmp_path)
+    # Now edit the file in a non-semantic way.
+    (tmp_path / "requirements.txt").write_text(
+        "# canonical fastapi pin\nfastapi >= 0.109   # web\n"
+    )
+    await v.verify(tmp_path)
+    assert install_calls["n"] == 1  # cache hit on the 2nd verify despite the edit
+
+
+@pytest.mark.asyncio
+async def test_runtime_smoke_delta_install_reuses_subset_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """When the new requirements is a superset of an existing cached set,
+    the verifier must clone the parent venv and only install the delta."""
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
+    import subprocess
+
+    cache = tmp_path / "cache"
+    (tmp_path / "main.py").write_text("import fastapi\n")
+    (tmp_path / "requirements.txt").write_text("fastapi\n")
+    install_args_log: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        if "venv" in cmd:
+            venv_dir = Path(cmd[-1])
+            (venv_dir / "bin").mkdir(parents=True, exist_ok=True)
+            (venv_dir / "bin" / "pip").touch()
+            (venv_dir / "bin" / "python").touch()
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        if cmd and "cp" == cmd[0]:
+            # Pretend clone succeeded: copytree fallback.
+            import shutil
+            shutil.copytree(cmd[-2], cmd[-1], symlinks=True)
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        if "install" in cmd:
+            install_args_log.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    v = RuntimeSmokeVerifier(cache_root=cache)
+    await v.verify(tmp_path)  # baseline: fastapi only
+
+    # Iter 1: add pydantic to requirements. The verifier must reuse the
+    # baseline venv (subset match) and only run `pip install pydantic`.
+    (tmp_path / "requirements.txt").write_text("fastapi\npydantic\n")
+    await v.verify(tmp_path)
+
+    assert len(install_args_log) == 2
+    # First call was the full `-r requirements.txt` install.
+    assert "-r" in install_args_log[0]
+    # Second call is the DELTA — bare package name, not `-r`.
+    assert "-r" not in install_args_log[1]
+    assert "pydantic" in install_args_log[1]
+    assert "fastapi" not in install_args_log[1]
