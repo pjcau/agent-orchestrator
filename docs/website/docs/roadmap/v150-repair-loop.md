@@ -31,7 +31,7 @@ Design: [`docs/architecture-repair-loop.md`](https://github.com/pjcau/agent-orch
 | 7.2 | ✅ Done | `WorkspaceCoherenceVerifier` | `core/verifiers/coherence.py` | `tests/test_verifiers.py` |
 | 7.3 | ✅ Done | Surface `repair: {…}` block in React UI | `frontend/src/api/types.ts`, `frontend/src/hooks/useWebSocket.ts` | `frontend/src/test/teamComplete.test.tsx` |
 | 7.4 | ✅ Done | Default verifier chain: 3 → 5 (Syntax + Encoding + Dependency + Import + Coherence) | `dashboard/agent_runtime_router.py`, `orchestrator.yaml.example` | `tests/test_repair_loop_wiring.py::test_build_repair_loop_includes_all_five_verifiers` |
-| 7.5 | ⏳ Pending | Benchmark re-run with the 5-verifier chain | `docs/learning-path-tests/2026-05-XX_repair-loop-v2.md` | end-to-end |
+| 7.5 | ✅ Done | Benchmark re-run with the 5-verifier chain (71.2/100, +22.2 vs run (b)) | `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` | end-to-end |
 
 ## TL;DR architecture
 

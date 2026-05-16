@@ -755,7 +755,7 @@ A workspace-level verify-and-retry pipeline that wraps `run_team()`. Different s
 | 7.2 | ✅ Done | `WorkspaceCoherenceVerifier` (cross-file contradictions) | `core/verifiers/coherence.py` |
 | 7.3 | ✅ Done | React dashboard surfaces `repair: {…}` summary | `frontend/src/api/types.ts`, `frontend/src/hooks/useWebSocket.ts` |
 | 7.4 | ✅ Done | Default verifier chain extended to 5 | `dashboard/agent_runtime_router.py`, `orchestrator.yaml.example` |
-| 7.5 | ⏳ Pending | Benchmark re-run with the 5-verifier chain | `docs/learning-path-tests/2026-05-XX_repair-loop-v2.md` |
+| 7.5 | ✅ Done | Benchmark re-run with the 5-verifier chain — 71.2/100, +22.2 vs run (b) | `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` |
 
 ### Configuration
 

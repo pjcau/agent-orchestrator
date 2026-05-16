@@ -643,7 +643,7 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learni
 | 7.2 | ✅ Done | `WorkspaceCoherenceVerifier` (catches `docker-compose.yml` vs `database.py` `DATABASE_URL` mismatches) |
 | 7.3 | ✅ Done | React UI surfaces the `repair: {…}` summary as a system message |
 | 7.4 | ✅ Done | Bundled chain extended from 3 → 5 verifiers |
-| 7.5 | ⏳ Pending | Benchmark re-run with the 5-verifier chain |
+| 7.5 | ✅ Done | Benchmark re-run with the 5-verifier chain — 71.2/100 (+22.2 vs run (b)), see `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` |
 
 ### v1.5 P1 KPIs
 
