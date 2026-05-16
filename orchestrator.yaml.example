@@ -102,20 +102,20 @@ sandbox:
 
 # ---------------------------------------------------------------------------
 # Repair loop (v1.5 P1) — verify-and-retry around run_team()
-# Opt-in. When enabled, every /api/team/run goes through
-# `_run_team_with_repair`: SyntaxVerifier → EncodingVerifier →
-# DependencyVerifier, with FailurePatternRegistry auto-fixes applied before
-# any LLM retry. See docs/architecture-repair-loop.md.
+# ON BY DEFAULT. Every /api/team/run goes through `_run_team_with_repair`:
+# SyntaxVerifier → EncodingVerifier → DependencyVerifier, with the
+# FailurePatternRegistry auto-fixes applied before any LLM retry.
+# Opt out by setting REPAIR_LOOP_ENABLED=false. See docs/architecture-repair-loop.md.
 #
 # These keys mirror env vars consumed by `dashboard/agent_runtime_router.py`
 # (env vars take precedence so the dashboard can be toggled without editing
 # this file):
-#   REPAIR_LOOP_ENABLED        — "true" to enable (default off)
+#   REPAIR_LOOP_ENABLED        — "false" to opt out (default on)
 #   REPAIR_LOOP_MAX_ATTEMPTS   — hard retry cap (default 5)
 #   REPAIR_LOOP_MAX_COST_USD   — cumulative cost cap (default 0.50)
 # ---------------------------------------------------------------------------
 repair_loop:
-  enabled: false              # Flip to true for a sprint, watch metrics, then promote
+  enabled: true               # ON by default — set to false to opt out
   max_attempts: 5             # Includes the first attempt; 5 = one initial + four retries
   max_cost_usd: 0.50          # Aborts as soon as cumulative cost exceeds this
   patterns: core/failure_patterns.yaml   # Bundled deterministic auto-fixes

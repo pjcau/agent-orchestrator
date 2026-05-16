@@ -76,13 +76,13 @@ def _get_ollama_url() -> str:
 
 # ---------------------------------------------------------------------------
 # Workspace repair-loop integration (v1.5 P1).
-# Opt-in via REPAIR_LOOP_ENABLED=true. Wraps run_team() with a 5-attempt
-# verify-and-retry harness. See docs/architecture-repair-loop.md.
+# ON BY DEFAULT — wraps run_team() with a 5-attempt verify-and-retry harness.
+# Set REPAIR_LOOP_ENABLED=false to opt out. See docs/architecture-repair-loop.md.
 # ---------------------------------------------------------------------------
 
 
 def _repair_loop_enabled() -> bool:
-    return os.environ.get("REPAIR_LOOP_ENABLED", "").strip().lower() == "true"
+    return os.environ.get("REPAIR_LOOP_ENABLED", "true").strip().lower() != "false"
 
 
 @dataclass

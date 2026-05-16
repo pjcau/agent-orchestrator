@@ -752,14 +752,15 @@ A workspace-level verify-and-retry pipeline that wraps `run_team()`. Different s
 | 6 | 🟡 In progress | Feature maps + roadmap sync | this file, `docs/website/architecture-map.yaml`, `*-map.json`, `sidebars.js` |
 | 7 | ⏳ Pending | Learning-path validation run | `docs/learning-path-tests/2026-05-XX_repair-loop.md` |
 
-### Configuration (opt-in)
+### Configuration
 
-Default **OFF**. Enable for a sprint, watch metrics, then promote.
+**ON by default** since Phase 7. Opt out with `REPAIR_LOOP_ENABLED=false`.
 
 ```bash
-export REPAIR_LOOP_ENABLED=true
-export REPAIR_LOOP_MAX_ATTEMPTS=5      # default 5
-export REPAIR_LOOP_MAX_COST_USD=0.50   # default 0.50
+# Defaults are equivalent to:
+export REPAIR_LOOP_ENABLED=true        # set to "false" to opt out
+export REPAIR_LOOP_MAX_ATTEMPTS=5
+export REPAIR_LOOP_MAX_COST_USD=0.50
 ```
 
 YAML mirror: `repair_loop:` block in `orchestrator.yaml.example`.

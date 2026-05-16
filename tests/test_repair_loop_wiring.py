@@ -27,9 +27,12 @@ from agent_orchestrator.dashboard.events import EventBus, EventType
         ("true", True),
         ("TRUE", True),
         (" true ", True),
+        ("1", True),       # any non-"false" value keeps the default ON
+        ("yes", True),
+        ("", True),        # empty string == unset on some shells → stay ON
         ("false", False),
-        ("", False),
-        ("1", False),  # only literal "true" enables it — keeps the rule unambiguous
+        ("FALSE", False),
+        (" false ", False),
     ],
 )
 def test_repair_loop_enabled_env(monkeypatch: pytest.MonkeyPatch, value: str, expected: bool):
@@ -37,9 +40,10 @@ def test_repair_loop_enabled_env(monkeypatch: pytest.MonkeyPatch, value: str, ex
     assert router_mod._repair_loop_enabled() is expected
 
 
-def test_repair_loop_disabled_by_default(monkeypatch: pytest.MonkeyPatch):
+def test_repair_loop_enabled_by_default(monkeypatch: pytest.MonkeyPatch):
+    """Defaults to ON in v1.5 P1 Phase 7 — opt-out via REPAIR_LOOP_ENABLED=false."""
     monkeypatch.delenv("REPAIR_LOOP_ENABLED", raising=False)
-    assert router_mod._repair_loop_enabled() is False
+    assert router_mod._repair_loop_enabled() is True
 
 
 # ---------------------------------------------------------------------------

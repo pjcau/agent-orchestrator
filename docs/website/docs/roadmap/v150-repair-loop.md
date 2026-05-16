@@ -52,11 +52,11 @@ team_run() → VerificationGate
 
 ## Configuration
 
-Opt-in. Default OFF. Enable for a sprint, watch metrics, promote.
+**ON by default** since Phase 7. Opt out by setting `REPAIR_LOOP_ENABLED=false`.
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `REPAIR_LOOP_ENABLED` | `false` | Master switch — `true` activates the wrapper |
+| `REPAIR_LOOP_ENABLED` | `true` | Master switch — set to `false` to opt out |
 | `REPAIR_LOOP_MAX_ATTEMPTS` | `5` | Hard cap on team-run invocations |
 | `REPAIR_LOOP_MAX_COST_USD` | `0.50` | Hard cumulative cost cap |
 
@@ -64,7 +64,7 @@ YAML mirror in `orchestrator.yaml.example`:
 
 ```yaml
 repair_loop:
-  enabled: false
+  enabled: true
   max_attempts: 5
   max_cost_usd: 0.50
   patterns: core/failure_patterns.yaml

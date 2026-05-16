@@ -636,7 +636,7 @@ Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learni
 | 2 | ✅ Done | `VerificationGate` + 3 verifiers (Syntax / Encoding / Dependency) |
 | 3 | ✅ Done | `RepairLoop` harness (max 5 attempts, $0.50 cumulative cap, signature memory) |
 | 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML (`pip_pin_repair`, `unicode_unescape`, `noop`) |
-| 5 | ✅ Done | Wiring into `/api/team/run` (opt-in via `REPAIR_LOOP_ENABLED=true`) |
+| 5 | ✅ Done | Wiring into `/api/team/run` (**ON by default** since Phase 7 — opt out via `REPAIR_LOOP_ENABLED=false`) |
 | 6 | 🟡 In progress | Feature maps + roadmap sync |
 | 7 | ⏳ Pending | `/orchestrator-learning-path-test` validation run |
 
