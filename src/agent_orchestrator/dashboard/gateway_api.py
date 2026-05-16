@@ -521,7 +521,7 @@ async def jobs_file_content(session_id: str, filename: str, request: Request):
 
 @gateway_router.get("/jobs/{session_id}/download")
 async def jobs_download_zip(session_id: str, request: Request):
-    """Download entire session as a ZIP archive."""
+    """Download entire session as a ZIP archive (recursive — includes subdirs)."""
     import io
     import zipfile
 
@@ -531,9 +531,14 @@ async def jobs_download_zip(session_id: str, request: Request):
         return JSONResponse(content={"error": "Session not found"}, status_code=404)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(session_dir.iterdir()):
-            if f.is_file():
-                zf.write(f, f.name)
+        for f in sorted(session_dir.rglob("*")):
+            if not f.is_file():
+                continue
+            # Skip Python bytecode caches — pollutes the archive and breaks
+            # cross-platform unpacking.
+            if "__pycache__" in f.parts:
+                continue
+            zf.write(f, f.relative_to(session_dir))
     buf.seek(0)
     return StreamingResponse(
         buf,
