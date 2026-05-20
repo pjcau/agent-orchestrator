@@ -233,7 +233,13 @@ class TestDeployWorkflow:
     def test_runs_tests_before_deploy(self):
         config = yaml.safe_load(self.WORKFLOW.read_text())
         assert "test" in config["jobs"]
-        assert config["jobs"]["deploy"]["needs"] == "test"
+        # deploy.needs may be a single job name (str) or a list — both are valid
+        # GitHub Actions syntax. The invariant is that `test` must gate deploy.
+        needs = config["jobs"]["deploy"]["needs"]
+        if isinstance(needs, str):
+            assert needs == "test"
+        else:
+            assert "test" in needs
 
     def test_deploy_only_on_main(self):
         content = self.WORKFLOW.read_text()
