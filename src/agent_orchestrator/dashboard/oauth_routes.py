@@ -3,9 +3,11 @@
 Provides:
 - GET /auth/github — redirect to GitHub OAuth2
 - GET /auth/github/callback — handle GitHub callback, set JWT cookie
+- GET /auth/google — redirect to Google OAuth2
+- GET /auth/google/callback — handle Google callback (allowlist gated), set JWT cookie
 - GET /auth/me — return current user info from JWT cookie
 - POST /auth/logout — clear session cookie
-- GET /login — simple login page with GitHub button
+- GET /login — simple login page with provider buttons
 - GET /api/admin/users — list all users (admin only)
 - POST /api/admin/users — approve a new user (admin only)
 - PATCH /api/admin/users/{login} — update user role (admin only)
@@ -22,10 +24,17 @@ import os
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .auth import create_oauth, create_session_token, get_base_url, verify_session_token
+from .auth import (
+    create_oauth,
+    create_session_token,
+    get_base_url,
+    is_email_allowed,
+    verify_session_token,
+)
 from .user_store import (
     approve_pending,
     approve_user,
+    async_auto_provision_google_user,
     async_get_or_create_user,
     deactivate_user,
     list_pending,
@@ -41,12 +50,21 @@ router = APIRouter()
 
 
 def _login_page_html() -> str:
-    """Simple login page with GitHub button."""
+    """Login page with one button per configured OAuth provider."""
     github_enabled = bool(os.environ.get("OAUTH_CLIENT_ID"))
+    google_enabled = bool(os.environ.get("GOOGLE_OAUTH_CLIENT_ID"))
 
     buttons = ""
     if github_enabled:
-        buttons += '<a href="/auth/github" class="btn github">Login with GitHub</a>'
+        buttons += (
+            '<a href="/auth/github" class="btn github">'
+            '<span class="icon">&#xf09b;</span>Login with GitHub</a>'
+        )
+    if google_enabled:
+        buttons += (
+            '<a href="/auth/google" class="btn google">'
+            '<span class="google-g">G</span>Login with Google</a>'
+        )
     if not buttons:
         buttons = "<p>No OAuth providers configured.</p>"
 
@@ -58,10 +76,15 @@ def _login_page_html() -> str:
          background: #1a1a2e; color: #e0e0e0; }}
   .container {{ text-align: center; padding: 2rem; }}
   h1 {{ margin-bottom: 2rem; }}
-  .btn {{ display: block; padding: 12px 24px; margin: 12px auto;
-          border-radius: 8px; text-decoration: none; color: white;
-          font-size: 16px; width: 250px; text-align: center; }}
-  .github {{ background: #333; }}
+  .btn {{ display: flex; align-items: center; justify-content: center; gap: 10px;
+          padding: 12px 24px; margin: 12px auto; border-radius: 8px;
+          text-decoration: none; color: white; font-size: 16px;
+          width: 250px; }}
+  .github {{ background: #24292e; }}
+  .google {{ background: #ffffff; color: #3c4043;
+             border: 1px solid #dadce0; }}
+  .google-g {{ font-weight: 700; color: #4285f4;
+                font-family: "Product Sans", Roboto, Arial, sans-serif; }}
   .btn:hover {{ opacity: 0.9; }}
   .denied {{ color: #ff6b6b; margin-top: 1rem; }}
 </style></head>
@@ -94,18 +117,31 @@ def _denied_page_html(login: str) -> str:
 
 @router.get("/auth/debug")
 async def auth_debug():
-    """Debug endpoint to verify OAuth configuration (no secrets exposed)."""
+    """Debug endpoint to verify OAuth configuration (no secrets exposed).
+
+    Never returns the actual client secrets nor the email allowlist contents.
+    """
     import os
 
-    client_id = os.environ.get("OAUTH_CLIENT_ID", "")
+    github_id = os.environ.get("OAUTH_CLIENT_ID", "")
+    google_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
     base_url = get_base_url()
     return JSONResponse(
         {
             "base_url": base_url,
-            "redirect_uri": base_url + "/auth/github/callback",
-            "oauth_client_id_set": bool(client_id),
-            "oauth_client_id_prefix": client_id[:8] + "..." if len(client_id) > 8 else client_id,
-            "oauth_client_secret_set": bool(os.environ.get("OAUTH_CLIENT_SECRET", "")),
+            "github": {
+                "redirect_uri": base_url + "/auth/github/callback",
+                "client_id_set": bool(github_id),
+                "client_id_prefix": (github_id[:8] + "..." if len(github_id) > 8 else github_id),
+                "client_secret_set": bool(os.environ.get("OAUTH_CLIENT_SECRET", "")),
+            },
+            "google": {
+                "redirect_uri": base_url + "/auth/google/callback",
+                "client_id_set": bool(google_id),
+                "client_id_prefix": (google_id[:8] + "..." if len(google_id) > 8 else google_id),
+                "client_secret_set": bool(os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")),
+                "allowlist_configured": bool(os.environ.get("ALLOWED_GOOGLE_EMAILS", "").strip()),
+            },
         }
     )
 
@@ -172,6 +208,80 @@ async def callback_github(request: Request):
     except Exception as exc:
         logger.warning("AUTH login failed: %s", exc)
         return JSONResponse({"error": "GitHub authentication failed"}, status_code=400)
+
+
+@router.get("/auth/google")
+async def login_google(request: Request):
+    """Redirect to Google OAuth2 authorization."""
+    oauth = create_oauth()
+    if not oauth or not hasattr(oauth, "google"):
+        return JSONResponse({"error": "Google OAuth not configured"}, status_code=501)
+    redirect_uri = get_base_url() + "/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/auth/google/callback")
+async def callback_google(request: Request):
+    """Handle Google OAuth2 callback.
+
+    Authorization model: the email returned by Google must match
+    ``ALLOWED_GOOGLE_EMAILS``. Matching emails are auto-provisioned with role
+    ``developer``; any other email returns the denied page (no pending entry).
+    """
+    oauth = create_oauth()
+    if not oauth or not hasattr(oauth, "google"):
+        return JSONResponse({"error": "Google OAuth not configured"}, status_code=501)
+
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        userinfo = token.get("userinfo") or {}
+        if not userinfo:
+            # Fallback for providers that don't include id_token claims in the token
+            userinfo_resp = await oauth.google.get(
+                "https://openidconnect.googleapis.com/v1/userinfo", token=token
+            )
+            userinfo = userinfo_resp.json()
+
+        email = (userinfo.get("email") or "").strip().lower()
+        name = userinfo.get("name") or email
+        email_verified = userinfo.get("email_verified", True)
+
+        if not email:
+            return JSONResponse({"error": "No email returned by Google"}, status_code=400)
+
+        if not email_verified:
+            logger.warning("AUTH google: unverified email rejected")
+            return HTMLResponse(content=_denied_page_html(email), status_code=403)
+
+        if not is_email_allowed(email):
+            logger.warning("AUTH google: email not in allowlist")
+            return HTMLResponse(content=_denied_page_html(email), status_code=403)
+
+        user = await async_auto_provision_google_user(email, name)
+
+        jwt_token = create_session_token(
+            {
+                "email": email,
+                "name": name,
+                "provider": "google",
+                "github_login": user["github_login"],
+                "role": user["role"],
+            }
+        )
+        response = RedirectResponse("/", status_code=302)
+        response.set_cookie(
+            "auth_session",
+            jwt_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=14400,
+        )
+        logger.info("AUTH login success (google) role=%s", user["role"])
+        return response
+    except Exception as exc:
+        logger.warning("AUTH google login failed: %s", exc)
+        return JSONResponse({"error": "Google authentication failed"}, status_code=400)
 
 
 @router.get("/auth/me")

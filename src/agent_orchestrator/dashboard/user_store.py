@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 USERS_FILE = Path("dashboard-users.json")
 PENDING_FILE = Path("dashboard-pending.json")
 
+# Prefix marking a user account created from a Google OAuth login.
+# Stored in the ``github_login`` column (which holds the generic stable id).
+GOOGLE_USER_PREFIX = "google:"
+
+
+def google_user_id(email: str) -> str:
+    """Return the stable user id used in the user store for a Google account."""
+    return f"{GOOGLE_USER_PREFIX}{email.strip().lower()}"
+
+
 # Module-level DB state (set by setup_db)
 _pool = None
 _db_available = False
@@ -720,3 +730,27 @@ async def _reject_pending_db(github_login: str) -> bool:
     async with _acquire() as conn:
         result = await conn.execute("DELETE FROM dashboard_pending WHERE github_login = $1", key)
         return result != "DELETE 0"
+
+
+# ---------------------------------------------------------------------------
+# Google auto-provisioning (allowlist-driven, bypasses pending workflow)
+# ---------------------------------------------------------------------------
+
+
+async def async_auto_provision_google_user(
+    email: str, name: str, role: str = "developer"
+) -> dict[str, Any]:
+    """Create or refresh a user record for a Google account already cleared by
+    ``ALLOWED_GOOGLE_EMAILS``. Returns the user dict (always active).
+
+    The caller MUST have validated ``email`` against the allowlist first —
+    this function performs no allowlist check.
+    """
+    key = google_user_id(email)
+    display_name = name or email
+    if _db_available and _pool:
+        try:
+            return await _approve_user_db(key, role, email, display_name)
+        except Exception:
+            pass
+    return _approve_user_json(key, role, email, display_name)

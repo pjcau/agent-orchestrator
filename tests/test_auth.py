@@ -6,9 +6,11 @@ import pytest
 
 from agent_orchestrator.dashboard.auth import (
     APIKeyMiddleware,
+    _load_allowed_emails,
     check_ws_auth,
     create_oauth,
     create_session_token,
+    is_email_allowed,
     verify_session_token,
     JWT_ALGORITHM,
     HAS_JWT,
@@ -103,8 +105,96 @@ class TestOAuthSetup:
     def test_github_only(self, monkeypatch):
         monkeypatch.setenv("OAUTH_CLIENT_ID", "test-github-id")
         monkeypatch.setenv("OAUTH_CLIENT_SECRET", "test-github-secret")
+        monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
         oauth = create_oauth()
         assert oauth is not None
+        assert hasattr(oauth, "github")
+        assert not hasattr(oauth, "google")
+
+    @pytest.mark.skipif(not HAS_AUTHLIB, reason="authlib not installed")
+    def test_google_only(self, monkeypatch):
+        monkeypatch.delenv("OAUTH_CLIENT_ID", raising=False)
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "test-google-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "test-google-secret")
+        oauth = create_oauth()
+        assert oauth is not None
+        assert hasattr(oauth, "google")
+        assert not hasattr(oauth, "github")
+
+    @pytest.mark.skipif(not HAS_AUTHLIB, reason="authlib not installed")
+    def test_both_providers(self, monkeypatch):
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "test-github-id")
+        monkeypatch.setenv("OAUTH_CLIENT_SECRET", "test-github-secret")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "test-google-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "test-google-secret")
+        oauth = create_oauth()
+        assert oauth is not None
+        assert hasattr(oauth, "github")
+        assert hasattr(oauth, "google")
+
+
+# ---------------------------------------------------------------------------
+# Google email allowlist tests
+# ---------------------------------------------------------------------------
+
+
+class TestGoogleAllowlist:
+    """Test ALLOWED_GOOGLE_EMAILS parsing and matching."""
+
+    def test_empty_env_returns_empty_set(self, monkeypatch):
+        monkeypatch.delenv("ALLOWED_GOOGLE_EMAILS", raising=False)
+        assert _load_allowed_emails() == set()
+
+    def test_blank_env_returns_empty_set(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_GOOGLE_EMAILS", "")
+        assert _load_allowed_emails() == set()
+
+    def test_single_email(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_GOOGLE_EMAILS", "alice@gmail.com")
+        assert _load_allowed_emails() == {"alice@gmail.com"}
+
+    def test_multiple_emails_with_whitespace(self, monkeypatch):
+        monkeypatch.setenv(
+            "ALLOWED_GOOGLE_EMAILS",
+            " Alice@Gmail.com , bob@Example.com , carla@azienda.it ",
+        )
+        assert _load_allowed_emails() == {
+            "alice@gmail.com",
+            "bob@example.com",
+            "carla@azienda.it",
+        }
+
+    def test_trailing_and_double_commas_ignored(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_GOOGLE_EMAILS", "alice@gmail.com,,bob@x.com,")
+        assert _load_allowed_emails() == {"alice@gmail.com", "bob@x.com"}
+
+    def test_domain_wildcard_parsed(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_GOOGLE_EMAILS", "*@azienda.it")
+        assert _load_allowed_emails() == {"*@azienda.it"}
+
+    def test_fail_closed_when_empty(self, monkeypatch):
+        monkeypatch.delenv("ALLOWED_GOOGLE_EMAILS", raising=False)
+        assert is_email_allowed("alice@gmail.com") is False
+
+    def test_exact_match(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_GOOGLE_EMAILS", "alice@gmail.com")
+        assert is_email_allowed("alice@gmail.com") is True
+        assert is_email_allowed("Alice@Gmail.com") is True  # case-insensitive
+        assert is_email_allowed("bob@gmail.com") is False
+
+    def test_wildcard_domain_match(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_GOOGLE_EMAILS", "*@azienda.it,alice@gmail.com")
+        assert is_email_allowed("anyone@azienda.it") is True
+        assert is_email_allowed("ANYONE@AZIENDA.IT") is True
+        assert is_email_allowed("alice@gmail.com") is True
+        assert is_email_allowed("bob@gmail.com") is False
+        assert is_email_allowed("alice@altraditta.com") is False
+
+    def test_empty_or_malformed_input_denied(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_GOOGLE_EMAILS", "*@azienda.it,alice@gmail.com")
+        assert is_email_allowed("") is False
+        assert is_email_allowed("not-an-email") is False
+        assert is_email_allowed("   ") is False
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +518,111 @@ class TestLogSanitization:
 # ---------------------------------------------------------------------------
 # Path traversal prevention tests
 # ---------------------------------------------------------------------------
+
+
+class TestLoginPageButtons:
+    """Test that the login page renders the right buttons per provider config."""
+
+    def _render(self, monkeypatch, *, github: bool, google: bool) -> str:
+        if github:
+            monkeypatch.setenv("OAUTH_CLIENT_ID", "test-github-id")
+        else:
+            monkeypatch.delenv("OAUTH_CLIENT_ID", raising=False)
+        if google:
+            monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "test-google-id")
+        else:
+            monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+
+        from agent_orchestrator.dashboard.oauth_routes import _login_page_html
+
+        return _login_page_html()
+
+    def test_no_providers_configured_shows_warning(self, monkeypatch):
+        html = self._render(monkeypatch, github=False, google=False)
+        assert "No OAuth providers configured" in html
+        assert "/auth/github" not in html
+        assert "/auth/google" not in html
+
+    def test_only_github_shows_github_button(self, monkeypatch):
+        html = self._render(monkeypatch, github=True, google=False)
+        assert "/auth/github" in html
+        assert "/auth/google" not in html
+
+    def test_only_google_shows_google_button(self, monkeypatch):
+        html = self._render(monkeypatch, github=False, google=True)
+        assert "/auth/google" in html
+        assert "/auth/github" not in html
+
+    def test_both_providers_show_both_buttons(self, monkeypatch):
+        html = self._render(monkeypatch, github=True, google=True)
+        assert "/auth/github" in html
+        assert "/auth/google" in html
+
+
+class TestGoogleCallbackFlow:
+    """Smoke tests for /auth/google and /auth/google/callback.
+
+    These tests run only when authlib + PyJWT are installed.
+    """
+
+    @pytest.mark.skipif(not HAS_AUTHLIB, reason="authlib not installed")
+    def test_login_google_redirects(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "test-google-id")
+        monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "test-google-secret")
+        monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-256bit-key-for-testing")
+        monkeypatch.setenv("BASE_URL", "https://localhost:5005")
+        monkeypatch.setenv("SESSION_SECRET_KEY", "test-session-secret")
+
+        from fastapi import FastAPI
+        from starlette.middleware.sessions import SessionMiddleware
+        from starlette.testclient import TestClient
+
+        from agent_orchestrator.dashboard.oauth_routes import router
+
+        app = FastAPI()
+        app.add_middleware(SessionMiddleware, secret_key="test-session-secret")
+        app.include_router(router)
+        client = TestClient(app)
+
+        from urllib.parse import urlparse
+
+        resp = client.get("/auth/google", follow_redirects=False)
+        assert resp.status_code in (302, 307)
+        location = resp.headers.get("location", "")
+        parsed = urlparse(location)
+        host = (parsed.hostname or "").lower()
+        assert host == "accounts.google.com" or host.endswith(".google.com")
+
+    @pytest.mark.skipif(not HAS_AUTHLIB, reason="authlib not installed")
+    def test_login_google_not_configured(self, monkeypatch):
+        monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+        monkeypatch.delenv("OAUTH_CLIENT_ID", raising=False)
+
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+
+        from agent_orchestrator.dashboard.oauth_routes import router
+
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        resp = client.get("/auth/google")
+        assert resp.status_code == 501
+        assert "not configured" in resp.json().get("error", "").lower()
+
+
+class TestGoogleAutoProvision:
+    """Verify that auto-provisioning produces a stable, scoped user id."""
+
+    def test_google_user_id_is_prefixed_and_lowercased(self):
+        from agent_orchestrator.dashboard.user_store import (
+            GOOGLE_USER_PREFIX,
+            google_user_id,
+        )
+
+        assert google_user_id("Alice@Gmail.com") == f"{GOOGLE_USER_PREFIX}alice@gmail.com"
+        assert google_user_id("  bob@x.com  ") == f"{GOOGLE_USER_PREFIX}bob@x.com"
 
 
 class TestPathTraversal:

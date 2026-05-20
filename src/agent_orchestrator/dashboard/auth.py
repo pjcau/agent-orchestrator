@@ -2,11 +2,14 @@
 
 Supports two modes:
 1. API key auth (X-API-Key header) — for programmatic access
-2. OAuth2 (GitHub) with JWT session cookies — for browser-based access
+2. OAuth2 (GitHub and/or Google) with JWT session cookies — for browser-based access
 
 Configuration via environment variables:
 - DASHBOARD_API_KEYS: comma-separated API keys (REQUIRED in production)
 - OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET: GitHub OAuth2 credentials
+- GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET: Google OAuth2 credentials
+- ALLOWED_GOOGLE_EMAILS: comma-separated allowlist of Google emails (and/or
+  ``*@domain`` wildcards). Empty/missing = no Google login allowed (fail-closed).
 - JWT_SECRET_KEY: secret for signing JWT session cookies (REQUIRED, no default)
 - BASE_URL: public URL for OAuth2 callbacks (e.g. https://agents.yourdomain.com)
 - ALLOW_DEV_MODE: set to "true" to explicitly allow unauthenticated dev mode
@@ -91,29 +94,41 @@ def verify_session_token(token: str) -> dict[str, Any] | None:
 
 
 def create_oauth() -> Any | None:
-    """Create and configure OAuth client for GitHub.
+    """Create and configure OAuth client for GitHub and/or Google.
 
-    Returns None if authlib is not installed or no OAuth credentials configured.
+    Returns None if authlib is not installed or no provider is configured.
+    Each provider is registered independently — both, either, or neither may be active.
     """
     if not HAS_AUTHLIB:
         return None
 
     github_id = os.environ.get("OAUTH_CLIENT_ID", "")
+    google_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 
-    if not github_id:
+    if not github_id and not google_id:
         return None
 
     oauth = OAuth()
 
-    oauth.register(
-        "github",
-        client_id=github_id,
-        client_secret=os.environ.get("OAUTH_CLIENT_SECRET", ""),
-        access_token_url="https://github.com/login/oauth/access_token",
-        authorize_url="https://github.com/login/oauth/authorize",
-        api_base_url="https://api.github.com/",
-        client_kwargs={"scope": "user:email"},
-    )
+    if github_id:
+        oauth.register(
+            "github",
+            client_id=github_id,
+            client_secret=os.environ.get("OAUTH_CLIENT_SECRET", ""),
+            access_token_url="https://github.com/login/oauth/access_token",
+            authorize_url="https://github.com/login/oauth/authorize",
+            api_base_url="https://api.github.com/",
+            client_kwargs={"scope": "user:email"},
+        )
+
+    if google_id:
+        oauth.register(
+            "google",
+            client_id=google_id,
+            client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+            server_metadata_url=("https://accounts.google.com/.well-known/openid-configuration"),
+            client_kwargs={"scope": "openid email profile"},
+        )
 
     return oauth
 
@@ -121,6 +136,43 @@ def create_oauth() -> Any | None:
 def get_base_url() -> str:
     """Get the public base URL for OAuth2 callbacks."""
     return os.environ.get("BASE_URL", "https://localhost:5005")
+
+
+# ---------------------------------------------------------------------------
+# Google email allowlist
+# ---------------------------------------------------------------------------
+
+
+def _load_allowed_emails() -> set[str]:
+    """Parse ALLOWED_GOOGLE_EMAILS env var into a set of normalized entries.
+
+    Accepts a comma-separated list. Each entry is stripped and lowercased.
+    Supports exact emails (``alice@gmail.com``) and domain wildcards
+    (``*@example.com``). Empty entries are dropped.
+    """
+    raw = os.environ.get("ALLOWED_GOOGLE_EMAILS", "")
+    return {entry.strip().lower() for entry in raw.split(",") if entry.strip()}
+
+
+def is_email_allowed(email: str) -> bool:
+    """Return True if ``email`` is permitted by ALLOWED_GOOGLE_EMAILS.
+
+    Fail-closed: an empty/missing allowlist denies every email.
+    Matches are case-insensitive. Domain wildcards (``*@domain``) match any
+    address with that domain.
+    """
+    if not email:
+        return False
+    email_lower = email.strip().lower()
+    if "@" not in email_lower:
+        return False
+    allowed = _load_allowed_emails()
+    if not allowed:
+        return False
+    if email_lower in allowed:
+        return True
+    domain = email_lower.split("@", 1)[1]
+    return f"*@{domain}" in allowed
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +198,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, api_keys: list[str] | None = None) -> None:
         super().__init__(app)
         self.api_keys: set[str] = set(api_keys) if api_keys else set()
-        self._oauth_configured = bool(os.environ.get("OAUTH_CLIENT_ID"))
+        self._oauth_configured = bool(
+            os.environ.get("OAUTH_CLIENT_ID") or os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
+        )
         env = os.environ.get("ENVIRONMENT", "").lower()
         wants_dev = os.environ.get("ALLOW_DEV_MODE", "").lower() == "true"
         if wants_dev and env == "production":
