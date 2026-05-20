@@ -310,6 +310,60 @@ export function ChatInput({
         >
           ⚙
         </button>
+        {/* Mobile-only segment controls (CSS-toggled). They replace the native
+            <select> pickers for mode + provider which can render misaligned
+            inside emulators / certain mobile browsers. The selects below
+            remain the source of truth on desktop. */}
+        <div
+          className="chat-input__segment chat-input__segment--mode"
+          role="radiogroup"
+          aria-label="Execution mode"
+        >
+          {(
+            [
+              ["multi-agent", "Multi"],
+              ["agent", "Single"],
+              ["prompt", "Prompt"],
+            ] as Array<[ExecMode, string]>
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={mode === value}
+              className={`chat-input__segment-btn ${mode === value ? "active" : ""}`}
+              onClick={() => setMode(value)}
+              disabled={isDisabled}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div
+          className="chat-input__segment chat-input__segment--provider"
+          role="radiogroup"
+          aria-label="Provider"
+        >
+          {(
+            [
+              ["openrouter", "Cloud"],
+              ["ollama", "Local"],
+            ] as Array<["openrouter" | "ollama", string]>
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={provider === value}
+              className={`chat-input__segment-btn ${provider === value ? "active" : ""}`}
+              onClick={() => handleProviderChange(value)}
+              disabled={isDisabled}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <select
           className="chat-input__select chat-input__select--adv"
           value={mode}

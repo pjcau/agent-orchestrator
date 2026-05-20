@@ -819,6 +819,8 @@ body {
 
 /* Gear toggle: hidden on desktop (advanced controls always visible) */
 .chat-input__adv-toggle { display: none; }
+/* Mobile segment controls: hidden on desktop (native selects above are used) */
+.chat-input__segment { display: none; }
 
 .chat-input__select {
   background: var(--bg);
@@ -1876,10 +1878,46 @@ body {
   .chat-input__controls { gap: 6px; }
   .chat-bubble { max-width: 100%; }
 
-  /* --- 7. Collapse mode/provider selects on mobile behind ⚙ toggle --- */
+  /* --- 7. Collapse mode/provider selects on mobile behind ⚙ toggle.
+         Native selects are hidden in favour of segment controls (below) — the
+         <select> pickers misalign in some mobile browsers / emulators and the
+         option lists are short enough to fit as inline buttons. The <select>
+         elements still exist in the DOM but visually swap with the segments. */
   .chat-input__adv-toggle { display: inline-flex; }
-  .chat-input__select--adv { display: none; }
-  .chat-input__controls--adv .chat-input__select--adv { display: flex; flex: 1 1 100%; }
+  .chat-input__select--adv { display: none !important; }
+  .chat-input__controls--adv .chat-input__segment {
+    display: flex;
+    flex: 1 1 100%;
+    gap: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px;
+  }
+  .chat-input__segment-btn {
+    flex: 1;
+    min-height: 36px;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .chat-input__segment-btn:hover,
+  .chat-input__segment-btn:focus-visible {
+    color: var(--text);
+    outline: none;
+  }
+  .chat-input__segment-btn.active {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--accent);
+  }
+  .chat-input__segment-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* Force the model select to full width regardless of flex specifics */
+  .chat-input__select--model { width: 100%; min-width: 0; flex: 1 1 100%; }
   /* Left panel (History/Prompts) cover almost full width when opened */
   .history-sidebar,
   .prompts-panel { width: min(320px, 86vw); }
