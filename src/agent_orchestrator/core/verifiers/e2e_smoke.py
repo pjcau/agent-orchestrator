@@ -166,7 +166,7 @@ def _free_port() -> int:
 
 def _serve_static(dir_path: Path, port: int) -> tuple[HTTPServer, threading.Thread]:
     """Spin up a tiny static HTTP server on 127.0.0.1:<port> serving dir_path."""
-    cwd_before = os.getcwd()
+    os.getcwd()
 
     class _Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
@@ -216,7 +216,6 @@ def _run_playwright(
     fe_rel = str(fe_dir.relative_to(workdir)) if fe_dir != workdir else "."
     console_errors: list[str] = []
     network_errors: list[str] = []
-    canvas_mounted = False
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -242,9 +241,9 @@ def _run_playwright(
             page.goto(f"http://127.0.0.1:{fe_port}/", wait_until="networkidle", timeout=15000)
             time.sleep(_PAGE_WAIT_S * 0.4)
             try:
-                canvas_mounted = bool(page.query_selector("canvas"))
+                bool(page.query_selector("canvas"))
             except Exception:
-                canvas_mounted = False
+                pass
         except Exception as exc:
             browser.close()
             return [VerifierFailure(

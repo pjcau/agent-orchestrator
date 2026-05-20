@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from agent_orchestrator.core.repair_loop import (
-    RepairAttempt,
     RepairLoop,
     augment_task,
 )
@@ -464,7 +462,7 @@ async def test_post_condition_guard_does_not_revert_when_fix_helps(tmp_path: Pat
 
     target = tmp_path / "requirements.txt"
     target.write_text("fastapi>=0.109\n")
-    original_text = target.read_text()
+    target.read_text()
 
     import re as _re
 
