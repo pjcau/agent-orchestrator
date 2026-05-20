@@ -485,8 +485,6 @@ async def test_runtime_smoke_import_failure_emits_missing_dep_compatible_with_ex
             (venv_dir / "bin" / "python").touch()
             return subprocess.CompletedProcess(cmd, 0, b"", b"")
         if "install" in cmd:
-            # Mark venv as cached so subsequent verify() calls skip install.
-            digest_dir = cache / list(cache.iterdir())[0].name if cache.exists() and any(cache.iterdir()) else None
             return subprocess.CompletedProcess(cmd, 0, b"", b"")
         # The import probe.
         if isinstance(cmd, list) and "-c" in cmd:
@@ -677,7 +675,7 @@ async def test_entrypoint_verifier_skips_when_smoke_venv_not_provisioned(tmp_pat
 async def test_entrypoint_verifier_catches_relative_import_crash(tmp_path: Path):
     """The 2026-05-16(g) failure mode: `from .database` under uvicorn from
     a non-package dir fails — entrypoint verifier must surface it."""
-    import shutil, sys, venv as _venv
+    import venv as _venv
     from agent_orchestrator.core.verifiers import EntrypointVerifier
 
     # Build a real backend with the broken relative import.
@@ -747,7 +745,7 @@ async def test_e2e_verifier_warns_when_playwright_missing(tmp_path: Path, monkey
     monkeypatch.setenv("REPAIR_LOOP_E2E_ENABLED", "true")
     (tmp_path / "frontend").mkdir()
     (tmp_path / "frontend" / "index.html").write_text("<html><body>hi</body></html>")
-    import sys, builtins
+    import builtins
     real_import = builtins.__import__
 
     def fake_import(name, *a, **kw):

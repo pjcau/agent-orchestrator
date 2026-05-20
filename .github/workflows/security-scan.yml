@@ -36,13 +36,16 @@ jobs:
         #   the latest release as of this ignore — no fixed version is yet published on PyPI.
         # CVE-2025-8869, CVE-2026-1703, CVE-2026-6357: pip itself in the runner.
         #   The CI runner image controls the pip version; project deps cannot pin it.
+        # PYSEC-2025-183: pyjwt "weak encryption" — disputed by maintainers (key length is
+        #   chosen by the application, not the library); no fix version exists.
         run: |
           pip-audit --desc \
             --ignore-vuln CVE-2026-4539 \
             --ignore-vuln CVE-2026-3219 \
             --ignore-vuln CVE-2025-8869 \
             --ignore-vuln CVE-2026-1703 \
-            --ignore-vuln CVE-2026-6357
+            --ignore-vuln CVE-2026-6357 \
+            --ignore-vuln PYSEC-2025-183
 
   # --- CodeQL static analysis ---
   codeql:
