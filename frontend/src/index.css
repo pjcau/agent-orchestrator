@@ -15,6 +15,8 @@
   --purple: #bc8cff;
   --cyan: #39d2c0;
   --pink: #f778ba;
+  --bp-compact: 600px;
+  --bp-narrow: 900px;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -1537,7 +1539,7 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
 /* === Responsive === */
-@media (max-width: 900px) {
+@media (max-width: var(--bp-narrow)) {
   .history-sidebar { display: none; }
   .sidebar { width: 260px; }
   .metric-group--cumulative { display: none; }
@@ -1887,7 +1889,7 @@ body {
 }
 .btn-hamburger:hover { border-color: var(--accent); color: var(--accent); }
 
-@media (max-width: 600px) {
+@media (max-width: var(--bp-compact)) {
   /* --- 1. Right sidebar → slide-in drawer with backdrop --- */
   .sidebar-backdrop {
     display: block;

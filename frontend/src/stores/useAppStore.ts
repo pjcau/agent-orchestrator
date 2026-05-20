@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { BP } from "@/lib/breakpoints";
 import type {
   AgentSnapshot,
   TaskSnapshot,
@@ -244,10 +245,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   attachedFiles: [],
 
   // UI state — start with the right rail collapsed on small screens so the
-  // mobile drawer (managed in CSS via @media ≤600px) doesn't open over the
+  // mobile drawer (managed in CSS via compact breakpoint) doesn't open over the
   // chat on first load. SSR-safe: `window` may be undefined at hydration.
   sidebarOpen:
-    typeof window === "undefined" || window.matchMedia("(max-width: 600px)").matches
+    typeof window === "undefined"
+    || window.matchMedia(`(max-width: ${BP.compact}px)`).matches
       ? false
       : true,
 

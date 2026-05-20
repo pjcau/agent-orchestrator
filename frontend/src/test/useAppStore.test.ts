@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore, STORAGE_KEY_RAG_ENABLED, STORAGE_KEY_RAG_NAMESPACE } from "@/stores/useAppStore";
+import { BP } from "@/lib/breakpoints";
 import type { OrchestratorEvent, Snapshot } from "@/api/types";
 
 describe("useAppStore", () => {
@@ -377,6 +378,28 @@ describe("useAppStore", () => {
       // localStorage still has RAG values
       expect(window.localStorage.getItem("ao_rag_enabled")).toBe("true");
       expect(window.localStorage.getItem("ao_rag_namespace")).toBe("project-docs");
+    });
+  });
+
+  describe("responsive sidebar initialization", () => {
+    it("starts closed when compact breakpoint matches", async () => {
+      vi.resetModules();
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query === `(max-width: ${BP.compact}px)`,
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+
+      const { useAppStore: freshStore } = await import("@/stores/useAppStore");
+      expect(freshStore.getState().sidebarOpen).toBe(false);
     });
   });
 });
