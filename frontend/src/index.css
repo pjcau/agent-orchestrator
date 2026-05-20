@@ -2107,14 +2107,47 @@ body {
   .cache-stat-label { font-size: 11px; }
   /* Timeline / activity inside drawer — coherent 12px scale */
   .agent-activity,
-  .timeline { max-height: 160px; }
+  .timeline { max-height: 220px; }
   .activity-item,
-  .event-item { padding: 6px 4px; }
+  .event-item { padding: 6px 4px; align-items: flex-start; }
   .activity-detail,
-  .event-desc { font-size: 11px; }
+  .event-desc { font-size: 12px; }
   .activity-agent { font-size: 12px; }
   .activity-time,
   .event-time { font-size: 11px; }
+
+  /* Event log filter ("All" dropdown) was 20px tall with 10px font and was
+     getting visually clipped after the global 16px font bump. Re-size it to
+     match the other touch controls in the drawer. */
+  .logs-controls { gap: 8px; flex-wrap: wrap; }
+  .logs-filter {
+    min-height: 40px;
+    padding: 6px 10px;
+    font-size: 14px;
+    height: auto;
+  }
+
+  /* Stop truncating long text with ellipsis on mobile — there is plenty of
+     vertical room in the drawer, so let it wrap to multiple lines instead
+     of getting clipped. */
+  .event-desc,
+  .event-type,
+  .activity-desc,
+  .activity-detail,
+  .history-session-prompt,
+  .history-record__prompt,
+  .history-record__output,
+  .interaction-desc,
+  .session-explorer__file-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  .event-body,
+  .activity-body { min-width: 0; overflow: visible; }
+
   /* Compare panel inputs were tiny */
   .compare-select { min-height: 40px; font-size: 14px; }
   .compare-output { font-size: 12px; max-height: 140px; }
