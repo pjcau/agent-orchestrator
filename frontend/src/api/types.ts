@@ -79,6 +79,27 @@ export interface TeamRunResult {
     status: string;
     detail: string;
   }>;
+  /**
+   * Repair-loop summary, present when REPAIR_LOOP_ENABLED is on (default
+   * since v1.5 P1 Phase 7). Surfaced by the dashboard as a system message
+   * so operators see whether the verifier chain kicked in.
+   */
+  repair?: RepairSummary;
+}
+
+export interface RepairSummary {
+  status: "passed" | "partial" | "aborted_budget" | "aborted_cost";
+  attempts: number;
+  cumulative_cost_usd: number;
+  final_passed: boolean;
+  final_failures: Array<{
+    verifier: string;
+    category: string;
+    message: string;
+    file?: string | null;
+    signature: string;
+  }>;
+  auto_fixed_signatures: string[];
 }
 
 export interface AgentCost {

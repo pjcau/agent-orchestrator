@@ -74,6 +74,19 @@ class EventType(str, Enum):
     GUARDRAIL_BLOCKED = "guardrail.blocked"
     GUARDRAIL_REDACTED = "guardrail.redacted"
 
+    # Verification gate + repair loop (v1.5 P1)
+    VERIFICATION_STARTED = "verification.started"
+    VERIFIER_STARTED = "verifier.started"
+    VERIFIER_FINISHED = "verifier.finished"
+    VERIFICATION_FINISHED = "verification.finished"
+    REPAIR_STARTED = "repair.started"
+    REPAIR_ATTEMPT_STARTED = "repair.attempt_started"
+    REPAIR_ATTEMPT_FINISHED = "repair.attempt_finished"
+    REPAIR_ESCALATED = "repair.escalated"
+    REPAIR_AUTO_FIXED = "repair.auto_fixed"
+    REPAIR_ABORTED = "repair.aborted"
+    REPAIR_FINISHED = "repair.finished"
+
 
 @dataclass
 class Event:
