@@ -104,8 +104,9 @@ interface AppState {
   appendStreamChunk: (chunk: string) => void;
   finalizeStream: (data?: {
     output?: string;
-    usage?: { output_tokens?: number; model?: string };
+    usage?: { output_tokens?: number; model?: string; cost_usd?: number };
     elapsed_s?: number;
+    cost_usd?: number;
     speed?: number;
   }) => void;
   clearStreamBuffer: () => void;
@@ -515,6 +516,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         role: "assistant",
         content: finalBuffer,
         model: data?.usage?.model,
+        elapsed_s: data?.elapsed_s,
+        cost_usd: data?.cost_usd ?? data?.usage?.cost_usd,
         timestamp: Date.now(),
       };
 

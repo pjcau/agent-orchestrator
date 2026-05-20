@@ -470,8 +470,33 @@ body {
 .chat-bubble__meta {
   font-size: 10px;
   color: var(--text-dim);
-  margin-top: 4px;
+  margin-top: 6px;
   font-family: var(--font-mono);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.chat-bubble__meta > span + span::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+.chat-bubble__meta-model {
+  font-weight: 500;
+}
+
+.chat-bubble__meta-time {
+  color: var(--text-dim);
+}
+
+.chat-bubble__meta-cost {
+  color: var(--accent, var(--text-dim));
+  font-variant-numeric: tabular-nums;
 }
 
 .chat-system-bubble {

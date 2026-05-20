@@ -296,7 +296,7 @@ async def run_graph(
         )
 
     # Aggregate usage
-    usage = _aggregate_usage(result, model)
+    usage = _aggregate_usage(result, model, provider)
 
     # Emit token update
     await event_bus.emit(
@@ -452,7 +452,7 @@ def _extract_steps(result: Any) -> list[dict[str, str]]:
     return steps
 
 
-def _aggregate_usage(result: Any, model: str) -> dict[str, Any]:
+def _aggregate_usage(result: Any, model: str, provider: Provider | None = None) -> dict[str, Any]:
     """Aggregate token usage from a graph result."""
     usage_info = result.state.get("_usage", {})
     usage = {
@@ -469,6 +469,21 @@ def _aggregate_usage(result: Any, model: str) -> dict[str, Any]:
         total_out += step_usage.get("output_tokens", 0)
     usage["input_tokens"] = max(usage["input_tokens"], total_in)
     usage["output_tokens"] = max(usage["output_tokens"], total_out)
+
+    # Best-effort cost estimation so the UI can display $ alongside tokens.
+    # Returns 0.0 for local providers (no pricing) — they still get the field.
+    cost = 0.0
+    if provider is not None:
+        try:
+            cost = float(
+                provider.estimate_cost(
+                    int(usage["input_tokens"] or 0),
+                    int(usage["output_tokens"] or 0),
+                )
+            )
+        except Exception:
+            cost = 0.0
+    usage["cost_usd"] = round(cost, 6)
     return usage
 
 

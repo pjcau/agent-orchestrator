@@ -182,6 +182,34 @@ The vanilla JS dashboard at `src/agent_orchestrator/dashboard/static/` was remov
 
 New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `fetchFileContent` (async helper), `usePricing`. Query keys added: `presets`, `files`, `pricing`.
 
+## Chat bubble cost & elapsed footer
+
+Every assistant bubble carries a small monospace footer aligned to the **bottom-right** of the bubble showing `model · elapsed · cost`:
+
+```
+inclusionai/ling-2.6-flash · 1.6s · $0.0023
+```
+
+Sources of the three fields:
+
+| Field      | Plain prompt (`/api/prompt`)                                  | WebSocket stream (`/ws/stream`)                                       | Agent / Team run                                                     |
+|------------|---------------------------------------------------------------|-----------------------------------------------------------------------|----------------------------------------------------------------------|
+| `model`    | `response.usage.model`                                        | `done.usage.model`                                                    | Selector value (passed back unchanged)                               |
+| `elapsed_s`| `response.elapsed_s`                                          | `done.elapsed_s`                                                      | `response.elapsed_s`                                                 |
+| `cost_usd` | `response.usage.cost_usd` — added by `_aggregate_usage` via `provider.estimate_cost(input, output)` | `done.cost_usd` — best-effort via `provider.estimate_cost(0, output_tokens)` (the stream path does not track input tokens) | `response.total_cost_usd`, or the sum of `agent_costs[*].cost_usd` |
+
+Formatting rules (`formatCost` in `ChatMessage.tsx`):
+
+- `0`           → `$0` (free/local provider — legitimate zero)
+- `< $0.0001`   → `<$0.0001` (avoids showing `$0` for very short paid prompts)
+- `< $0.01`     → 4 decimals (e.g. `$0.0023`)
+- `< $1`        → 3 decimals (e.g. `$0.124`)
+- `≥ $1`        → 2 decimals (e.g. `$1.23`)
+
+`formatElapsed` renders sub-second values as `ms`, < 60 s as `s.s`, and longer durations as `m m s s`.
+
+For local providers (Ollama, vLLM) `input_cost_per_million = output_cost_per_million = 0`, so `$0` is correct. For OpenRouter, models with a `:free` suffix are priced at zero in `OpenRouterProvider.MODELS`; pick a non-`:free` model to see non-zero costs.
+
 ## File context transparency (D)
 
 To remove ambiguity about what the model is actually receiving, every attached file shows:

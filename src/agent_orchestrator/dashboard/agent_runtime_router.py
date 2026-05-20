@@ -838,6 +838,14 @@ async def stream_endpoint(ws: WebSocket):
                 elapsed = time.time() - start_time
                 speed = total_tokens / elapsed if elapsed > 0 else 0
 
+                # Best-effort cost estimate. Stream path doesn't track input
+                # tokens, so this approximates with output-only — accurate
+                # enough for the UI footer (cents-level precision).
+                try:
+                    stream_cost = float(provider.estimate_cost(0, total_tokens))
+                except Exception:
+                    stream_cost = 0.0
+
                 await bus.emit(
                     Event(event_type=EventType.GRAPH_NODE_EXIT, node_name="stream", data={})
                 )
@@ -855,8 +863,10 @@ async def stream_endpoint(ws: WebSocket):
                         "usage": {
                             "output_tokens": total_tokens,
                             "model": model,
+                            "cost_usd": round(stream_cost, 6),
                         },
                         "elapsed_s": round(elapsed, 2),
+                        "cost_usd": round(stream_cost, 6),
                         "speed": round(speed, 1),
                     }
                 )
@@ -882,6 +892,7 @@ async def stream_endpoint(ws: WebSocket):
                     model=model,
                     provider=provider_type,
                     output_tokens=total_tokens,
+                    cost_usd=stream_cost,
                     elapsed_s=round(elapsed, 2),
                     session_id=job_logger.session_id,
                 )

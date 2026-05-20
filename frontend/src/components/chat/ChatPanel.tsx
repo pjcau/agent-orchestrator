@@ -157,6 +157,7 @@ export function ChatPanel() {
             output?: string;
             error?: string;
             total_tokens?: number;
+            total_cost_usd?: number;
             elapsed_s?: number;
           }>(
             "/api/agent/run",
@@ -175,9 +176,16 @@ export function ChatPanel() {
               role: "assistant",
               content: {
                 steps: [{ node: "agent", output: resp.data.output ?? "" }],
-                usage: { output_tokens: resp.data.total_tokens, model },
+                usage: {
+                  output_tokens: resp.data.total_tokens,
+                  model,
+                  cost_usd: resp.data.total_cost_usd,
+                },
                 elapsed_s: resp.data.elapsed_s,
               } as import("@/api/types").AssistantContent,
+              model,
+              elapsed_s: resp.data.elapsed_s,
+              cost_usd: resp.data.total_cost_usd,
               timestamp: Date.now(),
             } as ChatMessage);
           } else {
@@ -207,7 +215,12 @@ export function ChatPanel() {
               success: boolean;
               output?: string;
               error?: string;
-              usage?: { input_tokens?: number; output_tokens?: number; model?: string };
+              usage?: {
+                input_tokens?: number;
+                output_tokens?: number;
+                model?: string;
+                cost_usd?: number;
+              };
               elapsed_s?: number;
               rag?: {
                 namespace: string;
@@ -253,6 +266,8 @@ export function ChatPanel() {
                 role: "assistant",
                 content: resp.data.output ?? "",
                 model: resp.data.usage?.model,
+                elapsed_s: resp.data.elapsed_s,
+                cost_usd: resp.data.usage?.cost_usd,
                 timestamp: Date.now(),
               });
             } else {

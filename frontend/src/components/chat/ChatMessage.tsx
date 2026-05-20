@@ -17,6 +17,24 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+function formatElapsed(s: number): string {
+  if (s < 1) return `${Math.round(s * 1000)}ms`;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const r = Math.round(s - m * 60);
+  return `${m}m${r.toString().padStart(2, "0")}s`;
+}
+
+function formatCost(c: number): string {
+  if (c <= 0) return "$0";
+  // Avoid rounding non-zero costs to "$0" — short prompts can legitimately
+  // cost a fraction of a cent.
+  if (c < 0.0001) return "<$0.0001";
+  if (c < 0.01) return `$${c.toFixed(4)}`;
+  if (c < 1) return `$${c.toFixed(3)}`;
+  return `$${c.toFixed(2)}`;
+}
+
 function AgentStepMessage({ content }: { content: AssistantContent }) {
   const steps = content.steps ?? [];
   const costs = content.agent_costs ?? {};
@@ -42,19 +60,25 @@ function AgentStepMessage({ content }: { content: AssistantContent }) {
           </div>
         );
       })}
-      {(content.usage || content.elapsed_s) && (
-        <div className="chat-usage">
-          {content.usage?.output_tokens ?? 0} tok &middot;{" "}
-          {content.elapsed_s && content.usage?.output_tokens
-            ? `${((content.usage.output_tokens) / content.elapsed_s).toFixed(1)} tok/s`
-            : "-"}{" "}
-          &middot; {content.usage?.model ?? ""} &middot; {content.elapsed_s ?? 0}s
-          {Object.keys(costs).length > 0 &&
-            ` · $${Object.values(costs)
-              .reduce((s, c) => s + (c.cost_usd ?? 0), 0)
-              .toFixed(4)}`}
-        </div>
-      )}
+      {(content.usage || content.elapsed_s) && (() => {
+        const aggregatedCost = Object.values(costs).reduce(
+          (s, c) => s + (c.cost_usd ?? 0),
+          0,
+        );
+        const totalCost =
+          aggregatedCost > 0 ? aggregatedCost : (content.usage?.cost_usd ?? 0);
+        return (
+          <div className="chat-usage" title="tokens · tok/s · model · elapsed · cost (input+output)">
+            {content.usage?.output_tokens ?? 0} tok &middot;{" "}
+            {content.elapsed_s && content.usage?.output_tokens
+              ? `${(content.usage.output_tokens / content.elapsed_s).toFixed(1)} tok/s`
+              : "-"}{" "}
+            &middot; {content.usage?.model ?? ""} &middot;{" "}
+            {formatElapsed(content.elapsed_s ?? 0)}
+            {totalCost > 0 && ` · ${formatCost(totalCost)}`}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -151,9 +175,15 @@ export function ChatMessageItem({ message }: ChatMessageProps) {
         ) : (
           <AgentStepMessage content={content as AssistantContent} />
         )}
-        {message.model && (
-          <div className="chat-bubble__meta">
-            {message.model}
+        {(message.model || message.elapsed_s != null || message.cost_usd != null) && (
+          <div className="chat-bubble__meta" title="model · elapsed · cost (input+output)">
+            {message.model && <span className="chat-bubble__meta-model">{message.model}</span>}
+            {message.elapsed_s != null && (
+              <span className="chat-bubble__meta-time">{formatElapsed(message.elapsed_s)}</span>
+            )}
+            {message.cost_usd != null && (
+              <span className="chat-bubble__meta-cost">{formatCost(message.cost_usd)}</span>
+            )}
           </div>
         )}
       </div>

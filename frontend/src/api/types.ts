@@ -112,6 +112,7 @@ export interface UsageInfo {
   output_tokens?: number;
   model?: string;
   provider?: string;
+  cost_usd?: number;
 }
 
 export interface UsageStats {
@@ -165,6 +166,9 @@ export interface ChatMessage {
   model?: string;
   provider?: string;
   timestamp?: number;
+  // Footer metadata shown bottom-right of assistant bubbles
+  elapsed_s?: number;
+  cost_usd?: number;
 }
 
 export interface AssistantContent {

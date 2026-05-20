@@ -41,8 +41,9 @@ export function useSSE({ runId, enabled }: SSEOptions) {
           const data = JSON.parse(e.data as string) as {
             type?: string;
             content?: string;
-            usage?: { output_tokens?: number; model?: string };
+            usage?: { output_tokens?: number; model?: string; cost_usd?: number };
             elapsed_s?: number;
+            cost_usd?: number;
             speed?: number;
             error?: string;
             data?: OrchestratorEvent;
