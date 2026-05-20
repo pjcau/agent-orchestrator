@@ -6,6 +6,9 @@ on:
     paths:
       - 'docs/website/**'
       - '.github/workflows/deploy-docs.yml'
+  # Allow manual re-runs from the Actions tab (e.g. to publish doc tweaks
+  # made outside docs/website/, or to recover from a stale failed run).
+  workflow_dispatch:
 
 permissions:
   contents: read

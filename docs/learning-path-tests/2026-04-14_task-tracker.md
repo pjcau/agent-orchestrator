@@ -235,9 +235,9 @@ Future runs should fill the matrix below.
 docker compose up -d dashboard postgres
 
 # run the skill (via Claude Code)
-/orchestrator-learning-path-test
+/learning
 # or with a custom goal:
-/orchestrator-learning-path-test "Your topic here"
+/learning "Your topic here"
 ```
 
 The skill drives the run, performs verification, prints a report in the same

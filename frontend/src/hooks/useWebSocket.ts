@@ -141,6 +141,30 @@ export function useWebSocket() {
             });
           }
 
+          // v1.5 P1: when the repair loop runs, surface its summary so
+          // operators can see if the verifier chain caught anything.
+          if (result.repair) {
+            const r = result.repair;
+            const icon = r.status === "passed" ? "✓" : r.status === "partial" ? "⚠" : "✗";
+            const attempts = `${r.attempts} attempt${r.attempts === 1 ? "" : "s"}`;
+            const autoFixed =
+              r.auto_fixed_signatures.length > 0
+                ? `, ${r.auto_fixed_signatures.length} auto-fix${r.auto_fixed_signatures.length === 1 ? "" : "es"}`
+                : "";
+            const residual =
+              r.final_failures.length > 0
+                ? `, ${r.final_failures.length} residual failure${r.final_failures.length === 1 ? "" : "s"} (${r.final_failures
+                    .slice(0, 3)
+                    .map((f) => f.verifier)
+                    .join(", ")})`
+                : "";
+            addMessage({
+              role: "system",
+              content: `Repair loop: ${icon} ${r.status} (${attempts}${autoFixed}${residual})`,
+              timestamp: Date.now(),
+            });
+          }
+
           if (result.success) {
             const steps: Array<{ node: string; output: string }> = [];
             if (result.plan) {

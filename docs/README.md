@@ -10,6 +10,22 @@ Navigable entry point for the docs/ directory. Read top-to-bottom for a full onb
 | [architecture.md](architecture.md) | Core abstractions (Provider, Agent, Skill, Orchestrator), design rationale, mapping from Claude Code |
 | [abstractions.md](abstractions.md) | Exhaustive reference catalog of every abstraction by concern |
 
+## Live Architecture Maps
+
+Two interactive views of the project, served by `docker compose up docs` at `http://localhost:3000/agent-orchestrator/`:
+
+| Page | Source of truth | Purpose |
+|------|-----------------|---------|
+| [`/architecture-map`](http://localhost:3000/agent-orchestrator/architecture-map) | `docs/website/architecture-map.yaml` → `scripts/generate_architecture_map.py` | Logical constellation of 6 clusters (Harness, Skills, Memory, Protocols, Observability, Quality). Curated taxonomy; every file path is validated at build time. |
+| [`/feature-map`](http://localhost:3000/agent-orchestrator/feature-map) | `scripts/generate_feature_map.py` (AST scan) | Module-level graph (108 modules, ~210 edges). Filters by harness/app/category, text search, click-to-source. |
+
+Re-run the generators when you add or rename modules:
+
+```bash
+python scripts/generate_architecture_map.py   # writes static/architecture-map.json
+python scripts/generate_feature_map.py        # writes static/feature-map.json
+```
+
 ## Building & Running
 
 | Doc | What it covers |
