@@ -19,7 +19,8 @@ The dashboard body is a flex row with (left → right):
 
 - Keep responsive thresholds centralized in `frontend/src/lib/breakpoints.ts`.
 - For TypeScript runtime checks, use `BP.*` / `mq.*` (`useBreakpoint()` when inside components).
-- For CSS media queries, use shared variables in `frontend/src/index.css` (`--bp-*`) instead of hardcoded pixel literals.
+- For CSS media queries, keep thresholds aligned with `BP.*` from `frontend/src/lib/breakpoints.ts`.
+- `var(--bp-*)` is still exposed in `frontend/src/index.css`, but browser support for `var()` inside `@media` is inconsistent in CI/browser automation; when needed, use literal `@media (max-width: 600px|900px)` and keep exceptions tracked in `frontend/.responsive-baseline.txt`.
 
 ## Modular Architecture
 
