@@ -8,6 +8,7 @@ the next incident.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -50,9 +51,14 @@ class TestUptimeCheckWorkflow:
 
     def test_probes_both_production_domains(self, wf: dict) -> None:
         job = wf["jobs"]["probe"]
-        domains = job["strategy"]["matrix"]["domain"]
-        assert "agents-orchestrator.com" in domains
-        assert "monitoring.agents-orchestrator.com" in domains
+        domains = list(job["strategy"]["matrix"]["domain"])
+        # Compare as set elements (exact equality), not via `in` on a string,
+        # so CodeQL's py/incomplete-url-substring-sanitization rule does not
+        # mistake this list-membership check for URL sanitization.
+        expected = {"agents-orchestrator.com", "monitoring.agents-orchestrator.com"}
+        assert expected.issubset(set(domains)), (
+            f"Probe matrix must include {expected}, got {domains}"
+        )
 
     def test_grants_issues_write(self, wf: dict) -> None:
         perms = wf.get("permissions", {})
@@ -86,7 +92,12 @@ class TestDeployWorkflowAlerts:
         steps = wf["jobs"]["deploy"]["steps"]
         probe = next((s for s in steps if "public" in s.get("name", "").lower()), None)
         assert probe is not None, "Missing 'Public HTTPS probe' step"
-        assert "agents-orchestrator.com" in probe["run"], "Probe must target the production domain"
+        # Word-boundary regex so CodeQL's py/incomplete-url-substring-sanitization
+        # rule does not flag this content assertion on a YAML script body
+        # as URL sanitization (it is structural verification, not validation).
+        assert re.search(r"\bagents-orchestrator\.com\b", probe["run"]), (
+            "Probe must target the production domain"
+        )
 
     def test_probe_fails_on_untrusted_cert(self, wf: dict) -> None:
         """Regression guard: an untrusted cert must fail the deploy, not pass as DEGRADED.
