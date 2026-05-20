@@ -157,6 +157,7 @@ async def test_apply_unicode_unescape_fixes_package_json(tmp_path: Path):
     after = pkg.read_text()
     assert "\n" in after
     import json as _json
+
     parsed = _json.loads(after)
     assert parsed["name"] == "task-tracker-frontend"
 

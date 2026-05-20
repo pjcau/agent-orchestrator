@@ -27,9 +27,9 @@ from agent_orchestrator.dashboard.events import EventBus, EventType
         ("true", True),
         ("TRUE", True),
         (" true ", True),
-        ("1", True),       # any non-"false" value keeps the default ON
+        ("1", True),  # any non-"false" value keeps the default ON
         ("yes", True),
-        ("", True),        # empty string == unset on some shells → stay ON
+        ("", True),  # empty string == unset on some shells → stay ON
         ("false", False),
         ("FALSE", False),
         (" false ", False),

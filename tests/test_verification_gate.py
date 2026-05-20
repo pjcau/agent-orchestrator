@@ -272,8 +272,6 @@ async def test_empty_verifier_list_passes(tmp_path):
 def test_asyncio_smoke():
     # Sanity check that the gate can be driven without pytest-asyncio in
     # downstream consumers that prefer asyncio.run().
-    gate = VerificationGate(
-        [_FakeVerifier(name="syntax", cost_estimate_s=1.0, result=[])]
-    )
+    gate = VerificationGate([_FakeVerifier(name="syntax", cost_estimate_s=1.0, result=[])])
     report = asyncio.run(gate.verify(Path("/")))
     assert report.passed

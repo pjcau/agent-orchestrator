@@ -162,9 +162,9 @@ class RepairLoop:
 
         last_report: VerificationReport | None = None
         last_workdir: Path | None = None
-        status: Literal[
-            "passed", "partial", "aborted_budget", "aborted_cost", "aborted_time"
-        ] = "partial"
+        status: Literal["passed", "partial", "aborted_budget", "aborted_cost", "aborted_time"] = (
+            "partial"
+        )
 
         for attempt_idx in range(1, self._max_attempts + 1):
             self._emit_event(
@@ -394,7 +394,12 @@ def augment_task(
     the first 50 lines of each offending file (so the agent can see the
     actual code that triggered the failure).
     """
-    parts = [original, "", "─" * 60, f"REPAIR ATTEMPT {attempt} — previous output failed verification:"]
+    parts = [
+        original,
+        "",
+        "─" * 60,
+        f"REPAIR ATTEMPT {attempt} — previous output failed verification:",
+    ]
     parts.append(_format_failures(failures))
     if past_history:
         parts.append("")

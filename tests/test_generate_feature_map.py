@@ -38,8 +38,17 @@ def test_nodes_have_required_fields(gen):
     payload = gen.build_payload()
     assert payload["nodes"], "no nodes were discovered — generator broken?"
     required = {
-        "id", "name", "category", "layer", "path", "description", "classes",
-        "weight", "in_degree", "out_degree", "lines",
+        "id",
+        "name",
+        "category",
+        "layer",
+        "path",
+        "description",
+        "classes",
+        "weight",
+        "in_degree",
+        "out_degree",
+        "lines",
     }
     for node in payload["nodes"]:
         assert set(node) >= required

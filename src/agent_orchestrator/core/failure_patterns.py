@@ -87,7 +87,9 @@ class FailurePatternRegistry:
             try:
                 patterns.append(_pattern_from_dict(entry))
             except Exception as exc:  # noqa: BLE001 — surface index of bad entry
-                raise ValueError(f"{path}: entry #{i} ({entry.get('name', '?')}) invalid: {exc}") from exc
+                raise ValueError(
+                    f"{path}: entry #{i} ({entry.get('name', '?')}) invalid: {exc}"
+                ) from exc
         return cls(patterns)
 
     @property

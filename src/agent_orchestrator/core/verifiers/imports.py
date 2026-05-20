@@ -75,7 +75,17 @@ _STDLIB = set(sys.stdlib_module_names) | {
     "typing_extensions",  # very commonly bundled with toolchains; harmless if listed.
 }
 
-_SKIP_DIRS = {".git", "__pycache__", ".venv", "venv", "node_modules", "dist", "build", ".tox", ".pytest_cache"}
+_SKIP_DIRS = {
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "build",
+    ".tox",
+    ".pytest_cache",
+}
 
 
 class ImportVerifier:
@@ -232,6 +242,7 @@ def _collect_declared_packages(workdir: Path) -> set[str]:
         # Match anything that looks like a `"<package>[..]<spec>"` in a
         # dependencies list — keeps the heuristic offline.
         import re as _re
+
         for m in _re.finditer(r'"\s*([A-Za-z0-9][A-Za-z0-9._\-]*)', text):
             declared.add(_normalize(m.group(1)))
     return declared

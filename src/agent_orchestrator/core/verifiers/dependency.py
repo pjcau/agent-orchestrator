@@ -34,7 +34,10 @@ from agent_orchestrator.core.verification_gate import VerifierFailure
 KNOWN_BAD_PINS: dict[str, tuple[int, str]] = {
     # `psycopg` (the modern package) only has 3.x releases — anyone asking for
     # `psycopg<3` is conflating it with the legacy `psycopg2-binary`.
-    "psycopg": (3, "psycopg has no releases below 3.0 — use 'psycopg2-binary' for the v2 driver or 'psycopg>=3.0' for the v3 driver"),
+    "psycopg": (
+        3,
+        "psycopg has no releases below 3.0 — use 'psycopg2-binary' for the v2 driver or 'psycopg>=3.0' for the v3 driver",
+    ),
 }
 
 _REQ_LINE = re.compile(

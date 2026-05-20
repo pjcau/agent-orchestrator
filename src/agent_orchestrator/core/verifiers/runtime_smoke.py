@@ -100,9 +100,7 @@ class RuntimeSmokeVerifier:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _ensure_venv(
-        self, workdir: Path, req: Path
-    ) -> tuple[Path, VerifierFailure | None]:
+    def _ensure_venv(self, workdir: Path, req: Path) -> tuple[Path, VerifierFailure | None]:
         """Create or reuse a venv. Phase 7.9c — delta-install cache.
 
         Cache strategy:
@@ -148,6 +146,7 @@ class RuntimeSmokeVerifier:
 
         if venv_dir.exists():
             import shutil
+
             shutil.rmtree(venv_dir, ignore_errors=True)
 
         if parent_dir is not None:
@@ -159,7 +158,9 @@ class RuntimeSmokeVerifier:
             # No usable parent → fresh venv + full install.
             subprocess.run(
                 [sys.executable, "-m", "venv", str(venv_dir)],
-                capture_output=True, timeout=60, check=True,
+                capture_output=True,
+                timeout=60,
+                check=True,
             )
             install_cmd_input = ["-r", str(req)]
 
@@ -171,15 +172,14 @@ class RuntimeSmokeVerifier:
             # Parent set == current set after canonicalisation; nothing to
             # install. (Edge case: parent.set was already a superset, which
             # means the original SHA-key check missed because of formatting.)
-            (venv_dir / ".smoke-manifest.json").write_text(
-                _json.dumps(sorted(canonical))
-            )
+            (venv_dir / ".smoke-manifest.json").write_text(_json.dumps(sorted(canonical)))
             marker.write_text(digest)
             return venv_dir, None
 
         cp = subprocess.run(
             [str(pip), "install", "-q", "--no-input", *install_cmd_input],
-            capture_output=True, timeout=_PIP_INSTALL_TIMEOUT_S,
+            capture_output=True,
+            timeout=_PIP_INSTALL_TIMEOUT_S,
         )
         if cp.returncode != 0:
             stderr = cp.stderr.decode(errors="replace")
@@ -199,9 +199,7 @@ class RuntimeSmokeVerifier:
         marker.write_text(digest)
         return venv_dir, None
 
-    def _find_largest_subset_cache(
-        self, canonical: set[str]
-    ) -> tuple[Path | None, set[str]]:
+    def _find_largest_subset_cache(self, canonical: set[str]) -> tuple[Path | None, set[str]]:
         """Return (cache_dir, cache_set) of the largest existing venv whose
         canonical set is a STRICT subset of ``canonical``. Returns (None, set())
         if no usable parent exists."""
@@ -235,7 +233,8 @@ class RuntimeSmokeVerifier:
         try:
             cp = subprocess.run(
                 ["cp", "-a", "--reflink=auto", str(src), str(dst)],
-                capture_output=True, timeout=30,
+                capture_output=True,
+                timeout=30,
             )
             if cp.returncode == 0 and dst.exists():
                 # The cloned venv hard-codes the SRC path inside its pyvenv.cfg
@@ -246,6 +245,7 @@ class RuntimeSmokeVerifier:
             pass
         # Fallback.
         import shutil
+
         shutil.copytree(src, dst, symlinks=True)
         self._rewrite_venv_paths(src, dst)
 
@@ -318,7 +318,9 @@ class RuntimeSmokeVerifier:
             env["PYTHONPATH"] = str(root) + os.pathsep + pythonpath_value
             cp = subprocess.run(
                 [str(py_exe), "-c", f"import {module}"],
-                capture_output=True, timeout=_IMPORT_TIMEOUT_S, env=env,
+                capture_output=True,
+                timeout=_IMPORT_TIMEOUT_S,
+                env=env,
             )
             if cp.returncode == 0:
                 continue
@@ -326,6 +328,7 @@ class RuntimeSmokeVerifier:
             # Extract `No module named 'X'` for de-dup + matching the existing
             # ImportVerifier auto-fix pattern.
             import re as _re
+
             m = _re.search(r"No module named '([^']+)'", stderr)
             if m:
                 missing = m.group(1).split(".", 1)[0]
@@ -340,7 +343,7 @@ class RuntimeSmokeVerifier:
                         category="missing_dep",  # match ImportVerifier so the same auto-fix runs
                         message=f"No module named '{missing}' (smoke import of '{module}' in {rel_root})",
                         detail=(
-                            f"{rel_root}/{module}.py: `python -c \"import {module}\"` failed "
+                            f'{rel_root}/{module}.py: `python -c "import {module}"` failed '
                             f"with ModuleNotFoundError for '{missing}'. "
                             f"Expected package on PyPI: '{missing}'.\n\n"
                             f"stderr tail:\n{stderr.strip()[-800:]}"

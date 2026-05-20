@@ -179,9 +179,7 @@ async def test_signature_repeat_triggers_escalation(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_event_emission_lifecycle(tmp_path: Path):
-    gate = VerificationGate(
-        [_FakeVerifier(name="v", cost_estimate_s=1.0, results=[[]])]
-    )
+    gate = VerificationGate([_FakeVerifier(name="v", cost_estimate_s=1.0, results=[[]])])
     events: list[str] = []
 
     def emit(t: str, d: dict) -> None:
@@ -205,9 +203,7 @@ async def test_event_emission_lifecycle(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_event_emitter_exception_does_not_break_loop(tmp_path: Path):
-    gate = VerificationGate(
-        [_FakeVerifier(name="v", cost_estimate_s=1.0, results=[[]])]
-    )
+    gate = VerificationGate([_FakeVerifier(name="v", cost_estimate_s=1.0, results=[[]])])
 
     def emit(t: str, d: dict) -> None:
         raise RuntimeError("bad sink")
@@ -268,9 +264,7 @@ async def test_pattern_registry_exception_swallowed(tmp_path: Path):
             raise RuntimeError("oops")
 
     f = _failure()
-    gate = VerificationGate(
-        [_FakeVerifier(name="v", cost_estimate_s=1.0, results=[[f], []])]
-    )
+    gate = VerificationGate([_FakeVerifier(name="v", cost_estimate_s=1.0, results=[[f], []])])
 
     async def team(task: str, **kw):
         return _FakeTeamResult(workdir=tmp_path, cost_usd=0.01)
@@ -426,12 +420,16 @@ async def test_post_condition_guard_reverts_when_failure_count_increases(tmp_pat
     class _PoliceGate:
         verifiers: list = None
         call: int = 0
+
         async def verify(self, workdir):
             self.call += 1
             from agent_orchestrator.core.verification_gate import VerificationReport
+
             failures = initial if self.call == 1 else (after if self.call == 2 else initial)
             return VerificationReport(
-                passed=False, failures=tuple(failures), duration_ms=1,
+                passed=False,
+                failures=tuple(failures),
+                duration_ms=1,
             )
 
     gate = _PoliceGate()
@@ -493,19 +491,25 @@ async def test_post_condition_guard_does_not_revert_when_fix_helps(tmp_path: Pat
     class _GoodGate:
         verifiers: list = None
         call: int = 0
+
         async def verify(self, workdir):
             self.call += 1
             from agent_orchestrator.core.verification_gate import VerificationReport
+
             if self.call == 1:
                 return VerificationReport(
                     passed=False,
-                    failures=(_failure("missing_dep", file="x.py", msg="No module named 'passlib'"),),
+                    failures=(
+                        _failure("missing_dep", file="x.py", msg="No module named 'passlib'"),
+                    ),
                     duration_ms=1,
                 )
             return VerificationReport(passed=True, failures=(), duration_ms=1)
 
     gate = _GoodGate()
-    loop = RepairLoop(team_runner=lambda *a, **kw: None, gate=gate, pattern_registry=registry, max_attempts=1)
+    loop = RepairLoop(
+        team_runner=lambda *a, **kw: None, gate=gate, pattern_registry=registry, max_attempts=1
+    )
     report_before = await gate.verify(tmp_path)
     fixed, new_report = await loop._try_auto_fix(report_before, tmp_path)
 

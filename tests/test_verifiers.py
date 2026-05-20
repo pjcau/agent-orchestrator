@@ -88,9 +88,7 @@ async def test_encoding_verifier_catches_literal_newlines_in_json(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_encoding_verifier_clean_file_passes(tmp_path: Path):
-    (tmp_path / "package.json").write_text(
-        '{\n  "name": "task-tracker",\n  "version": "1.0.0"\n}'
-    )
+    (tmp_path / "package.json").write_text('{\n  "name": "task-tracker",\n  "version": "1.0.0"\n}')
     fails = await EncodingVerifier().verify(tmp_path)
     assert fails == []
 
@@ -192,8 +190,7 @@ async def test_import_verifier_catches_missing_dep(tmp_path: Path):
     backend = tmp_path / "backend"
     backend.mkdir()
     (backend / "models.py").write_text(
-        "from passlib.context import CryptContext\n"
-        "pwd_context = CryptContext(schemes=['bcrypt'])\n"
+        "from passlib.context import CryptContext\npwd_context = CryptContext(schemes=['bcrypt'])\n"
     )
     (backend / "requirements.txt").write_text("fastapi>=0.109\n")
     fails = await ImportVerifier().verify(tmp_path)
@@ -357,14 +354,11 @@ async def test_coherence_verifier_catches_sqlite_vs_postgres_split(tmp_path: Pat
 async def test_coherence_verifier_accepts_environment_as_list(tmp_path: Path):
     """docker-compose `environment` may be a list of `KEY=value` strings."""
     (tmp_path / "docker-compose.yml").write_text(
-        "services:\n  backend:\n    environment:\n"
-        "      - DATABASE_URL=postgresql://u:p@db/x\n"
+        "services:\n  backend:\n    environment:\n      - DATABASE_URL=postgresql://u:p@db/x\n"
     )
     backend = tmp_path / "backend"
     backend.mkdir()
-    (backend / "database.py").write_text(
-        "DATABASE_URL = 'postgresql+psycopg2://u:p@db/x'\n"
-    )
+    (backend / "database.py").write_text("DATABASE_URL = 'postgresql+psycopg2://u:p@db/x'\n")
     fails = await WorkspaceCoherenceVerifier().verify(tmp_path)
     assert fails == []
 
@@ -425,6 +419,7 @@ async def test_import_verifier_bare_psycopg2_in_requirements_also_accepted(tmp_p
 @pytest.mark.asyncio
 async def test_runtime_smoke_no_requirements_returns_no_failures(tmp_path: Path):
     from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
+
     (tmp_path / "main.py").write_text("print('hi')\n")
     fails = await RuntimeSmokeVerifier(cache_root=tmp_path / "cache").verify(tmp_path)
     assert fails == []
@@ -452,7 +447,10 @@ async def test_runtime_smoke_pip_install_failure_surfaces_as_pip_install_categor
             return subprocess.CompletedProcess(cmd, 0, b"", b"")
         if "install" in cmd:
             return subprocess.CompletedProcess(
-                cmd, 1, b"", b"ERROR: Could not find a version that satisfies the requirement not-a-real-package"
+                cmd,
+                1,
+                b"",
+                b"ERROR: Could not find a version that satisfies the requirement not-a-real-package",
             )
         return original_run(cmd, **kw)
 
@@ -489,7 +487,9 @@ async def test_runtime_smoke_import_failure_emits_missing_dep_compatible_with_ex
         # The import probe.
         if isinstance(cmd, list) and "-c" in cmd:
             return subprocess.CompletedProcess(
-                cmd, 1, b"",
+                cmd,
+                1,
+                b"",
                 b"Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'passlib'\n",
             )
         return subprocess.CompletedProcess(cmd, 0, b"", b"")
@@ -540,8 +540,10 @@ async def test_runtime_smoke_caches_venv_by_requirements_hash(
 
 def test_canonical_requirements_set_strips_versions_and_comments(tmp_path: Path):
     from agent_orchestrator.core.verifiers.runtime_smoke import (
-        _canonical_requirements_set, _hash_set,
+        _canonical_requirements_set,
+        _hash_set,
     )
+
     req = tmp_path / "requirements.txt"
     req.write_text(
         "# top-level comment\n\n"
@@ -620,6 +622,7 @@ async def test_runtime_smoke_delta_install_reuses_subset_parent(
         if cmd and "cp" == cmd[0]:
             # Pretend clone succeeded: copytree fallback.
             import shutil
+
             shutil.copytree(cmd[-2], cmd[-1], symlinks=True)
             return subprocess.CompletedProcess(cmd, 0, b"", b"")
         if "install" in cmd:
@@ -651,6 +654,7 @@ async def test_runtime_smoke_delta_install_reuses_subset_parent(
 @pytest.mark.asyncio
 async def test_entrypoint_verifier_skips_when_no_compose_no_dockerfile(tmp_path: Path):
     from agent_orchestrator.core.verifiers import EntrypointVerifier
+
     (tmp_path / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
     fails = await EntrypointVerifier(cache_root=tmp_path / "cache").verify(tmp_path)
     assert fails == []
@@ -661,6 +665,7 @@ async def test_entrypoint_verifier_skips_when_smoke_venv_not_provisioned(tmp_pat
     """Without an existing smoke venv, EntrypointVerifier has nothing to
     launch against — it must NOT try to spin a fresh venv (that's smoke's job)."""
     from agent_orchestrator.core.verifiers import EntrypointVerifier
+
     (tmp_path / "docker-compose.yml").write_text(
         "services:\n  backend:\n    build: ./backend\n    command: uvicorn main:app --host 0.0.0.0 --port 8000\n"
     )
@@ -691,15 +696,19 @@ async def test_entrypoint_verifier_catches_relative_import_crash(tmp_path: Path)
     )
     # Provision a real venv at the smoke-cache location with fastapi+uvicorn.
     from agent_orchestrator.core.verifiers.runtime_smoke import (
-        _canonical_requirements_set, _hash_set,
+        _canonical_requirements_set,
+        _hash_set,
     )
+
     cache = tmp_path / "cache"
     venv_dir = cache / _hash_set(_canonical_requirements_set(backend / "requirements.txt"))
     venv_dir.parent.mkdir(parents=True, exist_ok=True)
     _venv.create(str(venv_dir), with_pip=True)
     pip = venv_dir / "bin" / "pip"
     res = __import__("subprocess").run(
-        [str(pip), "install", "-q", "fastapi", "uvicorn"], capture_output=True, timeout=120,
+        [str(pip), "install", "-q", "fastapi", "uvicorn"],
+        capture_output=True,
+        timeout=120,
     )
     if res.returncode != 0:
         pytest.skip(f"pip install failed in test env: {res.stderr.decode()[:200]}")
@@ -720,6 +729,7 @@ async def test_entrypoint_verifier_catches_relative_import_crash(tmp_path: Path)
 async def test_e2e_verifier_disabled_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Without REPAIR_LOOP_E2E_ENABLED, the verifier is a no-op."""
     from agent_orchestrator.core.verifiers import E2ESmokeVerifier
+
     monkeypatch.delenv("REPAIR_LOOP_E2E_ENABLED", raising=False)
     (tmp_path / "frontend").mkdir()
     (tmp_path / "frontend" / "index.html").write_text("<html><body>hi</body></html>")
@@ -728,9 +738,12 @@ async def test_e2e_verifier_disabled_by_default(tmp_path: Path, monkeypatch: pyt
 
 
 @pytest.mark.asyncio
-async def test_e2e_verifier_skipped_with_no_frontend(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_e2e_verifier_skipped_with_no_frontend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Enabled but no frontend → silent."""
     from agent_orchestrator.core.verifiers import E2ESmokeVerifier
+
     monkeypatch.setenv("REPAIR_LOOP_E2E_ENABLED", "true")
     (tmp_path / "main.py").write_text("print('hi')\n")
     fails = await E2ESmokeVerifier().verify(tmp_path)
@@ -738,14 +751,18 @@ async def test_e2e_verifier_skipped_with_no_frontend(tmp_path: Path, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_e2e_verifier_warns_when_playwright_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_e2e_verifier_warns_when_playwright_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """If playwright isn't importable, surface a single warning failure
     (so the operator knows the run was unprotected)."""
     from agent_orchestrator.core.verifiers import E2ESmokeVerifier
+
     monkeypatch.setenv("REPAIR_LOOP_E2E_ENABLED", "true")
     (tmp_path / "frontend").mkdir()
     (tmp_path / "frontend" / "index.html").write_text("<html><body>hi</body></html>")
     import builtins
+
     real_import = builtins.__import__
 
     def fake_import(name, *a, **kw):

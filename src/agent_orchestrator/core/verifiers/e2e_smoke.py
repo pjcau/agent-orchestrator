@@ -148,8 +148,11 @@ class E2ESmokeVerifier:
 def _find_frontend(workdir: Path) -> Path | None:
     """Return the frontend dir containing an `index.html`, or None."""
     for sub in _FRONTEND_DIRS:
-        for candidate in ((workdir / sub / "index.html"), (workdir / sub / "dist" / "index.html"),
-                          (workdir / sub / "build" / "index.html")):
+        for candidate in (
+            (workdir / sub / "index.html"),
+            (workdir / sub / "dist" / "index.html"),
+            (workdir / sub / "build" / "index.html"),
+        ):
             if candidate.exists():
                 return candidate.parent
     # Last resort: index.html at the workdir root.
@@ -181,16 +184,17 @@ def _serve_static(dir_path: Path, port: int) -> tuple[HTTPServer, threading.Thre
     return server, thread
 
 
-def _spawn_backend(
-    cmd_str: str, py: Path, port: int, cwd: Path
-) -> subprocess.Popen[bytes]:
+def _spawn_backend(cmd_str: str, py: Path, port: int, cwd: Path) -> subprocess.Popen[bytes]:
     full_cmd = _materialise_uvicorn_cmd(cmd_str, py, port)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(cwd) + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     return subprocess.Popen(
-        full_cmd, cwd=str(cwd), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        full_cmd,
+        cwd=str(cwd),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
 
 
@@ -246,36 +250,42 @@ def _run_playwright(
                 pass
         except Exception as exc:
             browser.close()
-            return [VerifierFailure(
-                verifier="e2e_smoke",
-                severity="error",
-                category="e2e_navigation",
-                message=f"page load failed: {type(exc).__name__}",
-                detail=str(exc)[:1024],
-                file=fe_rel + "/index.html",
-                exit_code=None,
-            )]
+            return [
+                VerifierFailure(
+                    verifier="e2e_smoke",
+                    severity="error",
+                    category="e2e_navigation",
+                    message=f"page load failed: {type(exc).__name__}",
+                    detail=str(exc)[:1024],
+                    file=fe_rel + "/index.html",
+                    exit_code=None,
+                )
+            ]
         browser.close()
 
     failures: list[VerifierFailure] = []
     if console_errors:
-        failures.append(VerifierFailure(
-            verifier="e2e_smoke",
-            severity="error",
-            category="e2e_console_error",
-            message=f"{len(console_errors)} JS console error(s) on initial load",
-            detail="\n".join(console_errors[:5])[:2048],
-            file=fe_rel + "/index.html",
-            exit_code=None,
-        ))
+        failures.append(
+            VerifierFailure(
+                verifier="e2e_smoke",
+                severity="error",
+                category="e2e_console_error",
+                message=f"{len(console_errors)} JS console error(s) on initial load",
+                detail="\n".join(console_errors[:5])[:2048],
+                file=fe_rel + "/index.html",
+                exit_code=None,
+            )
+        )
     if network_errors:
-        failures.append(VerifierFailure(
-            verifier="e2e_smoke",
-            severity="error",
-            category="e2e_network_error",
-            message=f"{len(network_errors)} failed network request(s) on initial load",
-            detail="\n".join(network_errors[:5])[:2048],
-            file=fe_rel + "/index.html",
-            exit_code=None,
-        ))
+        failures.append(
+            VerifierFailure(
+                verifier="e2e_smoke",
+                severity="error",
+                category="e2e_network_error",
+                message=f"{len(network_errors)} failed network request(s) on initial load",
+                detail="\n".join(network_errors[:5])[:2048],
+                file=fe_rel + "/index.html",
+                exit_code=None,
+            )
+        )
     return failures

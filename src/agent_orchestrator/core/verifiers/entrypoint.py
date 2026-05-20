@@ -91,6 +91,7 @@ class EntrypointVerifier:
         timeout_s: int = _LAUNCH_TIMEOUT_S,
     ) -> None:
         import tempfile
+
         self._cache_root = cache_root or Path(tempfile.gettempdir()) / "ao-smoke-venvs"
         self._timeout_s = timeout_s
 
@@ -234,7 +235,7 @@ def _from_dockerfile(df: Path, workdir: Path) -> tuple[str, Path] | None:
     except (OSError, UnicodeDecodeError):
         return None
     # CMD can be JSON-array form (`CMD ["uvicorn", ...]`) or shell form.
-    m = re.search(r'^\s*CMD\s+(.+)$', text, re.MULTILINE)
+    m = re.search(r"^\s*CMD\s+(.+)$", text, re.MULTILINE)
     if not m:
         return None
     raw = m.group(1).strip()
@@ -242,6 +243,7 @@ def _from_dockerfile(df: Path, workdir: Path) -> tuple[str, Path] | None:
         # JSON-array form. Strip brackets + quotes.
         try:
             import json as _json
+
             parts = _json.loads(raw)
             cmd_str = " ".join(parts)
         except Exception:
