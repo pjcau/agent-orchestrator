@@ -11,6 +11,8 @@
  */
 
 export const BP = {
+  compact: 600,
+  narrow: 900,
   mobile: 768,
   tablet: 1024,
   desktop: 1280,
@@ -20,6 +22,10 @@ export type BreakpointName = keyof typeof BP;
 
 /** Pre-built media query strings — use with matchMedia or styled-components. */
 export const mq = {
+  /** width <= 600px */
+  compact: `(max-width: ${BP.compact}px)`,
+  /** width <= 900px */
+  narrow: `(max-width: ${BP.narrow}px)`,
   /** width < 768px */
   mobile: `(max-width: ${BP.mobile - 1}px)`,
   /** width >= 768px */

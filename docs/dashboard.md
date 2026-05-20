@@ -15,6 +15,12 @@ The dashboard body is a flex row with (left → right):
 3. **Main** (`.dashboard__main`) — Agent Interactions (graph), Chat, optional Sandbox workspace.
 4. **Right panel** (`.sidebar`, conditional) — event logs, activity, cache stats.
 
+### Responsive breakpoint policy
+
+- Keep responsive thresholds centralized in `frontend/src/lib/breakpoints.ts`.
+- For TypeScript runtime checks, use `BP.*` / `mq.*` (`useBreakpoint()` when inside components).
+- For CSS media queries, use shared variables in `frontend/src/index.css` (`--bp-*`) instead of hardcoded pixel literals.
+
 ## Modular Architecture
 
 `app.py` is a composition root (~282 lines) that includes two routers. Can run as single process or split.
@@ -323,4 +329,3 @@ Knowledge events (`knowledge.retrieved`, `knowledge.ingested`, `knowledge.retrie
 ### Persistence
 
 Both preferences are stored in `localStorage` and survive page reloads, tab closes, and the full **Reset** action (Reset intentionally does NOT clear user settings — only session state).
-
