@@ -1423,27 +1423,58 @@ class TestExplorerEndpoints:
         assert not target.is_relative_to(session_dir.resolve())
 
     def test_jobs_download_zip(self, tmp_path):
-        """Download ZIP creates valid archive with all session files."""
+        """Download ZIP creates valid archive — must include subdirectory files
+        recursively (regression for the 2026-05-16 Phase 7 bug where the ZIP
+        flattened to top-level files only)."""
         import io
         import zipfile
 
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from agent_orchestrator.dashboard.gateway_api import gateway_router
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
         session_dir = tmp_path / "job_zip-test"
         session_dir.mkdir()
-        (session_dir / "file1.json").write_text('{"a": 1}')
-        (session_dir / "file2.py").write_text("x = 1")
+        # Top-level files.
+        (session_dir / "README.md").write_text("# top")
+        (session_dir / "docker-compose.yml").write_text("services: {}")
+        # Subdirectory tree (the case that was broken).
+        backend = session_dir / "backend"
+        backend.mkdir()
+        (backend / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
+        (backend / "requirements.txt").write_text("fastapi\n")
+        routers = backend / "routers"
+        routers.mkdir()
+        (routers / "__init__.py").write_text("")
+        (routers / "tasks.py").write_text("# tasks router\n")
+        # __pycache__ should be excluded.
+        cache = backend / "__pycache__"
+        cache.mkdir()
+        (cache / "main.cpython-312.pyc").write_bytes(b"\x00\x01")
 
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in sorted(session_dir.iterdir()):
-                if f.is_file():
-                    zf.write(f, f.name)
-        buf.seek(0)
+        app = FastAPI()
+        app.state.job_logger = JobLogger(jobs_dir=str(tmp_path))
+        app.include_router(gateway_router)
+        client = TestClient(app)
 
-        with zipfile.ZipFile(buf, "r") as zf:
-            names = zf.namelist()
-            assert "file1.json" in names
-            assert "file2.py" in names
-            assert zf.read("file2.py") == b"x = 1"
+        resp = client.get("/api/jobs/zip-test/download")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            names = set(zf.namelist())
+            assert "README.md" in names
+            assert "docker-compose.yml" in names
+            assert "backend/main.py" in names
+            assert "backend/requirements.txt" in names
+            assert "backend/routers/__init__.py" in names
+            assert "backend/routers/tasks.py" in names
+            # bytecode caches must be skipped.
+            assert not any("__pycache__" in n for n in names)
+            # Content integrity check.
+            assert zf.read("backend/main.py").startswith(b"from fastapi import FastAPI")
 
     def test_jobs_files_empty_session(self, tmp_path):
         """Empty session directory returns empty file list."""

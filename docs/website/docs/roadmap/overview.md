@@ -9,9 +9,62 @@ title: Overview
 
 AWS infrastructure and monitoring come **first** — the product must be live and observable before iterating on features. Then validate agent autonomy with real sprints and sandboxed output preview. Only invest in scaling when revenue justifies it.
 
-## Current State (near-MVP)
+## Latest sprint — Q1+Q2 (May 2026)
 
-**Done:**
+**All six priorities from the harnessed-LLM-agent reference matrix shipped in a single afternoon, parallelised across 5 worktree agents.**
+
+```mermaid
+graph LR
+    classDef shipped fill:#1e2e5e,stroke:#5e8eff,color:#fff,stroke-width:2px
+    classDef benefit fill:#1e3e1e,stroke:#3fb950,color:#fff,stroke-width:1px
+    classDef parked fill:#3a3a3a,stroke:#888,color:#ccc,stroke-width:1px
+
+    BASE["Pre-sprint baseline<br/>~82% match-matrix coverage"]
+
+    BASE --> P1["P1 — RAG<br/>core/knowledge + skill + UI toggle"]:::shipped
+    BASE --> P2["P2 — Evaluator<br/>core/evaluator + evals + REST"]:::shipped
+    BASE --> P3["P3 — Guardrails<br/>core/guardrails + 5 built-ins"]:::shipped
+    BASE --> P4["P4 — Personalized Memory<br/>('user', id) namespace"]:::shipped
+    BASE --> P5a["P5a — Cooperation typed messages<br/>+ protocol spec"]:::shipped
+    BASE --> P6["P6 — Observability<br/>Langfuse + Phoenix sinks"]:::shipped
+
+    P1 --> AGENTS["Every agent gains retrieval"]:::benefit
+    P3 --> SAFETY["Multi-tenant safe"]:::benefit
+    P2 --> QUALITY["Regression detection"]:::benefit
+    P4 --> UX["Per-user UX"]:::benefit
+    P5a --> ONBOARD["Easier onboarding"]:::benefit
+    P6 --> DEBUG["LLM-native trace UI"]:::benefit
+
+    P5b["P5b — A2A adapter<br/>(parked, Q3+)"]:::parked
+```
+
+| Priority | Status | What changed |
+|---|---|---|
+| **P1 — RAG** | ✅ shipped | EmbeddingProvider/Chunker/KnowledgeStore ABCs, ingestion + retrieval, UI toggle, log-highlighting |
+| **P2 — Evaluator** | ✅ shipped | LLMJudge + RubricEvaluator + EvalSuite, smoke dataset, CLI runner, REST API |
+| **P3 — Guardrails** | ✅ shipped | PIIScanner / SecretsScanner / PromptInjectionDetector / OutputSchemaGuard / CostGuard |
+| **P4 — Personalized Memory** | ✅ shipped | `("user", id)` namespace, profile extractor, GDPR wipe |
+| **P5a — Cooperation messages** | ✅ shipped | typed dataclasses + sequence/state spec |
+| **P6 — Observability sinks** | ✅ shipped | Langfuse + Phoenix optional exporters |
+| P5b — A2A adapter | parked | Google A2A spec still moving |
+
+➡ **[Q1+Q2 sprint deep-dive](./q1q2-sprint)** — collapsible per-priority cards with copy-pasteable try-it examples, growth graphs, and SOLID rationale.
+
+## Coverage of the harnessed-LLM-agent reference
+
+```mermaid
+pie showData
+    title 19 reference components — coverage today
+    "✅ Done" : 18
+    "⚠ Partial" : 1
+    "❌ Missing" : 0
+```
+
+Up from 13 ✅ + 5 ⚠ + 1 ❌ at the start of the sprint (~82%) to **18 ✅ + 1 ⚠ + 0 ❌** today (~95%). Tests: **2065 / 2065 pass** (was 1865, +200 from this sprint).
+
+## Earlier state (still relevant for context)
+
+**Done before the Q1+Q2 sprint:**
 - Core: Provider, Agent, Skill, Orchestrator, Cooperation, StateGraph engine
 - 5 providers: Anthropic, OpenAI, Google, Ollama, OpenRouter (free models + fallback chains)
 - 23 agents across 5 categories (software-engineering, data-science, finance, marketing, tooling)
@@ -19,13 +72,13 @@ AWS infrastructure and monitoring come **first** — the product must be live an
 - Dashboard: streaming, multi-turn chat, presets, file context, agent execution, cost tracking
 - Checkpointing: InMemory, SQLite, PostgreSQL
 - Docker/OrbStack: dashboard, postgres, test, lint, format
-- 939+ tests
+- 1865+ tests at the start of the sprint
 
-**What's missing for production:**
-- Cloud deployment (AWS)
-- Infrastructure monitoring (Prometheus + Grafana)
-- Agent output sandbox (preview before merge)
-- Autonomous agent workflow validation
+**What's missing for production today:**
+- Cloud deployment (AWS) — see Phase 0
+- Infrastructure monitoring (Prometheus + Grafana) — see Phase 0
+- Default-on Guardrails set (multi-tenant rollout)
+- CI eval gate (drop-in via `python -m evals.runners.cli`)
 
 ## Phases
 

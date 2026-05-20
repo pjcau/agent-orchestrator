@@ -216,7 +216,7 @@ coherence checking in validation).
 ```bash
 docker compose up -d dashboard postgres
 # SmokeTester is enabled by default; turn off with DISABLE_SMOKE_TEST=true
-/orchestrator-learning-path-test "Build a full-stack Task Tracker..."
+/learning "Build a full-stack Task Tracker..."
 ```
 
 The smoke-test result is now returned on the team-run response:

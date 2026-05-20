@@ -16,6 +16,16 @@ Every code change (new feature, bug fix, refactor) **MUST** include:
 
 1. **Tests** — Add or update tests covering the change. Run `pytest` to verify.
 2. **Documentation** — Update the relevant doc (`docs/<area>.md`, `README.md`, inline comments). If the change introduces a new abstraction, also update `docs/abstractions.md`.
+3. **Feature maps** — If the change adds, removes, renames, or significantly modifies a feature, update the architecture map and re-run both generators:
+   - Edit `docs/website/architecture-map.yaml` (curated logical constellation).
+   - Run `python scripts/generate_architecture_map.py` (validates every `files:` path).
+   - Run `python scripts/generate_feature_map.py` (refreshes the module graph + weights).
+   - Stage the regenerated `docs/website/static/{architecture,feature}-map.json`.
+4. **Roadmap sync** — If the change touches roadmap status (new sprint, milestone closed, version bumped, scope shift), update **all three**:
+   - `docs/website/docs/roadmap/` (Docusaurus-served — the public-facing roadmap).
+   - `docs/roadmap.md`
+   - `docs/unified-roadmap.md`
+   - Update `docs/website/sidebars.js` when adding a new file under `docs/website/docs/roadmap/`.
 
 Do NOT skip these steps. They are required for every modification.
 
@@ -136,6 +146,9 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 - **Core abstractions, design rationale, mapping from Claude Code** → [docs/architecture.md](docs/architecture.md)
 - **Exhaustive catalog of every abstraction (Provider, Agent, Skill, Router, Store, Graph, Sandbox, MCP, prompt registry, middleware, …)** → [docs/abstractions.md](docs/abstractions.md)
 - **Docs navigation index** → [docs/README.md](docs/README.md)
+- **Live architecture maps** (`docker compose up docs` → http://localhost:3000/agent-orchestrator/):
+  - `/architecture-map` — logical constellation, 6 clusters, curated in [docs/website/architecture-map.yaml](docs/website/architecture-map.yaml), regenerate via `python scripts/generate_architecture_map.py`
+  - `/feature-map` — AST-derived module graph, regenerate via `python scripts/generate_feature_map.py`
 
 ### Agents, Skills, Dashboard
 - **30 agents by category, cross-dependencies, skills map, research scout workflow** → [docs/agents.md](docs/agents.md)

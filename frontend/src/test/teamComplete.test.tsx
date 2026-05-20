@@ -52,6 +52,37 @@ describe("team.complete fallback_log rendering", () => {
     expect(lines[2]).toContain("✗");
   });
 
+  it("formats a repair summary line (passed, no fixes)", () => {
+    // Mirrors the formatting in useWebSocket.ts.
+    const r = {
+      status: "passed" as const,
+      attempts: 1,
+      auto_fixed_signatures: [] as string[],
+      final_failures: [] as Array<{ verifier: string }>,
+    };
+    const icon = r.status === "passed" ? "✓" : "✗";
+    const line = `Repair loop: ${icon} ${r.status} (${r.attempts} attempt${r.attempts === 1 ? "" : "s"})`;
+    expect(line).toBe("Repair loop: ✓ passed (1 attempt)");
+  });
+
+  it("formats a repair summary line with auto-fixes + residual failures", () => {
+    const r = {
+      status: "partial" as const,
+      attempts: 3,
+      auto_fixed_signatures: ["sig1", "sig2"],
+      final_failures: [{ verifier: "imports" }, { verifier: "coherence" }],
+    };
+    const icon = r.status === "partial" ? "⚠" : "✗";
+    const attempts = `${r.attempts} attempt${r.attempts === 1 ? "" : "s"}`;
+    const autoFixed = `, ${r.auto_fixed_signatures.length} auto-fixes`;
+    const residual = `, ${r.final_failures.length} residual failures (${r.final_failures
+      .slice(0, 3)
+      .map((f) => f.verifier)
+      .join(", ")})`;
+    const line = `Repair loop: ${icon} ${r.status} (${attempts}${autoFixed}${residual})`;
+    expect(line).toBe("Repair loop: ⚠ partial (3 attempts, 2 auto-fixes, 2 residual failures (imports, coherence))");
+  });
+
   it("adds system message to the store when fallback_log is present", () => {
     const fbLog = [
       { agent: "data-analyst", model: "claude-sonnet-4-6", status: "ok", detail: "retry succeeded" },

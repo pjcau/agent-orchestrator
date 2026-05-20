@@ -52,3 +52,8 @@ terraform/backend/.terraform.lock.hcl
 # Worktrees and feature specs
 .claude/worktrees/
 features/
+
+# SQLite artefacts (LPT-generated apps stray .db files into repo root)
+*.db
+*.sqlite
+*.sqlite3
