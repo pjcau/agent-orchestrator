@@ -44,6 +44,21 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
             "provider": "openrouter",
         },
         {
+            "name": "qwen/qwen3.6-flash",
+            "size": "$0.19/$1.13 · Flash · 1M",
+            "provider": "openrouter",
+        },
+        {
+            "name": "inclusionai/ling-2.6-flash",
+            "size": "$0.01/$0.03 · Flash · 262K",
+            "provider": "openrouter",
+        },
+        {
+            "name": "tencent/hy3-preview",
+            "size": "$0.066/$0.26 · Preview · 262K",
+            "provider": "openrouter",
+        },
+        {
             "name": "qwen/qwen3-coder-next",
             "size": "$0.12/$0.75 · Coder Next · 262K",
             "provider": "openrouter",
