@@ -396,6 +396,18 @@ export function useWebSocket() {
     []
   );
 
+  // Force-close the streaming WebSocket to abort an in-flight generation.
+  // Server detects the disconnect and stops emitting tokens. The auto-reconnect
+  // logic in connectStreamWs() restores the channel for the next prompt.
+  const stopStream = useCallback(() => {
+    const ws = streamWsRef.current;
+    if (ws && ws.readyState <= WebSocket.OPEN) {
+      ws.close(1000, "user_stop");
+      return true;
+    }
+    return false;
+  }, []);
+
   // Mount effect
   useEffect(() => {
     mountedRef.current = true;
@@ -421,6 +433,7 @@ export function useWebSocket() {
 
   return {
     sendStreamPrompt,
+    stopStream,
     isStreamWsReady: () =>
       streamWsRef.current?.readyState === WebSocket.OPEN,
   };
