@@ -584,10 +584,14 @@ class TestGoogleCallbackFlow:
         app.include_router(router)
         client = TestClient(app)
 
+        from urllib.parse import urlparse
+
         resp = client.get("/auth/google", follow_redirects=False)
         assert resp.status_code in (302, 307)
         location = resp.headers.get("location", "")
-        assert "accounts.google.com" in location or "google" in location.lower()
+        parsed = urlparse(location)
+        host = (parsed.hostname or "").lower()
+        assert host == "accounts.google.com" or host.endswith(".google.com")
 
     @pytest.mark.skipif(not HAS_AUTHLIB, reason="authlib not installed")
     def test_login_google_not_configured(self, monkeypatch):
