@@ -85,6 +85,9 @@ export function ChatInput({
   const [browseOpen, setBrowseOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadingName, setUploadingName] = useState<string | null>(null);
+  // Collapsed "advanced" controls (mode + provider) — exposed via a gear toggle
+  // on mobile to free vertical space for the chat. Always-open on desktop via CSS.
+  const [advOpen, setAdvOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first available model when provider changes or models load
@@ -293,10 +296,22 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Controls row */}
-      <div className="chat-input__controls">
+      {/* Controls row.
+          On mobile (<=600px) the mode/provider selects collapse behind the
+          gear button so the chat keeps as much vertical space as possible. */}
+      <div className={`chat-input__controls ${advOpen ? "chat-input__controls--adv" : ""}`}>
+        <button
+          type="button"
+          className="btn-icon chat-input__adv-toggle"
+          onClick={() => setAdvOpen((o) => !o)}
+          aria-label={advOpen ? "Hide advanced options" : "Show advanced options"}
+          aria-expanded={advOpen}
+          title="Advanced options"
+        >
+          ⚙
+        </button>
         <select
-          className="chat-input__select"
+          className="chat-input__select chat-input__select--adv"
           value={mode}
           onChange={(e) => setMode(e.target.value as ExecMode)}
           disabled={isDisabled}
@@ -308,7 +323,7 @@ export function ChatInput({
         </select>
 
         <select
-          className="chat-input__select"
+          className="chat-input__select chat-input__select--adv"
           value={provider}
           onChange={(e) => handleProviderChange(e.target.value as "openrouter" | "ollama")}
           disabled={isDisabled}

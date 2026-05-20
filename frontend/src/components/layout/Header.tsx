@@ -5,16 +5,31 @@ import { MetricsBar } from "@/components/metrics/MetricsBar";
 interface HeaderProps {
   onToggleSidebar: () => void;
   onToggleSSE: () => void;
+  onToggleMobileNav: () => void;
   sidebarOpen: boolean;
   sseMode: boolean;
 }
 
-export function Header({ onToggleSidebar, onToggleSSE, sidebarOpen, sseMode }: HeaderProps) {
+export function Header({
+  onToggleSidebar,
+  onToggleSSE,
+  onToggleMobileNav,
+  sidebarOpen,
+  sseMode,
+}: HeaderProps) {
   const { orchestratorStatus, wsConnected } = useAppStore();
 
   return (
     <header className="app-header">
       <div className="app-header__left">
+        <button
+          className="btn-hamburger"
+          onClick={onToggleMobileNav}
+          aria-label="Open menu"
+          title="Menu"
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
         <h1 className="app-header__title">Agent Orchestrator</h1>
         <StatusBadge status={orchestratorStatus} />
       </div>
