@@ -242,8 +242,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastTokenSpeed: 0,
   attachedFiles: [],
 
-  // UI state
-  sidebarOpen: true,
+  // UI state — start with the right rail collapsed on small screens so the
+  // mobile drawer (managed in CSS via @media ≤600px) doesn't open over the
+  // chat on first load. SSR-safe: `window` may be undefined at hydration.
+  sidebarOpen:
+    typeof window === "undefined" || window.matchMedia("(max-width: 600px)").matches
+      ? false
+      : true,
 
   // Task plan
   taskPlanItems: [],

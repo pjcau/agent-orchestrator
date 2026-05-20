@@ -14,23 +14,23 @@ export default defineConfig({
     port: 3001,
     proxy: {
       "/api": {
-        target: "http://localhost:5005",
+        target: "https://localhost:5005",
         changeOrigin: true,
         secure: false,
       },
       "/ws": {
-        target: "ws://localhost:5005",
+        target: "wss://localhost:5005",
         ws: true,
         changeOrigin: true,
         secure: false,
       },
       "/static": {
-        target: "http://localhost:5005",
+        target: "https://localhost:5005",
         changeOrigin: true,
         secure: false,
       },
       "/auth": {
-        target: "http://localhost:5005",
+        target: "https://localhost:5005",
         changeOrigin: true,
         secure: false,
       },
@@ -40,6 +40,8 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // Playwright tests live in e2e/ and run separately via `npm run e2e`.
+    exclude: ["node_modules", "dist", ".idea", ".git", ".cache", "e2e/**"],
   },
   build: {
     outDir: "dist",

@@ -272,6 +272,25 @@ body {
   gap: 8px;
 }
 
+/* Title acts as a button (collapse toggle on mobile, decorative on desktop) */
+.graph-section__title-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.graph-section__chevron {
+  font-size: 10px;
+  color: var(--text-dim);
+  display: none; /* hidden on desktop — section is always expanded */
+}
+
 .section-title {
   font-size: 11px;
   text-transform: uppercase;
@@ -557,6 +576,72 @@ body {
 
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
+.chat-bubble--thinking .chat-bubble__content {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.thinking-dots__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.thinking-dots__dot:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dots__dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40%           { transform: translateY(-4px); opacity: 1; }
+}
+
+.chat-panel__stop-row {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.chat-panel__stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, #2a2a3e);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chat-panel__stop:hover {
+  background: var(--danger, #d94343);
+  border-color: var(--danger, #d94343);
+  color: #fff;
+}
+
+.chat-panel__stop:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chat-panel__stop-icon {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
 /* === Markdown Content === */
 .md-content {
   font-size: 13px;
@@ -797,6 +882,11 @@ body {
 }
 
 .chat-input__controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+
+/* Gear toggle: hidden on desktop (advanced controls always visible) */
+.chat-input__adv-toggle { display: none; }
+/* Mobile segment controls: hidden on desktop (native selects above are used) */
+.chat-input__segment { display: none; }
 
 .chat-input__select {
   background: var(--bg);
@@ -1731,9 +1821,464 @@ body {
   flex-shrink: 0;
 }
 
+/* === Mobile drawer backdrops + hamburger (only visible <=600px) === */
+.sidebar-backdrop,
+.mobile-nav-backdrop,
+.left-panel-backdrop { display: none; }
+
+/* Hamburger button — hidden on desktop, shown in header on mobile */
+.btn-hamburger {
+  display: none;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.btn-hamburger:hover { border-color: var(--accent); color: var(--accent); }
+
 @media (max-width: 600px) {
-  .sidebar { display: none; }
+  /* --- 1. Right sidebar → slide-in drawer with backdrop --- */
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 999;
+    animation: ao-backdrop-in 0.18s ease;
+  }
+  @keyframes ao-backdrop-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(340px, 88vw);
+    z-index: 1000;
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+    animation: ao-drawer-in 0.22s ease;
+  }
+  @keyframes ao-drawer-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+
+  /* --- 2. Touch targets ≥ 44 × 44 (Apple HIG / WCAG 2.5.5) --- */
+  .btn-icon { width: 44px; height: 44px; font-size: 16px; }
+  .btn-send { width: 44px; height: 44px; }
+  .btn-sidebar-toggle,
+  .btn-graph-ctrl,
+  .btn-text,
+  .btn-primary,
+  .btn-explorer-action,
+  .preset-btn,
+  .hitl-option-btn,
+  .hitl-approve-btn,
+  .hitl-reject-btn,
+  .breadcrumb-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    font-size: 13px;
+  }
+  .btn-session-delete {
+    width: 44px;
+    height: 44px;
+    opacity: 1; /* always visible — no hover on touch */
+  }
+
+  /* --- 3. iOS zoom fix: inputs must be ≥ 16px to avoid auto-zoom on focus --- */
+  .chat-input__textarea,
+  .chat-input__select,
+  .chat-input__rag-ns,
+  .compare-select,
+  .pricing-search,
+  .prompts-form input,
+  .prompts-form textarea,
+  .prompts-panel__filters input,
+  .logs-filter {
+    font-size: 16px;
+  }
+  .chat-input__select,
+  .chat-input__rag-ns {
+    height: 40px;
+  }
+  .chat-input__select--model { min-width: 0; flex: 1 1 100%; }
+  .chat-input__textarea { min-height: 44px; }
+
+  /* --- 4. Compact header on mobile --- */
+  .app-header { padding: 6px 10px; gap: 8px; }
+  .app-header__title { font-size: 14px; }
+  /* Hide metrics bar — it consumed ~3 rows on 375px */
+  .metrics-bar { display: none; }
+  /* Compaction widget is part of metrics, hide too */
+  .metrics-compaction { display: none; }
+
+  /* --- 5. Collapse the empty graph section --- */
+  .graph-section { padding: 6px 10px; }
+  .graph-visualizer { height: 160px; }
+  /* When the graph contains only the empty placeholder, fully collapse it */
+  .graph-section:has(.graph-empty) .graph-visualizer { display: none; }
+  .graph-empty { height: 36px; font-size: 11px; }
+  .interaction-timeline { max-height: 96px; }
+
+  /* --- Left rail compact (kept from previous rule) --- */
   .left-rail { width: 64px; padding: 6px 4px 10px 4px; }
-  .left-rail .btn-sidebar-toggle { padding: 6px 4px; font-size: 9px; }
-  .app-header { padding: 4px 10px; }
+  .left-rail .btn-sidebar-toggle { padding: 8px 4px; font-size: 11px; min-height: 44px; }
+
+  /* --- Misc mobile polish --- */
+  .chat-panel__messages { padding: 10px 12px; }
+  .chat-input { padding: 8px 12px; }
+  .chat-input__controls { gap: 6px; }
+  .chat-bubble { max-width: 100%; }
+
+  /* --- 14. Focused compose mode: when the textarea is focused on mobile it
+         grows to full-screen width × 3 lines, and the +/B/send buttons wrap
+         to a row above so the textarea owns its own line. The chat-input row
+         was: [+] [B] [textarea] [send]; while focused it becomes:
+                [+] [B] [send]
+                [    textarea full width × 3 lines    ]
+         Restores automatically on blur. */
+  .chat-input--focused .chat-input__row {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .chat-input--focused .chat-input__textarea {
+    order: 2;
+    flex: 1 1 100%;
+    min-height: 84px;
+    max-height: 180px;
+  }
+  /* While composing, mute the upper controls (mode/provider/model row +
+     RAG/stream) so the eye lands on the textarea. They stay tappable. */
+  .chat-input--focused .chat-input__controls { opacity: 0.65; }
+
+  /* --- 7. Collapse mode/provider selects on mobile behind ⚙ toggle.
+         Native selects are hidden in favour of segment controls (below) — the
+         <select> pickers misalign in some mobile browsers / emulators and the
+         option lists are short enough to fit as inline buttons. The <select>
+         elements still exist in the DOM but visually swap with the segments. */
+  .chat-input__adv-toggle { display: inline-flex; }
+  .chat-input__select--adv { display: none !important; }
+  .chat-input__controls--adv .chat-input__segment {
+    display: flex;
+    flex: 1 1 100%;
+    gap: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px;
+  }
+  .chat-input__segment-btn {
+    flex: 1;
+    min-height: 36px;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .chat-input__segment-btn:hover,
+  .chat-input__segment-btn:focus-visible {
+    color: var(--text);
+    outline: none;
+  }
+  .chat-input__segment-btn.active {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--accent);
+  }
+  .chat-input__segment-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* Force the model select to full width regardless of flex specifics */
+  .chat-input__select--model { width: 100%; min-width: 0; flex: 1 1 100%; }
+  /* Left panel (History/Prompts) cover almost full width when opened */
+  .history-sidebar,
+  .prompts-panel { width: min(320px, 86vw); }
+
+  /* --- 6. Hide the desktop left-rail; move actions to hamburger menu --- */
+  .left-rail { display: none; }
+  .btn-hamburger { display: inline-flex; }
+
+  /* Mobile nav: left-side drawer with backdrop */
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 999;
+    animation: ao-backdrop-in 0.18s ease;
+  }
+  .mobile-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(320px, 86vw);
+    z-index: 1000;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    animation: ao-mobile-nav-in 0.22s ease;
+    /* Honor iOS safe area on left edge / notch */
+    padding-left: env(safe-area-inset-left, 0);
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  @keyframes ao-mobile-nav-in {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  .mobile-nav__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-nav__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+  }
+  .mobile-nav__section {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .mobile-nav__section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin: 0;
+  }
+  /* Re-show metrics inside the drawer (overrides the .metrics-bar hide above) */
+  .mobile-nav .metrics-bar {
+    display: flex !important;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .mobile-nav .metric-group {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .mobile-nav .metric { align-items: flex-start; }
+  .mobile-nav .metric-label { font-size: 11px; }
+  .mobile-nav .metric-value { font-size: 14px; }
+  .mobile-nav .metric-separator { display: none; }
+
+  .mobile-nav__item {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .mobile-nav__item:hover,
+  .mobile-nav__item:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+  .mobile-nav__item.active {
+    background: rgba(88, 166, 255, 0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* --- 8. Bump small UI fonts (9-11px → 12px) for legibility --- */
+  .metric-label,
+  .agent-cat-label,
+  .agent-dot-mini,
+  .activity-icon,
+  .activity-time,
+  .activity-detail,
+  .event-time,
+  .event-icon,
+  .event-desc,
+  .history-session-ts,
+  .history-session-stats,
+  .interaction-item,
+  .interaction-time,
+  .compare-stats,
+  .compare-output,
+  .compare-model-label,
+  .pricing-table,
+  .pricing-cost,
+  .pricing-footer,
+  .chat-input__files-label,
+  .attached-file,
+  .attached-file__size,
+  .chat-step__cost,
+  .chat-usage,
+  .chat-bubble__meta,
+  .badge,
+  .status-badge {
+    font-size: 12px;
+  }
+  .agent-badge-mini { font-size: 12px; padding: 4px 8px; }
+  .section-title,
+  .sidebar-section__title,
+  .history-sidebar__title { font-size: 12px; }
+
+  /* --- 9. Respect notch / home-indicator (iOS safe-area) --- */
+  .app-header {
+    padding-left: max(10px, env(safe-area-inset-left, 0));
+    padding-right: max(10px, env(safe-area-inset-right, 0));
+    padding-top: max(6px, env(safe-area-inset-top, 0));
+  }
+  .chat-input {
+    padding-left: max(12px, env(safe-area-inset-left, 0));
+    padding-right: max(12px, env(safe-area-inset-right, 0));
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0));
+  }
+  .sidebar,
+  .history-sidebar,
+  .prompts-panel {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-right: env(safe-area-inset-right, 0);
+  }
+
+  /* --- 10. Modals: ensure all overlays fit the mobile viewport --- */
+  .file-picker-modal {
+    width: min(520px, 92vw);
+    max-height: 80dvh; /* dvh handles iOS keyboard better than vh */
+  }
+  .file-picker-overlay {
+    padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+            env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  }
+
+  /* --- 11. Graph section: collapsible + auto-hide when empty --- */
+  .graph-section__title-btn {
+    cursor: pointer;
+    min-height: 44px;
+    padding-right: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .graph-section__chevron { display: inline-block; }
+  /* Collapsed body — hide visualizer/timeline + the right-side controls */
+  .graph-section--collapsed .graph-section__body,
+  .graph-section--collapsed .graph-section__header-right {
+    display: none;
+  }
+  .graph-section--collapsed { padding: 0 12px; }
+  .graph-section--collapsed .graph-section__header { margin-bottom: 0; }
+  /* When BOTH the visualizer and the timeline are empty, drop the entire
+     section so the chat owns the whole screen. */
+  .graph-section:has(.graph-empty):has(.interaction-timeline--empty) {
+    display: none;
+  }
+
+  /* --- 12. History / Prompts as left drawers (override the 900px display:none) --- */
+  .left-panel-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 999;
+    animation: ao-backdrop-in 0.18s ease;
+  }
+  .history-sidebar,
+  .prompts-panel {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(340px, 88vw);
+    z-index: 1000;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.4);
+    animation: ao-mobile-nav-in 0.22s ease;
+    padding-left: env(safe-area-inset-left, 0);
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  /* --- 13. Right sidebar: normalize font scale (user reported "strange sizes") --- */
+  .sidebar { font-size: 13px; }
+  .sidebar-section { padding: 12px 14px; }
+  .sidebar-section__title { font-size: 11px; letter-spacing: 0.6px; }
+  /* 4-col cache grid → 2-col on a narrow drawer */
+  .cache-stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cache-stat-value { font-size: 16px; }
+  .cache-stat-label { font-size: 11px; }
+  /* Timeline / activity inside drawer — coherent 12px scale */
+  .agent-activity,
+  .timeline { max-height: 220px; }
+  .activity-item,
+  .event-item { padding: 6px 4px; align-items: flex-start; }
+  .activity-detail,
+  .event-desc { font-size: 12px; }
+  .activity-agent { font-size: 12px; }
+  .activity-time,
+  .event-time { font-size: 11px; }
+
+  /* Event log filter ("All" dropdown) was 20px tall with 10px font and was
+     getting visually clipped after the global 16px font bump. Re-size it to
+     match the other touch controls in the drawer. */
+  .logs-controls { gap: 8px; flex-wrap: wrap; }
+  .logs-filter {
+    min-height: 40px;
+    padding: 6px 10px;
+    font-size: 14px;
+    height: auto;
+  }
+
+  /* Stop truncating long text with ellipsis on mobile — there is plenty of
+     vertical room in the drawer, so let it wrap to multiple lines instead
+     of getting clipped. */
+  .event-desc,
+  .event-type,
+  .activity-desc,
+  .activity-detail,
+  .history-session-prompt,
+  .history-record__prompt,
+  .history-record__output,
+  .interaction-desc,
+  .session-explorer__file-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  .event-body,
+  .activity-body { min-width: 0; overflow: visible; }
+
+  /* Compare panel inputs were tiny */
+  .compare-select { min-height: 40px; font-size: 14px; }
+  .compare-output { font-size: 12px; max-height: 140px; }
+  /* Pricing — re-flow the cramped 3-col grid */
+  .pricing-row { grid-template-columns: 1fr 64px 64px; gap: 6px; padding: 6px 4px; }
+  .pricing-table { font-size: 12px; }
+  .pricing-cost { font-size: 12px; }
+  .pricing-search { min-height: 40px; font-size: 14px; }
 }

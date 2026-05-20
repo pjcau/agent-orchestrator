@@ -15,6 +15,11 @@ __pycache__/
 .env.*
 !.env.example
 
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+
 # Python
 *.egg-info/
 dist/

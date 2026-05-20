@@ -85,6 +85,12 @@ export function ChatInput({
   const [browseOpen, setBrowseOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadingName, setUploadingName] = useState<string | null>(null);
+  // Collapsed "advanced" controls (mode + provider) — exposed via a gear toggle
+  // on mobile to free vertical space for the chat. Always-open on desktop via CSS.
+  const [advOpen, setAdvOpen] = useState(false);
+  // Track textarea focus to expand it to full-width × 3 lines on mobile. The
+  // desktop UI is unaffected (the focus class is a no-op above 600 px).
+  const [composeFocused, setComposeFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first available model when provider changes or models load
@@ -218,7 +224,7 @@ export function ChatInput({
   const ollamaModels = models?.ollama ?? [];
 
   return (
-    <div className="chat-input">
+    <div className={`chat-input ${composeFocused ? "chat-input--focused" : ""}`}>
       {/* File context bar */}
       {(attachedFiles.length > 0 || uploadingName || uploadError) && (
         <div className="chat-input__files">
@@ -293,10 +299,76 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Controls row */}
-      <div className="chat-input__controls">
+      {/* Controls row.
+          On mobile (<=600px) the mode/provider selects collapse behind the
+          gear button so the chat keeps as much vertical space as possible. */}
+      <div className={`chat-input__controls ${advOpen ? "chat-input__controls--adv" : ""}`}>
+        <button
+          type="button"
+          className="btn-icon chat-input__adv-toggle"
+          onClick={() => setAdvOpen((o) => !o)}
+          aria-label={advOpen ? "Hide advanced options" : "Show advanced options"}
+          aria-expanded={advOpen}
+          title="Advanced options"
+        >
+          ⚙
+        </button>
+        {/* Mobile-only segment controls (CSS-toggled). They replace the native
+            <select> pickers for mode + provider which can render misaligned
+            inside emulators / certain mobile browsers. The selects below
+            remain the source of truth on desktop. */}
+        <div
+          className="chat-input__segment chat-input__segment--mode"
+          role="radiogroup"
+          aria-label="Execution mode"
+        >
+          {(
+            [
+              ["multi-agent", "Multi"],
+              ["agent", "Single"],
+              ["prompt", "Prompt"],
+            ] as Array<[ExecMode, string]>
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={mode === value}
+              className={`chat-input__segment-btn ${mode === value ? "active" : ""}`}
+              onClick={() => setMode(value)}
+              disabled={isDisabled}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div
+          className="chat-input__segment chat-input__segment--provider"
+          role="radiogroup"
+          aria-label="Provider"
+        >
+          {(
+            [
+              ["openrouter", "Cloud"],
+              ["ollama", "Local"],
+            ] as Array<["openrouter" | "ollama", string]>
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={provider === value}
+              className={`chat-input__segment-btn ${provider === value ? "active" : ""}`}
+              onClick={() => handleProviderChange(value)}
+              disabled={isDisabled}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <select
-          className="chat-input__select"
+          className="chat-input__select chat-input__select--adv"
           value={mode}
           onChange={(e) => setMode(e.target.value as ExecMode)}
           disabled={isDisabled}
@@ -308,7 +380,7 @@ export function ChatInput({
         </select>
 
         <select
-          className="chat-input__select"
+          className="chat-input__select chat-input__select--adv"
           value={provider}
           onChange={(e) => handleProviderChange(e.target.value as "openrouter" | "ollama")}
           disabled={isDisabled}
@@ -418,6 +490,8 @@ export function ChatInput({
             autoResizeTextarea();
           }}
           onKeyDown={handleKeyDown}
+          onFocus={() => setComposeFocused(true)}
+          onBlur={() => setComposeFocused(false)}
           disabled={isDisabled}
         />
         <button

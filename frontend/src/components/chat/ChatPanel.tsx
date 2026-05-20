@@ -4,6 +4,7 @@ import { useModels, useNewConversation } from "@/api/hooks";
 import { useWebSocketContext } from "@/hooks/useWebSocketContext";
 import { ChatMessageItem } from "./ChatMessage";
 import { StreamingMessage } from "./StreamingMessage";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 import { ChatInput, type ExecMode } from "./ChatInput";
 import { PresetsBar } from "@/components/prompts/PresetsBar";
 import apiClient from "@/api/client";
@@ -22,9 +23,27 @@ export function ChatPanel() {
 
   const { data: models } = useModels();
   const newConversation = useNewConversation();
-  const { sendStreamPrompt, isStreamWsReady } = useWebSocketContext();
+  const { sendStreamPrompt, stopStream, isStreamWsReady } = useWebSocketContext();
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const isRunning = useAppStore((s) => s.isStreaming);
+  // AbortController for in-flight non-streaming POSTs so the Stop button can
+  // cancel /api/prompt, /api/agent/run, and /api/team/run requests.
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleStop = useCallback(() => {
+    // Close the streaming WS (server detects disconnect and stops generating)
+    stopStream();
+    // Abort any in-flight non-streaming POST
+    abortRef.current?.abort();
+    abortRef.current = null;
+    // Reset store state (also clears stream buffer)
+    useAppStore.getState().clearStreamBuffer();
+    useAppStore.getState().addMessage({
+      role: "system",
+      content: "Stopped by user.",
+      timestamp: Date.now(),
+    });
+  }, [stopStream]);
 
   // Preset text injection: when a preset is applied, we store it and pass it
   // down to ChatInput so it can set its textarea value.
@@ -103,6 +122,10 @@ export function ChatPanel() {
       addMessage({ role: "user", content: text, timestamp: Date.now() });
       useAppStore.setState({ isStreaming: true });
 
+      // Fresh controller per send so previous aborts don't apply
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
         if (mode === "multi-agent") {
           // Team run — async, WS events will handle rendering
@@ -113,7 +136,8 @@ export function ChatPanel() {
               model,
               provider,
               conversation_id: activeConvId,
-            }
+            },
+            { signal: controller.signal }
           );
           if (resp.data.job_id) {
             setPendingTeamJob(resp.data.job_id, model);
@@ -134,13 +158,17 @@ export function ChatPanel() {
             error?: string;
             total_tokens?: number;
             elapsed_s?: number;
-          }>("/api/agent/run", {
-            agent: "team-lead",
-            task: text,
-            model,
-            provider,
-            conversation_id: conversationId,
-          });
+          }>(
+            "/api/agent/run",
+            {
+              agent: "team-lead",
+              task: text,
+              model,
+              provider,
+              conversation_id: conversationId,
+            },
+            { signal: controller.signal }
+          );
 
           if (resp.data.success) {
             addMessage({
@@ -188,15 +216,19 @@ export function ChatPanel() {
                 scores: number[];
                 error?: string;
               };
-            }>("/api/prompt", {
-              prompt: fileContext ? `${text}\n\n\`\`\`\n${fileContext}\n\`\`\`` : text,
-              model,
-              provider,
-              graph_type: "chat",
-              conversation_id: activeConvId,
-              file_context: fileContext,
-              ...(ragEnabled ? { rag_enabled: true, rag_namespace: ragNamespace, rag_k: 5 } : {}),
-            });
+            }>(
+              "/api/prompt",
+              {
+                prompt: fileContext ? `${text}\n\n\`\`\`\n${fileContext}\n\`\`\`` : text,
+                model,
+                provider,
+                graph_type: "chat",
+                conversation_id: activeConvId,
+                file_context: fileContext,
+                ...(ragEnabled ? { rag_enabled: true, rag_namespace: ragNamespace, rag_k: 5 } : {}),
+              },
+              { signal: controller.signal }
+            );
 
             // Show RAG system bubble before the assistant reply
             if (resp.data.rag) {
@@ -234,9 +266,22 @@ export function ChatPanel() {
           }
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        addMessage({ role: "assistant", content: `Request failed: ${msg}`, timestamp: Date.now() });
+        // User-initiated abort — handleStop already added a system message
+        const isAbort =
+          (err as { name?: string; code?: string })?.name === "CanceledError" ||
+          (err as { name?: string; code?: string })?.code === "ERR_CANCELED" ||
+          (err as { name?: string })?.name === "AbortError";
+        if (!isAbort) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addMessage({
+            role: "assistant",
+            content: `Request failed: ${msg}`,
+            timestamp: Date.now(),
+          });
+        }
         useAppStore.setState({ isStreaming: false });
+      } finally {
+        abortRef.current = null;
       }
     },
     [
@@ -272,6 +317,20 @@ export function ChatPanel() {
         ))}
         {isStreaming && streamBuffer && (
           <StreamingMessage buffer={streamBuffer} />
+        )}
+        {isStreaming && !streamBuffer && <ThinkingIndicator />}
+        {isStreaming && (
+          <div className="chat-panel__stop-row">
+            <button
+              type="button"
+              className="chat-panel__stop"
+              onClick={handleStop}
+              aria-label="Stop generation"
+            >
+              <span className="chat-panel__stop-icon" aria-hidden="true" />
+              Stop
+            </button>
+          </div>
         )}
         <div ref={chatBottomRef} />
       </div>

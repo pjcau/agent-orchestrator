@@ -12,6 +12,7 @@ interface WebSocketContextValue {
     rag_namespace?: string;
     rag_k?: number;
   }) => boolean;
+  stopStream: () => boolean;
   isStreamWsReady: () => boolean;
 }
 
