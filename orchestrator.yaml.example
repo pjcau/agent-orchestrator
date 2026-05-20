@@ -99,3 +99,34 @@ sandbox:
   max_concurrent: 10          # Max simultaneous sandbox containers
   port_range_start: 9000      # Host port allocation range (start)
   port_range_end: 9099        # Host port allocation range (end)
+
+# ---------------------------------------------------------------------------
+# Repair loop (v1.5 P1) — verify-and-retry around run_team()
+# ON BY DEFAULT. Every /api/team/run goes through `_run_team_with_repair`:
+# SyntaxVerifier → EncodingVerifier → DependencyVerifier, with the
+# FailurePatternRegistry auto-fixes applied before any LLM retry.
+# Opt out by setting REPAIR_LOOP_ENABLED=false. See docs/architecture-repair-loop.md.
+#
+# These keys mirror env vars consumed by `dashboard/agent_runtime_router.py`
+# (env vars take precedence so the dashboard can be toggled without editing
+# this file):
+#   REPAIR_LOOP_ENABLED        — "false" to opt out (default on)
+#   REPAIR_LOOP_MAX_ATTEMPTS   — hard retry cap (default 5)
+#   REPAIR_LOOP_MAX_COST_USD   — cumulative cost cap (default 0.50)
+#   REPAIR_LOOP_MAX_WALL_S     — cumulative wall-clock cap (default 1800 / 30 min)
+# ---------------------------------------------------------------------------
+repair_loop:
+  enabled: true               # ON by default — set to false to opt out
+  max_attempts: 5             # Includes the first attempt; 5 = one initial + four retries
+  max_cost_usd: 0.50          # Aborts as soon as cumulative cost exceeds this
+  max_wall_s: 1800            # Aborts as soon as cumulative wall-clock exceeds this (30 min default)
+  patterns: core/failure_patterns.yaml   # Bundled deterministic auto-fixes
+  verifiers:
+    - syntax                  # py_compile + json.loads
+    - encoding                # catches literal-\n corruption (frontend/package.json case)
+    - dependency              # static check against KNOWN_BAD_PINS (e.g. psycopg<3)
+    - imports                 # missing-dep detection (passlib/python-jose case, 2026-05-16b)
+    - coherence               # cross-file contradictions (compose vs database.py DATABASE_URL)
+    - runtime_smoke           # ground-truth tier: actual pip install + python -c "import X" in a tmp venv (2026-05-16d)
+    - entrypoint              # launches the Dockerfile CMD / compose command (uvicorn) with a health probe (2026-05-16g)
+    - e2e_smoke               # OPT-IN: REPAIR_LOOP_E2E_ENABLED=true. Headless browser test against the live frontend (2026-05-16g)
