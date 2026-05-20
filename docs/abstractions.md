@@ -122,3 +122,13 @@ Exhaustive list of every abstraction in the codebase, grouped by concern. For co
 ## Dashboard Composition
 
 - **Modular Dashboard** — `app.py` is a composition root (~282 lines) that includes `gateway_api.py` (REST management) and `agent_runtime_router.py` (execution + streaming). Can run as single process or split via `--mode gateway|runtime`. Split mode: `docker-compose.split.yml` + `nginx-split.conf`. See `docs/dashboard.md`.
+
+## Responsive Layout
+
+- **Breakpoint constants** (`frontend/src/lib/breakpoints.ts`) — `BP` object (`mobile: 768`, `tablet: 1024`, `desktop: 1280`) plus pre-built `mq.*` media-query strings. Single source of truth for both TS and (progressively) CSS.
+- **`useBreakpoint()` hook** (`frontend/src/hooks/useBreakpoint.ts`) — matchMedia-based, SSR-safe, reactive. Returns `{ isMobile, isTablet, isDesktop, reducedMotion }`. Replaces direct `window.innerWidth` reads.
+- **Responsive lint** (`scripts/check_responsive.sh`) — CI guard that blocks new hardcoded breakpoints and stray viewport reads in `frontend/src/`. Baseline file (`frontend/.responsive-baseline.txt`) pins pre-existing exceptions; rebuild via `scripts/check_responsive.sh --update-baseline`.
+- **Cross-viewport smoke E2E** (`frontend/e2e/chat-smoke.spec.ts`) — Playwright spec that runs once per viewport (375×667 mobile + 1440×900 desktop, both Chromium) against the dev bundle with all `/api/*` mocked. CI job: `frontend-e2e` in `deploy.yml`.
+- **iOS safe-area** — `viewport-fit=cover` in `frontend/index.html` + `env(safe-area-inset-*)` padding on `.app-header` and `.chat-input` in `frontend/src/index.css` so iPhones with notches / dynamic islands don't clip header chrome or the bottom action bar.
+
+See [docs/website/docs/architecture/responsive-layout.md](website/docs/architecture/responsive-layout.md) for the full guide (lint, hook usage, mobile-specific rules, what's intentionally not automated).

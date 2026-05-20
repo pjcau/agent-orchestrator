@@ -79,10 +79,24 @@ Parallel execution, conditional routing, human-in-the-loop, checkpointing, sub-g
 | | |
 |---|---|
 | [Architecture](https://pjcau.github.io/agent-orchestrator/docs/architecture/overview) | Core design, abstractions, components |
+| [Responsive layout](https://pjcau.github.io/agent-orchestrator/docs/architecture/responsive-layout) | Desktop + tablet + mobile (incl. iPhone notch), breakpoints, lint, cross-viewport E2E |
 | [Roadmap](https://pjcau.github.io/agent-orchestrator/docs/roadmap/overview) | Phases 0-3, version milestones |
 | [Business](https://pjcau.github.io/agent-orchestrator/docs/business/strategy) | Strategy, cost analysis, infrastructure |
 | [Security](docs/security.md) | Auth, RBAC, secrets, AWS deployment checklist |
 | [Migration](https://pjcau.github.io/agent-orchestrator/docs/architecture/migration-from-claude) | How to abstract away from Claude Code |
+
+## Responsive Layout
+
+The dashboard ships a **single React/CSS codebase** that adapts to desktop, tablet, and mobile — including iPhones with a notch / dynamic island.
+
+- **Breakpoints**: one source of truth in `frontend/src/lib/breakpoints.ts` (`mobile <768px`, `tablet 768–1023px`, `desktop ≥1024px`).
+- **Runtime detection**: `useBreakpoint()` hook (`frontend/src/hooks/useBreakpoint.ts`) — SSR-safe, reactive, replaces direct `window.innerWidth` reads.
+- **iOS safe-area**: `viewport-fit=cover` + `env(safe-area-inset-*)` padding on the header and chat input.
+- **Lint guard**: `scripts/check_responsive.sh` (wired into CI) blocks new hardcoded breakpoints and stray `window.innerWidth` reads; a baseline pins pre-existing exceptions.
+- **Cross-viewport E2E**: `frontend/e2e/chat-smoke.spec.ts` runs on both 375×667 (iPhone SE) and 1440×900 (desktop) every CI build (`npm run e2e` locally).
+- **PR template**: `.github/PULL_REQUEST_TEMPLATE.md` includes a Responsive Check that reviewers tick before merging UI work.
+
+Full details — including the migration path off the legacy 600px/900px breakpoints and what's intentionally not yet automated (visual regression) — in [docs/architecture/responsive-layout](https://pjcau.github.io/agent-orchestrator/docs/architecture/responsive-layout).
 
 ## Development
 
