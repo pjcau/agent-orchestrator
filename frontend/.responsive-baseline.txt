@@ -1,6 +1,6 @@
 # Pre-existing responsive violations — do not add new entries here.
 # Migrate listed sites to BP.* / useBreakpoint() then re-run with --update-baseline.
-frontend/src/index.css:1497:@media (max-width: 900px) {
-frontend/src/index.css:1847:@media (max-width: 600px) {
+frontend/src/index.css:1510:@media (max-width: 900px) {
+frontend/src/index.css:1860:@media (max-width: 600px) {
 frontend/src/pages/DashboardPage.tsx:25:  window.matchMedia("(max-width: 600px)").matches;
 frontend/src/stores/useAppStore.ts:249:    typeof window === "undefined" || window.matchMedia("(max-width: 600px)").matches

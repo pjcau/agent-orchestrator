@@ -301,18 +301,9 @@ export function ChatInput({
 
       {/* Controls row.
           On mobile (<=600px) the mode/provider selects collapse behind the
-          gear button so the chat keeps as much vertical space as possible. */}
+          gear button (rendered in the actions row at the bottom of this
+          component) so the chat keeps as much vertical space as possible. */}
       <div className={`chat-input__controls ${advOpen ? "chat-input__controls--adv" : ""}`}>
-        <button
-          type="button"
-          className="btn-icon chat-input__adv-toggle"
-          onClick={() => setAdvOpen((o) => !o)}
-          aria-label={advOpen ? "Hide advanced options" : "Show advanced options"}
-          aria-expanded={advOpen}
-          title="Advanced options"
-        >
-          ⚙
-        </button>
         {/* Mobile-only segment controls (CSS-toggled). They replace the native
             <select> pickers for mode + provider which can render misaligned
             inside emulators / certain mobile browsers. The selects below
@@ -514,10 +505,20 @@ export function ChatInput({
         </button>
       </div>
 
-      {/* Action bar */}
+      {/* Action bar — primary on the left, settings gear on the right. */}
       <div className="chat-input__actions">
         <button className="btn-text" onClick={onNewChat} disabled={isDisabled}>
           New Chat
+        </button>
+        <button
+          type="button"
+          className="btn-icon chat-input__adv-toggle"
+          onClick={() => setAdvOpen((o) => !o)}
+          aria-label={advOpen ? "Hide advanced options" : "Show advanced options"}
+          aria-expanded={advOpen}
+          title="Advanced options"
+        >
+          ⚙
         </button>
       </div>
 
