@@ -36,7 +36,12 @@ body {
 .dashboard {
   display: flex;
   flex-direction: column;
+  /* 100vh on iOS Safari is the LARGEST viewport (URL bar collapsed), so the
+     bottom of the layout slides under the URL bar when it's visible.
+     100dvh tracks the dynamic visible viewport — content reflows as Safari
+     shows/hides its chrome. Keep 100vh as fallback for browsers without dvh. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -1957,8 +1962,34 @@ body {
   .chat-input__textarea { min-height: 44px; }
 
   /* --- 4. Compact header on mobile --- */
-  .app-header { padding: 6px 10px; gap: 8px; }
-  .app-header__title { font-size: 14px; }
+  /* Header must stay on a SINGLE row at 360px+, otherwise the wrapped row
+     ends up under the iOS status bar / notch. We shrink every chip: title,
+     status badge, Logs/SSE buttons, and the ws dot. */
+  .app-header {
+    padding: 6px 10px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .app-header__left { gap: 8px; min-width: 0; flex: 1 1 auto; }
+  .app-header__right { gap: 6px; flex-wrap: nowrap; flex-shrink: 0; }
+  .app-header__actions { gap: 4px; }
+  .app-header__title {
+    font-size: 13px;
+    /* Truncate cleanly instead of wrapping the whole header */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  /* Status badge: shrink padding + font, drop letter spacing */
+  .status-badge { padding: 1px 6px; font-size: 9px; letter-spacing: 0.3px; }
+  /* Logs / SSE buttons: tighter padding, smaller font */
+  .app-header .btn-sidebar-toggle {
+    padding: 4px 8px;
+    font-size: 10px;
+    min-height: 0;
+  }
   /* Hide metrics bar — it consumed ~3 rows on 375px */
   .metrics-bar { display: none; }
   /* Compaction widget is part of metrics, hide too */
@@ -2204,7 +2235,15 @@ body {
   .chat-input {
     padding-left: max(12px, env(safe-area-inset-left, 0));
     padding-right: max(12px, env(safe-area-inset-right, 0));
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 0));
+    /* The home-indicator on iPhone is ~34pt; double it as visual breathing
+       room so the New Chat / gear footer never touches Safari's URL bar
+       when it pops back in. */
+    padding-bottom: calc(env(safe-area-inset-bottom, 0) + 12px);
+  }
+  /* Add a tiny separator above the New Chat / gear row so the home
+     indicator overlay doesn't visually merge with the gear button. */
+  .chat-input__actions {
+    padding-top: 4px;
   }
   .sidebar,
   .history-sidebar,
