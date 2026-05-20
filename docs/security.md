@@ -43,7 +43,7 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 ### 2. OAuth2 + JWT Sessions (browser access)
 
-Browser-based users authenticate via GitHub OAuth2. On successful login, a JWT session cookie is set.
+Browser-based users authenticate via **GitHub** and/or **Google** OAuth2. Both providers can be enabled simultaneously — the `/login` page renders one button per configured provider. On successful login, a JWT session cookie is set.
 
 **Session cookie properties:**
 
@@ -78,6 +78,57 @@ BASE_URL="https://agents.example.com"
 ```
 
 The `JWT_SECRET_KEY` has no default fallback. If not set, the application generates a random key at startup (sessions will not persist across restarts). For production, always set a stable 256-bit key.
+
+### Google OAuth2 (email allowlist)
+
+Google login uses **OpenID Connect** discovery (no manual endpoint configuration). Unlike GitHub — which falls back to the admin-approval workflow for unknown users — Google logins are gated by a strict **email allowlist**: only addresses explicitly listed in `ALLOWED_GOOGLE_EMAILS` are permitted, and they are auto-provisioned with the `developer` role on first login.
+
+**Why an allowlist instead of admin-approval?**
+GitHub usernames are public identities tied to a single account. Google email is shared across personal devices and is the natural unit of authorization for non-engineering invitees. The allowlist lets the operator pre-authorize specific people without a pending-approval round-trip.
+
+**Configuration:**
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID="<client-id>.apps.googleusercontent.com"
+GOOGLE_OAUTH_CLIENT_SECRET="<client-secret>"
+
+# Comma-separated. Case-insensitive. Supports *@domain wildcards.
+# Empty/missing = no Google login allowed (fail-closed).
+ALLOWED_GOOGLE_EMAILS="alice@gmail.com,bob@example.com,*@mycompany.com"
+```
+
+**Setting up the Google Cloud OAuth client:**
+
+1. Open [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials).
+2. Click **Create Credentials → OAuth client ID**.
+3. Application type: **Web application**.
+4. Authorized JavaScript origins: `${BASE_URL}` (e.g. `https://agents.example.com`).
+5. Authorized redirect URIs: `${BASE_URL}/auth/google/callback`.
+6. Save → copy the **Client ID** and **Client Secret** into the env vars above.
+7. If your OAuth consent screen is in **Testing** mode, add each allowed email under **Test users** as well; Google blocks the OAuth flow for unlisted accounts when the app is not yet **Published**.
+
+**Stored identity:**
+
+Google users are persisted with the stable id `google:<lowercased-email>` in the `dashboard_users` table (in the existing `github_login` column, which holds the generic subject id). This keeps the schema unchanged and avoids collisions with GitHub logins.
+
+**Fail-closed behavior:**
+
+| Scenario | Result |
+|----------|--------|
+| `ALLOWED_GOOGLE_EMAILS` unset or empty | Every Google login denied (403) |
+| Email not in allowlist | Login denied (403, no pending entry created) |
+| `email_verified: false` from Google | Login denied (403) |
+| Email in allowlist | User auto-provisioned with `developer` role, JWT cookie set |
+
+**Where to store `ALLOWED_GOOGLE_EMAILS`:**
+
+| Environment | Storage |
+|-------------|---------|
+| Local dev | `.env.local` (gitignored) |
+| GitHub Actions CI | Repository secret (`Settings → Secrets and variables → Actions`) |
+| Production server | `/etc/agent-orchestrator/secrets.env` (root-owned, mode `0600`) or AWS Secrets Manager, then exported into the container env |
+
+The allowlist contents are **never** returned by `/auth/debug` (only a boolean `allowlist_configured`) and are never written to application logs.
 
 ### WebSocket Authentication
 
@@ -162,8 +213,11 @@ All secrets are loaded from environment variables, never from code or config fil
 |----------|----------|-------------|
 | `JWT_SECRET_KEY` | Production | 256-bit key for signing JWT tokens |
 | `DASHBOARD_API_KEYS` | Production | Comma-separated API keys |
-| `OAUTH_CLIENT_ID` | If using OAuth | GitHub OAuth app client ID |
-| `OAUTH_CLIENT_SECRET` | If using OAuth | GitHub OAuth app client secret |
+| `OAUTH_CLIENT_ID` | If using GitHub login | GitHub OAuth app client ID |
+| `OAUTH_CLIENT_SECRET` | If using GitHub login | GitHub OAuth app client secret |
+| `GOOGLE_OAUTH_CLIENT_ID` | If using Google login | Google OAuth 2.0 client ID |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | If using Google login | Google OAuth 2.0 client secret |
+| `ALLOWED_GOOGLE_EMAILS` | If using Google login | Comma-separated email allowlist (supports `*@domain`) |
 | `OPENROUTER_API_KEY` | If using OpenRouter | OpenRouter API key |
 | `DATABASE_URL` | If using Postgres | PostgreSQL connection string |
 
@@ -278,6 +332,7 @@ Before deploying to AWS with the frontend exposed:
 - [ ] Generate strong `DASHBOARD_API_KEYS` — store in AWS Secrets Manager
 - [ ] Create a new GitHub OAuth App with the production `BASE_URL`
 - [ ] Store `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` in AWS Secrets Manager
+- [ ] (Optional) Create a Google Cloud OAuth client with the production redirect URI; store `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and `ALLOWED_GOOGLE_EMAILS` in AWS Secrets Manager
 - [ ] Store `OPENROUTER_API_KEY` in AWS Secrets Manager
 - [ ] Set `ENVIRONMENT=production` in the container/task definition
 - [ ] Verify `ALLOW_DEV_MODE` is NOT set (or is `false`)

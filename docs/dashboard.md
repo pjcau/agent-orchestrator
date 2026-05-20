@@ -165,7 +165,7 @@ The dashboard header shows two metric groups:
 - **Cumulative metrics** (right): all-time totals from PostgreSQL — tokens, cost, avg speed, requests
 - **Speed tracking**: `avg_speed` (total average output tok/s from DB), `session_speed` (current server session)
 - **DB indicator**: green dot = PostgreSQL connected, metrics persisted; red = in-memory only
-- **Debug**: `GET /auth/debug` — shows OAuth config (base_url, redirect_uri, client_id prefix)
+- **Debug**: `GET /auth/debug` — shows OAuth config per provider (base_url, redirect_uri, client_id prefix, allowlist_configured for Google). Never exposes secrets or allowlist contents.
 
 ## Ported features (parity with vanilla UI, removed)
 

@@ -80,6 +80,9 @@ jobs:
           JWT_KEY: ${{ secrets.JWT_SECRET_KEY }}
           OAUTH_ID: ${{ secrets.OAUTH_CLIENT_ID }}
           OAUTH_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_ALLOWLIST: ${{ secrets.ALLOWED_GOOGLE_EMAILS }}
           GF_SMTP_USER: ${{ secrets.GRAFANA_SMTP_USER }}
           GF_SMTP_PASS: ${{ secrets.GRAFANA_SMTP_PASSWORD }}
           GF_ADMIN_PASS: ${{ secrets.GRAFANA_PASSWORD || 'admin' }}
@@ -130,6 +133,9 @@ jobs:
           _inject JWT_SECRET_KEY "$JWT_KEY"
           _inject OAUTH_CLIENT_ID "$OAUTH_ID"
           _inject OAUTH_CLIENT_SECRET "$OAUTH_SECRET"
+          _inject GOOGLE_OAUTH_CLIENT_ID "$GOOGLE_OAUTH_ID"
+          _inject GOOGLE_OAUTH_CLIENT_SECRET "$GOOGLE_OAUTH_SECRET"
+          _inject ALLOWED_GOOGLE_EMAILS "$GOOGLE_ALLOWLIST"
           _inject GRAFANA_SMTP_USER "$GF_SMTP_USER"
           _inject GRAFANA_SMTP_PASSWORD "$GF_SMTP_PASS"
           _inject GRAFANA_PASSWORD "$GF_ADMIN_PASS"

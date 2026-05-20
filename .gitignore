@@ -13,6 +13,7 @@ __pycache__/
 .env
 .env.local
 .env.*
+!.env.example
 
 # Python
 *.egg-info/
