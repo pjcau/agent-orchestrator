@@ -28,6 +28,15 @@ import type {
   PromptListResponse,
   PromptTemplate,
   CompactionStats,
+  PresetsResponse,
+  FilesResponse,
+  FileContentResponse,
+  PricingResponse,
+  KnowledgeIngestRequest,
+  KnowledgeSearchRequest,
+  KnowledgeSearchResponse,
+  NamespacesResponse,
+  KnowledgeHealthResponse,
 } from "./types";
 
 // Query keys — centralised for cache invalidation
@@ -48,6 +57,11 @@ export const queryKeys = {
   promptSearch: (tags: string[], category: string | null) =>
     ["prompts", "search", tags.join(","), category ?? ""] as const,
   compactionStats: ["compaction", "stats"] as const,
+  presets: ["presets"] as const,
+  files: (path: string) => ["files", path] as const,
+  pricing: ["pricing"] as const,
+  knowledgeHealth: ["knowledge", "health"] as const,
+  knowledgeNamespaces: ["knowledge", "namespaces"] as const,
 };
 
 // --- Queries ---
@@ -302,6 +316,67 @@ export function useDeletePrompt() {
   });
 }
 
+// ── Presets (parity with vanilla UI) ──────────────────────────────────
+
+export function usePresets(
+  options?: Partial<UseQueryOptions<PresetsResponse>>
+) {
+  return useQuery<PresetsResponse>({
+    queryKey: queryKeys.presets,
+    queryFn: async () => {
+      const resp = await apiClient.get<PresetsResponse>("/api/presets");
+      return resp.data;
+    },
+    staleTime: 5 * 60 * 1000,
+    ...options,
+  });
+}
+
+// ── Files browser (parity with vanilla UI) ────────────────────────────
+
+export function useFiles(
+  path: string,
+  options?: Partial<UseQueryOptions<FilesResponse>>
+) {
+  return useQuery<FilesResponse>({
+    queryKey: queryKeys.files(path),
+    queryFn: async () => {
+      const resp = await apiClient.get<FilesResponse>(
+        `/api/files?path=${encodeURIComponent(path)}`
+      );
+      return resp.data;
+    },
+    enabled: path !== undefined,
+    staleTime: 10 * 1000,
+    ...options,
+  });
+}
+
+/** Thin async helper to fetch a single file's content. */
+export async function fetchFileContent(path: string): Promise<FileContentResponse> {
+  const resp = await apiClient.get<FileContentResponse>(
+    `/api/file?path=${encodeURIComponent(path)}`
+  );
+  return resp.data;
+}
+
+// ── Pricing (parity with vanilla UI) ──────────────────────────────────
+
+export function usePricing(
+  options?: Partial<UseQueryOptions<PricingResponse>>
+) {
+  return useQuery<PricingResponse>({
+    queryKey: queryKeys.pricing,
+    queryFn: async () => {
+      const resp = await apiClient.get<PricingResponse>("/api/openrouter/pricing");
+      return resp.data;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+}
+
 // ── Compaction stats (PR #60) ──────────────────────────────────────────
 
 export function useCompactionStats(
@@ -413,6 +488,61 @@ export function useGraphReset() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.usage });
+    },
+  });
+}
+
+// ── Knowledge / RAG (P1) ──────────────────────────────────────────────
+
+export function useKnowledgeHealth(
+  options?: Partial<UseQueryOptions<KnowledgeHealthResponse>>
+) {
+  return useQuery<KnowledgeHealthResponse>({
+    queryKey: queryKeys.knowledgeHealth,
+    queryFn: async () => {
+      const resp = await apiClient.get<KnowledgeHealthResponse>("/api/knowledge/health");
+      return resp.data;
+    },
+    staleTime: 30 * 1000,
+    ...options,
+  });
+}
+
+export function useKnowledgeNamespaces(
+  options?: Partial<UseQueryOptions<NamespacesResponse>>
+) {
+  return useQuery<NamespacesResponse>({
+    queryKey: queryKeys.knowledgeNamespaces,
+    queryFn: async () => {
+      const resp = await apiClient.get<NamespacesResponse>("/api/knowledge/namespaces");
+      return resp.data;
+    },
+    staleTime: 15 * 1000,
+    ...options,
+  });
+}
+
+export function useKnowledgeIngest() {
+  const queryClient = useQueryClient();
+  return useMutation<{ success: boolean; chunk_id?: string }, Error, KnowledgeIngestRequest>({
+    mutationFn: async (req) => {
+      const resp = await apiClient.post<{ success: boolean; chunk_id?: string }>(
+        "/api/knowledge/ingest",
+        req
+      );
+      return resp.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeNamespaces });
+    },
+  });
+}
+
+export function useKnowledgeSearch() {
+  return useMutation<KnowledgeSearchResponse, Error, KnowledgeSearchRequest>({
+    mutationFn: async (req) => {
+      const resp = await apiClient.post<KnowledgeSearchResponse>("/api/knowledge/search", req);
+      return resp.data;
     },
   });
 }

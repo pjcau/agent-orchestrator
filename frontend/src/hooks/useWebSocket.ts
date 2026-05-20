@@ -126,6 +126,45 @@ export function useWebSocket() {
           const model = state.pendingTeamModel ?? "";
           setPendingTeamJob(null, null);
 
+          // Render fallback_log entries as a system message before the result.
+          // Each entry: "✓ agent → model [status] detail" or "✗ ..." (mirrors vanilla UI).
+          const fbLog = result.fallback_log ?? [];
+          if (fbLog.length > 0) {
+            const lines = fbLog.map((f) => {
+              const icon = f.status === "ok" ? "✓" : "✗";
+              return `${icon} ${f.agent} → ${f.model} [${f.status}] ${f.detail}`;
+            });
+            addMessage({
+              role: "system",
+              content: `Fallback log:\n${lines.join("\n")}`,
+              timestamp: Date.now(),
+            });
+          }
+
+          // v1.5 P1: when the repair loop runs, surface its summary so
+          // operators can see if the verifier chain caught anything.
+          if (result.repair) {
+            const r = result.repair;
+            const icon = r.status === "passed" ? "✓" : r.status === "partial" ? "⚠" : "✗";
+            const attempts = `${r.attempts} attempt${r.attempts === 1 ? "" : "s"}`;
+            const autoFixed =
+              r.auto_fixed_signatures.length > 0
+                ? `, ${r.auto_fixed_signatures.length} auto-fix${r.auto_fixed_signatures.length === 1 ? "" : "es"}`
+                : "";
+            const residual =
+              r.final_failures.length > 0
+                ? `, ${r.final_failures.length} residual failure${r.final_failures.length === 1 ? "" : "s"} (${r.final_failures
+                    .slice(0, 3)
+                    .map((f) => f.verifier)
+                    .join(", ")})`
+                : "";
+            addMessage({
+              role: "system",
+              content: `Repair loop: ${icon} ${r.status} (${attempts}${autoFixed}${residual})`,
+              timestamp: Date.now(),
+            });
+          }
+
           if (result.success) {
             const steps: Array<{ node: string; output: string }> = [];
             if (result.plan) {
@@ -293,9 +332,29 @@ export function useWebSocket() {
           elapsed_s?: number;
           speed?: number;
           error?: string;
+          // RAG frame fields
+          namespace?: string;
+          hits?: number;
+          embedding_model?: string;
+          scores?: number[];
         };
 
-        if (data.type === "token") {
+        if (data.type === "rag") {
+          // Render a system bubble before the first token arrives
+          if (data.error) {
+            addMessage({
+              role: "system",
+              content: `RAG skipped: ${data.error}`,
+              timestamp: Date.now(),
+            });
+          } else {
+            addMessage({
+              role: "system",
+              content: `RAG: ${data.namespace ?? "shared"} · ${data.hits ?? 0} chunk(s) retrieved (${data.embedding_model ?? ""})`,
+              timestamp: Date.now(),
+            });
+          }
+        } else if (data.type === "token") {
           appendStreamChunk(data.content ?? "");
         } else if (data.type === "done") {
           finalizeStream(data);
@@ -324,6 +383,9 @@ export function useWebSocket() {
       provider: string;
       conversation_id?: string | null;
       file_context?: string;
+      rag_enabled?: boolean;
+      rag_namespace?: string;
+      rag_k?: number;
     }) => {
       if (streamWsRef.current?.readyState === WebSocket.OPEN) {
         streamWsRef.current.send(JSON.stringify(payload));

@@ -928,94 +928,6 @@ class TestJobLogger:
         assert logger.session_id == session_id
 
 
-class TestDashboardStaticUI:
-    """Verify dashboard HTML/JS/CSS contain required UI elements."""
-
-    @pytest.fixture(autouse=True)
-    def load_static(self):
-        from pathlib import Path
-
-        static = (
-            Path(__file__).parent.parent / "src" / "agent_orchestrator" / "dashboard" / "static"
-        )
-        self.html = (static / "index.html").read_text()
-        self.css = (static / "style.css").read_text()
-        self.js = (static / "app.js").read_text()
-
-    def test_graph_svg_element_exists(self):
-        assert 'id="graph-svg"' in self.html
-
-    def test_interaction_timeline_element_exists(self):
-        assert 'id="interaction-timeline"' in self.html
-
-    def test_resize_handle_graph(self):
-        assert 'id="resize-graph"' in self.html
-        assert "resize-handle-h" in self.html
-
-    def test_resize_handle_input(self):
-        assert 'id="resize-input"' in self.html
-
-    def test_css_has_interaction_styles(self):
-        assert ".interaction-timeline" in self.css
-        assert ".interaction-item" in self.css
-        assert ".interaction-from" in self.css
-        assert ".interaction-to" in self.css
-
-    def test_css_has_resize_handle_styles(self):
-        assert ".resize-handle-h" in self.css
-        assert "ns-resize" in self.css
-
-    def test_css_has_svg_node_styles(self):
-        assert ".svg-agent-node" in self.css
-        assert ".svg-edge" in self.css
-
-    def test_js_has_render_graph_svg(self):
-        assert "renderGraph" in self.js
-        assert "graph-svg" in self.js
-        assert "svgNodePositions" in self.js
-
-    def test_js_has_interaction_tracking(self):
-        assert "addInteraction" in self.js
-        assert "renderInteractionTimeline" in self.js
-        assert "animateEdge" in self.js
-
-    def test_js_has_section_resize(self):
-        assert "initSectionResize" in self.js
-        assert "resize-graph" in self.js
-        assert "resize-input" in self.js
-
-    def test_js_has_agent_colors(self):
-        assert "AGENT_COLORS" in self.js
-        assert "team-lead" in self.js
-
-    def test_arrow_animation_css(self):
-        assert "arrowPulse" in self.css
-        assert ".svg-edge.animating" in self.css
-
-    def test_cumulative_metrics_html(self):
-        assert 'id="cumul-tokens"' in self.html
-        assert 'id="cumul-cost"' in self.html
-        assert 'id="cumul-requests"' in self.html
-        assert 'id="db-indicator"' in self.html
-
-    def test_css_has_metric_group(self):
-        assert ".metric-group" in self.css
-        assert ".metric-separator" in self.css
-        assert ".db-dot" in self.css
-
-    def test_js_has_usage_fetch(self):
-        assert "fetchUsageStats" in self.js
-        assert "renderCumulativeMetrics" in self.js
-        assert "/api/usage" in self.js
-        assert "cumulativeUsage" in self.js
-
-    def test_js_handles_non_json_responses(self):
-        """Team/agent run endpoints handle non-JSON (e.g. nginx 502) gracefully."""
-        assert "content-type" in self.js
-        assert "application/json" in self.js
-        assert "Gateway timeout" in self.js
-
-
 class TestUsageDB:
     """Tests for the UsageDB in-memory accumulator (no DB required)."""
 
@@ -1511,27 +1423,58 @@ class TestExplorerEndpoints:
         assert not target.is_relative_to(session_dir.resolve())
 
     def test_jobs_download_zip(self, tmp_path):
-        """Download ZIP creates valid archive with all session files."""
+        """Download ZIP creates valid archive — must include subdirectory files
+        recursively (regression for the 2026-05-16 Phase 7 bug where the ZIP
+        flattened to top-level files only)."""
         import io
         import zipfile
 
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from agent_orchestrator.dashboard.gateway_api import gateway_router
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+
         session_dir = tmp_path / "job_zip-test"
         session_dir.mkdir()
-        (session_dir / "file1.json").write_text('{"a": 1}')
-        (session_dir / "file2.py").write_text("x = 1")
+        # Top-level files.
+        (session_dir / "README.md").write_text("# top")
+        (session_dir / "docker-compose.yml").write_text("services: {}")
+        # Subdirectory tree (the case that was broken).
+        backend = session_dir / "backend"
+        backend.mkdir()
+        (backend / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n")
+        (backend / "requirements.txt").write_text("fastapi\n")
+        routers = backend / "routers"
+        routers.mkdir()
+        (routers / "__init__.py").write_text("")
+        (routers / "tasks.py").write_text("# tasks router\n")
+        # __pycache__ should be excluded.
+        cache = backend / "__pycache__"
+        cache.mkdir()
+        (cache / "main.cpython-312.pyc").write_bytes(b"\x00\x01")
 
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in sorted(session_dir.iterdir()):
-                if f.is_file():
-                    zf.write(f, f.name)
-        buf.seek(0)
+        app = FastAPI()
+        app.state.job_logger = JobLogger(jobs_dir=str(tmp_path))
+        app.include_router(gateway_router)
+        client = TestClient(app)
 
-        with zipfile.ZipFile(buf, "r") as zf:
-            names = zf.namelist()
-            assert "file1.json" in names
-            assert "file2.py" in names
-            assert zf.read("file2.py") == b"x = 1"
+        resp = client.get("/api/jobs/zip-test/download")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            names = set(zf.namelist())
+            assert "README.md" in names
+            assert "docker-compose.yml" in names
+            assert "backend/main.py" in names
+            assert "backend/requirements.txt" in names
+            assert "backend/routers/__init__.py" in names
+            assert "backend/routers/tasks.py" in names
+            # bytecode caches must be skipped.
+            assert not any("__pycache__" in n for n in names)
+            # Content integrity check.
+            assert zf.read("backend/main.py").startswith(b"from fastapi import FastAPI")
 
     def test_jobs_files_empty_session(self, tmp_path):
         """Empty session directory returns empty file list."""
@@ -2011,3 +1954,122 @@ class TestClientErrorEndpoint:
         assert "orchestrator_llm_call_duration_seconds" in body
         assert "orchestrator_graph_node_duration_seconds" in body
         assert "orchestrator_agent_stalls_total" in body
+
+
+class TestConversationEndpoints:
+    """HTTP-level tests for conversation lifecycle endpoints used by the
+    dashboard's A2 (auto-create + persistence) and B (full Reset) flows."""
+
+    @pytest.mark.asyncio
+    async def test_new_then_delete_conversation(self, monkeypatch):
+        """POST /api/conversation/new returns an id; DELETE clears it server-side."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            new_resp = await client.post("/api/conversation/new")
+            assert new_resp.status_code == 200
+            conv_id = new_resp.json()["conversation_id"]
+            assert conv_id and isinstance(conv_id, str)
+
+            # The DELETE endpoint must respond OK regardless of whether the
+            # conversation has any messages.
+            del_resp = await client.delete(f"/api/conversation/{conv_id}")
+            assert del_resp.status_code == 200
+            body = del_resp.json()
+            assert body["success"] is True
+            assert body["conversation_id"] == conv_id
+
+    @pytest.mark.asyncio
+    async def test_delete_unknown_conversation_does_not_500(self, monkeypatch):
+        """DELETE on an unknown id is a no-op, not a 5xx — required by B's
+        best-effort cleanup path which must not block the UI reset."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.delete("/api/conversation/does-not-exist")
+            assert resp.status_code in (200, 404), f"expected 200 or 404, got {resp.status_code}"
+
+
+class TestUploadEndpoint:
+    """HTTP-level tests for /api/upload — the multipart endpoint that powers
+    the dashboard's C2 (real document upload) flow."""
+
+    @pytest.mark.asyncio
+    async def test_upload_text_file_returns_markdown(self, monkeypatch):
+        """A small .txt file round-trips through DocumentConverter as markdown."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            files = {"file": ("note.txt", b"hello world\n", "text/plain")}
+            resp = await client.post("/api/upload", files=files)
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["success"] is True
+        assert data["filename"] == "note.txt"
+        assert data["file_type"] == "txt"
+        assert "hello world" in data["markdown_content"]
+
+    @pytest.mark.asyncio
+    async def test_upload_unsupported_format_returns_400(self, monkeypatch):
+        """A truly unsupported format (e.g. .zip) returns 400.
+
+        Note: image formats (.png/.jpg/…) are now handled by the OCR path,
+        so they no longer reach this branch — see the image OCR tests in
+        test_document_converter.py."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            files = {"file": ("archive.zip", b"PK\x03\x04", "application/zip")}
+            resp = await client.post("/api/upload", files=files)
+
+        assert resp.status_code == 400
+        assert "Unsupported" in resp.json().get("error", "")
+
+    @pytest.mark.asyncio
+    async def test_upload_rejects_oversize(self, monkeypatch):
+        """Files exceeding MAX_FILE_SIZE_BYTES return 413 Payload Too Large."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+        from agent_orchestrator.core.document_converter import MAX_FILE_SIZE_BYTES
+
+        # 1 byte over the limit so we don't actually allocate huge memory.
+        oversize = b"x" * (MAX_FILE_SIZE_BYTES + 1)
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            files = {"file": ("big.txt", oversize, "text/plain")}
+            resp = await client.post("/api/upload", files=files)
+
+        assert resp.status_code == 413
+        assert "exceeds maximum" in resp.json().get("error", "").lower() or (
+            "too large" in resp.json().get("error", "").lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_upload_missing_file_field_returns_400(self, monkeypatch):
+        """Multipart body without a 'file' field is rejected cleanly."""
+        monkeypatch.setenv("ALLOW_DEV_MODE", "true")
+        from httpx import ASGITransport, AsyncClient
+        from agent_orchestrator.dashboard.app import create_dashboard_app
+
+        app = create_dashboard_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/upload", files={"not_file": ("x.txt", b"hi", "text/plain")}
+            )
+
+        assert resp.status_code == 400

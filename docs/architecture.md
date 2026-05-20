@@ -239,6 +239,38 @@ The following abstractions were added based on analysis of the ByteDance DeerFlo
 - **PostgresStore** — Durable cross-thread key-value store. JSONB values, dot-encoded namespaces, lazy TTL, UPSERT. `core/store_postgres.py`.
 - **MCPClientManager** — Connect to external MCP servers (stdio/SSE). Tool discovery + injection into SkillRegistry. `core/mcp_client.py`.
 - **Modular Dashboard** — `app.py` composes `gateway_api.py` (REST) + `agent_runtime_router.py` (execution/streaming). Split-process mode via `--mode gateway|runtime`.
+- **GuardrailManager (P3)** — opt-in pre/post LLM-call hook layer. `Agent.execute()` now runs `GuardrailManager.run_input(messages)` before every provider call and `run_output(response)` after. A blocking result raises `GuardrailBlocked(RuntimeError)` so the orchestrator can convert it to a clarification or error response. A redact result replaces the last user message (input) or completion content (output) transparently. Event emission is via the injected `emit_event` callable (no hard dep on dashboard). Built-in guardrails: `PIIScanner`, `SecretsScanner`, `PromptInjectionDetector`, `OutputSchemaGuard`, `CostGuard`. Configurable from `orchestrator.yaml` under a `guardrails:` key. `core/guardrails.py`.
+
+## 8. Evaluator Pipeline (P2)
+
+The Evaluator Framework closes the feedback loop: every agent run can be graded by
+deterministic rubric checks and/or an LLM judge, producing data-driven quality metrics.
+
+```
+EvalCase ──► agent_callable ──► EvalRun
+                                   │
+                        ┌──────────▼──────────┐
+                        │  RubricEvaluator     │  deterministic (no LLM)
+                        │  LLMJudge            │  strong-model judge (DIP)
+                        └──────────┬──────────┘
+                                   │ list[EvalScore]
+                        ┌──────────▼──────────┐
+                        │     EvalReport       │
+                        │  summary: pass_rate  │
+                        │          mean_score  │
+                        └─────────────────────┘
+```
+
+**Key design decisions**:
+- `Evaluator` is an ABC with a single async method — trivially extensible (O in SOLID).
+- `LLMJudge` accepts the abstract `Provider` interface, never a concrete vendor class (D in SOLID).
+- `EvalSuite.run()` catches evaluator exceptions and converts them to failed `EvalScore` objects — the suite never crashes on a broken evaluator.
+- JSON extraction uses a three-stage fallback (direct parse → code-fence strip → regex brace extraction) to handle the full range of LLM formatting quirks.
+
+**Entrypoints**:
+- `core/evaluator.py` — harness layer (no dashboard imports, import-boundary safe).
+- `evals/` — standalone datasets and CLI runner.
+- `dashboard/evals_routes.py` — REST API (`/api/evals/*`), background execution, in-memory report store.
 
 ## Mapping from Claude Code Concepts
 
@@ -251,6 +283,39 @@ The following abstractions were added based on analysis of the ByteDance DeerFlo
 | Hooks (PostToolUse etc.) | `EventBus` + handlers | Same pattern, more extensible |
 | `CLAUDE.md` | Project config YAML | Not tied to Claude namespace |
 | Memory (`MEMORY.md`) | `ContextStore` | Persistent cross-session state |
+
+## Personalized Memory — User Profile Injection Lifecycle (P4)
+
+User preferences are accumulated across sessions via the `PersonalizedMemory` facade
+(namespace `("user", user_id)`) and surfaced in every agent turn as a `<user_profile>`
+XML block inside the system prompt.
+
+```
+[Session start]
+  Agent.__init__(personalized_memory=pm, user_id="alice")
+    → await agent.prefetch_user_profile()   # async store read, populates _user_profile_cache
+
+[Each provider call]
+  agent.build_system_prompt()
+    → inject_marker_sections(config.role, _prompt_sections)
+    → _build_user_profile_block()           # sync, reads _user_profile_cache
+    → returns: "You are … <user_profile>\n  [profile]: {preferences: ['dark-mode']}\n</user_profile>"
+
+[Background: ProfileExtractorSkill]
+  skill.execute({user_id, recent_messages})
+    → provider.complete(extraction_prompt)  # best-effort, catches all exceptions
+    → PersonalizedMemory.put(user_id, "profile", {...})
+    → agent.prefetch_user_profile()         # optional refresh for next turn
+```
+
+Key design properties:
+- **Import boundary safe** — `core/personalized_memory.py` and `skills/profile_extractor_skill.py`
+  never import from `dashboard/`. The HTTP layer in `dashboard/personalized_memory_routes.py`
+  depends on the harness, not vice-versa.
+- **Best-effort** — the extractor skill catches all provider and persistence failures and
+  returns a `SkillResult(success=False)` so the main agent flow is never blocked.
+- **Filter-safe** — every write passes through `MemoryFilter`, keeping session artefacts
+  (tmp paths, job dirs) out of long-term user profiles.
 
 ## Anti-Stall Protocol (Built Into Core)
 

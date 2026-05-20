@@ -96,6 +96,15 @@ class DocumentConverter:
         ".html": "_convert_html",
         ".htm": "_convert_html",
         ".txt": "_convert_text",
+        # Image OCR — requires pytesseract + Pillow + the `tesseract` binary.
+        ".png": "_convert_image",
+        ".jpg": "_convert_image",
+        ".jpeg": "_convert_image",
+        ".gif": "_convert_image",
+        ".webp": "_convert_image",
+        ".bmp": "_convert_image",
+        ".tiff": "_convert_image",
+        ".tif": "_convert_image",
     }
 
     def __init__(self, output_dir: str | None = None) -> None:
@@ -387,6 +396,64 @@ class DocumentConverter:
             markdown_path=str(md_path),
             markdown_content=md_content,
             file_type="html",
+        )
+
+    async def _convert_image(self, path: Path) -> ConvertedDocument:
+        """Extract text from an image via tesseract OCR.
+
+        Note: this is *OCR only* — visual content (objects, scenes, diagrams)
+        is not interpreted. For real vision support, route the image through
+        a multimodal provider (e.g. Claude Sonnet, GPT-4o) instead.
+        """
+        try:
+            import pytesseract
+            from PIL import Image
+        except ImportError as exc:
+            raise DependencyMissingError(
+                "Image OCR requires 'pytesseract' and 'Pillow', plus the "
+                "'tesseract' system binary. Install with: "
+                "pip install 'agent-orchestrator[images]' and "
+                "apt-get install tesseract-ocr (Linux) "
+                "or brew install tesseract (macOS)."
+            ) from exc
+
+        try:
+            with Image.open(str(path)) as image:
+                text = pytesseract.image_to_string(image).strip()
+        except pytesseract.TesseractNotFoundError as exc:
+            raise DependencyMissingError(
+                "The 'tesseract' system binary is not installed. "
+                "Install with: apt-get install tesseract-ocr (Linux) "
+                "or brew install tesseract (macOS)."
+            ) from exc
+        except Exception as exc:  # pragma: no cover — defensive
+            raise DocumentConversionError(f"Failed to OCR image: {exc}") from exc
+
+        if not text:
+            md_content = (
+                f"*No text could be extracted from the image* "
+                f"(`{path.name}`). The image may not contain readable text, "
+                f"or it may be too low-resolution for OCR. "
+                f"Visual content (objects, scenes, diagrams) is not "
+                f"interpreted by OCR — use a vision-capable model "
+                f"if you need that."
+            )
+        else:
+            md_content = (
+                f"# OCR text from `{path.name}`\n\n"
+                f"_Extracted via tesseract OCR. Only readable text is "
+                f"captured — objects, scenes and diagrams are not "
+                f"interpreted._\n\n{text}"
+            )
+
+        md_path = self._md_output_path(path)
+        md_path.write_text(md_content, encoding="utf-8")
+
+        return ConvertedDocument(
+            original_path=str(path),
+            markdown_path=str(md_path),
+            markdown_content=md_content,
+            file_type="image",
         )
 
     async def _convert_text(self, path: Path) -> ConvertedDocument:

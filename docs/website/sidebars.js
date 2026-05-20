@@ -30,6 +30,16 @@ const sidebars = {
     'roadmap/overview',
     {
       type: 'category',
+      label: 'Latest sprint',
+      collapsed: false,
+      items: [
+        'roadmap/q1q2-sprint',
+        'roadmap/v140-gap-closure',
+        'roadmap/v150-repair-loop',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Phases',
       collapsed: false,
       items: [

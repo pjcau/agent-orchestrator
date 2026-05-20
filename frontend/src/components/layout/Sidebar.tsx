@@ -2,10 +2,13 @@ import { useState } from "react";
 import { useAppStore } from "@/stores/useAppStore";
 import type { OrchestratorEvent } from "@/api/types";
 import { useClearCache } from "@/api/hooks";
+import { ComparePanel } from "@/components/compare/ComparePanel";
+import { PricingPanel } from "@/components/pricing/PricingPanel";
 
-type EventFilter = "all" | "agent" | "graph" | "cooperation" | "cache";
+type EventFilter = "all" | "agent" | "graph" | "cooperation" | "cache" | "knowledge";
 
 function eventCategory(type: string): string {
+  if (type.startsWith("knowledge")) return "knowledge";
   if (type.startsWith("agent")) return "agent";
   if (type.startsWith("graph")) return "graph";
   if (type.startsWith("cooperation")) return "cooperation";
@@ -43,6 +46,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   cache: "$",
   metrics: "M",
   orchestrator: "O",
+  knowledge: "K",
 };
 
 /** Right sidebar with event log, agent activity, cache stats, and task plan. */
@@ -55,7 +59,7 @@ export function Sidebar() {
   const filteredEvents =
     filter === "all"
       ? events
-      : events.filter((e) => e.event_type.startsWith(filter));
+      : events.filter((e) => eventCategory(e.event_type) === filter);
 
   const cacheRate = (() => {
     const total = (cache.hits ?? 0) + (cache.misses ?? 0);
@@ -119,6 +123,7 @@ export function Sidebar() {
               <option value="graph">Graph</option>
               <option value="cooperation">Coop</option>
               <option value="cache">Cache</option>
+              <option value="knowledge">Knowledge</option>
             </select>
             <button className="btn-text" onClick={clearEvents}>
               Clear
@@ -243,6 +248,18 @@ export function Sidebar() {
             ))
           )}
         </div>
+      </section>
+
+      {/* Compare */}
+      <section className="sidebar-section">
+        <h2 className="sidebar-section__title">Compare Models</h2>
+        <ComparePanel />
+      </section>
+
+      {/* Pricing */}
+      <section className="sidebar-section">
+        <h2 className="sidebar-section__title">Pricing</h2>
+        <PricingPanel />
       </section>
     </aside>
   );

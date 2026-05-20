@@ -19,9 +19,26 @@ import logging
 import os
 import time
 import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+
+from agent_orchestrator.core.failure_patterns import load_default_registry
+from agent_orchestrator.core.repair_loop import RepairLoop
+from agent_orchestrator.core.verification_gate import VerificationGate
+from agent_orchestrator.core.verifiers import (
+    DependencyVerifier,
+    E2ESmokeVerifier,
+    EncodingVerifier,
+    EntrypointVerifier,
+    ImportVerifier,
+    RuntimeSmokeVerifier,
+    SyntaxVerifier,
+    WorkspaceCoherenceVerifier,
+)
 
 from .agent_runner import run_agent, run_team
 from .agents_registry import get_agent_registry
@@ -30,6 +47,16 @@ from .events import Event, EventBus, EventType
 from .graphs import _make_provider, run_graph
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_log(value: str) -> str:
+    """Strip CR/LF/TAB from values before they reach the logger.
+
+    Mirrors ``dashboard.app._sanitize_log``; duplicated to avoid an import
+    cycle between this router and ``app.py``.
+    """
+    return str(value).replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
 
 runtime_router = APIRouter(tags=["runtime"])
 
@@ -53,6 +80,186 @@ def _get_ollama_url() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Workspace repair-loop integration (v1.5 P1).
+# ON BY DEFAULT — wraps run_team() with a 5-attempt verify-and-retry harness.
+# Set REPAIR_LOOP_ENABLED=false to opt out. See docs/architecture-repair-loop.md.
+# ---------------------------------------------------------------------------
+
+
+def _repair_loop_enabled() -> bool:
+    return os.environ.get("REPAIR_LOOP_ENABLED", "true").strip().lower() != "false"
+
+
+@dataclass
+class _TeamRunWrapper:
+    """Adapter: wraps the run_team() dict result in the RepairLoop protocol."""
+
+    workdir: Path
+    cost_usd: float
+    raw: dict[str, Any]
+
+
+def _make_emit_bridge(bus: EventBus | None) -> Any:
+    """Sync (str, dict) -> None sink that forwards to an async EventBus.
+
+    The gate and repair loop call this synchronously from within their own
+    async context, so `asyncio.create_task` is the right primitive — it
+    requires a running event loop, which is guaranteed here.
+    """
+    if bus is None:
+        return None
+
+    def _emit(event_name: str, data: dict[str, Any]) -> None:
+        try:
+            event_type = EventType(event_name)
+        except ValueError:
+            return  # unknown event name → silently drop
+        try:
+            asyncio.create_task(bus.emit(Event(event_type=event_type, data=data)))
+        except RuntimeError:
+            # No running loop (e.g. shutdown) — drop the event rather than crash.
+            pass
+
+    return _emit
+
+
+def _build_repair_loop(
+    bus: EventBus | None,
+    team_runner: Any,
+) -> RepairLoop:
+    """Construct the bundled repair loop. `team_runner` is the closure that
+    invokes `run_team()` and packages the result for the loop."""
+    emit = _make_emit_bridge(bus)
+    gate = VerificationGate(
+        [
+            # Cheap-first ordering: syntactic checks before any AST/IO walk.
+            SyntaxVerifier(),
+            EncodingVerifier(),
+            DependencyVerifier(),
+            # v1.5 P1 Phase 7+ extensions: catch the failure classes the
+            # 2026-05-16(b) benchmark surfaced (missing imports + cross-file
+            # contradictions).
+            ImportVerifier(),
+            WorkspaceCoherenceVerifier(),
+            # v1.5 P1 Phase 7.7: ground-truth tier. cost_estimate_s=30 puts
+            # this last, and fail_fast=True (gate default) means it only
+            # runs when every cheap verifier is already clean. Catches the
+            # entire class of "static check passed but the workspace can't
+            # actually install or import".
+            RuntimeSmokeVerifier(),
+            # Phase 7.11a: actually launch the production entrypoint
+            # (uvicorn / Dockerfile CMD). Catches relative-import bugs and
+            # startup-time crashes that bare-import probes miss.
+            EntrypointVerifier(),
+            # Phase 7.11b: headless browser e2e (opt-in via
+            # REPAIR_LOOP_E2E_ENABLED=true). Catches frontend/backend
+            # integration failures (shape mismatches, console errors,
+            # failed fetches).
+            E2ESmokeVerifier(),
+        ],
+        emit_event=emit,
+    )
+    try:
+        registry = load_default_registry()
+    except Exception as exc:  # noqa: BLE001 — broken YAML must not break team_run
+        logger.warning("repair loop: failed to load failure_patterns.yaml: %s", exc)
+        registry = None
+
+    max_attempts = int(os.environ.get("REPAIR_LOOP_MAX_ATTEMPTS", "5"))
+    max_cost = float(os.environ.get("REPAIR_LOOP_MAX_COST_USD", "0.50"))
+    max_wall = float(os.environ.get("REPAIR_LOOP_MAX_WALL_S", "1800"))
+
+    return RepairLoop(
+        team_runner=team_runner,
+        gate=gate,
+        max_attempts=max_attempts,
+        max_cost_usd=max_cost,
+        max_wall_s=max_wall,
+        pattern_registry=registry,
+        emit_event=emit,
+    )
+
+
+async def _run_team_with_repair(
+    task_description: str,
+    *,
+    provider: Any,
+    event_bus: EventBus,
+    working_directory: str,
+    usage_db: Any,
+    session_id: str,
+    conversation_id: str | None,
+    conversation_manager: Any,
+    sandbox_manager: Any,
+) -> dict[str, Any]:
+    """Drop-in replacement for `run_team()` when REPAIR_LOOP_ENABLED=true.
+
+    Returns the SAME dict shape as `run_team()` for backwards compatibility
+    (so the existing job_logger / usage_db flow keeps working), enriched
+    with a top-level ``repair`` key carrying the loop summary.
+    """
+    workdir = Path(working_directory)
+    # Capture every attempt's raw dict in attempt order; the last one is what
+    # the dashboard surfaces, while keeping the full history available for
+    # debugging.
+    raw_history: list[dict[str, Any]] = []
+
+    async def _runner(task: str, **kw: Any) -> _TeamRunWrapper:
+        raw = await run_team(task_description=task, **kw)
+        raw_history.append(raw)
+        return _TeamRunWrapper(
+            workdir=workdir,
+            cost_usd=float(raw.get("total_cost_usd") or 0.0),
+            raw=raw,
+        )
+
+    loop = _build_repair_loop(event_bus, _runner)
+    repair_result = await loop.run(
+        task_description,
+        provider=provider,
+        event_bus=event_bus,
+        working_directory=working_directory,
+        usage_db=usage_db,
+        session_id=session_id,
+        conversation_id=conversation_id,
+        conversation_manager=conversation_manager,
+        sandbox_manager=sandbox_manager,
+    )
+
+    # Fall back to an empty dict if the loop aborted before any attempt ran
+    # (shouldn't happen — max_attempts >= 1 — but defensive).
+    last_raw: dict[str, Any] = raw_history[-1] if raw_history else {}
+
+    payload = dict(last_raw)
+    # The repair loop is authoritative for "did the whole pipeline pass?".
+    # We override only `success`; everything else (output, plan, agent_costs,
+    # tokens) flows from the underlying run_team call.
+    payload["success"] = bool(last_raw.get("success")) and repair_result.final_report.passed
+    payload["total_cost_usd"] = repair_result.cumulative_cost_usd
+    payload["elapsed_s"] = repair_result.cumulative_duration_s
+    payload["repair"] = {
+        "status": repair_result.status,
+        "attempts": repair_result.attempt_count,
+        "cumulative_cost_usd": repair_result.cumulative_cost_usd,
+        "final_passed": repair_result.final_report.passed,
+        "final_failures": [
+            {
+                "verifier": f.verifier,
+                "category": f.category,
+                "message": f.message,
+                "file": f.file,
+                "signature": f.signature,
+            }
+            for f in repair_result.final_report.failures
+        ],
+        "auto_fixed_signatures": [
+            sig for a in repair_result.attempts for sig in a.auto_fixed_signatures
+        ],
+    }
+    return payload
+
+
+# ---------------------------------------------------------------------------
 # Prompt execution (non-streaming)
 # ---------------------------------------------------------------------------
 
@@ -70,6 +277,12 @@ async def prompt(body: dict, request: Request):
     graph_type = body.get("graph_type", "auto")
     conv_id = body.get("conversation_id")
     file_context = body.get("file_context", "")
+    # P1 RAG: optional toggle. When true the dashboard fetches relevant
+    # chunks from the configured namespace before calling the LLM and
+    # prepends them to the prompt as a "Retrieved context" block.
+    rag_enabled = bool(body.get("rag_enabled", False))
+    rag_namespace = str(body.get("rag_namespace", "shared")).strip() or "shared"
+    rag_k = int(body.get("rag_k", 5) or 5)
 
     if not user_prompt:
         return JSONResponse(content={"success": False, "error": "Empty prompt"}, status_code=400)
@@ -81,6 +294,61 @@ async def prompt(body: dict, request: Request):
     full_prompt = user_prompt
     if file_context:
         full_prompt = f"{user_prompt}\n\n```\n{file_context}\n```"
+
+    # ── RAG injection (P1) ────────────────────────────────────────────
+    rag_summary: dict | None = None
+    if rag_enabled:
+        retriever = getattr(request.app.state, "knowledge_retriever", None)
+        if retriever is not None:
+            try:
+                from ..skills.retrieval_skill import parse_namespace, render_namespace
+
+                ns = parse_namespace(rag_namespace)
+                rag_result = await retriever.retrieve(user_prompt, ns, k=rag_k)
+                if not rag_result.is_empty:
+                    full_prompt = f"{rag_result.as_context_block()}\n{full_prompt}"
+                rag_summary = {
+                    "namespace": render_namespace(ns),
+                    "hits": len(rag_result.hits),
+                    "embedding_model": rag_result.embedding_model,
+                    "scores": [h.score for h in rag_result.hits],
+                }
+                logger.info(
+                    "RAG retrieved %d chunks from %r for prompt (model=%r)",
+                    len(rag_result.hits),
+                    _safe_log(render_namespace(ns)),
+                    _safe_log(rag_result.embedding_model),
+                )
+                await bus.emit(
+                    Event(
+                        event_type=EventType.KNOWLEDGE_RETRIEVED,
+                        data={
+                            "namespace": list(ns),
+                            "namespace_label": render_namespace(ns),
+                            "query": user_prompt,
+                            "k": rag_k,
+                            "hits": len(rag_result.hits),
+                            "embedding_model": rag_result.embedding_model,
+                            "scores": [h.score for h in rag_result.hits],
+                            "trigger": "auto",
+                        },
+                    )
+                )
+            except ValueError as exc:
+                rag_summary = {"error": str(exc)}
+                await bus.emit(
+                    Event(
+                        event_type=EventType.KNOWLEDGE_RETRIEVAL_SKIPPED,
+                        data={"reason": str(exc), "namespace": rag_namespace},
+                    )
+                )
+        else:
+            await bus.emit(
+                Event(
+                    event_type=EventType.KNOWLEDGE_RETRIEVAL_SKIPPED,
+                    data={"reason": "knowledge subsystem not configured"},
+                )
+            )
 
     ollama_url = _get_ollama_url()
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -125,6 +393,12 @@ async def prompt(body: dict, request: Request):
         await usage_db.append_message(conv_id, "user", user_prompt)
         if result.get("success"):
             await usage_db.append_message(conv_id, "assistant", result.get("output", ""))
+
+    if rag_summary is not None:
+        # Surface RAG details in the response so the UI can show "RAG used"
+        # bubbles, scores, and the namespace that was searched.
+        result = dict(result)
+        result["rag"] = rag_summary
 
     return JSONResponse(content=result)
 
@@ -297,17 +571,30 @@ async def team_run(body: dict, request: Request):
             )
 
             sandbox_manager = request.app.state.sandbox_manager
-            result = await run_team(
-                task_description=task_desc,
-                provider=provider,
-                event_bus=bus,
-                working_directory=str(job_logger.session_dir),
-                usage_db=usage_db,
-                session_id=job_logger.session_id,
-                conversation_id=conv_id_team,
-                conversation_manager=conv_manager if conv_id_team else None,
-                sandbox_manager=sandbox_manager,
-            )
+            if _repair_loop_enabled():
+                result = await _run_team_with_repair(
+                    task_desc,
+                    provider=provider,
+                    event_bus=bus,
+                    working_directory=str(job_logger.session_dir),
+                    usage_db=usage_db,
+                    session_id=job_logger.session_id,
+                    conversation_id=conv_id_team,
+                    conversation_manager=conv_manager if conv_id_team else None,
+                    sandbox_manager=sandbox_manager,
+                )
+            else:
+                result = await run_team(
+                    task_description=task_desc,
+                    provider=provider,
+                    event_bus=bus,
+                    working_directory=str(job_logger.session_dir),
+                    usage_db=usage_db,
+                    session_id=job_logger.session_id,
+                    conversation_id=conv_id_team,
+                    conversation_manager=conv_manager if conv_id_team else None,
+                    sandbox_manager=sandbox_manager,
+                )
 
             job_logger.log(
                 "team_run",
@@ -425,6 +712,9 @@ async def stream_endpoint(ws: WebSocket):
             system = data.get("system", "You are a helpful AI assistant. Be concise and direct.")
             conv_id = data.get("conversation_id")
             file_context = data.get("file_context", "")
+            rag_enabled = bool(data.get("rag_enabled", False))
+            rag_namespace = str(data.get("rag_namespace", "shared")).strip() or "shared"
+            rag_k = int(data.get("rag_k", 5) or 5)
 
             if not prompt_text or not model:
                 await ws.send_json({"type": "error", "error": "Missing prompt or model"})
@@ -435,6 +725,58 @@ async def stream_endpoint(ws: WebSocket):
             full_prompt = prompt_text
             if file_context:
                 full_prompt = f"{prompt_text}\n\n```\n{file_context}\n```"
+
+            # ── RAG injection (P1) for streaming path ──────────────────
+            if rag_enabled:
+                retriever = getattr(ws.app.state, "knowledge_retriever", None)
+                if retriever is not None:
+                    try:
+                        from ..skills.retrieval_skill import (
+                            parse_namespace,
+                            render_namespace,
+                        )
+
+                        ns = parse_namespace(rag_namespace)
+                        rag_result = await retriever.retrieve(prompt_text, ns, k=rag_k)
+                        if not rag_result.is_empty:
+                            full_prompt = f"{rag_result.as_context_block()}\n{full_prompt}"
+                        logger.info(
+                            "RAG (stream) retrieved %d chunks from %r",
+                            len(rag_result.hits),
+                            _safe_log(render_namespace(ns)),
+                        )
+                        await bus.emit(
+                            Event(
+                                event_type=EventType.KNOWLEDGE_RETRIEVED,
+                                data={
+                                    "namespace": list(ns),
+                                    "namespace_label": render_namespace(ns),
+                                    "query": prompt_text,
+                                    "k": rag_k,
+                                    "hits": len(rag_result.hits),
+                                    "embedding_model": rag_result.embedding_model,
+                                    "scores": [h.score for h in rag_result.hits],
+                                    "trigger": "auto-stream",
+                                },
+                            )
+                        )
+                        # Notify the client so it can render a "RAG used" chip.
+                        await ws.send_json(
+                            {
+                                "type": "rag",
+                                "namespace": render_namespace(ns),
+                                "hits": len(rag_result.hits),
+                                "embedding_model": rag_result.embedding_model,
+                                "scores": [h.score for h in rag_result.hits],
+                            }
+                        )
+                    except ValueError as exc:
+                        await bus.emit(
+                            Event(
+                                event_type=EventType.KNOWLEDGE_RETRIEVAL_SKIPPED,
+                                data={"reason": str(exc), "namespace": rag_namespace},
+                            )
+                        )
 
             if conv_id:
                 recent = await usage_db.get_recent_messages(conv_id, limit=6)

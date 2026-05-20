@@ -191,7 +191,7 @@ class TestAPIKeyMiddleware:
     async def test_exempt_paths_allowed(self):
         """Static, health, auth paths should be exempt."""
         for path in (
-            "/static/style.css",
+            "/assets/index-abc.js",
             "/health",
             "/auth/github",
             "/login",

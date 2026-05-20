@@ -4,11 +4,13 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { HistorySidebar } from "@/components/layout/HistorySidebar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { GraphVisualizer } from "@/components/graph/GraphVisualizer";
+import { InteractionTimeline } from "@/components/graph/InteractionTimeline";
 import { AgentSelector } from "@/components/agents/AgentSelector";
 import { SandboxPanel } from "@/components/sandbox/SandboxPanel";
 import { PromptsPanel } from "@/components/prompts/PromptsPanel";
 import { useAppStore } from "@/stores/useAppStore";
 import { useGraphReset, useSandboxStatus } from "@/api/hooks";
+import apiClient from "@/api/client";
 
 type LeftPanelMode = "history" | "prompts" | null;
 
@@ -34,12 +36,35 @@ export function DashboardPage() {
     setLeftPanel((p) => (p === "prompts" ? null : "prompts"));
   };
 
+  /**
+   * Full Reset (B): wipes graph + chat + attached files + conversation memory,
+   * both client-side and server-side.
+   *
+   * 1. DELETE /api/conversation/{id} — drops conversation memory on the server
+   * 2. POST /api/graph/reset — clears server-side graph snapshot
+   * 3. store.reset() — clears all client UI state (messages, attachedFiles,
+   *    conversationId, graph nodes, events, activity, interactions, …) and
+   *    removes the persisted localStorage entry.
+   *
+   * Server calls are best-effort: client state is always cleared so the user
+   * never sees a stale dashboard even if the network fails.
+   */
   const handleResetGraph = async () => {
+    const currentConvId = useAppStore.getState().conversationId;
     try {
+      if (currentConvId) {
+        await apiClient
+          .delete(`/api/conversation/${encodeURIComponent(currentConvId)}`)
+          .catch((err) => {
+            // Stale or unknown id — proceed with reset regardless.
+            console.warn("DELETE /api/conversation failed:", err);
+          });
+      }
       await graphReset.mutateAsync();
-      reset();
     } catch (err) {
-      console.error("Graph reset failed:", err);
+      console.warn("Graph reset call failed:", err);
+    } finally {
+      reset();
     }
   };
 
@@ -109,6 +134,7 @@ export function DashboardPage() {
               </div>
             </div>
             <GraphVisualizer />
+            <InteractionTimeline />
           </section>
 
           {/* Center: Chat */}

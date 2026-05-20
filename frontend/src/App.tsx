@@ -5,6 +5,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { WebSocketProvider } from "@/hooks/useWebSocketContext";
 import { useUsage } from "@/api/hooks";
 import { useAppStore } from "@/stores/useAppStore";
+import apiClient from "@/api/client";
 
 /** Bootstraps data loading (WS connections are in WebSocketProvider). */
 function AppBootstrap({ children }: { children: React.ReactNode }) {
@@ -22,6 +23,43 @@ function AppBootstrap({ children }: { children: React.ReactNode }) {
       }
     }
   }, [usage, setCumulativeUsage]);
+
+  // Restore conversation history at boot if we have a persisted id.
+  // The store hydrates conversationId from localStorage at create time;
+  // here we fetch the saved messages for that id and replay them in the chat.
+  useEffect(() => {
+    const convId = useAppStore.getState().conversationId;
+    if (!convId) return;
+
+    type RestoredMessage = { role: string; content: string };
+    apiClient
+      .get<{ conversation_id: string; messages: RestoredMessage[] }>(
+        `/api/conversation/${encodeURIComponent(convId)}`
+      )
+      .then(({ data }) => {
+        const msgs = data.messages ?? [];
+        if (msgs.length === 0) return; // empty conv — keep id, no replay
+        const store = useAppStore.getState();
+        for (const m of msgs) {
+          if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") continue;
+          store.addMessage({
+            role: m.role,
+            content: m.content,
+            timestamp: Date.now(),
+          });
+        }
+        store.addMessage({
+          role: "system",
+          content: `Restored conversation (${msgs.length} messages).`,
+          timestamp: Date.now(),
+        });
+      })
+      .catch(() => {
+        // Stored id no longer exists on the server — clear it so the next
+        // send creates a fresh conversation.
+        useAppStore.getState().setConversationId(null);
+      });
+  }, []);
 
   // Report frontend errors to server
   useEffect(() => {

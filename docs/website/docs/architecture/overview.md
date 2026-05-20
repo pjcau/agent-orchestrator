@@ -22,8 +22,12 @@ Current agent systems (Claude Code, Cursor, Copilot Workspace) are tightly coupl
 | **Agent** | Autonomous unit with role, tools, provider. Stateless between tasks. |
 | **Skill** | Reusable capability. Provider-independent. |
 | **Orchestrator** | Coordinates agents, routes tasks, enforces anti-stall. |
-| **Cooperation** | Inter-agent delegation, artifact sharing, conflict resolution. |
+| **Cooperation** | Inter-agent delegation, artifact sharing, conflict resolution (typed messages + spec). |
 | **StateGraph** | LangGraph-inspired directed graph engine for orchestration flows. |
+| **KnowledgeStore** *(P1)* | Vector store + embedder + chunker for retrieval-augmented generation. Per-agent / shared / per-user namespaces. |
+| **Guardrail** *(P3)* | Pre/post-LLM input and output checks (PII, secrets, prompt injection, schema, cost). |
+| **Evaluator** *(P2)* | LLM-judge + rubric framework with golden datasets and a CLI runner. |
+| **PersonalizedMemory** *(P4)* | Per-user namespace facade over the existing store with system-prompt injection and GDPR wipe. |
 
 ## Agent Team
 

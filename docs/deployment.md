@@ -191,6 +191,8 @@ Only `dashboard` and `aws-cost-exporter` are force-recreated on deploy. Stateful
 
 - **Tempo**: trace backend container (ports 3200 Tempo API, 4318 OTLP HTTP, 7-day retention). Defined in `docker-compose.prod.yml`.
 - **`OTEL_EXPORTER_OTLP_ENDPOINT`**: set on the `dashboard` container (e.g. `http://tempo:4318`) to enable trace export. Omit to disable tracing (graceful no-op).
+- **Langfuse (optional)**: set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` on the dashboard container to enable the Langfuse LLM-native trace sink. Optionally set `LANGFUSE_HOST` (default: `https://cloud.langfuse.com`). Requires `pip install "agent-orchestrator[langfuse]"` in the dashboard image. See [observability-upgrade.md § 12](observability-upgrade.md#12-langfuse--phoenix-optional-llm-native-sinks).
+- **Phoenix (optional)**: set `PHOENIX_COLLECTOR_ENDPOINT` (default: `http://localhost:6006`) and optionally `PHOENIX_API_KEY` to enable the Arize Phoenix OTLP sink. Requires `pip install "agent-orchestrator[phoenix]"`. See [observability-upgrade.md § 12](observability-upgrade.md#12-langfuse--phoenix-optional-llm-native-sinks).
 - **Postgres password sync**: `ALTER USER` runs on every deploy to fix first-init password mismatch.
 - **Nginx timeout**: 600 s (10 min) for long team runs.
 - **`BASE_URL`**: `https://agents-orchestrator.com` (domain, not IP — required for OAuth callbacks).

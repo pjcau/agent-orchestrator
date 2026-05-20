@@ -487,7 +487,7 @@ async def smart_route(request) -> str:
 | SSE streaming endpoint | New | **Critical** | `GET /api/runs/{run_id}/stream` returning `text/event-stream`. Wires `CompiledGraph.astream()` to HTTP. Supports `stream_mode` param (events/values/messages). No persistent WebSocket required. |
 | HITL resume endpoint | New | **Critical** | `POST /api/runs/{run_id}/resume` accepting `{human_input: {...}}`. Resumes interrupted graphs from checkpoint. Returns new SSE stream for continued execution. |
 | Run management | New | High | `POST /api/runs` to create a run, `GET /api/runs/{run_id}` for status. Run registry with TTL eviction. |
-| Frontend SSE client | New | High | `EventSource` in app.js consuming SSE stream. Fallback to existing WebSocket for browsers without SSE. |
+| Frontend SSE client | New | High | `EventSource` consumer in `frontend/src/hooks/useSSE.ts` and `useWebSocket.ts`. Falls back to WebSocket for browsers without SSE. |
 | Configurable HITL | New | Medium | `hitl_config` parameter: enable/disable HITL per graph, configurable timeout, auto-approve option. |
 
 ### Sprint 2: UI Components (DeepFlow-Inspired)
@@ -540,7 +540,7 @@ async def smart_route(request) -> str:
 |------|--------|----------|--------|
 | Extract `agent_runtime.py` module | New | High | Move WebSocket streaming, `run_agent()`, `run_team()`, graph execution into a separate FastAPI router module. |
 | Extract `gateway_api.py` module | New | High | Move REST management endpoints (config, users, jobs, MCP, metrics) into a separate router module. |
-| Static file serving separation | New | Medium | Serve `dashboard/static/` via nginx directly in production (bypass FastAPI for static assets). |
+| Static file serving separation | New | Medium | Serve `frontend/dist/` via nginx directly in production (bypass FastAPI for static assets). |
 | Multi-process docker-compose | New | Medium | Optional `docker-compose.split.yml` with agent-runtime, gateway-api, and nginx as separate services. |
 | Shared state via Redis | New | Low | When running as separate processes, share event bus and session state via Redis pub/sub. |
 
@@ -552,6 +552,113 @@ async def smart_route(request) -> str:
 - MCP client connects to at least 2 external servers (GitHub, filesystem)
 - Cross-thread memory persisted to PostgreSQL
 - App split into at least 2 independent router modules
+
+---
+
+## v1.3 — Q1+Q2 Sprint (May 2026, shipped)
+
+Six priorities (P1–P6) from the harnessed-LLM-agent reference matrix, parallelised across 5 worktree agents and converged into `main` in a single afternoon.
+
+| Priority | Status | Where it lives |
+|---|---|---|
+| P1 — Semantic Knowledge / RAG | ✅ shipped | `core/knowledge/`, `skills/retrieval_skill.py`, `dashboard/knowledge_routes.py`, RAG toggle in `frontend/src/components/chat/ChatInput.tsx` |
+| P2 — Evaluator framework | ✅ shipped | `core/evaluator.py`, `evals/datasets/smoke.json`, `evals/runners/cli.py`, `dashboard/evals_routes.py` |
+| P3 — Guardrails layer | ✅ shipped | `core/guardrails.py` (PII / Secrets / PromptInjection / Schema / Cost) |
+| P4 — Personalized Memory | ✅ shipped | `core/personalized_memory.py`, `skills/profile_extractor_skill.py`, `dashboard/personalized_memory_routes.py` |
+| P5a — Cooperation typed messages | ✅ shipped | `core/cooperation_messages.py` + `docs/cooperation-protocol.md` |
+| P5b — A2A adapter | ⚠ parked | spec churn (Apr 2026) — un-parked in v1.4 |
+| P6 — Observability sinks | ✅ shipped | `core/observability/{langfuse_exporter,phoenix_exporter}.py` |
+
+**Numbers**: reference-matrix coverage 82 % → **95 %** (18/19 ✅). Test count 1865 → **2065** (+200).
+
+Full per-priority cards with try-it commands: [website roadmap → Q1+Q2 sprint](https://pjcau.github.io/agent-orchestrator/docs/roadmap/q1q2-sprint).
+
+### v1.3 KPIs
+
+- 18 of 19 reference-matrix components ✅ (only A2A adapter still ⚠)
+- RAG namespaces: `("shared",)`, `("agent", name)`, `("user", id)` all in production
+- 3 new optional extras shipped: `[rag]`, `[langfuse]`, `[phoenix]`
+- 200 new tests passing, zero regressions
+
+---
+
+## v1.4 — External Reference Gap Closure (Q3 2026, planned)
+
+Cross-analysis of `analysis/{deepflow,langgraph,harnessed-llm-agent}` after grep-verifying every candidate against `src/`. The first draft of v1.4 listed 16 items; **10 were already shipped** and pruned. The 6 surviving items below are confirmed missing.
+
+### Confirmed shipped (do NOT re-do)
+
+Audit trail from the pruning pass — these were on the original v1.4 draft but already live on `main`: loop detection (`core/loop_detection.py`), sandboxed execution (`core/sandbox.py` + `skills/sandboxed_shell.py`), progressive skill loading (`skills/skill_loader.py`), structured clarification (`core/clarification.py` + `skills/clarification_skill.py`), dangling tool-call recovery (`core/tool_recovery.py`), typed channels (`core/channels.py`), per-node `CachePolicy` (`core/cache.py`), skill middleware chain (`core/skill.py`), `RetryPolicy` + circuit breaker (`core/resilience.py`), conformance test suite (`core/conformance.py`), `tool_description` parameter (`core/skill.py`), configurable summarisation triggers (`core/conversation.py::SummarizationConfig`), config versioning (`core/yaml_config.py`), memory upload filter (`core/memory_filter.py`).
+
+### Genuinely missing
+
+#### P1 — Must-have
+
+| Item | Why it matters | Where it will live |
+|---|---|---|
+| **A2A adapter (un-park P5b)** | Closes the 19th match-matrix row — bidirectional bridge so Google A2A peers appear as local cooperation agents and vice-versa. Builds on `core/cooperation_messages.py`. | `core/cooperation/a2a_adapter.py` + `/api/a2a/` |
+| **Managed values (computed state)** | LangGraph-style read-only injections (`step_count`, `remaining_steps`, `interrupt_ids`, `is_final_step`) — never checkpointed. Lets nodes self-throttle without polluting `State`. | new `core/managed_values.py` + Pregel-loop hook in `core/graph.py` |
+
+#### P2 — Nice-to-have
+
+| Item | Why it matters | Where it will live |
+|---|---|---|
+| **Personalized Memory dashboard UI** | REST endpoints exist since v1.3.0 P4 but no React page consumes them (verified). Closes the loop on P4. | `frontend/src/components/memory/UserMemoryPanel.tsx` |
+| **Granular stream modes** | `dashboard/sse.py` only ships 2 of LangGraph's 7 modes (`events`, `values`). Add `updates`, `messages`, `tasks`, `debug`, `custom`. Reduces frontend filtering load. | `dashboard/sse.py` + frontend selector |
+
+#### P3 — Optional
+
+| Item | Why it matters | Where it will live |
+|---|---|---|
+| **Content-addressed checkpoint blobs** | Dedupe large state values by SHA-256 in `PostgresCheckpointer`. 5-20× storage reduction on long conversations. | `core/store_postgres.py` |
+| **Structured deprecation annotations** | `@deprecated(since=…, removed_in=…, migration=…)` decorator + auto-generated `docs/deprecations.md`. Pre-requisite for any 2.x cleanup. | new `core/deprecation.py` |
+
+### v1.4 KPIs
+
+- Reference-matrix coverage: 18/19 → **19/19 ✅**
+- LangGraph stream-mode coverage: 2/7 → **7/7**
+- Personalized Memory: REST-only → REST + UI
+- A2A protocol: not supported → bidirectional adapter (round-trip with one external A2A peer)
+
+Full design + sprint shape: [website roadmap → v1.4](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v140-gap-closure).
+
+---
+
+## v1.5 P1 — Workspace Repair Loop (Q3 2026, in progress)
+
+Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learning-path-tests/2026-05-16_task-tracker.md` (a single `psycopg<3` typo dropped the score from ~79 to 32.5/100). See `docs/architecture-repair-loop.md` for the full design.
+
+### Phase status (7 phases)
+
+| Phase | Status | What it ships |
+|---|---|---|
+| 1 | ✅ Done | Design doc |
+| 2 | ✅ Done | `VerificationGate` + 3 verifiers (Syntax / Encoding / Dependency) |
+| 3 | ✅ Done | `RepairLoop` harness (max 5 attempts, $0.50 cumulative cap, signature memory) |
+| 4 | ✅ Done | `FailurePatternRegistry` + bundled YAML (`pip_pin_repair`, `unicode_unescape`, `noop`) |
+| 5 | ✅ Done | Wiring into `/api/team/run` (**ON by default** since Phase 7 — opt out via `REPAIR_LOOP_ENABLED=false`) |
+| 6 | ✅ Done | Feature maps + roadmap sync |
+| 7 | ✅ Done | `/orchestrator-learning-path-test` first run (49/100 vs 32.5 baseline; gaps closed in 7.1-7.4 below) |
+| 7.1 | ✅ Done | `ImportVerifier` + `requirements_append` auto-fix (catches `passlib` / `python-jose` style missing-dep failures) |
+| 7.2 | ✅ Done | `WorkspaceCoherenceVerifier` (catches `docker-compose.yml` vs `database.py` `DATABASE_URL` mismatches) |
+| 7.3 | ✅ Done | React UI surfaces the `repair: {…}` summary as a system message |
+| 7.4 | ✅ Done | Bundled chain extended from 3 → 5 verifiers |
+| 7.5 | ✅ Done | Benchmark re-run with the 5-verifier chain — 71.2/100 (+22.2 vs run (b)), see `docs/learning-path-tests/2026-05-16c_repair-loop-v2.md` |
+| 7.6 | ✅ Done | `ImportVerifier` alias-map fix: `psycopg2 ↔ psycopg2-binary` interchangeably (regression from run (d) where the auto-fix appended bare `psycopg2`, breaking pip install) |
+| 7.7 | ✅ Done | Abstraction-level fix for the whole "static verifier said passed but workspace doesn't run" class: (a) `RuntimeSmokeVerifier` as ground-truth tier (runs actual `pip install` + `python -c "import X"` in a hashed/cached venv, last in the cheap-first chain so only fires when the static chain is clean), and (b) post-condition guard in `RepairLoop._try_auto_fix` that reverts every touched file if the failure count strictly increases after the fix. |
+| 7.8 | ✅ Done | Benchmark re-run (e): **74.2/100 on iter 0 alone** (vs 48.8 in (d) with 6 iters). Runtime 0 → 20/20. Iter 1 hung server-side — surfaced a cache-miss-on-every-retry issue when `requirements.txt` mutates. See `docs/learning-path-tests/2026-05-16e_weather-portal-v2.md`. |
+| 7.9 | ✅ Done | All 3 findings from run (e) addressed: (a) `RepairLoop.max_wall_s` cap + `aborted_time` status + `repair.aborted{reason:"time"}` event; (b) `verifier.finished` event now carries `duration_ms`; (c) smoke verifier cache keyed by canonical normalised package set (formatting/version edits no longer invalidate), with strict-subset delta install via `cp -a --reflink=auto` + `pip install <delta>`. |
+| 7.10 | ✅ Done | Benchmark re-run (f): **82.0/100 — new all-time high** (vs 74.2 in (e), 32.5 in (a)). All 6 iters completed; iter 1 (which hung in (e)) ran cleanly. 1 auto-fix triggered. Validates Phase 7.9 end-to-end. See `docs/learning-path-tests/2026-05-16f_weather-portal-v3.md`. |
+| 7.11 | ✅ Done | Two new verifiers added to address the 2026-05-16(g) three.js-space-app failure class: (a) `EntrypointVerifier` actually launches the Dockerfile CMD / compose `command:` (uvicorn) with a health probe — catches relative-import bugs and startup crashes that bare-import probes miss; (b) `E2ESmokeVerifier` (opt-in via `REPAIR_LOOP_E2E_ENABLED=true`) opens the frontend in headless Chromium via Playwright and captures console errors + failed network requests — catches frontend/backend integration failures by construction. Bundled chain grows 6 → 8. |
+| 7.12 | ⏳ Pending | Re-run the three.js-space-app benchmark with Entrypoint + E2E (env-gated) active |
+
+### v1.5 P1 KPIs
+
+- Confidence score on the 2026-05-16 baseline: **32.5 → ~85** (estimate; validated in Phase 7).
+- Median overhead per `team_run`: target < 15 s for the verifier chain.
+- LLM-call-free auto-fix coverage: at least 1 in 3 first-attempt failures resolved deterministically by the pattern registry.
+
+Full design + per-phase deliverables: [website roadmap → v1.5](https://pjcau.github.io/agent-orchestrator/docs/roadmap/v150-repair-loop).
 
 ---
 

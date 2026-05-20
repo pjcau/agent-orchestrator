@@ -156,6 +156,17 @@ from .store import (
     NAMESPACE_SEP,
 )
 from .modality import Modality, detect_modality, record_detection
+from .evaluator import (
+    EvalCase,
+    EvalRun,
+    EvalScore,
+    EvalReport,
+    Evaluator,
+    RubricEvaluator,
+    LLMJudge,
+    EvalSuite,
+    JsonDataset,
+)
 
 __all__ = [
     "Provider",
@@ -320,6 +331,16 @@ __all__ = [
     "Modality",
     "detect_modality",
     "record_detection",
+    # P2 — Evaluator Framework
+    "EvalCase",
+    "EvalRun",
+    "EvalScore",
+    "EvalReport",
+    "Evaluator",
+    "RubricEvaluator",
+    "LLMJudge",
+    "EvalSuite",
+    "JsonDataset",
     # v1.4 — Memory Upload Filtering
     "MemoryFilter",
     "SESSION_FILE_PATTERNS",

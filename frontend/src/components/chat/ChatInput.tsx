@@ -1,5 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import type { ModelsResponse } from "@/api/types";
+import { WorkspaceFilePicker } from "@/components/files/WorkspaceFilePicker";
+import { useAppStore } from "@/stores/useAppStore";
+import apiClient from "@/api/client";
+import type { AxiosError } from "axios";
 
 export type ExecMode = "multi-agent" | "agent" | "prompt";
 
@@ -13,8 +17,16 @@ interface ChatInputProps {
     provider: "openrouter" | "ollama";
     useStreaming: boolean;
     fileContext: string;
+    ragEnabled: boolean;
+    ragNamespace: string;
   }) => void;
   onNewChat: () => void;
+  /** When non-null, ChatInput sets its textarea to this value (from preset). */
+  presetText?: string | null;
+  /** Called after the preset text has been consumed so parent can clear it. */
+  onPresetConsumed?: () => void;
+  /** Notifies parent whenever the derived fileContext string changes. */
+  onFileContextChange?: (ctx: string) => void;
 }
 
 /** Detect provider from model name */
@@ -22,19 +34,57 @@ function detectProvider(modelName: string): "openrouter" | "ollama" {
   return modelName.includes("/") ? "openrouter" : "ollama";
 }
 
-/** Attached file state */
-interface AttachedFile {
-  path: string;
-  content: string;
+/** Format a byte count as a short human-readable string. */
+export function formatBytes(n: number | undefined): string {
+  if (!n || n <= 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputProps) {
+/** Single-letter category for the chip badge. */
+function fileKindBadge(kind: string | undefined, path: string): string {
+  const k = (kind ?? "").toLowerCase();
+  if (k === "pdf") return "PDF";
+  if (k === "excel" || k === "xlsx" || k === "xls") return "XLS";
+  if (k === "csv") return "CSV";
+  if (k === "docx") return "DOC";
+  if (k === "pptx") return "PPT";
+  if (k === "html") return "HTML";
+  if (k === "txt" || k.startsWith("text/")) return "TXT";
+  if (k === "image" || k.startsWith("image/")) return "IMG";
+  // Fallback to extension
+  const m = path.match(/\.([a-z0-9]{1,5})$/i);
+  return m ? m[1].toUpperCase() : "FILE";
+}
+
+export function ChatInput({
+  models,
+  isDisabled,
+  onSend,
+  onNewChat,
+  presetText,
+  onPresetConsumed,
+  onFileContextChange,
+}: ChatInputProps) {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<ExecMode>("multi-agent");
   const [provider, setProvider] = useState<"openrouter" | "ollama">("openrouter");
   const [model, setModel] = useState("");
   const [useStreaming, setUseStreaming] = useState(true);
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  // attachedFiles lives in the store so the global Reset action can clear it.
+  const attachedFiles = useAppStore((s) => s.attachedFiles);
+  const addAttachedFile = useAppStore((s) => s.addAttachedFile);
+  const removeAttachedFileAt = useAppStore((s) => s.removeAttachedFileAt);
+  const clearAttachedFiles = useAppStore((s) => s.clearAttachedFiles);
+  // RAG preferences live in the store and survive Reset.
+  const ragEnabled = useAppStore((s) => s.ragEnabled);
+  const ragNamespace = useAppStore((s) => s.ragNamespace);
+  const setRagEnabled = useAppStore((s) => s.setRagEnabled);
+  const setRagNamespace = useAppStore((s) => s.setRagNamespace);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadingName, setUploadingName] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first available model when provider changes or models load
@@ -45,6 +95,23 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
       setModel(list[0].name);
     }
   }, [models, provider, model]);
+
+  // Apply preset text into textarea when parent sets it
+  useEffect(() => {
+    if (presetText != null) {
+      setText(presetText);
+      onPresetConsumed?.();
+      textareaRef.current?.focus();
+    }
+  }, [presetText, onPresetConsumed]);
+
+  // Notify parent whenever the derived fileContext changes
+  useEffect(() => {
+    const ctx = attachedFiles
+      .map((f) => `--- ${f.path} ---\n${f.content}`)
+      .join("\n\n");
+    onFileContextChange?.(ctx);
+  }, [attachedFiles, onFileContextChange]);
 
   const handleProviderChange = (p: "openrouter" | "ollama") => {
     setProvider(p);
@@ -73,12 +140,12 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
       .map((f) => `--- ${f.path} ---\n${f.content}`)
       .join("\n\n");
 
-    onSend({ text: trimmed, mode, model, provider, useStreaming, fileContext });
+    onSend({ text: trimmed, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace });
     setText("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming]);
+  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming, ragEnabled, ragNamespace]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -87,21 +154,64 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
     }
   };
 
-  const handleFileAttach = async () => {
-    // Simple file input trigger
+  /**
+   * Upload a local file to /api/upload (multipart). The server runs the file
+   * through DocumentConverter and returns markdown text suitable for the LLM
+   * (PDFs, CSVs, .docx, .xlsx, …). Replaces the previous file.text() path
+   * which was binary-unsafe.
+   */
+  const uploadFile = useCallback(async (file: File) => {
+    setUploadError(null);
+    setUploadingName(file.name);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const resp = await apiClient.post<{
+        success: boolean;
+        filename: string;
+        file_type?: string;
+        markdown_content?: string;
+        markdown_path?: string;
+        page_count?: number | null;
+        row_count?: number | null;
+        error?: string;
+      }>("/api/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const data = resp.data;
+      if (!data.success) {
+        setUploadError(data.error ?? "Upload failed");
+        return;
+      }
+      addAttachedFile({
+        path: data.filename ?? file.name,
+        content: data.markdown_content ?? "",
+        source: "upload",
+        kind: data.file_type ?? file.type,
+        bytes: file.size,
+        truncated: false,
+      });
+    } catch (err) {
+      const ax = err as AxiosError<{ error?: string }>;
+      const serverMsg =
+        (ax.response?.data && (ax.response.data as { error?: string }).error) ||
+        ax.message ||
+        String(err);
+      setUploadError(serverMsg);
+    } finally {
+      setUploadingName(null);
+    }
+  }, [addAttachedFile]);
+
+  const handleFileAttach = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
-      if (!file) return;
-      const content = await file.text();
-      setAttachedFiles((prev) => [
-        ...prev.filter((f) => f.path !== file.name),
-        { path: file.name, content },
-      ]);
+      if (file) uploadFile(file);
     };
     input.click();
-  };
+  }, [uploadFile]);
 
   const paidModels = models?.openrouter.filter((m) => !m.name.includes(":free")) ?? [];
   const freeModels = models?.openrouter.filter((m) => m.name.includes(":free")) ?? [];
@@ -110,28 +220,76 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
   return (
     <div className="chat-input">
       {/* File context bar */}
-      {attachedFiles.length > 0 && (
+      {(attachedFiles.length > 0 || uploadingName || uploadError) && (
         <div className="chat-input__files">
           <span className="chat-input__files-label">Files</span>
-          {attachedFiles.map((f, i) => (
-            <span key={f.path} className="attached-file">
-              <span className="attached-file__name">{f.path}</span>
+          {attachedFiles.map((f, i) => {
+            const sizeLabel = formatBytes(f.bytes);
+            const sourceLabel = f.source === "workspace" ? "ws" : "up";
+            const detail = [sizeLabel, sourceLabel].filter(Boolean).join(" · ");
+            return (
+              <span
+                key={f.path}
+                className="attached-file"
+                title={`${f.path}${detail ? ` (${detail})` : ""}`}
+                data-source={f.source ?? "upload"}
+                data-kind={f.kind ?? ""}
+              >
+                <span className="attached-file__badge">{fileKindBadge(f.kind, f.path)}</span>
+                <span className="attached-file__name">{f.path}</span>
+                {sizeLabel && <span className="attached-file__size">{sizeLabel}</span>}
+                {f.truncated && (
+                  <span
+                    className="attached-file__warn"
+                    title="Content was truncated by the server"
+                    aria-label="truncated"
+                  >
+                    !
+                  </span>
+                )}
+                <button
+                  className="attached-file__remove"
+                  onClick={() => removeAttachedFileAt(i)}
+                  aria-label={`Remove ${f.path}`}
+                >
+                  &times;
+                </button>
+              </span>
+            );
+          })}
+          {uploadingName && (
+            <span
+              className="attached-file attached-file--uploading"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="attached-file__spinner" />
+              <span className="attached-file__name">{uploadingName}</span>
+            </span>
+          )}
+          {uploadError && (
+            <span
+              className="attached-file attached-file--error"
+              role="alert"
+            >
+              <span className="attached-file__name">Upload failed: {uploadError}</span>
               <button
                 className="attached-file__remove"
-                onClick={() =>
-                  setAttachedFiles((prev) => prev.filter((_, j) => j !== i))
-                }
+                onClick={() => setUploadError(null)}
+                aria-label="Dismiss error"
               >
                 &times;
               </button>
             </span>
-          ))}
-          <button
-            className="btn-text"
-            onClick={() => setAttachedFiles([])}
-          >
-            Clear
-          </button>
+          )}
+          {attachedFiles.length > 0 && (
+            <button
+              className="btn-text"
+              onClick={clearAttachedFiles}
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
 
@@ -208,6 +366,27 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
             <span>Stream</span>
           </label>
         )}
+
+        <label className="stream-toggle">
+          <input
+            type="checkbox"
+            checked={ragEnabled}
+            onChange={(e) => setRagEnabled(e.target.checked)}
+          />
+          <span>RAG</span>
+        </label>
+
+        {ragEnabled && (
+          <input
+            className="chat-input__rag-ns"
+            type="text"
+            value={ragNamespace}
+            onChange={(e) => setRagNamespace(e.target.value)}
+            placeholder="namespace"
+            aria-label="RAG namespace"
+            title="RAG namespace"
+          />
+        )}
       </div>
 
       {/* Input row */}
@@ -215,10 +394,18 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
         <button
           className="btn-icon"
           onClick={handleFileAttach}
-          title="Attach file"
-          disabled={isDisabled}
+          title="Upload local file (PDF, DOCX, XLSX, CSV, HTML, TXT)"
+          disabled={isDisabled || uploadingName !== null}
         >
           +
+        </button>
+        <button
+          className="btn-icon"
+          onClick={() => setBrowseOpen(true)}
+          title="Browse workspace files"
+          disabled={isDisabled}
+        >
+          B
         </button>
         <textarea
           ref={textareaRef}
@@ -259,6 +446,13 @@ export function ChatInput({ models, isDisabled, onSend, onNewChat }: ChatInputPr
           New Chat
         </button>
       </div>
+
+      {/* Workspace file picker modal */}
+      <WorkspaceFilePicker
+        open={browseOpen}
+        onClose={() => setBrowseOpen(false)}
+        onPick={(file) => addAttachedFile({ ...file, source: "workspace" })}
+      />
     </div>
   );
 }

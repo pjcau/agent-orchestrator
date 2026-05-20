@@ -80,6 +80,16 @@ const config = {
             label: 'Business',
           },
           {
+            to: '/architecture-map',
+            label: 'Architecture Map',
+            position: 'left',
+          },
+          {
+            to: '/feature-map',
+            label: 'Feature Map',
+            position: 'left',
+          },
+          {
             href: 'https://github.com/pjcau/agent-orchestrator',
             label: 'GitHub',
             position: 'right',

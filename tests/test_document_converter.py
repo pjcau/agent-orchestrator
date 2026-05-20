@@ -129,10 +129,12 @@ async def test_text_empty_file(converter: DocumentConverter, tmp_path: Path):
 @pytest.mark.asyncio
 async def test_unsupported_format_raises_error(converter: DocumentConverter, tmp_path: Path):
     """Unsupported extensions should raise UnsupportedFormatError."""
-    bad_file = tmp_path / "image.png"
-    bad_file.write_bytes(b"\x89PNG")
+    # Use a clearly-unsupported extension. Image extensions (.png, .jpg, …)
+    # are now supported via OCR — see test_image_ocr_* below.
+    bad_file = tmp_path / "archive.zip"
+    bad_file.write_bytes(b"PK\x03\x04")
 
-    with pytest.raises(UnsupportedFormatError, match="Unsupported file format '.png'"):
+    with pytest.raises(UnsupportedFormatError, match="Unsupported file format '.zip'"):
         await converter.convert(str(bad_file))
 
 
@@ -310,8 +312,154 @@ async def test_md_file_written(converter: DocumentConverter, tmp_csv: Path):
 
 def test_supported_types_include_expected_extensions():
     """SUPPORTED_TYPES should include all documented extensions."""
-    expected = {".pdf", ".xlsx", ".xls", ".csv", ".docx", ".pptx", ".html", ".htm", ".txt"}
+    expected = {
+        ".pdf",
+        ".xlsx",
+        ".xls",
+        ".csv",
+        ".docx",
+        ".pptx",
+        ".html",
+        ".htm",
+        ".txt",
+        # Image OCR (solution 1)
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".tiff",
+        ".tif",
+    }
     assert expected.issubset(set(DocumentConverter.SUPPORTED_TYPES.keys()))
+
+
+# ---------------------------------------------------------------------------
+# Image OCR (solution 1)
+# ---------------------------------------------------------------------------
+
+
+import shutil  # noqa: E402
+
+_HAS_TESSERACT_BINARY = shutil.which("tesseract") is not None
+
+
+@pytest.mark.asyncio
+async def test_image_ocr_missing_pytesseract_raises_dependency_error(
+    converter: DocumentConverter, tmp_path: Path
+):
+    """Without pytesseract installed, image OCR raises DependencyMissingError."""
+    img = tmp_path / "photo.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+
+    # Force the import of pytesseract to fail.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _block_pytesseract(name, *args, **kwargs):
+        if name == "pytesseract":
+            raise ImportError("simulated missing pytesseract")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=_block_pytesseract):
+        with pytest.raises(DependencyMissingError) as exc_info:
+            await converter.convert(str(img))
+
+    msg = str(exc_info.value)
+    assert "pytesseract" in msg
+    assert "tesseract" in msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_image_ocr_missing_tesseract_binary_raises_dependency_error(
+    converter: DocumentConverter, tmp_path: Path
+):
+    """When pytesseract is installed but the system binary is missing,
+    DependencyMissingError surfaces a helpful install instruction."""
+    pytest.importorskip("pytesseract")
+    pytest.importorskip("PIL")
+
+    from PIL import Image
+
+    img_path = tmp_path / "tiny.png"
+    Image.new("RGB", (10, 10), color="white").save(img_path)
+
+    import pytesseract
+
+    with patch.object(
+        pytesseract,
+        "image_to_string",
+        side_effect=pytesseract.TesseractNotFoundError(),
+    ):
+        with pytest.raises(DependencyMissingError) as exc_info:
+            await converter.convert(str(img_path))
+
+    msg = str(exc_info.value).lower()
+    assert "tesseract" in msg
+    assert ("apt" in msg) or ("brew" in msg) or ("install" in msg)
+
+
+@pytest.mark.skipif(
+    not _HAS_TESSERACT_BINARY,
+    reason="tesseract system binary is not installed",
+)
+@pytest.mark.asyncio
+async def test_image_ocr_extracts_text_from_image(converter: DocumentConverter, tmp_path: Path):
+    """End-to-end OCR test: render text into an image and verify it's extracted.
+
+    Skipped when the tesseract binary is not on PATH (e.g. some CI runners).
+    """
+    pytest.importorskip("pytesseract")
+    pytest.importorskip("PIL")
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    img_path = tmp_path / "ocr-input.png"
+    img = Image.new("RGB", (300, 80), color="white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 28)
+    except OSError:
+        font = ImageFont.load_default()
+    draw.text((10, 20), "OCR test 1234", fill="black", font=font)
+    img.save(img_path)
+
+    result = await converter.convert(str(img_path))
+
+    assert result.file_type == "image"
+    # OCR output sometimes garbles characters slightly; check digits + a
+    # distinctive substring of the rendered text.
+    md_lower = result.markdown_content.lower()
+    assert "1234" in result.markdown_content
+    assert "ocr" in md_lower
+
+
+@pytest.mark.asyncio
+async def test_image_ocr_no_text_returns_helpful_message(
+    converter: DocumentConverter, tmp_path: Path
+):
+    """An image with no recognisable text yields a clear empty-result message,
+    NOT a misleading hallucinated description."""
+    pytest.importorskip("pytesseract")
+    pytest.importorskip("PIL")
+
+    from PIL import Image
+
+    img_path = tmp_path / "blank.png"
+    Image.new("RGB", (10, 10), color="white").save(img_path)
+
+    import pytesseract
+
+    # Force OCR to return an empty string regardless of binary state.
+    with patch.object(pytesseract, "image_to_string", return_value="   \n  "):
+        result = await converter.convert(str(img_path))
+
+    assert result.file_type == "image"
+    md = result.markdown_content
+    assert "No text could be extracted" in md
+    assert "vision" in md.lower()  # mentions vision-capable models as the alt
 
 
 # ---------------------------------------------------------------------------

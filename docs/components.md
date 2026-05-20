@@ -9,7 +9,7 @@ graph TD
         WS["WebSocket /ws"]
         STREAM["Streaming /ws/stream"]
         TERM["Terminal WS /ws/sandbox/*/terminal"]
-        UI["UI (React/Vite or vanilla JS fallback)"]
+        UI["UI (React/Vite, served from frontend/dist/)"]
         REST --> EB
         WS --> EB
         STREAM --> EB

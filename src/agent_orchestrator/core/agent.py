@@ -6,15 +6,19 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .clarification import ClarificationManager
+from .guardrails import GuardrailBlocked, GuardrailManager
 from .loop_detection import LoopDetector, LoopStatus
 from .metrics import MetricsRegistry
 from .prompt_markers import inject_marker_sections
 from .provider import Message, Provider, Role, ToolDefinition
 from .skill import SkillRegistry
 from .tool_recovery import recover_dangling_tool_calls
+
+if TYPE_CHECKING:
+    from .personalized_memory import PersonalizedMemory
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,10 @@ class Agent:
         loop_detector: LoopDetector | None = None,
         clarification_manager: ClarificationManager | None = None,
         metrics: MetricsRegistry | None = None,
+        guardrails: GuardrailManager | None = None,
+        emit_event: Any | None = None,
+        personalized_memory: "PersonalizedMemory | None" = None,
+        user_id: str | None = None,
     ):
         self.config = config
         self.provider = provider
@@ -81,6 +89,10 @@ class Agent:
         self.loop_detector = loop_detector
         self.clarification_manager = clarification_manager
         self._metrics = metrics
+        self._guardrails = guardrails
+        self._emit_event = emit_event  # optional callable(event_type_str, data_dict)
+        self._personalized_memory = personalized_memory
+        self._user_id = user_id
         self._messages: list[Message] = []
         self._status: TaskStatus = TaskStatus.PENDING
         # Marker-based prompt sections. Applied to `config.role` every time
@@ -106,10 +118,68 @@ class Agent:
             ).inc()
 
     def build_system_prompt(self) -> str:
-        """Return the effective system prompt with all marker sections applied."""
-        if not self._prompt_sections:
-            return self.config.role
-        return inject_marker_sections(self.config.role, self._prompt_sections)
+        """Return the effective system prompt with all marker sections applied.
+
+        When both ``personalized_memory`` and ``user_id`` were supplied at
+        construction time, a ``<user_profile>`` block is appended after any
+        marker-injected sections.  The block is built synchronously from an
+        in-process cache populated by :meth:`_refresh_user_profile_cache`.
+
+        If the cache has not been populated yet (first call), the block is
+        omitted rather than blocking on an async store read.  Call
+        :meth:`prefetch_user_profile` before ``execute()`` when you need the
+        block on the very first turn.
+        """
+        base = self.config.role
+        if self._prompt_sections:
+            base = inject_marker_sections(base, self._prompt_sections)
+
+        profile_block = self._build_user_profile_block()
+        if profile_block:
+            base = base + "\n\n" + profile_block
+
+        return base
+
+    def _build_user_profile_block(self, top_n: int = 5) -> str:
+        """Build the ``<user_profile>`` XML block from the in-process cache.
+
+        Returns an empty string when no profile data is available.
+        """
+        if self._personalized_memory is None or not self._user_id:
+            return ""
+        entries = getattr(self, "_user_profile_cache", None)
+        if not entries:
+            return ""
+        lines: list[str] = []
+        for entry in entries[:top_n]:
+            key = entry.get("key", "")
+            value = entry.get("value", {})
+            lines.append(f"  [{key}]: {value}")
+        inner = "\n".join(lines)
+        return f"<user_profile>\n{inner}\n</user_profile>"
+
+    async def prefetch_user_profile(self, top_n: int = 5) -> None:
+        """Pre-populate the user profile cache from the store.
+
+        Call this once before the first ``execute()`` call when you want the
+        ``<user_profile>`` block to appear on turn 1.  Subsequent calls
+        refresh the cache (e.g. after a profile-extraction skill run).
+
+        Safe to call even when ``personalized_memory`` or ``user_id`` is not
+        set — in that case it is a no-op.
+        """
+        if self._personalized_memory is None or not self._user_id:
+            return
+        try:
+            entries = await self._personalized_memory.list(self._user_id, limit=top_n)
+            self._user_profile_cache: list[dict] = entries
+        except Exception:
+            logger.warning(
+                "Agent '%s': failed to prefetch user profile for user '%s'",
+                self.config.name,
+                self._user_id,
+                exc_info=True,
+            )
 
     async def execute(
         self,
@@ -227,6 +297,29 @@ class Agent:
                 session_id=self.config.name,
             )
 
+            # --- Guardrail: input check ---
+            if self._guardrails:
+                gr_in = await self._guardrails.run_input(self._messages)
+                self._emit_guardrail_event("input", gr_in)
+                if gr_in.action == "block":
+                    raise GuardrailBlocked(
+                        guardrail_name="GuardrailManager",
+                        reason=gr_in.reason,
+                        side="input",
+                    )
+                if gr_in.action == "redact" and gr_in.redacted_text is not None:
+                    # Replace the last user message content with the redacted version.
+                    # The redacted_text covers the combined content; we patch the last
+                    # user message so the conversation stays structurally valid.
+                    for i in range(len(self._messages) - 1, -1, -1):
+                        if self._messages[i].role == Role.USER:
+                            from dataclasses import replace as _dc_replace
+
+                            self._messages[i] = _dc_replace(
+                                self._messages[i], content=gr_in.redacted_text
+                            )
+                            break
+
             completion = await provider.traced_complete(
                 messages=self._messages,
                 tools=tool_defs if tool_defs else None,
@@ -236,6 +329,21 @@ class Agent:
             total_tokens += completion.usage.input_tokens + completion.usage.output_tokens
             total_cost += completion.usage.cost_usd
             steps += 1
+
+            # --- Guardrail: output check ---
+            if self._guardrails and completion.content:
+                gr_out = await self._guardrails.run_output(completion.content)
+                self._emit_guardrail_event("output", gr_out)
+                if gr_out.action == "block":
+                    raise GuardrailBlocked(
+                        guardrail_name="GuardrailManager",
+                        reason=gr_out.reason,
+                        side="output",
+                    )
+                if gr_out.action == "redact" and gr_out.redacted_text is not None:
+                    from dataclasses import replace as _dc_replace
+
+                    completion = _dc_replace(completion, content=gr_out.redacted_text)
 
             # No tool calls — agent is done
             if not completion.tool_calls:
@@ -339,6 +447,30 @@ class Agent:
         span.set_attribute("agent.status", result.status.value)
         span.end()
         return result
+
+    def _emit_guardrail_event(self, side: str, result: Any) -> None:
+        """Emit a guardrail event via the injected emitter (best-effort)."""
+        if self._emit_event is None:
+            return
+        try:
+            action = result.action
+            if action == "block":
+                event_type = "guardrail.blocked"
+            elif action == "redact":
+                event_type = "guardrail.redacted"
+            else:
+                event_type = "guardrail.checked"
+            self._emit_event(
+                event_type,
+                {
+                    "agent": self.config.name,
+                    "side": side,
+                    "action": action,
+                    "reason": result.reason,
+                },
+            )
+        except Exception:
+            pass  # never let event emission break agent execution
 
     def _get_tool_definitions(self) -> list[ToolDefinition]:
         """Get tool definitions for allowed skills only."""

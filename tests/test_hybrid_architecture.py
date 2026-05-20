@@ -103,8 +103,8 @@ class TestRustCrateStructure:
         assert "maturin" in content
 
 
-class TestAppDualServe:
-    """Verify app.py has dual-serve logic for React/vanilla JS."""
+class TestAppReactServe:
+    """Verify app.py serves the React frontend from frontend/dist/."""
 
     APP_PY = ROOT / "src" / "agent_orchestrator" / "dashboard" / "app.py"
 
@@ -112,12 +112,12 @@ class TestAppDualServe:
         content = self.APP_PY.read_text()
         assert "react_dist" in content
         assert "frontend" in content
+        assert "/assets" in content
 
-    def test_fallback_to_static(self):
+    def test_no_legacy_static_dir(self):
+        """STATIC_DIR was removed when the vanilla UI was deleted."""
         content = self.APP_PY.read_text()
-        assert "STATIC_DIR" in content
-        # Both paths should serve index.html
-        assert content.count("index.html") >= 2
+        assert "STATIC_DIR" not in content
 
 
 class TestFallbackImports:

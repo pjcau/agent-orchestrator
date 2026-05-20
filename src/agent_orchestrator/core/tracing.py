@@ -12,6 +12,13 @@ Configuration (environment variables):
     OTEL_EXPORTER_OTLP_ENDPOINT  — e.g. http://localhost:4318
                                     Empty or unset → tracing disabled (no-op)
     OTEL_SERVICE_NAME            — overrides the default service name
+
+Optional LLM-native sinks (additive — do not disable Tempo):
+    Langfuse:  set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY (+ optional LANGFUSE_HOST)
+    Phoenix:   set PHOENIX_COLLECTOR_ENDPOINT (+ optional PHOENIX_API_KEY)
+
+    Both sinks are auto-registered at the end of setup_tracing() when their
+    respective env vars are present.  See core/observability/ for details.
 """
 
 from __future__ import annotations
@@ -91,6 +98,17 @@ def setup_tracing(
 
     trace.set_tracer_provider(provider)
     _tracer = trace.get_tracer(service_name)
+
+    # Wire optional LLM-native sinks (Langfuse, Phoenix) — purely additive.
+    # Import is deferred to avoid circular dependencies and to remain safe when
+    # the observability sub-package's optional dependencies are absent.
+    try:
+        from agent_orchestrator.core.observability import register_optional_exporters
+
+        register_optional_exporters()
+    except Exception:  # pragma: no cover — defensive; never raises in practice
+        pass
+
     return _tracer
 
 

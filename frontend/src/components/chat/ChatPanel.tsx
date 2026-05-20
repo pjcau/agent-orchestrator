@@ -1,10 +1,11 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useAppStore } from "@/stores/useAppStore";
 import { useModels, useNewConversation } from "@/api/hooks";
 import { useWebSocketContext } from "@/hooks/useWebSocketContext";
 import { ChatMessageItem } from "./ChatMessage";
 import { StreamingMessage } from "./StreamingMessage";
 import { ChatInput, type ExecMode } from "./ChatInput";
+import { PresetsBar } from "@/components/prompts/PresetsBar";
 import apiClient from "@/api/client";
 import type { ChatMessage } from "@/api/types";
 
@@ -24,6 +25,12 @@ export function ChatPanel() {
   const { sendStreamPrompt, isStreamWsReady } = useWebSocketContext();
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const isRunning = useAppStore((s) => s.isStreaming);
+
+  // Preset text injection: when a preset is applied, we store it and pass it
+  // down to ChatInput so it can set its textarea value.
+  const [presetText, setPresetText] = useState<string | null>(null);
+  // fileContext is tracked here so PresetsBar can use it for {context} substitution.
+  const [fileContext, setFileContext] = useState("");
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -49,8 +56,48 @@ export function ChatPanel() {
       provider: "openrouter" | "ollama";
       useStreaming: boolean;
       fileContext: string;
+      ragEnabled: boolean;
+      ragNamespace: string;
     }) => {
-      const { text, mode, model, provider, useStreaming, fileContext } = opts;
+      const { text, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace } = opts;
+
+      // Auto-create a conversation on first send so multi-turn memory works
+      // without the user having to click "New Chat" first. The id is then
+      // persisted in localStorage by setConversationId.
+      let activeConvId = conversationId;
+      if (!activeConvId) {
+        try {
+          const created = await newConversation.mutateAsync();
+          activeConvId = created.conversation_id;
+          setConversationId(activeConvId);
+        } catch (err) {
+          console.warn("Auto-create conversation failed; sending without persistence", err);
+        }
+      }
+
+      // Surface the files actually being sent so the user can confirm what
+      // the model is seeing — D (transparency).
+      const filesAtSend = useAppStore.getState().attachedFiles;
+      if (filesAtSend.length > 0) {
+        const summary = filesAtSend
+          .map((f) => {
+            const size = f.bytes
+              ? f.bytes < 1024
+                ? `${f.bytes} B`
+                : f.bytes < 1024 * 1024
+                  ? `${(f.bytes / 1024).toFixed(1)} KB`
+                  : `${(f.bytes / (1024 * 1024)).toFixed(1)} MB`
+              : "";
+            const source = f.source === "workspace" ? "workspace" : "upload";
+            return `${f.path}${size ? ` (${size})` : ""} [${source}]`;
+          })
+          .join(", ");
+        addMessage({
+          role: "system",
+          content: `Sent with ${filesAtSend.length} file${filesAtSend.length > 1 ? "s" : ""}: ${summary}`,
+          timestamp: Date.now(),
+        });
+      }
 
       // Add user message to chat
       addMessage({ role: "user", content: text, timestamp: Date.now() });
@@ -65,7 +112,7 @@ export function ChatPanel() {
               task: text,
               model,
               provider,
-              conversation_id: conversationId,
+              conversation_id: activeConvId,
             }
           );
           if (resp.data.job_id) {
@@ -116,13 +163,14 @@ export function ChatPanel() {
         } else {
           // Simple prompt
           if (useStreaming && isStreamWsReady()) {
-            // WebSocket streaming
+            // WebSocket streaming — RAG fields forwarded to backend
             sendStreamPrompt({
               prompt: fileContext ? `${text}\n\n\`\`\`\n${fileContext}\n\`\`\`` : text,
               model,
               provider,
-              conversation_id: conversationId,
+              conversation_id: activeConvId,
               file_context: fileContext,
+              ...(ragEnabled ? { rag_enabled: true, rag_namespace: ragNamespace, rag_k: 5 } : {}),
             });
             // isStreaming stays true until stream finishes
           } else {
@@ -133,14 +181,40 @@ export function ChatPanel() {
               error?: string;
               usage?: { input_tokens?: number; output_tokens?: number; model?: string };
               elapsed_s?: number;
+              rag?: {
+                namespace: string;
+                hits: number;
+                embedding_model: string;
+                scores: number[];
+                error?: string;
+              };
             }>("/api/prompt", {
               prompt: fileContext ? `${text}\n\n\`\`\`\n${fileContext}\n\`\`\`` : text,
               model,
               provider,
               graph_type: "chat",
-              conversation_id: conversationId,
+              conversation_id: activeConvId,
               file_context: fileContext,
+              ...(ragEnabled ? { rag_enabled: true, rag_namespace: ragNamespace, rag_k: 5 } : {}),
             });
+
+            // Show RAG system bubble before the assistant reply
+            if (resp.data.rag) {
+              const r = resp.data.rag;
+              if (r.error) {
+                addMessage({
+                  role: "system",
+                  content: `RAG skipped: ${r.error}`,
+                  timestamp: Date.now(),
+                });
+              } else {
+                addMessage({
+                  role: "system",
+                  content: `RAG: ${r.namespace} · ${r.hits} chunk(s) retrieved (${r.embedding_model})`,
+                  timestamp: Date.now(),
+                });
+              }
+            }
 
             if (resp.data.success) {
               addMessage({
@@ -165,7 +239,16 @@ export function ChatPanel() {
         useAppStore.setState({ isStreaming: false });
       }
     },
-    [addMessage, conversationId, sendStreamPrompt, isStreamWsReady, setPendingTeamJob]
+    [
+      addMessage,
+      conversationId,
+      newConversation,
+      setConversationId,
+      sendStreamPrompt,
+      isStreamWsReady,
+      setPendingTeamJob,
+    ]
+    // ragEnabled and ragNamespace come from opts parameter, not closure
   );
 
   return (
@@ -193,11 +276,16 @@ export function ChatPanel() {
         <div ref={chatBottomRef} />
       </div>
 
+      <PresetsBar onApply={setPresetText} fileContext={fileContext} />
+
       <ChatInput
         models={models}
         isDisabled={isRunning}
         onSend={handleSend}
         onNewChat={handleNewChat}
+        presetText={presetText}
+        onPresetConsumed={() => setPresetText(null)}
+        onFileContextChange={setFileContext}
       />
     </div>
   );

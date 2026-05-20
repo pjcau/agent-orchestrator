@@ -7,6 +7,9 @@ export interface PromptRequest {
   graph_type?: string;
   conversation_id?: string | null;
   file_context?: string;
+  rag_enabled?: boolean;
+  rag_namespace?: string;
+  rag_k?: number;
 }
 
 export interface PromptResponse {
@@ -17,6 +20,13 @@ export interface PromptResponse {
   agent_costs?: Record<string, AgentCost>;
   usage?: UsageInfo;
   elapsed_s?: number;
+  rag?: {
+    namespace: string;
+    hits: number;
+    embedding_model: string;
+    scores: number[];
+    error?: string;
+  };
 }
 
 export interface AgentRunRequest {
@@ -69,6 +79,27 @@ export interface TeamRunResult {
     status: string;
     detail: string;
   }>;
+  /**
+   * Repair-loop summary, present when REPAIR_LOOP_ENABLED is on (default
+   * since v1.5 P1 Phase 7). Surfaced by the dashboard as a system message
+   * so operators see whether the verifier chain kicked in.
+   */
+  repair?: RepairSummary;
+}
+
+export interface RepairSummary {
+  status: "passed" | "partial" | "aborted_budget" | "aborted_cost";
+  attempts: number;
+  cumulative_cost_usd: number;
+  final_passed: boolean;
+  final_failures: Array<{
+    verifier: string;
+    category: string;
+    message: string;
+    file?: string | null;
+    signature: string;
+  }>;
+  auto_fixed_signatures: string[];
 }
 
 export interface AgentCost {
@@ -380,4 +411,53 @@ export interface CompactionStats {
   tokens_saved: number;
   messages_compacted: number;
   last_compaction_ratio: number;
+}
+
+// ── Knowledge / RAG (P1) ────────────────────────────────────────────────
+
+export interface KnowledgeIngestRequest {
+  /** Text to embed and store. */
+  text: string;
+  /** Target namespace (default: "shared"). */
+  namespace?: string;
+  /** Arbitrary metadata attached to the chunk. */
+  metadata?: Record<string, unknown>;
+}
+
+export interface KnowledgeSearchRequest {
+  /** Natural-language query to embed and search. */
+  query: string;
+  /** Namespace to search in (default: "shared"). */
+  namespace?: string;
+  /** Number of nearest neighbours to return (default: 5). */
+  k?: number;
+}
+
+export interface KnowledgeSearchHit {
+  text: string;
+  score: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface KnowledgeSearchResponse {
+  hits: KnowledgeSearchHit[];
+  namespace: string;
+  embedding_model: string;
+}
+
+export interface NamespaceInfo {
+  name: string;
+  chunk_count: number;
+}
+
+export interface NamespacesResponse {
+  namespaces: NamespaceInfo[];
+}
+
+export interface KnowledgeHealthResponse {
+  status: "ok" | "degraded" | "unavailable";
+  embedding_model: string;
+  store_type: string;
+  namespaces: number;
+  total_chunks: number;
 }

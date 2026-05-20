@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useAppStore } from "@/stores/useAppStore";
+import { useAppStore, STORAGE_KEY_RAG_ENABLED, STORAGE_KEY_RAG_NAMESPACE } from "@/stores/useAppStore";
 import type { OrchestratorEvent, Snapshot } from "@/api/types";
 
 describe("useAppStore", () => {
@@ -247,5 +247,136 @@ describe("useAppStore", () => {
     expect(useAppStore.getState().wsConnected).toBe(false);
     useAppStore.getState().setWsConnected(true);
     expect(useAppStore.getState().wsConnected).toBe(true);
+  });
+
+  describe("conversation id persistence (A2)", () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+      useAppStore.getState().setConversationId(null);
+    });
+
+    it("setConversationId writes to localStorage", () => {
+      useAppStore.getState().setConversationId("conv-abc");
+      expect(window.localStorage.getItem("ao_conv_id")).toBe("conv-abc");
+      expect(useAppStore.getState().conversationId).toBe("conv-abc");
+    });
+
+    it("setConversationId(null) clears localStorage", () => {
+      window.localStorage.setItem("ao_conv_id", "stale-id");
+      useAppStore.getState().setConversationId(null);
+      expect(window.localStorage.getItem("ao_conv_id")).toBeNull();
+      expect(useAppStore.getState().conversationId).toBeNull();
+    });
+
+    it("STORAGE_KEY_CONVERSATION_ID is exported and stable", async () => {
+      const { STORAGE_KEY_CONVERSATION_ID } = await import("@/stores/useAppStore");
+      expect(STORAGE_KEY_CONVERSATION_ID).toBe("ao_conv_id");
+    });
+  });
+
+  describe("attached files slice (B)", () => {
+    beforeEach(() => useAppStore.getState().clearAttachedFiles());
+
+    it("addAttachedFile appends and de-duplicates by path", () => {
+      const store = useAppStore.getState();
+      store.addAttachedFile({ path: "a.txt", content: "1", source: "upload" });
+      store.addAttachedFile({ path: "b.txt", content: "2", source: "upload" });
+      store.addAttachedFile({ path: "a.txt", content: "1-updated", source: "upload" });
+
+      const files = useAppStore.getState().attachedFiles;
+      expect(files).toHaveLength(2);
+      expect(files.find((f) => f.path === "a.txt")?.content).toBe("1-updated");
+    });
+
+    it("removeAttachedFileAt removes by index", () => {
+      const store = useAppStore.getState();
+      store.addAttachedFile({ path: "a.txt", content: "1" });
+      store.addAttachedFile({ path: "b.txt", content: "2" });
+      store.removeAttachedFileAt(0);
+      expect(useAppStore.getState().attachedFiles).toEqual([
+        { path: "b.txt", content: "2" },
+      ]);
+    });
+
+    it("clearAttachedFiles empties the list", () => {
+      const store = useAppStore.getState();
+      store.addAttachedFile({ path: "a.txt", content: "1" });
+      store.clearAttachedFiles();
+      expect(useAppStore.getState().attachedFiles).toEqual([]);
+    });
+  });
+
+  describe("full reset (B)", () => {
+    it("reset clears chat, attachedFiles, conversationId, and localStorage", () => {
+      window.localStorage.setItem("ao_conv_id", "to-be-cleared");
+      const store = useAppStore.getState();
+      store.setConversationId("to-be-cleared");
+      store.addMessage({ role: "user", content: "hi", timestamp: 1 });
+      store.addAttachedFile({ path: "a.txt", content: "x" });
+      store.appendStreamChunk("partial");
+
+      store.reset();
+
+      const after = useAppStore.getState();
+      expect(after.messages).toEqual([]);
+      expect(after.attachedFiles).toEqual([]);
+      expect(after.conversationId).toBeNull();
+      expect(after.streamBuffer).toBe("");
+      expect(after.isStreaming).toBe(false);
+      expect(window.localStorage.getItem("ao_conv_id")).toBeNull();
+    });
+  });
+
+  describe("RAG preferences (P1)", () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+      // Force store to a known RAG state by calling setters
+      useAppStore.getState().setRagEnabled(false);
+      useAppStore.getState().setRagNamespace("shared");
+    });
+
+    it("STORAGE_KEY_RAG_ENABLED and STORAGE_KEY_RAG_NAMESPACE are exported and stable", () => {
+      expect(STORAGE_KEY_RAG_ENABLED).toBe("ao_rag_enabled");
+      expect(STORAGE_KEY_RAG_NAMESPACE).toBe("ao_rag_namespace");
+    });
+
+    it("setRagEnabled(true) writes 'true' to localStorage", () => {
+      useAppStore.getState().setRagEnabled(true);
+      expect(window.localStorage.getItem("ao_rag_enabled")).toBe("true");
+      expect(useAppStore.getState().ragEnabled).toBe(true);
+    });
+
+    it("setRagEnabled(false) writes 'false' to localStorage", () => {
+      useAppStore.getState().setRagEnabled(true);
+      useAppStore.getState().setRagEnabled(false);
+      expect(window.localStorage.getItem("ao_rag_enabled")).toBe("false");
+      expect(useAppStore.getState().ragEnabled).toBe(false);
+    });
+
+    it("setRagNamespace writes to localStorage", () => {
+      useAppStore.getState().setRagNamespace("my-project");
+      expect(window.localStorage.getItem("ao_rag_namespace")).toBe("my-project");
+      expect(useAppStore.getState().ragNamespace).toBe("my-project");
+    });
+
+    it("reset does NOT clear ragEnabled or ragNamespace", () => {
+      useAppStore.getState().setRagEnabled(true);
+      useAppStore.getState().setRagNamespace("project-docs");
+
+      // Also set some session state that SHOULD be cleared
+      useAppStore.getState().addMessage({ role: "user", content: "hi", timestamp: 1 });
+
+      useAppStore.getState().reset();
+
+      const after = useAppStore.getState();
+      // Session state cleared
+      expect(after.messages).toEqual([]);
+      // RAG prefs preserved
+      expect(after.ragEnabled).toBe(true);
+      expect(after.ragNamespace).toBe("project-docs");
+      // localStorage still has RAG values
+      expect(window.localStorage.getItem("ao_rag_enabled")).toBe("true");
+      expect(window.localStorage.getItem("ao_rag_namespace")).toBe("project-docs");
+    });
   });
 });

@@ -8,7 +8,7 @@ Serves:
 - WebSocket at /ws for real-time events
 - WebSocket at /ws/stream for streaming LLM responses
 - REST APIs for models, agents, prompt, files, conversations, presets
-- Static files for the dashboard UI
+- React frontend from frontend/dist/ (built by docker/dashboard/Dockerfile)
 """
 
 from __future__ import annotations
@@ -43,11 +43,12 @@ from .usage_db import UsageDB
 from .alert_webhook import AlertHandler
 from .gateway_api import gateway_router, health_router, metrics_router
 from .agent_runtime_router import runtime_router
+from .knowledge_routes import knowledge_router
+from .evals_routes import evals_router
+from .personalized_memory_routes import memory_router
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
-
-STATIC_DIR = Path(__file__).parent / "static"
 
 # Module-level counter kept for backward compatibility — tests that import
 # _frontend_error_count directly from app will get the counter used by the
@@ -263,6 +264,73 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     app.state.run_manager = run_manager
     app.state.mcp_client_manager = mcp_client_manager
 
+    # ── Personalized Memory (P4) ────────────────────────────────────────
+    # Constructed eagerly using the initial store (InMemory or None).
+    # Startup replaces it with the Postgres-backed instance when DATABASE_URL
+    # is set.  Routes read from app.state.personalized_memory at request time
+    # so they always see the latest store.
+    from ..core.personalized_memory import PersonalizedMemory as _PM
+
+    app.state.personalized_memory = (
+        _PM(store_holder[0], memory_filter=_memory_filter) if store_holder[0] is not None else None
+    )
+
+    # ── Knowledge / RAG (P1) ────────────────────────────────────────────
+    # The knowledge subsystem is a single shared (embedder, store) pair
+    # plus the Ingester / Retriever orchestrators. Defaults are dependency
+    # free (HashEmbedder + InMemoryKnowledgeStore) so /api/knowledge/* is
+    # always available — production deployments swap these via env vars.
+    from ..core.knowledge import (
+        HashEmbedder,
+        InMemoryKnowledgeStore,
+        Ingester,
+        MarkdownChunker,
+        Retriever,
+    )
+
+    _embedding_provider = os.environ.get("RAG_EMBEDDING_PROVIDER", "hash").lower()
+    if _embedding_provider == "openai":
+        try:
+            from ..core.knowledge import OpenAIEmbeddingProvider
+
+            _embedder = OpenAIEmbeddingProvider(
+                model=os.environ.get("RAG_OPENAI_MODEL", "text-embedding-3-small")
+            )
+        except Exception:
+            logger.warning(
+                "OpenAI embedder unavailable — falling back to HashEmbedder",
+                exc_info=True,
+            )
+            _embedder = HashEmbedder(dim=64)
+    elif _embedding_provider == "local":
+        try:
+            from ..core.knowledge import LocalEmbeddingProvider
+
+            _embedder = LocalEmbeddingProvider(
+                model_name=os.environ.get("RAG_LOCAL_MODEL", "all-MiniLM-L6-v2")
+            )
+        except Exception:
+            logger.warning(
+                "Local embedder unavailable — falling back to HashEmbedder",
+                exc_info=True,
+            )
+            _embedder = HashEmbedder(dim=64)
+    else:
+        _embedder = HashEmbedder(dim=64)
+
+    _knowledge_store = InMemoryKnowledgeStore()
+    _chunker = MarkdownChunker(max_section_chars=2000, overlap=200)
+    app.state.knowledge_store = _knowledge_store
+    app.state.knowledge_embedder = _embedder
+    app.state.knowledge_ingester = Ingester(_chunker, _embedder, _knowledge_store)
+    app.state.knowledge_retriever = Retriever(_embedder, _knowledge_store)
+    logger.info(
+        "Knowledge subsystem ready (provider=%s, model=%s, dim=%d)",
+        _embedder.info.provider,
+        _embedder.info.name,
+        _embedder.dim,
+    )
+
     # -----------------------------------------------------------------------
     # Startup / shutdown lifecycle
     # -----------------------------------------------------------------------
@@ -301,6 +369,10 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             app.state.store = store_holder[0]
         # Rebuild PromptRegistry against the resolved store (Postgres or InMemory).
         app.state.prompt_registry = PromptRegistry(app.state.store, metrics=metrics_registry)
+        # Rebuild PersonalizedMemory against the resolved store.
+        from ..core.personalized_memory import PersonalizedMemory as _PM
+
+        app.state.personalized_memory = _PM(app.state.store, memory_filter=_memory_filter)
 
         if _sandbox_enabled:
             logger.info("Sandbox system enabled (SANDBOX_ENABLED=true)")
@@ -312,28 +384,37 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
             logger.info("Sandbox manager: all sessions cleaned up")
 
     # -----------------------------------------------------------------------
-    # Static files and root HTML (React frontend preferred, vanilla JS fallback)
+    # Static files and root HTML — React frontend from frontend/dist/
+    # In production the Docker build always populates frontend/dist/. In test
+    # or dev environments without a build, we serve a placeholder page rather
+    # than crashing so backend-only tests can still create the app.
     # -----------------------------------------------------------------------
 
     react_dist = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
+    react_index = react_dist / "index.html"
 
-    if react_dist.is_dir() and (react_dist / "index.html").exists():
+    if react_dist.is_dir() and react_index.exists():
         logger.info("Serving React frontend from %s", react_dist)
         app.mount("/assets", StaticFiles(directory=str(react_dist / "assets")), name="assets")
-        # Keep legacy static mount for backward compatibility
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-        @app.get("/", response_class=HTMLResponse)
-        async def index():
-            return HTMLResponse(content=(react_dist / "index.html").read_text())
+        _index_html = react_index.read_text()
     else:
-        logger.info("React frontend not found, serving vanilla JS from %s", STATIC_DIR)
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+        logger.warning(
+            "React frontend build not found at %s. The dashboard UI will not "
+            "be served. Run `cd frontend && npm install && npm run build` to "
+            "build it.",
+            react_dist,
+        )
+        _index_html = (
+            "<!doctype html><meta charset=utf-8>"
+            "<title>Agent Orchestrator</title>"
+            "<h1>React frontend not built</h1>"
+            "<p>Run <code>cd frontend && npm install && npm run build</code> "
+            "and restart the dashboard.</p>"
+        )
 
-        @app.get("/", response_class=HTMLResponse)
-        async def index():
-            index_file = STATIC_DIR / "index.html"
-            return HTMLResponse(content=index_file.read_text())
+    @app.get("/", response_class=HTMLResponse)
+    async def index():
+        return HTMLResponse(content=_index_html)
 
     # -----------------------------------------------------------------------
     # Include modular routers
@@ -345,6 +426,15 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # REST management endpoints (/api/*)
     app.include_router(gateway_router)
+
+    # Knowledge / RAG endpoints (/api/knowledge/*) — P1
+    app.include_router(knowledge_router)
+
+    # Evaluator endpoints (/api/evals/*) — P2
+    app.include_router(evals_router)
+
+    # Personalized memory endpoints (/api/user-memory/users/*) — P4
+    app.include_router(memory_router)
 
     # Agent execution, WebSocket streaming, SSE (/api/prompt, /api/agent/run,
     # /api/team/*, /ws, /ws/stream)

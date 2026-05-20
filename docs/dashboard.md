@@ -58,6 +58,22 @@ The dashboard exposes all agents and skills as MCP (Model Context Protocol) tool
 - **Orchestrator bridge**: `Orchestrator.register_mcp_tools()` populates an `MCPServerRegistry` from all configured agents and skills
 - **UI**: MCP tool count shown in dashboard header
 
+## Personalized Memory API (P4)
+
+Per-user long-term memory CRUD, scoped to namespace `("user", user_id)` in the shared store.
+All writes pass through `MemoryFilter` before persistence.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/user-memory/users/{user_id}` | List all entries for a user (query param `limit`, default 50, max 500). Returns `{user_id, count, entries}`. |
+| `GET` | `/api/user-memory/users/{user_id}/{key}` | Single entry. Returns `{user_id, key, value}` or 404. |
+| `DELETE` | `/api/user-memory/users/{user_id}/{key}` | Remove a single entry. Returns `{success, user_id, key}` or 404. |
+| `DELETE` | `/api/user-memory/users/{user_id}` | GDPR erasure — wipe **all** entries for the user. Returns `{success, user_id, removed}`. |
+
+The `PersonalizedMemory` instance is attached to `app.state.personalized_memory` at startup and
+rebuilt when the store switches from InMemory to Postgres. Implemented in
+`dashboard/personalized_memory_routes.py`.
+
 ## MCP Client — connecting to external servers
 
 The dashboard also acts as an MCP **client**, connecting outbound to external MCP servers.
@@ -97,6 +113,7 @@ Multi-agent team runs execute as background tasks to prevent HTTP timeouts:
 - **Graph visualization**: `run_team()` emits `GRAPH_START`/`GRAPH_NODE_ENTER`/`GRAPH_NODE_EXIT`/`GRAPH_END` for 3-phase workflow (plan → sub-agents → review)
 - **Polling fallback**: `GET /api/team/status/{job_id}` returns current status and result
 - **Memory safety**: completed jobs are evicted (keeps last 20) to prevent unbounded growth
+- **Repair loop (ON by default, v1.5 P1)**: every `/api/team/run` is now wrapped by `_run_team_with_repair`, which verifies the produced workdir through an 8-verifier chain (Syntax / Encoding / Dependency / Import / WorkspaceCoherence / RuntimeSmoke / Entrypoint / E2ESmoke — last two added in Phase 7.11; E2E is opt-in via `REPAIR_LOOP_E2E_ENABLED=true`) and retries the team — with deterministic auto-fixes from `core/failure_patterns.yaml` applied first — up to `REPAIR_LOOP_MAX_ATTEMPTS` (default 5), `REPAIR_LOOP_MAX_COST_USD` (default 0.50) **or** `REPAIR_LOOP_MAX_WALL_S` (default 1800 = 30 min, added in Phase 7.9 after iter 1 of run (e) hung >37 min). New event types stream to the dashboard: `verification.*`, `verifier.*` (with per-verifier `duration_ms`), `repair.started/attempt_started/attempt_finished/escalated/auto_fixed/auto_fix_reverted/aborted/finished`. The team-run result dict gains a top-level `repair: {status, attempts, cumulative_cost_usd, final_passed, final_failures[], auto_fixed_signatures[]}` block; existing fields (`output`, `plan`, `agent_costs`, `total_tokens`) are preserved. Opt out by setting `REPAIR_LOOP_ENABLED=false` (or `repair_loop.enabled: false` in `orchestrator.yaml.example`). See `docs/architecture-repair-loop.md`.
 
 ## Session Explorer
 
@@ -150,14 +167,132 @@ The dashboard header shows two metric groups:
 - **DB indicator**: green dot = PostgreSQL connected, metrics persisted; red = in-memory only
 - **Debug**: `GET /auth/debug` — shows OAuth config (base_url, redirect_uri, client_id prefix)
 
+## Ported features (parity with vanilla UI, removed)
+
+The vanilla JS dashboard at `src/agent_orchestrator/dashboard/static/` was removed once the React frontend reached feature parity. The following components were ported from the legacy `app.js` to React; they are listed here so the surface area is documented in one place.
+
+| Component | File | Rendered in | Description |
+|-----------|------|-------------|-------------|
+| **PresetsBar** | `frontend/src/components/prompts/PresetsBar.tsx` | Above `ChatInput` inside `ChatPanel` | Fetches `GET /api/presets` and renders pill buttons. Clicking a preset substitutes `{context}` with the current attached-file context and calls `onApply` to set the textarea. Shows an inline notice if a file is required but not attached. |
+| **ComparePanel** | `frontend/src/components/compare/ComparePanel.tsx` | Right `Sidebar`, "Compare Models" section | Two model selects + a "Go" button. POSTs the last user message to `/api/prompt` twice in parallel and shows side-by-side outputs with tok/s and elapsed time. |
+| **PricingPanel** | `frontend/src/components/pricing/PricingPanel.tsx` | Right `Sidebar`, "Pricing" section | Fetches `GET /api/openrouter/pricing` (staleTime 60 s, no auto-refetch). Search input filters by model id/name; shows up to 50 rows; free models are highlighted. |
+| **WorkspaceFilePicker** | `frontend/src/components/files/WorkspaceFilePicker.tsx` | Modal opened from `ChatInput` "Browse" button | Browses server-side workspace via `GET /api/files?path=...`. Breadcrumb navigation into directories; clicking a file fetches `GET /api/file?path=...` and pushes it into `attachedFiles`. |
+| **InteractionTimeline** | `frontend/src/components/graph/InteractionTimeline.tsx` | Inside `graph-section` in `DashboardPage`, below `GraphVisualizer` | Renders `interactions` from the Zustand store (populated by `useWebSocket.ts`). Auto-scrolls to bottom on new items. Status dot coloured by status (pending/running/completed/failed). Shows "No interactions yet" empty state. |
+| **Fallback log** | `frontend/src/hooks/useWebSocket.ts`, `team.complete` handler | As a system message in the chat | When `result.fallback_log` is non-empty, adds a system message before the assistant reply listing each entry as `✓ agent → model [ok] detail` or `✗ ... [failed] detail`. |
+
+New API hooks added to `frontend/src/api/hooks.ts`: `usePresets`, `useFiles`, `fetchFileContent` (async helper), `usePricing`. Query keys added: `presets`, `files`, `pricing`.
+
+## File context transparency (D)
+
+To remove ambiguity about what the model is actually receiving, every attached file shows:
+
+- A **kind badge** (`PDF`, `CSV`, `DOC`, `TXT`, …) — derived from `file_type` returned by `/api/upload`, or from the extension as a fallback.
+- The **byte size** in B / KB / MB.
+- A **source colour**: blue (`source: "upload"`) for local uploads, purple (`source: "workspace"`) for files picked from the server-side workspace.
+- A **truncation warning** (`!` chip) when the server clipped the content (e.g. `/api/file` rejects > 100 KB).
+- A `title` attribute combining all of the above for screen readers and hover.
+
+At send time, `ChatPanel` emits a `system` bubble in the chat **before** the user message:
+
+```
+Sent with 2 files: report.pdf (2.0 KB) [upload], data.csv (12.3 KB) [workspace]
+```
+
+This addresses the original confusion ("did the model actually get my photo?") by making the included context visible turn-by-turn.
+
+## Local file upload (C2)
+
+The "+" button in `ChatInput` uploads the selected file to `POST /api/upload` (multipart) instead of reading it as UTF-8 in the browser.
+
+- Backend (`gateway_api.py`) runs the file through `core.document_converter.DocumentConverter`, which converts PDF, DOCX, PPTX, XLSX/XLS, CSV, HTML/HTM, TXT to Markdown. **Images** (PNG, JPG, JPEG, GIF, WEBP, BMP, TIFF) go through tesseract OCR — see "Image OCR" below. Returns `{success, filename, file_type, markdown_content, markdown_path, page_count, row_count}`.
+- The returned `markdown_content` is what gets attached and sent to the LLM — **no more binary-as-UTF-8 garbage** when an image is attached.
+- Truly unsupported formats (`.zip`, `.exe`, …) get a 400 with `{"error":"Unsupported file format"}`. The UI surfaces the message in a red `attached-file--error` chip; the file is **not** attached.
+- During the round-trip, an `attached-file--uploading` chip with a spinner is shown.
+
+The "Browse" button next to it still browses the server-side workspace via `/api/files` + `/api/file` and adds the picked file with `source: "workspace"`.
+
+### Image OCR
+
+Image uploads are handled by `DocumentConverter._convert_image`, which uses `pytesseract` + `Pillow` + the `tesseract` system binary.
+
+- Install on the host: `pip install 'agent-orchestrator[images]'` and `apt install tesseract-ocr` (Linux) or `brew install tesseract` (macOS). The Docker image (`docker/dashboard/Dockerfile`) installs both automatically.
+- Output: a Markdown document with header `# OCR text from <filename>` followed by the extracted text. If no text is recognised, the document explains that visual content (objects, scenes, diagrams) is not interpreted by OCR and points to vision-capable models as the alternative.
+- Missing dependencies surface clearly: a missing Python package or missing binary both raise `DependencyMissingError`, which the UI shows in the red error chip.
+- This is **OCR only** — for "see what's in the picture" semantics use a multimodal model (Claude Sonnet, GPT-4o, Gemini) and the future C3 vision pipeline.
+
+The frontend renders `kind: "image"` with an `IMG` badge in the file chip.
+
+## Reset behaviour (B)
+
+The Reset button at the top right of the Agent Interactions section performs a **full** reset, not just the graph.
+
+What it clears, in order:
+
+1. `DELETE /api/conversation/{id}` — drops conversation memory on the server (best-effort; UI clears even on failure).
+2. `POST /api/graph/reset` — clears the server-side graph snapshot.
+3. `useAppStore.reset()` — wipes client state: messages, attached files, conversation id, graph nodes/edges, events, activity, interactions, task plan, stream buffer, pending team job. Also removes the `ao_conv_id` key from `localStorage` so the next send starts fresh.
+
+`attachedFiles` is part of the store (not local to `ChatInput`) for exactly this reason — Reset can centrally clear them. `ChatInput` reads/writes through `useAppStore`'s `attachedFiles` slice (`addAttachedFile`, `removeAttachedFileAt`, `clearAttachedFiles`).
+
+## Conversation persistence (A2)
+
+The Simple Prompt mode keeps multi-turn memory automatically.
+
+- The Zustand store (`frontend/src/stores/useAppStore.ts`) hydrates `conversationId` from `localStorage` (key `ao_conv_id`) when the app boots.
+- `setConversationId(id)` mirrors changes back to `localStorage`; calling it with `null` clears the key.
+- `ChatPanel.handleSend` lazily creates a conversation on the first send: if `conversationId` is null, it calls `POST /api/conversation/new`, persists the returned id, and only then issues the prompt request — so the very first turn is also recorded.
+- At boot, `App.tsx` reads the persisted id and fetches `GET /api/conversation/{id}` to replay messages back into the chat. If the server no longer knows the id (404), the local id is cleared and the next send starts fresh.
+
+This means a page reload, a new tab, or a server restart no longer drops the conversation thread.
+
 ## UI Enhancements (DeepFlow-Inspired)
 
-Rich rendering capabilities in the vanilla JS dashboard (no framework, CDN-only):
+Rich rendering capabilities in the React dashboard (Mermaid loaded from CDN, KaTeX via `rehype-katex`):
 
-- **Mermaid.js** — renders ` ```mermaid ` code blocks as SVG diagrams in chat messages (CDN: `mermaid@11`)
-- **KaTeX** — renders `$...$` (inline) and `$$...$$` (block) LaTeX math formulas (CDN: `katex@0.16`)
+- **Mermaid.js** — renders ` ```mermaid ` code blocks as SVG diagrams in chat messages (CDN `mermaid@11`, wired in `frontend/src/components/common/MarkdownRenderer.tsx`)
+- **KaTeX** — renders `$...$` (inline) and `$$...$$` (block) LaTeX math formulas via `rehype-katex` + `remark-math`
 - **Progressive markdown streaming** — buffers streaming chunks and re-renders full markdown on each chunk, fixing broken code blocks and tables mid-stream
 - **Reasoning/thinking accordion** — extracts `<thinking>` / `<reasoning>` tags into collapsible `<details>` blocks (auto-collapsed, purple left border)
 - **Task Plan panel** — right sidebar section showing real-time graph execution progress (pending/in_progress/completed/failed) with elapsed time per node
 - **HITL option buttons** — renders clarification options as clickable pill buttons; interrupt events show Approve/Reject buttons; clicks POST to `/api/runs/{run_id}/resume`
 - **SSE toggle** — switch between WebSocket and EventSource for event streaming; indicator dot in header
+
+## RAG (P1)
+
+Retrieval-Augmented Generation support integrated into the chat input and event log.
+
+### Toggle location
+
+The RAG checkbox (`label.stream-toggle`) lives in the controls row of `ChatInput`, immediately to the right of the **Stream** toggle. It is visible in all execution modes (Multi-Agent, Single Agent, Simple Prompt).
+
+### Namespace
+
+When RAG is enabled, a small text field (`chat-input__rag-ns`) appears beside the checkbox. The default value is `"shared"`. Type any string to switch namespaces; the value is persisted to `localStorage` (key `ao_rag_namespace`) and restored on reload.
+
+### System bubble
+
+After each RAG-enabled turn the chat shows a system bubble **before** the assistant reply:
+
+```
+RAG: <namespace> · <hits> chunk(s) retrieved (<embedding_model>)
+```
+
+If the backend skipped retrieval (e.g. the knowledge store is unavailable), a yellow system bubble is shown instead:
+
+```
+RAG skipped: <reason>
+```
+
+Both the non-streaming path (`POST /api/prompt` → `data.rag`) and the streaming WebSocket path (`{type: "rag", ...}` frame) produce identical bubbles.
+
+### Event log highlight
+
+Knowledge events (`knowledge.retrieved`, `knowledge.ingested`, `knowledge.retrieval_skipped`, etc.) appear in the event log with:
+
+- Icon **K** in a purple/lavender badge (`.event-icon--knowledge`)
+- A **Knowledge** option in the filter `<select>` (class `logs-filter`) so users can isolate RAG activity from agent/graph noise.
+
+### Persistence
+
+Both preferences are stored in `localStorage` and survive page reloads, tab closes, and the full **Reset** action (Reset intentionally does NOT clear user settings — only session state).
+

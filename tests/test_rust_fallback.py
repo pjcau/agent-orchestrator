@@ -200,22 +200,19 @@ class TestMetricsRustFallback:
         assert "42" in output
 
 
-class TestDualServeFallback:
-    """Verify app.py serves React when available, vanilla JS otherwise."""
+class TestReactServe:
+    """Verify app.py serves the React frontend from frontend/dist/."""
 
-    def test_static_dir_exists(self):
-        from agent_orchestrator.dashboard.app import STATIC_DIR
+    def test_react_dist_optional_in_tests(self):
+        """Dashboard creation must succeed even without frontend/dist/.
 
-        assert STATIC_DIR.is_dir()
-        assert (STATIC_DIR / "index.html").exists()
-
-    def test_react_dist_not_required(self):
-        """Dashboard should start fine without frontend/dist/."""
+        The Docker production image always builds React, but backend-only
+        pytest runs (no Node) must still be able to instantiate the app —
+        the missing build degrades to a placeholder index page, not a crash.
+        """
         from pathlib import Path
 
         react_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-        # It's OK if it doesn't exist — vanilla JS fallback is used
-        # This test just verifies the path logic doesn't crash
         if react_dist.is_dir():
             assert (react_dist / "index.html").exists()
 

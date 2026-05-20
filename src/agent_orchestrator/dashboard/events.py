@@ -64,6 +64,29 @@ class EventType(str, Enum):
     COST_UPDATE = "metrics.cost_update"
     TOKEN_UPDATE = "metrics.token_update"
 
+    # Knowledge / RAG (P1)
+    KNOWLEDGE_INGESTED = "knowledge.ingested"
+    KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
+    KNOWLEDGE_RETRIEVAL_SKIPPED = "knowledge.retrieval_skipped"
+
+    # Guardrail events (P3)
+    GUARDRAIL_CHECKED = "guardrail.checked"
+    GUARDRAIL_BLOCKED = "guardrail.blocked"
+    GUARDRAIL_REDACTED = "guardrail.redacted"
+
+    # Verification gate + repair loop (v1.5 P1)
+    VERIFICATION_STARTED = "verification.started"
+    VERIFIER_STARTED = "verifier.started"
+    VERIFIER_FINISHED = "verifier.finished"
+    VERIFICATION_FINISHED = "verification.finished"
+    REPAIR_STARTED = "repair.started"
+    REPAIR_ATTEMPT_STARTED = "repair.attempt_started"
+    REPAIR_ATTEMPT_FINISHED = "repair.attempt_finished"
+    REPAIR_ESCALATED = "repair.escalated"
+    REPAIR_AUTO_FIXED = "repair.auto_fixed"
+    REPAIR_ABORTED = "repair.aborted"
+    REPAIR_FINISHED = "repair.finished"
+
 
 @dataclass
 class Event:

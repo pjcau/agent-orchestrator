@@ -23,6 +23,25 @@ export interface ActivityItem {
   time: number;
 }
 
+export interface AttachedFile {
+  /** Display label (filename or workspace path). */
+  path: string;
+  /** Markdown / text content sent to the model. */
+  content: string;
+  /**
+   * Origin: where the file came from.
+   * - "upload": local file uploaded via /api/upload (text or document → markdown).
+   * - "workspace": picked from the server-side workspace via /api/file.
+   */
+  source?: "upload" | "workspace";
+  /** MIME type or file extension category (for the UI badge). */
+  kind?: string;
+  /** Original byte size, when known. */
+  bytes?: number;
+  /** True when content was clipped by a server-side limit. */
+  truncated?: boolean;
+}
+
 interface AppState {
   // Connection state
   wsConnected: boolean;
@@ -47,6 +66,7 @@ interface AppState {
   streamBuffer: string;
   conversationId: string | null;
   lastTokenSpeed: number;
+  attachedFiles: AttachedFile[];
 
   // UI state
   sidebarOpen: boolean;
@@ -70,6 +90,10 @@ interface AppState {
   // Pending team job
   pendingTeamJobId: string | null;
   pendingTeamModel: string | null;
+
+  // RAG preferences (persisted in localStorage, survive Reset)
+  ragEnabled: boolean;
+  ragNamespace: string;
 
   // Actions
   setWsConnected: (connected: boolean) => void;
@@ -112,12 +136,70 @@ interface AppState {
     status: InteractionItem["status"]
   ) => void;
   setPendingTeamJob: (jobId: string | null, model: string | null) => void;
+  setAttachedFiles: (files: AttachedFile[]) => void;
+  addAttachedFile: (file: AttachedFile) => void;
+  removeAttachedFileAt: (index: number) => void;
+  clearAttachedFiles: () => void;
+  setRagEnabled: (b: boolean) => void;
+  setRagNamespace: (s: string) => void;
+  /** Full Reset: graph + chat + attachments + conversation id (caller is
+   *  responsible for the server-side DELETE /api/conversation/{id}).
+   *  RAG preferences are intentionally NOT cleared — they are user settings. */
   reset: () => void;
 }
 
 const MAX_EVENTS = 500;
 const MAX_ACTIVITY = 200;
 const MAX_INTERACTIONS = 50;
+
+/** localStorage key used to persist the active conversation id across reloads. */
+export const STORAGE_KEY_CONVERSATION_ID = "ao_conv_id";
+
+/** localStorage key used to persist the RAG enabled preference. */
+export const STORAGE_KEY_RAG_ENABLED = "ao_rag_enabled";
+
+/** localStorage key used to persist the RAG namespace preference. */
+export const STORAGE_KEY_RAG_NAMESPACE = "ao_rag_namespace";
+
+/** Read the persisted conversation id from localStorage, or null. */
+function readPersistedConversationId(): string | null {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_CONVERSATION_ID);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist (or clear) the conversation id in localStorage. */
+function writePersistedConversationId(id: string | null): void {
+  try {
+    if (id) {
+      window.localStorage.setItem(STORAGE_KEY_CONVERSATION_ID, id);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEY_CONVERSATION_ID);
+    }
+  } catch {
+    /* localStorage unavailable (private mode, SSR) — fail silently */
+  }
+}
+
+/** Read the persisted RAG enabled flag from localStorage, or false. */
+function readPersistedRagEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_RAG_ENABLED) === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Read the persisted RAG namespace from localStorage, or "shared". */
+function readPersistedRagNamespace(): string {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_RAG_NAMESPACE) ?? "shared";
+  } catch {
+    return "shared";
+  }
+}
 
 const initialCacheState: CacheStats = {
   hits: 0,
@@ -155,8 +237,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   isStreaming: false,
   streamBuffer: "",
-  conversationId: null,
+  // Hydrate conversationId from localStorage so a reload preserves the thread.
+  conversationId: readPersistedConversationId(),
   lastTokenSpeed: 0,
+  attachedFiles: [],
 
   // UI state
   sidebarOpen: true,
@@ -180,6 +264,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Pending team job
   pendingTeamJobId: null,
   pendingTeamModel: null,
+
+  // RAG preferences (persisted, survive Reset)
+  ragEnabled: readPersistedRagEnabled(),
+  ragNamespace: readPersistedRagNamespace(),
 
   // --- Actions ---
 
@@ -443,7 +531,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearStreamBuffer: () => set({ streamBuffer: "", isStreaming: false }),
 
-  setConversationId: (id) => set({ conversationId: id }),
+  setConversationId: (id) => {
+    writePersistedConversationId(id);
+    set({ conversationId: id });
+  },
 
   setLastTokenSpeed: (speed) => set({ lastTokenSpeed: speed }),
 
@@ -499,7 +590,40 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingTeamJob: (jobId, model) =>
     set({ pendingTeamJobId: jobId, pendingTeamModel: model }),
 
-  reset: () =>
+  setAttachedFiles: (files) => set({ attachedFiles: files }),
+  addAttachedFile: (file) =>
+    set((state) => {
+      // De-duplicate by path
+      const filtered = state.attachedFiles.filter((f) => f.path !== file.path);
+      return { attachedFiles: [...filtered, file] };
+    }),
+  removeAttachedFileAt: (index) =>
+    set((state) => ({
+      attachedFiles: state.attachedFiles.filter((_, i) => i !== index),
+    })),
+  clearAttachedFiles: () => set({ attachedFiles: [] }),
+
+  setRagEnabled: (b) => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY_RAG_ENABLED, String(b));
+    } catch {
+      /* fail silently */
+    }
+    set({ ragEnabled: b });
+  },
+
+  setRagNamespace: (s) => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY_RAG_NAMESPACE, s);
+    } catch {
+      /* fail silently */
+    }
+    set({ ragNamespace: s });
+  },
+
+  reset: () => {
+    // Persist: clear localStorage too
+    writePersistedConversationId(null);
     set({
       orchestratorStatus: "idle",
       agents: {},
@@ -517,5 +641,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       interactions: [],
       pendingTeamJobId: null,
       pendingTeamModel: null,
-    }),
+      // Chat-related state
+      messages: [],
+      isStreaming: false,
+      streamBuffer: "",
+      conversationId: null,
+      attachedFiles: [],
+    });
+  },
 }));
