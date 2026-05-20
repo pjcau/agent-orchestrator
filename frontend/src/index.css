@@ -60,7 +60,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 20px;
+  /* Respect iOS notch / dynamic island on top and the curved corners on
+     the sides. env() falls back to 0 on browsers without safe-area support
+     so desktop layouts remain unchanged. */
+  padding: max(6px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+           6px max(20px, env(safe-area-inset-left));
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -794,7 +798,10 @@ body {
 .chat-input {
   border-top: 1px solid var(--border);
   background: var(--bg-card);
-  padding: 10px 16px;
+  /* Reserve room for the iOS home indicator and side curves. */
+  padding: 10px max(16px, env(safe-area-inset-right))
+           max(10px, env(safe-area-inset-bottom))
+           max(16px, env(safe-area-inset-left));
   flex-shrink: 0;
 }
 
@@ -963,7 +970,13 @@ body {
 .btn-send:hover { opacity: 0.85; }
 .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.chat-input__actions { display: flex; gap: 8px; margin-top: 6px; }
+.chat-input__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
 
 /* === Sidebar === */
 .sidebar {
@@ -1504,22 +1517,22 @@ body {
 .presets-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 16px 0;
+  gap: 8px;
+  padding: 8px 16px 10px;
   align-items: center;
 }
 
 .preset-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--text-dim);
   font-size: 11px;
   font-family: var(--font-mono);
-  padding: 2px 8px;
+  padding: 4px 12px;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
@@ -1969,9 +1982,19 @@ body {
          Native selects are hidden in favour of segment controls (below) — the
          <select> pickers misalign in some mobile browsers / emulators and the
          option lists are short enough to fit as inline buttons. The <select>
-         elements still exist in the DOM but visually swap with the segments. */
+         elements still exist in the DOM but visually swap with the segments.
+         Other controls (model picker, RAG checkbox, stream toggle) stay
+         visible by default — only the segment radios collapse behind ⚙. */
   .chat-input__adv-toggle { display: inline-flex; }
   .chat-input__select--adv { display: none !important; }
+  /* Breathing room between PresetsBar pills + away from the textarea below. */
+  .presets-bar { gap: 10px; padding: 10px 12px 14px; row-gap: 10px; }
+  .preset-btn { padding: 8px 14px; font-size: 12px; }
+  /* Make the gear feel like an end-aligned secondary action next to New Chat. */
+  .chat-input__actions { padding: 2px 4px; }
+  .chat-input__actions .chat-input__adv-toggle {
+    border-radius: 999px;
+  }
   .chat-input__controls--adv .chat-input__segment {
     display: flex;
     flex: 1 1 100%;
