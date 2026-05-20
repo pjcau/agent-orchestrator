@@ -88,6 +88,9 @@ export function ChatInput({
   // Collapsed "advanced" controls (mode + provider) — exposed via a gear toggle
   // on mobile to free vertical space for the chat. Always-open on desktop via CSS.
   const [advOpen, setAdvOpen] = useState(false);
+  // Track textarea focus to expand it to full-width × 3 lines on mobile. The
+  // desktop UI is unaffected (the focus class is a no-op above 600 px).
+  const [composeFocused, setComposeFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first available model when provider changes or models load
@@ -221,7 +224,7 @@ export function ChatInput({
   const ollamaModels = models?.ollama ?? [];
 
   return (
-    <div className="chat-input">
+    <div className={`chat-input ${composeFocused ? "chat-input--focused" : ""}`}>
       {/* File context bar */}
       {(attachedFiles.length > 0 || uploadingName || uploadError) && (
         <div className="chat-input__files">
@@ -487,6 +490,8 @@ export function ChatInput({
             autoResizeTextarea();
           }}
           onKeyDown={handleKeyDown}
+          onFocus={() => setComposeFocused(true)}
+          onBlur={() => setComposeFocused(false)}
           disabled={isDisabled}
         />
         <button
