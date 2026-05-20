@@ -12,6 +12,9 @@ on:
         required: false
         default: "dashboard,nginx,postgres,prometheus,grafana,redis,aws-cost-exporter"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   fetch-logs:
     runs-on: ubuntu-latest
