@@ -1076,6 +1076,67 @@ body {
   gap: 6px;
 }
 
+/* --- Voice input ---
+   The mic button uses the same .btn-icon base; the listening state turns it
+   red, pulses softly, and swaps the glyph to "■" (stop). The transient
+   notice row sits above the input row, mirroring the file-context pattern. */
+.btn-mic {
+  font-size: 14px;
+}
+.btn-mic--listening {
+  background: rgba(248, 81, 73, 0.18);
+  border-color: var(--red);
+  color: var(--red);
+  animation: ao-mic-pulse 1.4s ease-in-out infinite;
+}
+.btn-mic--listening:hover {
+  background: rgba(248, 81, 73, 0.28);
+  border-color: var(--red);
+  color: var(--red);
+}
+@keyframes ao-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.45); }
+  50%      { box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); }
+}
+.chat-input__speech-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 6px;
+  min-height: 28px;
+}
+.chat-input__speech-notice--error {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--red);
+  border: 1px solid rgba(248, 81, 73, 0.35);
+}
+.chat-input__speech-notice--interim {
+  background: rgba(88, 166, 255, 0.10);
+  color: var(--text-dim);
+  border: 1px solid rgba(88, 166, 255, 0.30);
+}
+.chat-input__speech-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+  animation: ao-mic-pulse 1.2s ease-in-out infinite;
+}
+.chat-input__speech-interim {
+  font-style: italic;
+  /* Truncate long interim phrases on narrow screens — the full text still
+     reaches the textarea as final chunks. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 /* === Sidebar === */
 .sidebar {
   width: 320px;

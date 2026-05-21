@@ -55,6 +55,37 @@ prefers `tencent/hy3-preview` if it appears in `models.openrouter`; it
 falls back to `list[0]` otherwise. Local (`ollama`) still picks the first
 available model. Tracked in `ChatInput.tsx` via `PREFERRED_CLOUD_MODEL`.
 
+### Voice input (Web Speech API)
+
+The chat composer ships a 🎙 microphone button between the textarea and
+the send arrow. It dictates straight into the textarea by appending final
+transcript chunks as they arrive — no extra backend, no API key.
+
+| State | UI | Source |
+|-------|----|--------|
+| Idle | 🎙 grey | default |
+| Recording | ■ red + soft pulse + interim preview row | `useAppStore`-free local state in `ChatInput` |
+| Permission denied / network / no-speech / aborted / unsupported / language-not-supported | red notice row above the textarea, auto-clears after 4 s | `SPEECH_ERROR_MESSAGES` in `ChatInput.tsx` |
+| Unsupported browser (Firefox) | mic disabled, tooltip explains why | `isSupported` from the hook |
+
+Hook: `frontend/src/hooks/useSpeechRecognition.ts`. Default language is
+`it-IT` (override via the `lang` option). It maps the raw browser error
+codes (`not-allowed`, `service-not-allowed`, `no-speech`, `audio-capture`,
+`network`, `aborted`, `language-not-supported`) into a stable
+`SpeechErrorCode` union and cleans up the underlying `SpeechRecognition`
+instance on unmount.
+
+Tested in `frontend/src/test/useSpeechRecognition.test.ts`: support
+detection, fallback to `webkitSpeechRecognition`, every error mapping,
+cumulative final transcript accumulation, `start()` re-entry behaviour,
+and the unmount-cleanup contract. 19 cases.
+
+Browser support note: Chromium and Safari (incl. iOS 14.5+ / macOS 14.3+
+on-device) support `SpeechRecognition`. Firefox does not — the hook
+surfaces `not-supported` and the button is disabled with an explanatory
+tooltip. Web Speech in Chrome streams audio to Google for processing;
+Safari does it on-device.
+
 ## Modular Architecture
 
 `app.py` is a composition root (~282 lines) that includes two routers. Can run as single process or split.

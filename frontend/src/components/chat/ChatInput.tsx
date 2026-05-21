@@ -4,6 +4,29 @@ import { WorkspaceFilePicker } from "@/components/files/WorkspaceFilePicker";
 import { useAppStore } from "@/stores/useAppStore";
 import apiClient from "@/api/client";
 import type { AxiosError } from "axios";
+import {
+  useSpeechRecognition,
+  type SpeechErrorCode,
+} from "@/hooks/useSpeechRecognition";
+
+/**
+ * Human-readable copy for every state of the voice-input flow.
+ * Kept at module scope so the strings live next to the error union and survive
+ * accidental component re-mounts.
+ */
+const SPEECH_ERROR_MESSAGES: Record<SpeechErrorCode, string> = {
+  "not-supported":
+    "Voice input is not supported in this browser. Try Chrome, Edge, or Safari.",
+  "permission-denied":
+    "Microphone access denied. Enable it in your browser site settings.",
+  "no-speech": "No speech detected — try again.",
+  "audio-capture": "Microphone not found or unavailable.",
+  "network": "Voice input needs an internet connection.",
+  "aborted": "Voice input was cancelled.",
+  "service-not-allowed": "Voice input service not allowed in this context.",
+  "language-not-supported": "The requested language is not supported.",
+  "unknown": "Voice input failed. Try again.",
+};
 
 export type ExecMode = "multi-agent" | "agent" | "prompt";
 
@@ -89,6 +112,34 @@ export function ChatInput({
   // Toggle for the PresetsBar visibility (Explain / Review / …).
   const presetsHidden = useAppStore((s) => s.presetsHidden);
   const togglePresetsHidden = useAppStore((s) => s.togglePresetsHidden);
+
+  // Voice input (Web Speech API). Final transcript chunks are appended to the
+  // textarea as they arrive so the user sees their words materialise live.
+  // Errors are surfaced through `speechNotice` and auto-cleared after 4 s.
+  const [speechNotice, setSpeechNotice] = useState<string | null>(null);
+  // Keep `autoResizeTextarea` reachable inside the speech callback without
+  // forcing a new hook instance every render.
+  const autoResizeRef = useRef<() => void>(() => {});
+  const handleFinalChunk = useCallback((chunk: string) => {
+    setText((prev) => {
+      const sep = prev && !/[\s\n]$/.test(prev) ? " " : "";
+      return prev + sep + chunk;
+    });
+    autoResizeRef.current();
+  }, []);
+  const {
+    isSupported: speechSupported,
+    isListening,
+    interim: speechInterim,
+    error: speechError,
+    start: startListening,
+    stop: stopListening,
+    reset: resetSpeech,
+  } = useSpeechRecognition({
+    lang: "it-IT",
+    continuous: true,
+    onFinal: handleFinalChunk,
+  });
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadingName, setUploadingName] = useState<string | null>(null);
   // Collapsed "advanced" controls (mode + provider) — exposed via a gear toggle
@@ -125,6 +176,32 @@ export function ChatInput({
     }
   }, [presetText, onPresetConsumed]);
 
+  // Surface speech-recognition errors as a transient notice. Auto-clear after
+  // 4 s so the row doesn't stay covered after a one-off network/no-speech
+  // event. `aborted` is treated as informational only when the user clicked
+  // stop themselves — otherwise we still want to show it (e.g. tab lost focus).
+  useEffect(() => {
+    if (!speechError) return;
+    setSpeechNotice(SPEECH_ERROR_MESSAGES[speechError]);
+    const id = window.setTimeout(() => setSpeechNotice(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [speechError]);
+
+  const handleMicClick = useCallback(() => {
+    if (!speechSupported) {
+      setSpeechNotice(SPEECH_ERROR_MESSAGES["not-supported"]);
+      window.setTimeout(() => setSpeechNotice(null), 4000);
+      return;
+    }
+    if (isListening) {
+      stopListening();
+    } else {
+      resetSpeech();
+      setSpeechNotice(null);
+      startListening();
+    }
+  }, [speechSupported, isListening, startListening, stopListening, resetSpeech]);
+
   // Notify parent whenever the derived fileContext changes
   useEffect(() => {
     const ctx = attachedFiles
@@ -152,6 +229,8 @@ export function ChatInput({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
+  // Sync the ref so voice-input callbacks (defined before this) can call it.
+  autoResizeRef.current = autoResizeTextarea;
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -471,6 +550,29 @@ export function ChatInput({
         )}
       </div>
 
+      {/* Voice-input transient notice. Shown for ~4 s after permission errors,
+          network drops, no-speech timeouts, … Doesn't block the input row. */}
+      {(speechNotice || (isListening && speechInterim)) && (
+        <div
+          className={`chat-input__speech-notice ${
+            speechNotice
+              ? "chat-input__speech-notice--error"
+              : "chat-input__speech-notice--interim"
+          }`}
+          role={speechNotice ? "alert" : "status"}
+          aria-live="polite"
+        >
+          {speechNotice ?? (
+            <>
+              <span className="chat-input__speech-pulse" aria-hidden="true" />
+              <span className="chat-input__speech-interim">
+                {speechInterim || "Listening…"}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Input row */}
       <div className="chat-input__row">
         <button
@@ -504,6 +606,23 @@ export function ChatInput({
           onBlur={() => setComposeFocused(false)}
           disabled={isDisabled}
         />
+        <button
+          type="button"
+          className={`btn-icon btn-mic ${isListening ? "btn-mic--listening" : ""}`}
+          onClick={handleMicClick}
+          disabled={isDisabled || (!speechSupported && !isListening)}
+          aria-pressed={isListening}
+          aria-label={isListening ? "Stop voice input" : "Start voice input"}
+          title={
+            !speechSupported
+              ? "Voice input not supported in this browser"
+              : isListening
+                ? "Stop voice input"
+                : "Start voice input (dictate prompt)"
+          }
+        >
+          {isListening ? "■" : "🎙"}
+        </button>
         <button
           className="btn-send"
           onClick={handleSend}
