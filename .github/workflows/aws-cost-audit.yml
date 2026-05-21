@@ -1,0 +1,180 @@
+name: AWS Cost Audit
+
+# Investigates why monthly AWS spend exceeds the documented ~$2.70/mo
+# baseline. Runs six diagnostic queries against Cost Explorer + EC2 / S3 /
+# CloudWatch / VPC and prints the result to the workflow Step Summary so it
+# can be read directly from the GitHub UI without downloading artifacts.
+#
+# Trigger manually from the Actions tab → "AWS Cost Audit" → "Run workflow".
+
+on:
+  workflow_dispatch:
+    inputs:
+      month_start:
+        description: 'Cost-Explorer query start date (YYYY-MM-DD)'
+        required: false
+        default: ''  # auto-fills to first day of current month
+      month_end:
+        description: 'Cost-Explorer query end date (YYYY-MM-DD, exclusive)'
+        required: false
+        default: ''  # auto-fills to today
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Run cost audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Resolve date range
+        id: dates
+        run: |
+          start="${{ github.event.inputs.month_start }}"
+          end="${{ github.event.inputs.month_end }}"
+          if [ -z "$start" ]; then start="$(date -u +%Y-%m-01)"; fi
+          if [ -z "$end" ];   then end="$(date -u +%Y-%m-%d)"; fi
+          # Cost Explorer requires end > start. If we're on day 1, bump end by one day.
+          if [ "$start" = "$end" ]; then end="$(date -u -d "$end +1 day" +%Y-%m-%d)"; fi
+          echo "start=$start" >> "$GITHUB_OUTPUT"
+          echo "end=$end"     >> "$GITHUB_OUTPUT"
+          echo "Date range: $start → $end"
+
+      - name: Verify identity
+        run: |
+          echo "### Identity" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          aws sts get-caller-identity >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 1. Cost by service (this month)
+        run: |
+          echo "## 1. Cost by service — ${{ steps.dates.outputs.start }} → ${{ steps.dates.outputs.end }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '| Service | Cost (USD) |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|---------|-----------:|' >> "$GITHUB_STEP_SUMMARY"
+          aws ce get-cost-and-usage \
+            --region us-east-1 \
+            --time-period "Start=${{ steps.dates.outputs.start }},End=${{ steps.dates.outputs.end }}" \
+            --granularity MONTHLY \
+            --metrics UnblendedCost \
+            --group-by Type=DIMENSION,Key=SERVICE \
+            --output json \
+          | jq -r '
+              .ResultsByTime[0].Groups
+              | sort_by(.Metrics.UnblendedCost.Amount | tonumber)
+              | reverse
+              | .[]
+              | "| " + .Keys[0] + " | $" + (.Metrics.UnblendedCost.Amount | tonumber | . * 100 | round / 100 | tostring) + " |"
+            ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 2. EC2 — running instances
+        run: |
+          echo "## 2. Running EC2 instances" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          aws ec2 describe-instances \
+            --region eu-west-1 \
+            --query "Reservations[].Instances[?State.Name=='running'].[InstanceId,InstanceType,LaunchTime,InstanceLifecycle,Tags[?Key=='Name']|[0].Value]" \
+            --output table >> "$GITHUB_STEP_SUMMARY" || echo "(none)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 3. EBS — orphaned volumes
+        run: |
+          echo "## 3. Orphaned EBS volumes (State=available — billed but unattached)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          aws ec2 describe-volumes \
+            --region eu-west-1 \
+            --query "Volumes[?State=='available'].[VolumeId,Size,VolumeType,CreateTime]" \
+            --output table >> "$GITHUB_STEP_SUMMARY" || echo "(none)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          echo "## 3b. ALL EBS volumes (attached + free)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          aws ec2 describe-volumes \
+            --region eu-west-1 \
+            --query "Volumes[].[VolumeId,Size,VolumeType,State,Attachments[0].InstanceId,CreateTime]" \
+            --output table >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 4. EBS — snapshots
+        run: |
+          echo "## 4. EBS snapshots owned by this account" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          aws ec2 describe-snapshots \
+            --owner-ids self \
+            --region eu-west-1 \
+            --query "Snapshots[].[SnapshotId,VolumeSize,StartTime,Description]" \
+            --output table >> "$GITHUB_STEP_SUMMARY" || echo "(none)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 5. Elastic IPs
+        run: |
+          echo "## 5. Elastic IP addresses" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          aws ec2 describe-addresses \
+            --region eu-west-1 \
+            --query "Addresses[].[PublicIp,AllocationId,InstanceId,AssociationId]" \
+            --output table >> "$GITHUB_STEP_SUMMARY" || echo "(none)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          echo "### Unattached EIPs (billed at \$0.005/h = ~\$3.65/mo each)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          aws ec2 describe-addresses \
+            --region eu-west-1 \
+            --query "Addresses[?!AssociationId].[PublicIp,AllocationId]" \
+            --output table >> "$GITHUB_STEP_SUMMARY" || echo "(none — good)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 6. S3 buckets and sizes
+        run: |
+          echo "## 6. S3 buckets" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          aws s3api list-buckets --query "Buckets[].Name" --output text 2>/dev/null \
+          | tr '\t' '\n' \
+          | while read -r bucket; do
+              [ -z "$bucket" ] && continue
+              # CloudWatch BucketSizeBytes only updates daily; fall back to a recursive ls if missing.
+              size=$(aws cloudwatch get-metric-statistics \
+                --region eu-west-1 \
+                --namespace AWS/S3 \
+                --metric-name BucketSizeBytes \
+                --start-time "$(date -u -d '2 days ago' +%Y-%m-%dT00:00:00Z)" \
+                --end-time   "$(date -u +%Y-%m-%dT00:00:00Z)" \
+                --period 86400 \
+                --statistics Average \
+                --dimensions Name=BucketName,Value="$bucket" Name=StorageType,Value=StandardStorage \
+                --query 'Datapoints[-1].Average' --output text 2>/dev/null || echo "None")
+              if [ "$size" = "None" ] || [ -z "$size" ]; then
+                echo "$bucket → size: unknown (CloudWatch not yet populated)"
+              else
+                # Convert bytes → MB (rounded)
+                mb=$(awk "BEGIN { printf \"%.1f\", $size / 1024 / 1024 }")
+                echo "$bucket → ${mb} MB"
+              fi
+            done >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 7. Forecast for current month (bonus)
+        run: |
+          echo "## 7. Forecast to end of month" >> "$GITHUB_STEP_SUMMARY"
+          tomorrow="$(date -u -d 'tomorrow' +%Y-%m-%d)"
+          eom="$(date -u -d "$(date -u +%Y-%m-01) +1 month -1 day" +%Y-%m-%d)"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          aws ce get-cost-forecast \
+            --region us-east-1 \
+            --time-period "Start=$tomorrow,End=$eom" \
+            --metric UNBLENDED_COST \
+            --granularity MONTHLY \
+            --output json 2>&1 | head -30 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Done
+        run: echo "Audit complete — see the Step Summary above."
