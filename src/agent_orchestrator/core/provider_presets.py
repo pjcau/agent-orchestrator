@@ -54,7 +54,7 @@ _BUILTIN_PRESETS: dict[str, ProviderPreset] = {
             ProviderPresetEntry(
                 key="openrouter",
                 type="openrouter",
-                model="qwen/qwen3-235b-a22b:free",
+                model="deepseek/deepseek-v4-flash",
                 api_key_env="OPENROUTER_API_KEY",
                 is_default=True,
             ),
@@ -76,7 +76,7 @@ _BUILTIN_PRESETS: dict[str, ProviderPreset] = {
             ProviderPresetEntry(
                 key="openrouter",
                 type="openrouter",
-                model="qwen/qwen3-235b-a22b:free",
+                model="deepseek/deepseek-v4-flash",
                 api_key_env="OPENROUTER_API_KEY",
             ),
         ],

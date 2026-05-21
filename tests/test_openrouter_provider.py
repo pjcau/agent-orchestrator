@@ -60,17 +60,31 @@ def test_tencent_hy3_preview_registered():
     assert info["context"] == 262_144
 
 
-def test_flash_tier_alternatives_after_qwen35_flash():
-    """The three flash-tier alternatives must appear AFTER qwen3.5-flash in the
-    MODELS dict (insertion order is preserved in Python 3.7+ dicts)."""
-    keys = list(OpenRouterProvider.MODELS.keys())
-    base = keys.index("qwen/qwen3.5-flash-02-23")
-    for follower in (
-        "qwen/qwen3.6-flash",
-        "inclusionai/ling-2.6-flash",
-        "tencent/hy3-preview",
-    ):
-        assert keys.index(follower) > base, f"{follower} must come after qwen3.5-flash"
+def test_no_free_models_in_catalog():
+    """All `:free` endpoints were removed — the catalog is paid-only now,
+    so the model picker doesn't double-list the same vendor at lower quality."""
+    free = [m for m in OpenRouterProvider.MODELS if ":free" in m]
+    assert free == [], f"unexpected free models still in MODELS: {free}"
+
+
+def test_every_model_has_a_tier():
+    """Each entry must declare `tier` so the UI dropdown can group correctly."""
+    for model_id, info in OpenRouterProvider.MODELS.items():
+        assert "tier" in info, f"{model_id} missing tier"
+        assert info["tier"] in ("premium", "paid"), f"{model_id} has invalid tier {info['tier']!r}"
+
+
+def test_paid_premium_tier_exact_membership():
+    """Paid Premium is the pinned set: qwen3.6-plus, qwen3-235b-a22b-thinking-2507,
+    deepseek-v4-pro, qwen3.5-397b-a17b. Anything else here means the catalog
+    has drifted."""
+    premium = {m for m, info in OpenRouterProvider.MODELS.items() if info["tier"] == "premium"}
+    assert premium == {
+        "qwen/qwen3.6-plus",
+        "qwen/qwen3-235b-a22b-thinking-2507",
+        "deepseek/deepseek-v4-pro",
+        "qwen/qwen3.5-397b-a17b",
+    }, f"premium tier drift: {premium}"
 
 
 # --- DeepSeek V4 family — verified against the OpenRouter catalog ---

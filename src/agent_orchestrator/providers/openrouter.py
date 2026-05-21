@@ -26,44 +26,18 @@ logger = logging.getLogger(__name__)
 class OpenRouterProvider(OpenAIProvider):
     """Access any model via OpenRouter (OpenAI-compatible)."""
 
+    # Each entry carries a `tier` field:
+    #   - "premium": the three top-shelf models pinned by the project
+    #     (qwen3.6-plus, qwen3-235b-a22b-thinking-2507, deepseek-v4-pro).
+    #   - "paid":    everything else still on the menu — paid endpoints with
+    #                non-zero per-token cost.
+    # Free (`:free`) endpoints used to sit alongside paid ones; they were
+    # removed because they double-list the same vendor at lower quality and
+    # made the model picker noisy.
     MODELS = {
-        # --- Free models (big brands) ---
-        # Google
-        "google/gemma-3-27b-it:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 131_072,
-            "max_output": 8_192,
-            "coding": 0.72,
-            "reasoning": 0.70,
-        },
-        "google/gemma-3-12b-it:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 32_768,
-            "max_output": 8_192,
-            "coding": 0.65,
-            "reasoning": 0.62,
-        },
-        # Meta
-        "meta-llama/llama-3.3-70b-instruct:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 128_000,
-            "max_output": 16_384,
-            "coding": 0.78,
-            "reasoning": 0.75,
-        },
-        "meta-llama/llama-3.2-3b-instruct:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 131_072,
-            "max_output": 8_192,
-            "coding": 0.50,
-            "reasoning": 0.45,
-        },
-        # Qwen (Alibaba)
+        # --- Paid Premium tier ---
         "qwen/qwen3.6-plus": {
+            "tier": "premium",
             "input_cost": 0.325,
             "output_cost": 1.95,
             "context": 1_000_000,
@@ -71,15 +45,39 @@ class OpenRouterProvider(OpenAIProvider):
             "coding": 0.92,
             "reasoning": 0.90,
         },
-        "qwen/qwen3-coder:free": {
+        "qwen/qwen3-235b-a22b-thinking-2507": {
+            "tier": "premium",
+            # 235B-parameter MoE — listed by the user as a premium reasoning
+            # tier. OpenRouter exposes this slug at $0 (zero-priced research
+            # endpoint); keep the pricing accurate.
             "input_cost": 0.0,
             "output_cost": 0.0,
-            "context": 262_000,
-            "max_output": 32_768,
-            "coding": 0.88,
-            "reasoning": 0.80,
+            "context": 131_072,
+            "max_output": 16_384,
+            "coding": 0.85,
+            "reasoning": 0.88,
         },
+        "deepseek/deepseek-v4-pro": {
+            "tier": "premium",
+            "input_cost": 0.435,
+            "output_cost": 0.87,
+            "context": 1_050_000,
+            "max_output": 32_768,
+            "coding": 0.91,
+            "reasoning": 0.90,
+        },
+        "qwen/qwen3.5-397b-a17b": {
+            "tier": "premium",
+            "input_cost": 0.39,
+            "output_cost": 2.34,
+            "context": 262_144,
+            "max_output": 32_768,
+            "coding": 0.87,
+            "reasoning": 0.86,
+        },
+        # --- Paid tier ---
         "qwen/qwen3-coder-next": {
+            "tier": "paid",
             "input_cost": 0.12,
             "output_cost": 0.75,
             "context": 262_144,
@@ -88,6 +86,7 @@ class OpenRouterProvider(OpenAIProvider):
             "reasoning": 0.82,
         },
         "qwen/qwen3.5-flash-02-23": {
+            "tier": "paid",
             "input_cost": 0.06,
             "output_cost": 0.30,
             "context": 262_144,
@@ -96,6 +95,7 @@ class OpenRouterProvider(OpenAIProvider):
             "reasoning": 0.80,
         },
         "qwen/qwen3.6-flash": {
+            "tier": "paid",
             "input_cost": 0.1875,
             "output_cost": 1.125,
             "context": 1_000_000,
@@ -104,6 +104,7 @@ class OpenRouterProvider(OpenAIProvider):
             "reasoning": 0.83,
         },
         "inclusionai/ling-2.6-flash": {
+            "tier": "paid",
             "input_cost": 0.01,
             "output_cost": 0.03,
             "context": 262_144,
@@ -112,6 +113,7 @@ class OpenRouterProvider(OpenAIProvider):
             "reasoning": 0.72,
         },
         "tencent/hy3-preview": {
+            "tier": "paid",
             "input_cost": 0.066,
             "output_cost": 0.26,
             "context": 262_144,
@@ -119,96 +121,10 @@ class OpenRouterProvider(OpenAIProvider):
             "coding": 0.80,
             "reasoning": 0.75,
         },
-        "qwen/qwen3.5-397b-a17b": {
-            "input_cost": 0.39,
-            "output_cost": 2.34,
-            "context": 262_144,
-            "max_output": 32_768,
-            "coding": 0.87,
-            "reasoning": 0.86,
-        },
-        "qwen/qwen3-235b-a22b-thinking-2507": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 131_072,
-            "max_output": 16_384,
-            "coding": 0.85,
-            "reasoning": 0.88,
-        },
-        "qwen/qwen3-next-80b-a3b-instruct:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 262_144,
-            "max_output": 16_384,
-            "coding": 0.80,
-            "reasoning": 0.78,
-        },
-        "qwen/qwen3-4b:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 40_960,
-            "max_output": 4_096,
-            "coding": 0.55,
-            "reasoning": 0.50,
-        },
-        # OpenAI
-        "openai/gpt-oss-120b:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 131_072,
-            "max_output": 16_384,
-            "coding": 0.82,
-            "reasoning": 0.80,
-        },
-        "openai/gpt-oss-20b:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 131_072,
-            "max_output": 8_192,
-            "coding": 0.65,
-            "reasoning": 0.60,
-        },
-        # Mistral
-        "mistralai/mistral-small-3.1-24b-instruct:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 128_000,
-            "max_output": 16_384,
-            "coding": 0.72,
-            "reasoning": 0.70,
-        },
-        # NVIDIA
-        "nvidia/nemotron-3-nano-30b-a3b:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 256_000,
-            "max_output": 16_384,
-            "coding": 0.70,
-            "reasoning": 0.68,
-        },
-        "nvidia/nemotron-nano-9b-v2:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 128_000,
-            "max_output": 8_192,
-            "coding": 0.60,
-            "reasoning": 0.58,
-        },
-        # Nous Research
-        "nousresearch/hermes-3-llama-3.1-405b:free": {
-            "input_cost": 0.0,
-            "output_cost": 0.0,
-            "context": 131_072,
-            "max_output": 16_384,
-            "coding": 0.80,
-            "reasoning": 0.78,
-        },
-        # DeepSeek V4 — Mixture-of-Experts family from DeepSeek.
-        # Pricing and context window verified against the OpenRouter catalog.
-        # `v4-flash` is the default for the medical-advisor agent
-        # (see .claude/agents/healthcare/medical-advisor.md); both models are
-        # available to every agent from the UI.
+        # DeepSeek V4 Flash — efficiency-optimized MoE. Default model for
+        # the healthcare agents (see .claude/agents/healthcare/_safety.md).
         "deepseek/deepseek-v4-flash": {
+            "tier": "paid",
             "input_cost": 0.112,
             "output_cost": 0.224,
             "context": 1_050_000,
@@ -216,17 +132,9 @@ class OpenRouterProvider(OpenAIProvider):
             "coding": 0.85,
             "reasoning": 0.82,
         },
-        "deepseek/deepseek-v4-pro": {
-            "input_cost": 0.435,
-            "output_cost": 0.87,
-            "context": 1_050_000,
-            "max_output": 32_768,
-            "coding": 0.91,
-            "reasoning": 0.90,
-        },
     }
 
-    def __init__(self, model: str = "qwen/qwen3-coder:free", api_key: str | None = None):
+    def __init__(self, model: str = "deepseek/deepseek-v4-flash", api_key: str | None = None):
         self._model = model
         self._api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
         self._client = None
@@ -267,21 +175,21 @@ class OpenRouterProvider(OpenAIProvider):
         info = self.MODELS.get(self._model, list(self.MODELS.values())[0])
         return info["output_cost"]
 
-    # Fallback order: best models sorted by coding/reasoning quality
+    # Fallback order: premium first, then standard paid. No :free models —
+    # see the MODELS docstring above for rationale.
     FALLBACK_ORDER = [
+        # premium
         "deepseek/deepseek-v4-pro",
-        "deepseek/deepseek-v4-flash",
         "qwen/qwen3.6-plus",
-        "qwen/qwen3-coder:free",
-        "qwen/qwen3-coder-next",
-        "qwen/qwen3.5-397b-a17b",
         "qwen/qwen3-235b-a22b-thinking-2507",
-        "openai/gpt-oss-120b:free",
-        "nousresearch/hermes-3-llama-3.1-405b:free",
-        "qwen/qwen3-next-80b-a3b-instruct:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "mistralai/mistral-small-3.1-24b-instruct:free",
-        "nvidia/nemotron-3-nano-30b-a3b:free",
+        "qwen/qwen3.5-397b-a17b",
+        # paid
+        "deepseek/deepseek-v4-flash",
+        "qwen/qwen3-coder-next",
+        "qwen/qwen3.6-flash",
+        "qwen/qwen3.5-flash-02-23",
+        "tencent/hy3-preview",
+        "inclusionai/ling-2.6-flash",
     ]
 
     async def complete(
@@ -294,28 +202,18 @@ class OpenRouterProvider(OpenAIProvider):
     ) -> Completion:
         """Complete with automatic fallback on 429/402/404 errors.
 
-        Fallback order: paid models first, then free as last resort when
-        credits are exhausted on all paid options.
+        Fallback order: the chosen model first, then the highest-quality
+        sibling in FALLBACK_ORDER (premium → paid). Since the project no
+        longer enumerates `:free` endpoints, the previous bias toward free
+        siblings is gone — at most one retry on a real failure.
         """
-        vendor = self._model.split("/")[0]  # e.g. "qwen" from "qwen/qwen3-coder-next"
-        paid_models = [self._model]
-        free_same_vendor: list[str] = []
-        free_other: list[str] = []
-        for m in self.FALLBACK_ORDER:
-            if m == self._model:
-                continue
-            if ":free" in m:
-                if m.split("/")[0] == vendor:
-                    free_same_vendor.append(m)
-                else:
-                    free_other.append(m)
-            else:
-                paid_models.append(m)
-
-        # Try: chosen model, then first free from same vendor — max 2 attempts
+        # Try: chosen model, then the first sibling from FALLBACK_ORDER —
+        # max 2 attempts so an unrecoverable upstream failure doesn't fan out.
         models_to_try = [self._model]
-        if free_same_vendor:
-            models_to_try.append(free_same_vendor[0])
+        for candidate in self.FALLBACK_ORDER:
+            if candidate != self._model:
+                models_to_try.append(candidate)
+                break
 
         last_error = None
         effective_max_tokens = max_tokens

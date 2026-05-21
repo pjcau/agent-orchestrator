@@ -34,117 +34,77 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
     The curated list is always returned regardless of whether an API key
     is configured — the key is only needed for actual LLM calls, not for
     browsing the model catalog.
+
+    Each entry carries a `tier` field used by the frontend dropdown to
+    group models under "Paid Premium" or "Paid" optgroups. No free models
+    are listed: they double-list the same vendor at lower quality and made
+    the picker noisy.
     """
-    # Curated models: paid first, then free
     return [
-        # --- Paid models ---
-        {
-            "name": "qwen/qwen3.5-flash-02-23",
-            "size": "$0.06/$0.30 · Flash · 262K",
-            "provider": "openrouter",
-        },
-        {
-            "name": "qwen/qwen3.6-flash",
-            "size": "$0.19/$1.13 · Flash · 1M",
-            "provider": "openrouter",
-        },
-        {
-            "name": "inclusionai/ling-2.6-flash",
-            "size": "$0.01/$0.03 · Flash · 262K",
-            "provider": "openrouter",
-        },
-        {
-            "name": "tencent/hy3-preview",
-            "size": "$0.066/$0.26 · Preview · 262K",
-            "provider": "openrouter",
-        },
-        {
-            "name": "qwen/qwen3-coder-next",
-            "size": "$0.12/$0.75 · Coder Next · 262K",
-            "provider": "openrouter",
-        },
+        # --- Paid Premium ---
         {
             "name": "qwen/qwen3.6-plus",
             "size": "$0.325/$1.95 · Plus · 1M",
             "provider": "openrouter",
+            "tier": "premium",
         },
         {
-            "name": "qwen/qwen3.5-397b-a17b",
-            "size": "$0.39/$2.34 · 397B MoE · 262K",
+            "name": "qwen/qwen3-235b-a22b-thinking-2507",
+            "size": "235B MoE thinking · 131K",
             "provider": "openrouter",
-        },
-        {
-            "name": "deepseek/deepseek-v4-flash",
-            "size": "$0.112/$0.224 · MoE Flash · 1M",
-            "provider": "openrouter",
+            "tier": "premium",
         },
         {
             "name": "deepseek/deepseek-v4-pro",
             "size": "$0.435/$0.87 · 1.6T MoE · 1M",
             "provider": "openrouter",
-        },
-        # --- Free models ---
-        {
-            "name": "qwen/qwen3-coder:free",
-            "size": "Free · 480B MoE · 262K",
-            "provider": "openrouter",
+            "tier": "premium",
         },
         {
-            "name": "qwen/qwen3-235b-a22b-thinking-2507",
-            "size": "Free · 235B MoE · 131K",
+            "name": "qwen/qwen3.5-397b-a17b",
+            "size": "$0.39/$2.34 · 397B MoE · 262K",
             "provider": "openrouter",
+            "tier": "premium",
+        },
+        # --- Paid ---
+        # tencent/hy3-preview + inclusionai/ling-2.6-flash are pinned to the
+        # top of the Paid group on the user's request (low cost, predictable
+        # behaviour — sensible defaults for casual use).
+        {
+            "name": "tencent/hy3-preview",
+            "size": "$0.066/$0.26 · Preview · 262K",
+            "provider": "openrouter",
+            "tier": "paid",
         },
         {
-            "name": "qwen/qwen3-next-80b-a3b-instruct:free",
-            "size": "Free · 80B MoE · 262K",
+            "name": "inclusionai/ling-2.6-flash",
+            "size": "$0.01/$0.03 · Flash · 262K",
             "provider": "openrouter",
-        },
-        {"name": "qwen/qwen3-4b:free", "size": "Free · 4B · 41K", "provider": "openrouter"},
-        {
-            "name": "openai/gpt-oss-120b:free",
-            "size": "Free · 120B · 131K",
-            "provider": "openrouter",
-        },
-        {"name": "openai/gpt-oss-20b:free", "size": "Free · 20B · 131K", "provider": "openrouter"},
-        {
-            "name": "nousresearch/hermes-3-llama-3.1-405b:free",
-            "size": "Free · 405B · 131K",
-            "provider": "openrouter",
+            "tier": "paid",
         },
         {
-            "name": "meta-llama/llama-3.3-70b-instruct:free",
-            "size": "Free · 70B · 128K",
+            "name": "deepseek/deepseek-v4-flash",
+            "size": "$0.112/$0.224 · MoE Flash · 1M",
             "provider": "openrouter",
+            "tier": "paid",
         },
         {
-            "name": "google/gemma-3-27b-it:free",
-            "size": "Free · 27B · 131K",
+            "name": "qwen/qwen3-coder-next",
+            "size": "$0.12/$0.75 · Coder Next · 262K",
             "provider": "openrouter",
+            "tier": "paid",
         },
         {
-            "name": "google/gemma-3-12b-it:free",
-            "size": "Free · 12B · 32K",
+            "name": "qwen/qwen3.6-flash",
+            "size": "$0.19/$1.13 · Flash · 1M",
             "provider": "openrouter",
+            "tier": "paid",
         },
         {
-            "name": "meta-llama/llama-3.2-3b-instruct:free",
-            "size": "Free · 3B · 131K",
+            "name": "qwen/qwen3.5-flash-02-23",
+            "size": "$0.06/$0.30 · Flash · 262K",
             "provider": "openrouter",
-        },
-        {
-            "name": "mistralai/mistral-small-3.1-24b-instruct:free",
-            "size": "Free · 24B · 128K",
-            "provider": "openrouter",
-        },
-        {
-            "name": "nvidia/nemotron-3-nano-30b-a3b:free",
-            "size": "Free · 30B MoE · 256K",
-            "provider": "openrouter",
-        },
-        {
-            "name": "nvidia/nemotron-nano-9b-v2:free",
-            "size": "Free · 9B · 128K",
-            "provider": "openrouter",
+            "tier": "paid",
         },
     ]
 

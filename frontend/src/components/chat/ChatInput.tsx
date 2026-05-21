@@ -160,11 +160,17 @@ export function ChatInput({
   // Auto-select default model when provider changes or models load.
   // On the Cloud (OpenRouter) provider, prefer "tencent/hy3-preview" when
   // it's available, otherwise fall back to the first model in the list.
+  // Also re-select if the currently chosen model has disappeared from the
+  // catalog (e.g. a previously selected :free model that we just removed) —
+  // otherwise the <select> displays an empty value because no <option>
+  // matches.
   const PREFERRED_CLOUD_MODEL = "tencent/hy3-preview";
   useEffect(() => {
     if (!models) return;
     const list = provider === "openrouter" ? models.openrouter : models.ollama;
-    if (list.length > 0 && !model) {
+    if (list.length === 0) return;
+    const stillExists = model ? list.some((m) => m.name === model) : false;
+    if (!stillExists) {
       if (provider === "openrouter") {
         const preferred = list.find((m) => m.name === PREFERRED_CLOUD_MODEL);
         setModel(preferred ? preferred.name : list[0].name);
@@ -324,8 +330,11 @@ export function ChatInput({
     input.click();
   }, [uploadFile]);
 
-  const paidModels = models?.openrouter.filter((m) => !m.name.includes(":free")) ?? [];
-  const freeModels = models?.openrouter.filter((m) => m.name.includes(":free")) ?? [];
+  // OpenRouter catalog is split into two tiers via the `tier` field served by
+  // the backend (`list_openrouter_models`). Free models were removed; nothing
+  // appears in more than one optgroup.
+  const premiumModels = models?.openrouter.filter((m) => m.tier === "premium") ?? [];
+  const paidModels = models?.openrouter.filter((m) => m.tier !== "premium") ?? [];
   const ollamaModels = models?.ollama ?? [];
 
   return (
@@ -533,7 +542,7 @@ export function ChatInput({
           {provider === "openrouter" ? (
             <>
               {paidModels.length > 0 && (
-                <optgroup label="Paid models">
+                <optgroup label="Paid">
                   {paidModels.map((m) => (
                     <option key={m.name} value={m.name} style={{ color: "#f0b060" }}>
                       {m.name} ({m.size})
@@ -541,10 +550,10 @@ export function ChatInput({
                   ))}
                 </optgroup>
               )}
-              {freeModels.length > 0 && (
-                <optgroup label="Free models">
-                  {freeModels.map((m) => (
-                    <option key={m.name} value={m.name} style={{ color: "#7ee07e" }}>
+              {premiumModels.length > 0 && (
+                <optgroup label="Paid Premium">
+                  {premiumModels.map((m) => (
+                    <option key={m.name} value={m.name} style={{ color: "#d685ff" }}>
                       {m.name} ({m.size})
                     </option>
                   ))}

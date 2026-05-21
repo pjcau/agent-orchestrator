@@ -133,6 +133,12 @@ export interface SessionInfo {
 export interface ModelInfo {
   name: string;
   size: string;
+  /**
+   * Catalog tier for OpenRouter models. The dropdown groups models under
+   * "Paid Premium" or "Paid" optgroups based on this field. Ollama entries
+   * do not set it.
+   */
+  tier?: "premium" | "paid";
 }
 
 export interface ModelsResponse {

@@ -324,7 +324,7 @@ Formatting rules (`formatCost` in `ChatMessage.tsx`):
 
 `formatElapsed` renders sub-second values as `ms`, < 60 s as `s.s`, and longer durations as `m m s s`.
 
-For local providers (Ollama, vLLM) `input_cost_per_million = output_cost_per_million = 0`, so `$0` is correct. For OpenRouter, models with a `:free` suffix are priced at zero in `OpenRouterProvider.MODELS`; pick a non-`:free` model to see non-zero costs.
+For local providers (Ollama, vLLM) `input_cost_per_million = output_cost_per_million = 0`, so `$0` is correct. For OpenRouter, the curated catalog now exposes only paid endpoints, grouped into **Paid** and **Paid Premium** tiers via the `tier` field served by `list_openrouter_models()` (see `src/agent_orchestrator/dashboard/graphs.py`). The previous `:free` endpoints were removed because they double-listed the same vendor at lower quality. Per-model pricing lives in `OpenRouterProvider.MODELS`.
 
 ## Assistant message actions
 

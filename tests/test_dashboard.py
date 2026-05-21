@@ -1154,8 +1154,10 @@ class TestDynamicMaxTokens:
         p = OpenRouterProvider(model="qwen/qwen3.5-flash-02-23")
         assert p.capabilities.max_output_tokens == 32_768
 
-        p2 = OpenRouterProvider(model="qwen/qwen3-4b:free")
-        assert p2.capabilities.max_output_tokens == 4_096
+        # DeepSeek V4 Flash caps generation at 16K — the default model for
+        # the healthcare agents.
+        p2 = OpenRouterProvider(model="deepseek/deepseek-v4-flash")
+        assert p2.capabilities.max_output_tokens == 16_384
 
     def test_model_capabilities_default(self):
         """ModelCapabilities.max_output_tokens has a sensible default."""
