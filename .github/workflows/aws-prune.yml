@@ -22,6 +22,12 @@ name: AWS Prune (terminate orphan resources)
 #                     (DeleteOnTermination usually handles attached ones)
 
 on:
+  schedule:
+    # Mondays 09:00 UTC — periodic dry-run reminder. Catches drift if a new
+    # orphan appears or if the known orphan still hasn't been cleaned. Always
+    # runs in dry-run mode (cron can't supply `confirm=YES`), so it is safe
+    # by construction.
+    - cron: '0 9 * * 1'
   workflow_dispatch:
     inputs:
       instance_id:
@@ -62,11 +68,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      INSTANCE_ID: ${{ github.event.inputs.instance_id }}
-      AWS_REGION_TARGET: ${{ github.event.inputs.region }}
-      DRY_RUN: ${{ github.event.inputs.dry_run }}
+      # Cron events have no inputs — default to the known orphan + safe dry-run.
+      INSTANCE_ID: ${{ github.event.inputs.instance_id || 'i-01f4af542f7c8c38d' }}
+      AWS_REGION_TARGET: ${{ github.event.inputs.region || 'eu-west-1' }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
       CONFIRM: ${{ github.event.inputs.confirm }}
-      DELETE_ORPHAN: ${{ github.event.inputs.delete_orphan_volumes }}
+      DELETE_ORPHAN: ${{ github.event.inputs.delete_orphan_volumes || 'false' }}
       REPORT: prune-report.md
     steps:
       - name: Configure AWS Credentials
@@ -100,20 +107,53 @@ jobs:
           fi
 
       - name: 1. Describe instance
+        id: describe
         run: |
+          # Fail-soft: if the instance no longer exists (already cleaned, or
+          # typo in the input), report cleanly and skip the rest of the
+          # destructive steps. Exit-status-aware so the cron run stays green
+          # once the orphan has been pruned.
+          if ! aws ec2 describe-instances \
+              --region "$AWS_REGION_TARGET" \
+              --instance-ids "$INSTANCE_ID" \
+              --output json > /tmp/desc.json 2> /tmp/desc.err; then
+            err="$(cat /tmp/desc.err)"
+            {
+              echo "## 1. Instance not found"
+              echo ""
+              echo '```'
+              echo "$err"
+              echo '```'
+              echo ""
+              echo "Nothing to do — the instance has already been terminated"
+              echo "or the ID is wrong. Skipping the rest of the workflow."
+            } >> "$REPORT"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           {
             echo "## 1. Instance to operate on"
             echo '```'
-            aws ec2 describe-instances \
-              --region "$AWS_REGION_TARGET" \
-              --instance-ids "$INSTANCE_ID" \
-              --query "Reservations[].Instances[].[InstanceId,InstanceType,State.Name,LaunchTime,InstanceLifecycle,KeyName,Tags]" \
-              --output table
+            # Two views: a compact table without Tags (which the table
+            # renderer can't flatten — that was the previous run's crash),
+            # then the Name tag picked out separately.
+            jq -r '.Reservations[].Instances[]
+                   | "InstanceId: " + .InstanceId
+                   + "\nType:       " + .InstanceType
+                   + "\nState:      " + .State.Name
+                   + "\nLaunched:   " + .LaunchTime
+                   + "\nLifecycle:  " + (.InstanceLifecycle // "on-demand")
+                   + "\nKeyName:    " + (.KeyName // "(none)")
+                   + "\nName tag:   " + (
+                       (.Tags // []) | map(select(.Key=="Name")) | .[0].Value // "(none)"
+                     )' < /tmp/desc.json
             echo '```'
             echo ""
           } >> "$REPORT"
+          echo "found=true" >> "$GITHUB_OUTPUT"
 
       - name: 2. Attached volumes
+        if: steps.describe.outputs.found == 'true'
         id: vols
         run: |
           {
@@ -138,6 +178,7 @@ jobs:
           echo "vol_ids=$vol_ids" >> "$GITHUB_OUTPUT"
 
       - name: 3. Associated EIPs
+        if: steps.describe.outputs.found == 'true'
         run: |
           {
             echo "## 3. Associated Elastic IPs"
@@ -152,6 +193,7 @@ jobs:
           } >> "$REPORT"
 
       - name: 4. Plan
+        if: steps.describe.outputs.found == 'true'
         run: |
           {
             echo "## 4. Plan"
@@ -173,7 +215,7 @@ jobs:
           } >> "$REPORT"
 
       - name: 5. Terminate
-        if: ${{ github.event.inputs.dry_run == 'false' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' && steps.describe.outputs.found == 'true' }}
         run: |
           {
             echo "## 5. Terminate result"
@@ -186,7 +228,7 @@ jobs:
           } >> "$REPORT"
 
       - name: 6. Wait for termination
-        if: ${{ github.event.inputs.dry_run == 'false' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' && steps.describe.outputs.found == 'true' }}
         run: |
           aws ec2 wait instance-terminated \
             --region "$AWS_REGION_TARGET" \
@@ -204,7 +246,7 @@ jobs:
           } >> "$REPORT"
 
       - name: 7. Cleanup orphan volumes
-        if: ${{ github.event.inputs.dry_run == 'false' && github.event.inputs.delete_orphan_volumes == 'true' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' && github.event.inputs.delete_orphan_volumes == 'true' && steps.describe.outputs.found == 'true' }}
         run: |
           {
             echo "## 7. Orphan volume cleanup"

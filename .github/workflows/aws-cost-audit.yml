@@ -9,6 +9,9 @@ name: AWS Cost Audit
 # Trigger manually from the Actions tab → "AWS Cost Audit" → "Run workflow".
 
 on:
+  schedule:
+    # Mondays 09:00 UTC — weekly cost overview so drift is caught early.
+    - cron: '0 9 * * 1'
   workflow_dispatch:
     inputs:
       month_start:
