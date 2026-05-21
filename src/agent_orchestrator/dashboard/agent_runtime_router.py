@@ -786,9 +786,7 @@ async def team_cancel(job_id: str, request: Request):
             status_code=409,
         )
     future.cancel()
-    return JSONResponse(
-        content={"job_id": job_id, "status": "cancelling", "cancelled": True}
-    )
+    return JSONResponse(content={"job_id": job_id, "status": "cancelling", "cancelled": True})
 
 
 @runtime_router.get("/api/team/status/{job_id}")

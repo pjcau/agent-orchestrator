@@ -187,7 +187,7 @@ async def test_cancelled_team_run_unwinds_entire_chain(monkeypatch):
             ]
             assert cancelled_events, (
                 "Expected a TEAM_COMPLETE(cancelled=True) event after cancel; "
-                f"received instead: {[ (ev.event_type, ev.data) for ev in received ]}"
+                f"received instead: {[(ev.event_type, ev.data) for ev in received]}"
             )
             assert app.state.active_jobs[job_id]["status"] == "cancelled"
     finally:
