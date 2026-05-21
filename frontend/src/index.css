@@ -1010,6 +1010,15 @@ body {
   margin-top: 6px;
 }
 
+/* Keep the icon toggles (✨ presets + ⚙ advanced) glued together at the right
+   of the action bar so `justify-content: space-between` on the parent doesn't
+   push the middle button to the center of the row. */
+.chat-input__toggles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* === Sidebar === */
 .sidebar {
   width: 320px;
@@ -2042,21 +2051,45 @@ body {
      RAG/stream) so the eye lands on the textarea. They stay tappable. */
   .chat-input--focused .chat-input__controls { opacity: 0.65; }
 
-  /* --- 7. Collapse mode/provider selects on mobile behind ⚙ toggle.
-         Native selects are hidden in favour of segment controls (below) — the
-         <select> pickers misalign in some mobile browsers / emulators and the
-         option lists are short enough to fit as inline buttons. The <select>
-         elements still exist in the DOM but visually swap with the segments.
-         Other controls (model picker, RAG checkbox, stream toggle) stay
-         visible by default — only the segment radios collapse behind ⚙. */
-  .chat-input__adv-toggle { display: inline-flex; }
+  /* --- 7. Collapse mode/provider/model controls on mobile behind ⚙ toggle.
+         Native selects are hidden in favour of segment controls (mode +
+         provider) — the <select> pickers misalign in some mobile browsers
+         and the option lists are short enough to fit as inline buttons.
+         The model <select> is the only picker that is wide enough to
+         deserve its own row, so it stays as <select> but is also collapsed
+         behind the gear.
+         The PresetsBar (Explain / Review / …) is toggled by its own button
+         (✨) next to the gear via the `.presets-hidden` state on
+         <PresetsBar/>; no extra CSS rule needed here.
+         The advanced row content (mode, provider, model, RAG, stream) is
+         entirely hidden when the gear is closed; opening the gear reveals
+         every collapsed control in a single column. */
+  .chat-input__adv-toggle,
+  .chat-input__presets-toggle { display: inline-flex; }
   .chat-input__select--adv { display: none !important; }
+  /* Model picker + segment controls (mode/provider) are hidden until the
+     gear is opened. They reappear inside .chat-input__controls--adv below. */
+  .chat-input__controls .chat-input__select--model,
+  .chat-input__controls .chat-input__segment { display: none; }
+  /* Hide the textarea "B" (Browse workspace) button on mobile — the same
+     action lives in the mobile nav drawer to keep the input row compact. */
+  .chat-input__row .btn-icon[title*="workspace" i] { display: none; }
+  /* Keep the placeholder on a single visual row — long phrases used to wrap
+     and pushed the +/send buttons out of vertical alignment on iPhone SE
+     widths. Typed text is unaffected (textarea still wraps + auto-resizes
+     on Enter and on focus). */
+  .chat-input__textarea::placeholder {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* Breathing room between PresetsBar pills + away from the textarea below. */
   .presets-bar { gap: 10px; padding: 10px 12px 14px; row-gap: 10px; }
   .preset-btn { padding: 8px 14px; font-size: 12px; }
   /* Make the gear feel like an end-aligned secondary action next to New Chat. */
-  .chat-input__actions { padding: 2px 4px; }
-  .chat-input__actions .chat-input__adv-toggle {
+  .chat-input__actions { padding: 2px 4px; gap: 6px; }
+  .chat-input__actions .chat-input__adv-toggle,
+  .chat-input__actions .chat-input__presets-toggle {
     border-radius: 999px;
   }
   .chat-input__controls--adv .chat-input__segment {
@@ -2067,6 +2100,11 @@ body {
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 4px;
+  }
+  .chat-input__controls--adv .chat-input__select--model {
+    display: block;
+    width: 100%;
+    flex: 1 1 100%;
   }
   .chat-input__segment-btn {
     flex: 1;

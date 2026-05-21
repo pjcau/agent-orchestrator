@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { usePresets } from "@/api/hooks";
+import { useAppStore } from "@/stores/useAppStore";
 
 interface PresetsBarProps {
   /** Called with the substituted prompt text when a preset is applied. */
@@ -15,7 +16,9 @@ interface PresetsBarProps {
 export function PresetsBar({ onApply, fileContext }: PresetsBarProps) {
   const { data, isLoading } = usePresets();
   const [notice, setNotice] = useState<string | null>(null);
+  const presetsHidden = useAppStore((s) => s.presetsHidden);
 
+  if (presetsHidden) return null;
   if (isLoading || !data?.presets?.length) return null;
 
   const handleClick = (prompt: string) => {

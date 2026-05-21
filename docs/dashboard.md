@@ -25,6 +25,36 @@ The dashboard body is a flex row with (left → right):
   silently dropped. Keep the literal and the variable in sync. Pixel mismatch is
   caught by `frontend/e2e/responsive-iphone.spec.ts`.
 
+### ChatInput controls on mobile
+
+The chat composer (`frontend/src/components/chat/ChatInput.tsx`) keeps the
+on-screen footprint minimal on viewports ≤ 600 px:
+
+| Control | Default state | Reveal path |
+|---------|---------------|-------------|
+| Mode segment (Multi / Single / Prompt) | hidden | gear (⚙) |
+| Provider segment (Cloud / Local) | hidden | gear (⚙) |
+| Model `<select>` | hidden | gear (⚙) |
+| RAG / Stream toggles | hidden | gear (⚙) |
+| PresetsBar (Explain, Review, …) | visible | sparkles (✨) toggle — state in `useAppStore.presetsHidden` |
+| Workspace browse picker | n/a (modal) | "Browse files" entry in the mobile-nav drawer (state in `useAppStore.browseOpen`) |
+
+The ✨ and ⚙ toggles live in a shared `.chat-input__toggles` flex group
+inside `.chat-input__actions` so they stay glued at the right edge of the
+action row regardless of the `justify-content: space-between` on the parent.
+
+The textarea placeholder is forced to a single visual row on mobile (CSS
+`white-space: nowrap; text-overflow: ellipsis` on `::placeholder`) to keep
+the +/B/send buttons vertically aligned at iPhone-SE width. Typed text
+still wraps and the textarea still auto-resizes on Enter / focus.
+
+### Default Cloud model
+
+When the provider is set to `openrouter` (Cloud), the model auto-selector
+prefers `tencent/hy3-preview` if it appears in `models.openrouter`; it
+falls back to `list[0]` otherwise. Local (`ollama`) still picks the first
+available model. Tracked in `ChatInput.tsx` via `PREFERRED_CLOUD_MODEL`.
+
 ## Modular Architecture
 
 `app.py` is a composition root (~282 lines) that includes two routers. Can run as single process or split.

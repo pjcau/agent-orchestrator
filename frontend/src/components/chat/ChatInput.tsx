@@ -82,7 +82,13 @@ export function ChatInput({
   const ragNamespace = useAppStore((s) => s.ragNamespace);
   const setRagEnabled = useAppStore((s) => s.setRagEnabled);
   const setRagNamespace = useAppStore((s) => s.setRagNamespace);
-  const [browseOpen, setBrowseOpen] = useState(false);
+  // Workspace file picker state lives in the store so the mobile nav drawer
+  // can trigger it without duplicating a "B" button next to the textarea.
+  const browseOpen = useAppStore((s) => s.browseOpen);
+  const setBrowseOpen = useAppStore((s) => s.setBrowseOpen);
+  // Toggle for the PresetsBar visibility (Explain / Review / …).
+  const presetsHidden = useAppStore((s) => s.presetsHidden);
+  const togglePresetsHidden = useAppStore((s) => s.togglePresetsHidden);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadingName, setUploadingName] = useState<string | null>(null);
   // Collapsed "advanced" controls (mode + provider) — exposed via a gear toggle
@@ -93,12 +99,20 @@ export function ChatInput({
   const [composeFocused, setComposeFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-select first available model when provider changes or models load
+  // Auto-select default model when provider changes or models load.
+  // On the Cloud (OpenRouter) provider, prefer "tencent/hy3-preview" when
+  // it's available, otherwise fall back to the first model in the list.
+  const PREFERRED_CLOUD_MODEL = "tencent/hy3-preview";
   useEffect(() => {
     if (!models) return;
     const list = provider === "openrouter" ? models.openrouter : models.ollama;
     if (list.length > 0 && !model) {
-      setModel(list[0].name);
+      if (provider === "openrouter") {
+        const preferred = list.find((m) => m.name === PREFERRED_CLOUD_MODEL);
+        setModel(preferred ? preferred.name : list[0].name);
+      } else {
+        setModel(list[0].name);
+      }
     }
   }, [models, provider, model]);
 
@@ -123,7 +137,12 @@ export function ChatInput({
     setProvider(p);
     const list = p === "openrouter" ? models?.openrouter : models?.ollama;
     if (list?.length) {
-      setModel(list[0].name);
+      if (p === "openrouter") {
+        const preferred = list.find((m) => m.name === PREFERRED_CLOUD_MODEL);
+        setModel(preferred ? preferred.name : list[0].name);
+      } else {
+        setModel(list[0].name);
+      }
     }
   };
 
@@ -505,21 +524,36 @@ export function ChatInput({
         </button>
       </div>
 
-      {/* Action bar — primary on the left, settings gear on the right. */}
+      {/* Action bar — primary on the left, settings cluster on the right.
+          The two toggle buttons (✨ presets + ⚙ advanced) sit in a shared
+          flex sub-container so they stay glued together regardless of how
+          many buttons live in the outer row. */}
       <div className="chat-input__actions">
         <button className="btn-text" onClick={onNewChat} disabled={isDisabled}>
           New Chat
         </button>
-        <button
-          type="button"
-          className="btn-icon chat-input__adv-toggle"
-          onClick={() => setAdvOpen((o) => !o)}
-          aria-label={advOpen ? "Hide advanced options" : "Show advanced options"}
-          aria-expanded={advOpen}
-          title="Advanced options"
-        >
-          ⚙
-        </button>
+        <div className="chat-input__toggles">
+          <button
+            type="button"
+            className="btn-icon chat-input__presets-toggle"
+            onClick={togglePresetsHidden}
+            aria-label={presetsHidden ? "Show preset prompts" : "Hide preset prompts"}
+            aria-pressed={!presetsHidden}
+            title={presetsHidden ? "Show preset prompts (Explain, Review, …)" : "Hide preset prompts"}
+          >
+            ✨
+          </button>
+          <button
+            type="button"
+            className="btn-icon chat-input__adv-toggle"
+            onClick={() => setAdvOpen((o) => !o)}
+            aria-label={advOpen ? "Hide advanced options" : "Show advanced options"}
+            aria-expanded={advOpen}
+            title="Advanced options"
+          >
+            ⚙
+          </button>
+        </div>
       </div>
 
       {/* Workspace file picker modal */}

@@ -381,6 +381,33 @@ describe("useAppStore", () => {
     });
   });
 
+  describe("UI toggles (presets visibility + workspace browser)", () => {
+    beforeEach(() => {
+      useAppStore.setState({ presetsHidden: false, browseOpen: false });
+    });
+
+    it("setPresetsHidden flips the flag", () => {
+      expect(useAppStore.getState().presetsHidden).toBe(false);
+      useAppStore.getState().setPresetsHidden(true);
+      expect(useAppStore.getState().presetsHidden).toBe(true);
+    });
+
+    it("togglePresetsHidden alternates the flag", () => {
+      useAppStore.getState().togglePresetsHidden();
+      expect(useAppStore.getState().presetsHidden).toBe(true);
+      useAppStore.getState().togglePresetsHidden();
+      expect(useAppStore.getState().presetsHidden).toBe(false);
+    });
+
+    it("setBrowseOpen drives the workspace picker modal state", () => {
+      expect(useAppStore.getState().browseOpen).toBe(false);
+      useAppStore.getState().setBrowseOpen(true);
+      expect(useAppStore.getState().browseOpen).toBe(true);
+      useAppStore.getState().setBrowseOpen(false);
+      expect(useAppStore.getState().browseOpen).toBe(false);
+    });
+  });
+
   describe("responsive sidebar initialization", () => {
     it("starts closed when compact breakpoint matches", async () => {
       vi.resetModules();

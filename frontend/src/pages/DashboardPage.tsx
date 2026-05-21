@@ -32,6 +32,7 @@ export function DashboardPage() {
   // the full screen. The header bar remains tappable to expand it.
   const [graphCollapsed, setGraphCollapsed] = useState(isMobileViewport);
   const { sidebarOpen, setSidebarOpen, setSseMode, sseMode, reset } = useAppStore();
+  const setBrowseOpen = useAppStore((s) => s.setBrowseOpen);
   const graphReset = useGraphReset();
   const { data: sandboxStatus } = useSandboxStatus();
 
@@ -143,6 +144,16 @@ export function DashboardPage() {
                   )}
                 </button>
               )}
+              <button
+                className="mobile-nav__item"
+                onClick={() => {
+                  setBrowseOpen(true);
+                  setMobileNavOpen(false);
+                }}
+                title="Browse workspace files"
+              >
+                Browse files
+              </button>
               <button
                 className={`mobile-nav__item ${sseMode ? "active" : ""}`}
                 onClick={handleToggleSSE}

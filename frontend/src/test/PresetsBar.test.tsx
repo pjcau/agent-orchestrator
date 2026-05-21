@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PresetsBar } from "@/components/prompts/PresetsBar";
+import { useAppStore } from "@/stores/useAppStore";
 
 // Mock apiClient so no real network calls are made
 vi.mock("@/api/client", () => ({
@@ -37,6 +38,8 @@ describe("PresetsBar", () => {
         ],
       },
     });
+    // Reset the UI toggle so tests that don't touch it see the default state.
+    useAppStore.setState({ presetsHidden: false });
   });
 
   it("renders preset buttons after load", async () => {
@@ -82,5 +85,16 @@ describe("PresetsBar", () => {
     );
     await user.click(screen.getByText("Hello"));
     expect(onApply).toHaveBeenCalledWith("Hello world");
+  });
+
+  it("renders nothing when presetsHidden is true", () => {
+    useAppStore.setState({ presetsHidden: true });
+    const { container } = render(
+      <PresetsBar onApply={vi.fn()} fileContext="" />,
+      { wrapper }
+    );
+    // No preset buttons rendered at all
+    expect(container.querySelector(".presets-bar")).toBeNull();
+    expect(screen.queryByText("Summarise")).toBeNull();
   });
 });

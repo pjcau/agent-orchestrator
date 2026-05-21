@@ -71,6 +71,12 @@ interface AppState {
 
   // UI state
   sidebarOpen: boolean;
+  /** Hide the PresetsBar (Explain / Review / …). Toggleable from ChatInput. */
+  presetsHidden: boolean;
+  /** Workspace file picker open state. Lifted from ChatInput so the mobile
+   *  nav drawer can trigger it without keeping a duplicate B button next to
+   *  the textarea. */
+  browseOpen: boolean;
 
   // Task plan
   taskPlanItems: TaskPlanItem[];
@@ -144,6 +150,9 @@ interface AppState {
   clearAttachedFiles: () => void;
   setRagEnabled: (b: boolean) => void;
   setRagNamespace: (s: string) => void;
+  setPresetsHidden: (hidden: boolean) => void;
+  togglePresetsHidden: () => void;
+  setBrowseOpen: (open: boolean) => void;
   /** Full Reset: graph + chat + attachments + conversation id (caller is
    *  responsible for the server-side DELETE /api/conversation/{id}).
    *  RAG preferences are intentionally NOT cleared — they are user settings. */
@@ -277,11 +286,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   ragEnabled: readPersistedRagEnabled(),
   ragNamespace: readPersistedRagNamespace(),
 
+  // UI toggles (volatile — not persisted)
+  presetsHidden: false,
+  browseOpen: false,
+
   // --- Actions ---
 
   setWsConnected: (connected) => set({ wsConnected: connected }),
 
   setSseMode: (mode) => set({ sseMode: mode }),
+
+  setPresetsHidden: (hidden) => set({ presetsHidden: hidden }),
+  togglePresetsHidden: () => set((s) => ({ presetsHidden: !s.presetsHidden })),
+
+  setBrowseOpen: (open) => set({ browseOpen: open }),
 
   applySnapshot: (snapshot) =>
     set({
