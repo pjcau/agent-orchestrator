@@ -257,6 +257,37 @@ jobs:
           # state. Safe no-op when there are none.
           $SSH_CMD "docker ps -aq --filter 'name=agent-orchestrator' | xargs -r docker rm -f" || true
 
+          # --- Disk hygiene before build ---
+          # `docker compose build --no-cache` accumulates intermediate
+          # BuildKit layers every run (frontend node_modules, rust toolchain,
+          # apt/pip caches). On a busy day with multiple failed retries the
+          # 100 GB EC2 volume can fill in days, breaking the rust-build stage
+          # with "no free space in /var/cache/apt/archives".
+          #
+          # Strategy (no impact on running services, no feature loss):
+          #   1. Prune dangling images + build cache older than 24h. Keeps
+          #      yesterday's cache for fast retry-after-fix, but caps the
+          #      rolling footprint at ~one day of builds.
+          #   2. Bail early with a clear error if free space < 5 GB, so we
+          #      never start a build that's doomed to fail mid-way.
+          # Volumes (postgres, grafana, certs) and active container images
+          # are explicitly NOT touched.
+          $SSH_CMD "
+            echo '=== disk before prune ==='
+            df -h / | head -3
+            docker container prune -f --filter 'until=24h' >/dev/null 2>&1 || true
+            docker image prune -af --filter 'until=24h' >/dev/null 2>&1 || true
+            docker builder prune -af --filter 'until=24h' >/dev/null 2>&1 || true
+            echo '=== disk after prune ==='
+            df -h / | head -3
+            AVAIL_GB=\$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+            if [ \"\${AVAIL_GB:-0}\" -lt 5 ]; then
+              echo \"FATAL: only \${AVAIL_GB} GB free on EC2 root — build needs >=5 GB.\"
+              echo \"Run: docker builder prune -af  (drops all cache, slower next build)\"
+              exit 1
+            fi
+          "
+
           # Build and restart services
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache dashboard aws-cost-exporter"
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans --timeout 30" || true

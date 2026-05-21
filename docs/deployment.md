@@ -187,6 +187,30 @@ All GitHub Secrets are injected into `.env.prod` on EC2 via the `_inject()` help
 
 Only `dashboard` and `aws-cost-exporter` are force-recreated on deploy. Stateful services (postgres, redis, nginx, tempo) are preserved between deploys to keep data/TLS state.
 
+### EC2 Disk Hygiene
+
+`docker compose build --no-cache` accumulates intermediate BuildKit layers
+every deploy (frontend `node_modules`, rust toolchain, apt/pip caches). On
+busy days with multiple retries the 100 GB root volume can fill in days,
+breaking the `rust-build` stage with `no free space in /var/cache/apt/archives`.
+
+The deploy workflow runs **automatic prune before every build**
+(`deploy.yml` step `Deploy to EC2`):
+
+1. `docker container/image/builder prune --filter "until=24h"` — drops cache
+   older than one day. Yesterday's cache is preserved so a same-day
+   retry-after-fix still benefits from layer reuse.
+2. Hard guard: if free space < 5 GB after the prune, the deploy fails with
+   a clear error rather than mid-build OOM. The recovery hint is logged.
+3. **Volumes are NOT touched** — postgres data, grafana dashboards, LE
+   cert archives, prometheus history all survive.
+
+Manual nuclear option if the volume ever fills:
+```bash
+ssh ec2-user@<EC2_IP> 'docker builder prune -af'
+```
+This drops all build cache (next deploy rebuilds from scratch, +5–10 min).
+
 ### Operational Notes
 
 - **Tempo**: trace backend container (ports 3200 Tempo API, 4318 OTLP HTTP, 7-day retention). Defined in `docker-compose.prod.yml`.
