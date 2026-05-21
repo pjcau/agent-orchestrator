@@ -997,6 +997,9 @@ body {
 }
 .chat-input__select:focus { border-color: var(--accent); outline: none; }
 .chat-input__select--model { flex: 1; min-width: 120px; }
+/* Single-agent picker: sits next to model on desktop. Min width keeps the
+   longest names (e.g. "clinical-pharmacist") readable without truncation. */
+.chat-input__select--agent { min-width: 160px; }
 
 .stream-toggle {
   display: flex;
@@ -2185,9 +2188,13 @@ body {
   .chat-input__adv-toggle,
   .chat-input__presets-toggle { display: inline-flex; }
   .chat-input__select--adv { display: none !important; }
-  /* Model picker + segment controls (mode/provider) are hidden until the
-     gear is opened. They reappear inside .chat-input__controls--adv below. */
+  /* Model picker + agent picker + segment controls (mode/provider) are
+     hidden until the gear is opened. They reappear inside
+     .chat-input__controls--adv below. (We deliberately do NOT add
+     `--adv` to the model/agent classes — that variant uses !important and
+     would beat the show rule below.) */
   .chat-input__controls .chat-input__select--model,
+  .chat-input__controls .chat-input__select--agent,
   .chat-input__controls .chat-input__segment { display: none; }
   /* Hide the textarea "B" (Browse workspace) button on mobile — the same
      action lives in the mobile nav drawer to keep the input row compact. */
@@ -2219,7 +2226,8 @@ body {
     border-radius: 6px;
     padding: 4px;
   }
-  .chat-input__controls--adv .chat-input__select--model {
+  .chat-input__controls--adv .chat-input__select--model,
+  .chat-input__controls--adv .chat-input__select--agent {
     display: block;
     width: 100%;
     flex: 1 1 100%;

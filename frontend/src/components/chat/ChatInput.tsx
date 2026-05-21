@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import type { ModelsResponse } from "@/api/types";
+import type { ModelsResponse, AgentsResponse } from "@/api/types";
 import { WorkspaceFilePicker } from "@/components/files/WorkspaceFilePicker";
 import { useAppStore } from "@/stores/useAppStore";
+import { useAgents } from "@/api/hooks";
 import apiClient from "@/api/client";
 import type { AxiosError } from "axios";
 import {
@@ -42,6 +43,7 @@ interface ChatInputProps {
     fileContext: string;
     ragEnabled: boolean;
     ragNamespace: string;
+    agent: string;
   }) => void;
   onNewChat: () => void;
   /** When non-null, ChatInput sets its textarea to this value (from preset). */
@@ -95,6 +97,11 @@ export function ChatInput({
   const [provider, setProvider] = useState<"openrouter" | "ollama">("openrouter");
   const [model, setModel] = useState("");
   const [useStreaming, setUseStreaming] = useState(true);
+  // Single-agent mode: which agent to invoke. Defaults to team-lead so the
+  // dashboard's previous behaviour (hardcoded team-lead) is preserved when the
+  // user doesn't actively pick something.
+  const [agent, setAgent] = useState<string>("team-lead");
+  const { data: agentsData } = useAgents();
   // attachedFiles lives in the store so the global Reset action can clear it.
   const attachedFiles = useAppStore((s) => s.attachedFiles);
   const addAttachedFile = useAppStore((s) => s.addAttachedFile);
@@ -244,12 +251,12 @@ export function ChatInput({
       .map((f) => `--- ${f.path} ---\n${f.content}`)
       .join("\n\n");
 
-    onSend({ text: trimmed, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace });
+    onSend({ text: trimmed, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace, agent });
     setText("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming, ragEnabled, ragNamespace]);
+  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming, ragEnabled, ragNamespace, agent]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -478,6 +485,43 @@ export function ChatInput({
           <option value="openrouter">Cloud (OpenRouter)</option>
           <option value="ollama">Local (Ollama)</option>
         </select>
+
+        {/* Single-Agent picker. Visible only in "agent" mode so multi-agent
+            runs (where team-lead always orchestrates) and prompt mode stay
+            visually uncluttered. Sits BEFORE the model select so the user
+            picks WHO runs the task first, then refines WHICH LLM powers it.
+            Agents are grouped by category for clarity:
+            healthcare, software-engineering, finance, …
+            On mobile this select follows the same pattern as the model
+            select (no --adv class — that variant has display:none !important
+            on mobile which a sibling rule can't override). Mobile hide /
+            show is handled in index.css under @media (max-width: 600px). */}
+        {mode === "agent" && (
+          <select
+            className="chat-input__select chat-input__select--agent"
+            value={agent}
+            onChange={(e) => setAgent(e.target.value)}
+            disabled={isDisabled}
+            title="Agent"
+            aria-label="Agent"
+          >
+            {agentsData ? (
+              Object.entries(
+                (agentsData as AgentsResponse).categories ?? {},
+              ).map(([category, list]) => (
+                <optgroup key={category} label={category}>
+                  {list.map((a) => (
+                    <option key={a.name} value={a.name}>
+                      {a.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))
+            ) : (
+              <option value="team-lead">team-lead</option>
+            )}
+          </select>
+        )}
 
         <select
           className="chat-input__select chat-input__select--model"

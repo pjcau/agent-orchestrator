@@ -35,6 +35,7 @@ on-screen footprint minimal on viewports ≤ 600 px:
 | Mode segment (Multi / Single / Prompt) | hidden | gear (⚙) |
 | Provider segment (Cloud / Local) | hidden | gear (⚙) |
 | Model `<select>` | hidden | gear (⚙) |
+| Agent `<select>` (only when mode = Single) | hidden | gear (⚙) |
 | RAG / Stream toggles | hidden | gear (⚙) |
 | PresetsBar (Explain, Review, …) | visible | sparkles (✨) toggle — state in `useAppStore.presetsHidden` |
 | Workspace browse picker | n/a (modal) | "Browse files" entry in the mobile-nav drawer (state in `useAppStore.browseOpen`) |
@@ -54,6 +55,28 @@ When the provider is set to `openrouter` (Cloud), the model auto-selector
 prefers `tencent/hy3-preview` if it appears in `models.openrouter`; it
 falls back to `list[0]` otherwise. Local (`ollama`) still picks the first
 available model. Tracked in `ChatInput.tsx` via `PREFERRED_CLOUD_MODEL`.
+
+### Single-Agent picker
+
+In **Single Agent** mode the composer reveals an additional `<select>`
+populated from `GET /api/agents` (the registry walks `.claude/agents/**`
+recursively, including the `healthcare/` category — `diagnostician`,
+`medical-advisor`, `disease-specialist`, `clinical-pharmacist`). The
+selected agent is forwarded as the `agent` field of
+`POST /api/agent/run`; it defaults to `team-lead` so the previous
+hardcoded behaviour is preserved when the user hasn't actively picked.
+
+The picker uses the same `.chat-input__select--adv` class as
+mode/provider/model, so on mobile it stays hidden until the ⚙ gear is
+opened, then expands to a full-width row inside the advanced panel
+(`.chat-input__controls--adv .chat-input__select--agent` in `index.css`).
+It is not rendered at all in `multi-agent` or `prompt` mode — team runs
+always orchestrate via `team-lead`, and `/api/prompt` doesn't take an
+agent name.
+
+Tested in `frontend/src/test/agentPicker.test.tsx` (3 cases): selected
+agent is forwarded to `/api/agent/run`, default falls back to
+`team-lead`, picker is absent outside single-agent mode.
 
 ### Stop button semantics
 

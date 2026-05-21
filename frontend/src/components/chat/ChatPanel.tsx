@@ -19,6 +19,7 @@ interface SendOpts {
   fileContext: string;
   ragEnabled: boolean;
   ragNamespace: string;
+  agent: string;
 }
 
 type SendOptsNoText = Omit<SendOpts, "text">;
@@ -159,10 +160,10 @@ export function ChatPanel() {
 
   const handleSend = useCallback(
     async (opts: SendOpts) => {
-      const { text, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace } = opts;
+      const { text, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace, agent } = opts;
       // Capture everything but the prompt text so Regenerate can replay.
       lastSendOptsRef.current = {
-        mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace,
+        mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace, agent,
       };
 
       // Auto-create a conversation on first send so multi-turn memory works
@@ -247,7 +248,7 @@ export function ChatPanel() {
           }>(
             "/api/agent/run",
             {
-              agent: "team-lead",
+              agent: agent || "team-lead",
               task: text,
               model,
               provider,
