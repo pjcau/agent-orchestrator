@@ -71,3 +71,58 @@ def test_flash_tier_alternatives_after_qwen35_flash():
         "tencent/hy3-preview",
     ):
         assert keys.index(follower) > base, f"{follower} must come after qwen3.5-flash"
+
+
+# --- DeepSeek V4 family — verified against the OpenRouter catalog ---
+
+
+def test_deepseek_v4_flash_registered():
+    """deepseek/deepseek-v4-flash — efficiency-optimized MoE, default model
+    for the medical-advisor agent. Pricing and context match OpenRouter."""
+    info = OpenRouterProvider.MODELS["deepseek/deepseek-v4-flash"]
+    assert info["input_cost"] == 0.112
+    assert info["output_cost"] == 0.224
+    assert info["context"] == 1_050_000
+    assert info["max_output"] >= 8_192
+    assert info["reasoning"] >= 0.80
+
+
+def test_deepseek_v4_flash_capabilities():
+    provider = OpenRouterProvider(model="deepseek/deepseek-v4-flash", api_key="test")
+    caps = provider.capabilities
+    assert caps.max_context == 1_050_000
+    assert caps.supports_tools is True
+    assert caps.supports_streaming is True
+    assert provider.input_cost_per_million == 0.112
+    assert provider.output_cost_per_million == 0.224
+
+
+def test_deepseek_v4_flash_in_fallback_chain():
+    """DeepSeek-v4-flash must be reachable through the fallback chain."""
+    assert "deepseek/deepseek-v4-flash" in OpenRouterProvider.FALLBACK_ORDER
+
+
+def test_deepseek_v4_pro_registered():
+    """deepseek/deepseek-v4-pro — large-scale MoE (1.6T total / 49B active)."""
+    info = OpenRouterProvider.MODELS["deepseek/deepseek-v4-pro"]
+    assert info["input_cost"] == 0.435
+    assert info["output_cost"] == 0.87
+    assert info["context"] == 1_050_000
+    assert info["coding"] >= 0.88
+
+
+def test_deepseek_v4_pro_capabilities():
+    provider = OpenRouterProvider(model="deepseek/deepseek-v4-pro", api_key="test")
+    caps = provider.capabilities
+    assert caps.max_context == 1_050_000
+    assert provider.input_cost_per_million == 0.435
+    assert provider.output_cost_per_million == 0.87
+
+
+def test_deepseek_v4_pro_ranked_above_flash_in_fallback():
+    """Pro should be preferred over Flash when both are reachable — it has
+    higher reasoning and coding scores."""
+    order = OpenRouterProvider.FALLBACK_ORDER
+    assert "deepseek/deepseek-v4-pro" in order
+    assert "deepseek/deepseek-v4-flash" in order
+    assert order.index("deepseek/deepseek-v4-pro") < order.index("deepseek/deepseek-v4-flash")

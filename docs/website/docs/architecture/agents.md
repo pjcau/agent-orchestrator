@@ -104,6 +104,38 @@ graph TD
     style GH fill:#e6a23c,color:#fff
 ```
 
+### Healthcare (4 agents)
+
+```mermaid
+graph TD
+    HC["Healthcare"]
+    HC --> MA["medical-advisor<br/>triage / orchestrator, general clinical Q&A"]
+    HC --> DS["disease-specialist<br/>structured pathology dossiers"]
+    HC --> DX["diagnostician<br/>Bayesian differential diagnosis"]
+    HC --> CP["clinical-pharmacist<br/>drug class, dose ranges, interactions"]
+    HC -.->|references| SF["_safety.md<br/>canonical Hard Safety Rules"]
+
+    style HC fill:#16a085,color:#fff
+    style MA fill:#16a085,color:#fff
+    style DS fill:#16a085,color:#fff
+    style DX fill:#16a085,color:#fff
+    style CP fill:#16a085,color:#fff
+    style SF fill:#7f8c8d,color:#fff
+```
+
+All four healthcare agents default to `deepseek/deepseek-v4-flash` via OpenRouter
+(cheap, fast, reasoning-strong) and remain swappable from the UI. Two DeepSeek V4
+models are in the shared OpenRouter catalog: `deepseek/deepseek-v4-flash` (default
+for healthcare) and `deepseek/deepseek-v4-pro` (large MoE, escalation tier).
+
+The shared file `.claude/agents/healthcare/_safety.md` is the **single source of
+truth** for the safety contract: disclaimer on every reply, emergency escalation,
+no individualized prescriptions, cited clinical claims, refusal of PII, no
+self-harm enablement, explicit uncertainty, pregnancy / age-extreme flags,
+in-scope only, anti-stall. Each agent links back to `_safety.md` and reproduces
+the 10 rules verbatim — the CI test
+`test_each_healthcare_agent_references_safety_doc` catches drift.
+
 ## Cross-Agent Dependencies
 
 ### Software Engineering

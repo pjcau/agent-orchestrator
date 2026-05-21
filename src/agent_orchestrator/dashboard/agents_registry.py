@@ -49,6 +49,35 @@ AGENT_SKILLS: dict[str, list[str]] = {
     "growth-hacker": ["web-research"],
     "social-media-manager": ["web-research"],
     "email-marketer": ["web-research"],
+    # healthcare
+    "medical-advisor": ["web-research"],
+    "disease-specialist": ["web-research"],
+    "diagnostician": ["web-research"],
+    "clinical-pharmacist": ["web-research"],
+}
+
+# Per-agent default model override. Agents not listed here fall back to the
+# project-wide default chosen by the dashboard / provider router. The dict
+# stays small on purpose: only agents with a strong reason to pin a specific
+# model belong here (e.g. clinical reasoning agents that want a cheap, fast,
+# reasoning-oriented model by default).
+AGENT_DEFAULT_MODEL: dict[str, dict[str, str]] = {
+    "medical-advisor": {
+        "provider_type": "openrouter",
+        "model": "deepseek/deepseek-v4-flash",
+    },
+    "disease-specialist": {
+        "provider_type": "openrouter",
+        "model": "deepseek/deepseek-v4-flash",
+    },
+    "diagnostician": {
+        "provider_type": "openrouter",
+        "model": "deepseek/deepseek-v4-flash",
+    },
+    "clinical-pharmacist": {
+        "provider_type": "openrouter",
+        "model": "deepseek/deepseek-v4-flash",
+    },
 }
 
 
@@ -71,13 +100,17 @@ def _read_agent_file(md_file: Path, category: str) -> dict | None:
         text = md_file.read_text()
         fm = _parse_frontmatter(text)
         name = fm.get("name", md_file.stem)
-        return {
+        agent: dict = {
             "name": name,
             "model": fm.get("model", ""),
             "description": fm.get("description", ""),
             "category": fm.get("category", category),
             "skills": AGENT_SKILLS.get(name, []),
         }
+        default = AGENT_DEFAULT_MODEL.get(name)
+        if default is not None:
+            agent["default_provider"] = default
+        return agent
     except Exception:
         return None
 
@@ -93,8 +126,12 @@ def get_agent_registry() -> dict:
     skills: list[dict] = []
 
     if AGENTS_DIR.is_dir():
-        # Root-level agents (e.g. team-lead.md)
+        # Root-level agents (e.g. team-lead.md). Files prefixed with `_` are
+        # treated as shared / private documentation (e.g. healthcare/_safety.md)
+        # and skipped by the registry.
         for md_file in sorted(AGENTS_DIR.glob("*.md")):
+            if md_file.name.startswith("_"):
+                continue
             agent = _read_agent_file(md_file, category="general")
             if agent:
                 agents.append(agent)
@@ -104,6 +141,8 @@ def get_agent_registry() -> dict:
             if subdir.is_dir():
                 category = subdir.name
                 for md_file in sorted(subdir.glob("*.md")):
+                    if md_file.name.startswith("_"):
+                        continue
                     agent = _read_agent_file(md_file, category=category)
                     if agent:
                         agents.append(agent)

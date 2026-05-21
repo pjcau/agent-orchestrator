@@ -1,6 +1,6 @@
 # Agents & Skills
 
-Catalog of the 30 agents, their categories, cross-dependencies, the skills map, and the research scout workflow.
+Catalog of the 34 agents, their categories, cross-dependencies, the skills map, and the research scout workflow.
 
 Agents live under `.claude/agents/<category>/`. Root-level agents live directly in `.claude/agents/`.
 
@@ -100,6 +100,49 @@ Growth-Hacker ↔ All:                 experiment design across channels
 Social-Media-Manager ↔ Content:      content distribution
 Email-Marketer ↔ Growth-Hacker:      funnel automation, nurture flows
 ```
+
+## Healthcare (4 agents)
+
+```
+.claude/agents/healthcare/
+  ├── _safety.md ─────────────────── canonical Hard Safety Rules (not an agent)
+  ├── medical-advisor ─────────────── triage / orchestrator, general clinical Q&A
+  ├── disease-specialist ──────────── structured disease dossiers (etiology → prognosis)
+  ├── diagnostician ───────────────── Bayesian differential diagnosis engine
+  └── clinical-pharmacist ─────────── drug class, dose ranges, interactions, monitoring
+```
+
+All four healthcare agents default to `deepseek/deepseek-v4-flash` via OpenRouter
+(see `AGENT_DEFAULT_MODEL` in `src/agent_orchestrator/dashboard/agents_registry.py`).
+The file `_safety.md` is the **single source of truth** for the shared safety
+contract; every agent links to it and reproduces the 10 rules verbatim so the
+contract survives even when the body is fed directly to the LLM. The CI test
+`test_each_healthcare_agent_references_safety_doc` catches any drift.
+
+The medical-advisor is the first agent with a **per-agent default model override**
+(see `AGENT_DEFAULT_MODEL` in `src/agent_orchestrator/dashboard/agents_registry.py`).
+By default it routes to `deepseek/deepseek-v4-flash` via OpenRouter — cheap, fast,
+strong on reasoning — while every other agent retains the user-selected model.
+
+Two DeepSeek V4 models are registered in `OpenRouterProvider.MODELS` and selectable
+from the UI for any agent:
+
+| Model | Input $/M | Output $/M | Context | Notes |
+|-------|-----------|------------|---------|-------|
+| `deepseek/deepseek-v4-flash` | 0.112 | 0.224 | 1.05M | Efficiency MoE — default for medical-advisor |
+| `deepseek/deepseek-v4-pro`   | 0.435 | 0.870 | 1.05M | Large MoE (1.6T total / 49B active) — escalation tier |
+
+### Hard Safety Rules
+
+The medical-advisor enforces non-negotiable safety constraints:
+
+1. Every reply opens with the disclaimer "Informational only — not a substitute
+   for evaluation by a licensed clinician."
+2. Emergency scenarios trigger an explicit escalation to local emergency services.
+3. No individualized prescriptions — only drug-class / guideline-level discussion.
+4. Clinical claims are cited or labeled "no citation available".
+5. PII is refused; users are asked to redact and resend de-identified data.
+6. Hallucinated dosages, lab values, or guideline numbers are forbidden.
 
 ## Tooling (1 agent)
 

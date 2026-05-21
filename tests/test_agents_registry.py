@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from agent_orchestrator.dashboard.agents_registry import (
+    AGENT_DEFAULT_MODEL,
     AGENT_SKILLS,
     _parse_frontmatter,
     _read_agent_file,
@@ -206,6 +207,123 @@ class TestAgentSkills:
             "growth-hacker",
             "social-media-manager",
             "email-marketer",
+            "medical-advisor",
         ]
         for name in new_agents:
             assert "web-research" in AGENT_SKILLS[name], f"{name} missing web-research skill"
+
+
+# --- Healthcare category & medical-advisor agent ---
+
+
+HEALTHCARE_AGENTS = (
+    "medical-advisor",
+    "disease-specialist",
+    "diagnostician",
+    "clinical-pharmacist",
+)
+
+
+class TestHealthcareAgents:
+    def test_healthcare_category_present(self):
+        registry = get_agent_registry()
+        assert "healthcare" in registry["categories"], (
+            "healthcare category must be discovered from .claude/agents/healthcare/"
+        )
+
+    def test_all_four_healthcare_agents_discovered(self):
+        registry = get_agent_registry()
+        names = {a["name"] for a in registry["categories"]["healthcare"]}
+        assert set(HEALTHCARE_AGENTS).issubset(names), (
+            f"missing healthcare agents: {set(HEALTHCARE_AGENTS) - names}"
+        )
+
+    def test_each_healthcare_agent_metadata(self):
+        registry = get_agent_registry()
+        agents_by_name = {a["name"]: a for a in registry["agents"]}
+        for name in HEALTHCARE_AGENTS:
+            agent = agents_by_name[name]
+            assert agent["category"] == "healthcare"
+            # All four healthcare agents default to DeepSeek V4 Flash
+            assert agent["model"] == "deepseek/deepseek-v4-flash", (
+                f"{name}: unexpected model {agent['model']}"
+            )
+            assert agent["description"], f"{name}: missing description"
+
+    def test_each_healthcare_agent_has_web_research(self):
+        for name in HEALTHCARE_AGENTS:
+            assert "web-research" in AGENT_SKILLS[name], f"{name} missing web-research"
+
+    def test_safety_file_not_exposed_as_agent(self):
+        """_safety.md is shared documentation, not an agent — the registry must
+        skip files whose name starts with an underscore."""
+        registry = get_agent_registry()
+        names = {a["name"] for a in registry["agents"]}
+        assert "_safety" not in names
+        assert "safety" not in names
+
+    def test_each_healthcare_agent_references_safety_doc(self):
+        """Every agent under .claude/agents/healthcare/ MUST link back to
+        _safety.md so the shared contract stays the single source of truth.
+        This test catches drift: rename or remove the link, and CI fails."""
+        from agent_orchestrator.dashboard.agents_registry import AGENTS_DIR
+
+        healthcare_dir = AGENTS_DIR / "healthcare"
+        for name in HEALTHCARE_AGENTS:
+            md = healthcare_dir / f"{name}.md"
+            assert md.exists(), f"missing {md}"
+            body = md.read_text()
+            assert "_safety.md" in body, (
+                f"{name}: must reference _safety.md (shared safety contract)"
+            )
+            assert "Hard Safety Rules" in body, (
+                f"{name}: must have a 'Hard Safety Rules' section"
+            )
+
+    def test_safety_doc_contains_required_rules(self):
+        """The shared _safety.md must contain the canonical rule set so the
+        agents that link to it have a real anchor."""
+        from agent_orchestrator.dashboard.agents_registry import AGENTS_DIR
+
+        safety = (AGENTS_DIR / "healthcare" / "_safety.md").read_text()
+        required = [
+            "Informational only",
+            "Emergency escalation",
+            "No individualized prescription",
+            "Cite or label",
+            "Refuse PII",
+            "Acknowledge uncertainty",
+        ]
+        for needle in required:
+            assert needle in safety, f"_safety.md missing required rule: {needle!r}"
+
+
+# --- Per-agent default model overrides ---
+
+
+class TestAgentDefaultModel:
+    def test_all_healthcare_agents_default_to_deepseek_v4_flash(self):
+        for name in HEALTHCARE_AGENTS:
+            default = AGENT_DEFAULT_MODEL[name]
+            assert default["provider_type"] == "openrouter"
+            assert default["model"] == "deepseek/deepseek-v4-flash"
+
+    def test_default_model_exposed_in_registry(self):
+        registry = get_agent_registry()
+        agents_by_name = {a["name"]: a for a in registry["agents"]}
+        for name in HEALTHCARE_AGENTS:
+            agent = agents_by_name[name]
+            assert "default_provider" in agent
+            assert agent["default_provider"]["provider_type"] == "openrouter"
+            assert agent["default_provider"]["model"] == "deepseek/deepseek-v4-flash"
+
+    def test_other_agents_have_no_default_provider_override(self):
+        """Agents not in AGENT_DEFAULT_MODEL should NOT carry a default_provider
+        key, so the dashboard / runtime keeps the user-selected model."""
+        registry = get_agent_registry()
+        for agent in registry["agents"]:
+            if agent["name"] in AGENT_DEFAULT_MODEL:
+                continue
+            assert "default_provider" not in agent, (
+                f"{agent['name']} unexpectedly has a default_provider override"
+            )

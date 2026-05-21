@@ -203,6 +203,27 @@ class OpenRouterProvider(OpenAIProvider):
             "coding": 0.80,
             "reasoning": 0.78,
         },
+        # DeepSeek V4 — Mixture-of-Experts family from DeepSeek.
+        # Pricing and context window verified against the OpenRouter catalog.
+        # `v4-flash` is the default for the medical-advisor agent
+        # (see .claude/agents/healthcare/medical-advisor.md); both models are
+        # available to every agent from the UI.
+        "deepseek/deepseek-v4-flash": {
+            "input_cost": 0.112,
+            "output_cost": 0.224,
+            "context": 1_050_000,
+            "max_output": 16_384,
+            "coding": 0.85,
+            "reasoning": 0.82,
+        },
+        "deepseek/deepseek-v4-pro": {
+            "input_cost": 0.435,
+            "output_cost": 0.87,
+            "context": 1_050_000,
+            "max_output": 32_768,
+            "coding": 0.91,
+            "reasoning": 0.90,
+        },
     }
 
     def __init__(self, model: str = "qwen/qwen3-coder:free", api_key: str | None = None):
@@ -246,8 +267,10 @@ class OpenRouterProvider(OpenAIProvider):
         info = self.MODELS.get(self._model, list(self.MODELS.values())[0])
         return info["output_cost"]
 
-    # Fallback order: best free models sorted by coding quality
+    # Fallback order: best models sorted by coding/reasoning quality
     FALLBACK_ORDER = [
+        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4-flash",
         "qwen/qwen3.6-plus",
         "qwen/qwen3-coder:free",
         "qwen/qwen3-coder-next",
