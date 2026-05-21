@@ -457,21 +457,49 @@ async def agent_run(body: dict, request: Request):
                     exc_info=True,
                 )
 
-        result = await run_agent(
-            agent_name=agent_name,
-            task_description=task_desc,
-            provider=provider,
-            role=role,
-            tools=tools,
-            max_steps=max_steps,
-            event_bus=bus,
-            working_directory=str(job_logger.session_dir),
-            usage_db=usage_db,
-            session_id=job_logger.session_id,
-            conversation_id=conv_id,
-            conversation_manager=conv_manager if conv_id else None,
-            sandbox=_agent_sandbox,
+        # Wrap run_agent in an asyncio.Task so a client-side abort (the user
+        # clicking Stop, closing the tab, etc.) can cancel the entire chain
+        # — every awaiting child (LLM call, tool, sub-step) sees the
+        # CancelledError and unwinds, not just the current step.
+        run_task = asyncio.create_task(
+            run_agent(
+                agent_name=agent_name,
+                task_description=task_desc,
+                provider=provider,
+                role=role,
+                tools=tools,
+                max_steps=max_steps,
+                event_bus=bus,
+                working_directory=str(job_logger.session_dir),
+                usage_db=usage_db,
+                session_id=job_logger.session_id,
+                conversation_id=conv_id,
+                conversation_manager=conv_manager if conv_id else None,
+                sandbox=_agent_sandbox,
+            )
         )
+
+        async def _watch_disconnect() -> None:
+            # Poll request state at ~500 ms cadence. When the client aborts
+            # the HTTP POST, Starlette flips is_disconnected to True; we
+            # cancel the run task so the agent loop stops mid-step.
+            try:
+                while not run_task.done():
+                    if await request.is_disconnected():
+                        if not run_task.done():
+                            run_task.cancel()
+                        return
+                    await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                # Watcher itself was cancelled (run finished normally) —
+                # nothing to do.
+                return
+
+        watcher = asyncio.create_task(_watch_disconnect())
+        try:
+            result = await run_task
+        finally:
+            watcher.cancel()
         job_logger.log(
             "agent_run",
             {
@@ -495,6 +523,19 @@ async def agent_run(body: dict, request: Request):
             session_id=job_logger.session_id,
         )
         return JSONResponse(content=result)
+    except asyncio.CancelledError:
+        # Client aborted the HTTP POST → _watch_disconnect cancelled run_task.
+        # Return a cancellation marker so the frontend's catch block can
+        # distinguish this from a genuine error and avoid the noisy bubble.
+        logger.info("Agent run cancelled by client disconnect (agent=%s)", agent_name)
+        return JSONResponse(
+            content={
+                "success": False,
+                "cancelled": True,
+                "error": "Cancelled by user",
+            },
+            status_code=499,  # nginx convention for "Client Closed Request"
+        )
     except Exception as exc:
         logger.exception("Agent run failed")
         job_logger.log(
@@ -557,7 +598,14 @@ async def team_run(body: dict, request: Request):
     for k in finished[:-20]:
         active_jobs.pop(k, None)
 
-    active_jobs[job_id] = {"status": "running", "task": task_desc, "result": None}
+    active_jobs[job_id] = {
+        "status": "running",
+        "task": task_desc,
+        "result": None,
+        # `future` is set right after asyncio.create_task() below so
+        # /api/team/{job_id}/cancel can reach into the active task.
+        "future": None,
+    }
 
     async def _run_in_background():
         try:
@@ -627,7 +675,12 @@ async def team_run(body: dict, request: Request):
                     session_id=job_logger.session_id,
                 )
 
-            active_jobs[job_id] = {"status": "completed", "task": task_desc, "result": result}
+            active_jobs[job_id] = {
+                "status": "completed",
+                "task": task_desc,
+                "result": result,
+                "future": None,
+            }
 
             await bus.emit(
                 Event(
@@ -636,6 +689,34 @@ async def team_run(body: dict, request: Request):
                 )
             )
 
+        except asyncio.CancelledError:
+            # User clicked Stop — emit a terminal team.complete event so the
+            # client clears its `pendingTeamJobId` and stops painting tokens.
+            # Re-raise so the asyncio.Task transitions to cancelled() state
+            # for any external watcher.
+            logger.info("Team run cancelled by user (job_id=%s)", job_id)
+            cancelled_result = {
+                "success": False,
+                "cancelled": True,
+                "error": "Cancelled by user",
+            }
+            active_jobs[job_id] = {
+                "status": "cancelled",
+                "task": task_desc,
+                "result": cancelled_result,
+                "future": None,
+            }
+            try:
+                await bus.emit(
+                    Event(
+                        event_type=EventType.TEAM_COMPLETE,
+                        data={"job_id": job_id, **cancelled_result},
+                    )
+                )
+            except Exception:
+                logger.exception("Failed to emit cancellation TEAM_COMPLETE")
+            raise
+
         except Exception as exc:
             logger.exception("Team run failed (job_id=%s)", job_id)
             error_result = {"success": False, "error": str(exc)}
@@ -643,6 +724,7 @@ async def team_run(body: dict, request: Request):
                 "status": "failed",
                 "task": task_desc,
                 "result": error_result,
+                "future": None,
             }
             job_logger.log(
                 "team_run",
@@ -660,8 +742,53 @@ async def team_run(body: dict, request: Request):
                 )
             )
 
-    asyncio.create_task(_run_in_background())
+    future = asyncio.create_task(_run_in_background())
+    active_jobs[job_id]["future"] = future
     return JSONResponse(content={"job_id": job_id, "status": "started"})
+
+
+@runtime_router.post("/api/team/{job_id}/cancel")
+async def team_cancel(job_id: str, request: Request):
+    """Cancel a running team job.
+
+    Hard-cancels the underlying asyncio.Task: every awaiting child task
+    inside the team graph (LLM call, tool invocation, sub-agent run) gets a
+    CancelledError so the whole chain unwinds — not just the current step.
+
+    Returns 404 when the job is unknown, 409 when it's already terminal,
+    and 200 with the new status when the cancellation request reached a
+    live task. The actual TEAM_COMPLETE(cancelled=True) event is emitted
+    by the run coroutine when it observes the cancellation.
+    """
+    active_jobs: dict = request.app.state.active_jobs
+    job = active_jobs.get(job_id)
+    if not job:
+        return JSONResponse(content={"error": "Job not found"}, status_code=404)
+    if job["status"] != "running":
+        return JSONResponse(
+            content={
+                "job_id": job_id,
+                "status": job["status"],
+                "cancelled": False,
+                "note": "Job already terminal — nothing to cancel.",
+            },
+            status_code=409,
+        )
+    future = job.get("future")
+    if future is None or future.done():
+        return JSONResponse(
+            content={
+                "job_id": job_id,
+                "status": job["status"],
+                "cancelled": False,
+                "note": "No live future to cancel.",
+            },
+            status_code=409,
+        )
+    future.cancel()
+    return JSONResponse(
+        content={"job_id": job_id, "status": "cancelling", "cancelled": True}
+    )
 
 
 @runtime_router.get("/api/team/status/{job_id}")

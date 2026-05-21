@@ -55,6 +55,21 @@ prefers `tencent/hy3-preview` if it appears in `models.openrouter`; it
 falls back to `list[0]` otherwise. Local (`ollama`) still picks the first
 available model. Tracked in `ChatInput.tsx` via `PREFERRED_CLOUD_MODEL`.
 
+### Stop button semantics
+
+Clicking **Stop** halts every transport in use, end-to-end:
+
+| Mode | What handleStop does | Server-side effect |
+|------|----------------------|--------------------|
+| `prompt` (WS stream) | `stopStream()` → close the streaming socket | Server detects WS close and stops emitting tokens |
+| `prompt` (HTTP graph) | `abortRef.abort()` → axios cancellation | Starlette propagates the AbortSignal; FastAPI handler returns early |
+| `agent` (`/api/agent/run`) | `abortRef.abort()` → POST is aborted client-side | `_watch_disconnect` polls `request.is_disconnected()` every 500 ms; on flip it `task.cancel()`s the wrapped `run_agent` task — every awaiting child raises `CancelledError`, so the whole chain unwinds, not just the current step |
+| `multi-agent` (`/api/team/run`) | POST `/api/team/{job_id}/cancel` then `setPendingTeamJob(null, null)` | `asyncio.Task.cancel()` on the background coroutine; coroutine emits `team.complete(cancelled=True)` and marks `active_jobs[job_id].status = "cancelled"` |
+
+`handleNewChat` also pipes through the same cancel path before resetting the
+store, so starting a fresh chat while a team run is still streaming doesn't
+leak tokens from the previous run into the new conversation.
+
 ### Voice input (Web Speech API)
 
 The chat composer ships a 🎙 microphone button between the textarea and
@@ -183,6 +198,13 @@ Multi-agent team runs execute as background tasks to prevent HTTP timeouts:
 - **Event lifecycle**: `team.started` → `agent.*` events → `team.complete` (with full result)
 - **Graph visualization**: `run_team()` emits `GRAPH_START`/`GRAPH_NODE_ENTER`/`GRAPH_NODE_EXIT`/`GRAPH_END` for 3-phase workflow (plan → sub-agents → review)
 - **Polling fallback**: `GET /api/team/status/{job_id}` returns current status and result
+- **Hard cancel**: `POST /api/team/{job_id}/cancel` calls `asyncio.Task.cancel()` on the
+  background coroutine. Every awaiting child (LLM call, sub-agent, tool) receives
+  `CancelledError`, so the whole graph unwinds — not just the step that happened to
+  be running. The coroutine catches the cancellation, marks the job `status:"cancelled"`,
+  and emits a terminal `team.complete` event with `cancelled:true` so the WS pipeline
+  drains cleanly. Returns `200 cancelled:true` when the future was reachable,
+  `409` when the job is already terminal, `404` when the id is unknown.
 - **Memory safety**: completed jobs are evicted (keeps last 20) to prevent unbounded growth
 - **Repair loop (ON by default, v1.5 P1)**: every `/api/team/run` is now wrapped by `_run_team_with_repair`, which verifies the produced workdir through an 8-verifier chain (Syntax / Encoding / Dependency / Import / WorkspaceCoherence / RuntimeSmoke / Entrypoint / E2ESmoke — last two added in Phase 7.11; E2E is opt-in via `REPAIR_LOOP_E2E_ENABLED=true`) and retries the team — with deterministic auto-fixes from `core/failure_patterns.yaml` applied first — up to `REPAIR_LOOP_MAX_ATTEMPTS` (default 5), `REPAIR_LOOP_MAX_COST_USD` (default 0.50) **or** `REPAIR_LOOP_MAX_WALL_S` (default 1800 = 30 min, added in Phase 7.9 after iter 1 of run (e) hung >37 min). New event types stream to the dashboard: `verification.*`, `verifier.*` (with per-verifier `duration_ms`), `repair.started/attempt_started/attempt_finished/escalated/auto_fixed/auto_fix_reverted/aborted/finished`. The team-run result dict gains a top-level `repair: {status, attempts, cumulative_cost_usd, final_passed, final_failures[], auto_fixed_signatures[]}` block; existing fields (`output`, `plan`, `agent_costs`, `total_tokens`) are preserved. Opt out by setting `REPAIR_LOOP_ENABLED=false` (or `repair_loop.enabled: false` in `orchestrator.yaml.example`). See `docs/architecture-repair-loop.md`.
 

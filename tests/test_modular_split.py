@@ -143,6 +143,7 @@ def test_runtime_router_has_expected_routes():
         "/api/agent/run",
         "/api/team/run",
         "/api/team/status/{job_id}",
+        "/api/team/{job_id}/cancel",
         "/ws/stream",
         "/ws",
     }

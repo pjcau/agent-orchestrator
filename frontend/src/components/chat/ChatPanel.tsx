@@ -47,20 +47,71 @@ export function ChatPanel() {
   // user to re-select anything in the input bar.
   const lastSendOptsRef = useRef<SendOptsNoText | null>(null);
 
+  /**
+   * Hard-stop the current generation, regardless of which transport drove it:
+   *
+   *  - prompt mode (WS stream)         → close the streaming socket; the
+   *                                       server detects the disconnect and
+   *                                       stops emitting tokens.
+   *  - prompt mode (HTTP graph)        → abort the in-flight axios POST; the
+   *                                       AbortSignal propagates to the
+   *                                       server through Starlette.
+   *  - agent mode  (HTTP /api/agent/run)→ abort the POST. The server-side
+   *                                       _watch_disconnect coroutine sees
+   *                                       is_disconnected() flip and cancels
+   *                                       the underlying run_agent task —
+   *                                       this kills the whole agent loop
+   *                                       (LLM call + tool steps), not just
+   *                                       the current step.
+   *  - team mode   (background job)    → abort the start POST AND fire the
+   *                                       new /api/team/{job_id}/cancel
+   *                                       endpoint, which calls
+   *                                       asyncio.Task.cancel() on the
+   *                                       graph coroutine. Every awaiting
+   *                                       child (LLM call, sub-agent,
+   *                                       tool) receives CancelledError so
+   *                                       the entire chain unwinds — not
+   *                                       just whichever step happens to be
+   *                                       running. The server then emits a
+   *                                       terminal team.complete event with
+   *                                       cancelled:true so the WS pipeline
+   *                                       drains cleanly.
+   */
   const handleStop = useCallback(() => {
-    // Close the streaming WS (server detects disconnect and stops generating)
+    // 1. WS streaming (prompt mode)
     stopStream();
-    // Abort any in-flight non-streaming POST
+
+    // 2. In-flight HTTP POST (prompt / agent / team-start)
     abortRef.current?.abort();
     abortRef.current = null;
-    // Reset store state (also clears stream buffer)
+
+    // 3. Background team job — must be cancelled server-side because the
+    //    /api/team/run POST already returned the job_id and the AbortController
+    //    has no leverage on the coroutine that's now running on its own.
+    const { pendingTeamJobId } = useAppStore.getState();
+    if (pendingTeamJobId) {
+      apiClient
+        .post(`/api/team/${pendingTeamJobId}/cancel`)
+        .catch((err) => {
+          // 409 (already terminal) is fine — race between Stop and natural
+          // completion. Anything else is logged but not surfaced to chat
+          // since the user already sees "Stopped by user".
+          if (err?.response?.status !== 409) {
+            console.warn("team cancel failed:", err?.response?.data ?? err);
+          }
+        });
+      setPendingTeamJob(null, null);
+    }
+
+    // 4. Local cleanup — the team.complete(cancelled=true) event will arrive
+    //    via WS shortly and finish draining the store state.
     useAppStore.getState().clearStreamBuffer();
     useAppStore.getState().addMessage({
       role: "system",
       content: "Stopped by user.",
       timestamp: Date.now(),
     });
-  }, [stopStream]);
+  }, [stopStream, setPendingTeamJob]);
 
   // Preset text injection: when a preset is applied, we store it and pass it
   // down to ChatInput so it can set its textarea value.
@@ -74,6 +125,28 @@ export function ChatPanel() {
   }, [messages, isStreaming, streamBuffer]);
 
   const handleNewChat = useCallback(async () => {
+    // If a team job is still streaming events, kill it before resetting —
+    // otherwise the new chat would keep receiving tokens from the old run
+    // and the user would see ghost output minutes after clicking "New".
+    const { pendingTeamJobId } = useAppStore.getState();
+    if (pendingTeamJobId) {
+      try {
+        await apiClient.post(`/api/team/${pendingTeamJobId}/cancel`);
+      } catch (err) {
+        const status = (err as { response?: { status?: number } })?.response
+          ?.status;
+        if (status !== 409 && status !== 404) {
+          console.warn("team cancel during New Chat failed:", err);
+        }
+      }
+      setPendingTeamJob(null, null);
+    }
+    // Also abort any pending HTTP POST (agent/run, prompt/run) so the server
+    // sees the disconnect and unwinds the chain.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    stopStream();
+
     try {
       const resp = await newConversation.mutateAsync();
       setConversationId(resp.conversation_id);
@@ -82,7 +155,7 @@ export function ChatPanel() {
     } catch (err) {
       console.error("Failed to start new conversation:", err);
     }
-  }, [newConversation, setConversationId, addMessage]);
+  }, [newConversation, setConversationId, addMessage, setPendingTeamJob, stopStream]);
 
   const handleSend = useCallback(
     async (opts: SendOpts) => {
