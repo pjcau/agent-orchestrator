@@ -31,8 +31,11 @@ from botocore.exceptions import ClientError, NoCredentialsError
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# Refresh interval: 1 hour (Cost Explorer data updates ~daily)
-REFRESH_INTERVAL = 3600
+# Refresh interval: 24 h. Cost Explorer data only updates ~once per day, and
+# each refresh issues 4 paid API calls ($0.01 each) — at 1 h cadence this was
+# the single biggest line on the AWS bill (~$20/mo, 40% of total). Daily
+# polling matches the data refresh rate and costs ~$1.20/mo.
+REFRESH_INTERVAL = 86400
 
 # Global metrics store
 _metrics: dict[str, float] = {}

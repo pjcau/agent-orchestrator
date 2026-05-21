@@ -90,14 +90,16 @@ jobs:
             echo ""
           } >> "$REPORT"
 
-      - name: 2. Running EC2 instances
+      - name: 2. EC2 instances (all states)
         run: |
           {
-            echo "## 2. Running EC2 instances"
+            echo "## 2. EC2 instances — ALL states"
             echo '```'
+            # Drop the State.Name=='running' filter so stopped / stopping /
+            # pending instances also appear — needed to spot orphans.
             aws ec2 describe-instances \
               --region eu-west-1 \
-              --query "Reservations[].Instances[?State.Name=='running'].[InstanceId,InstanceType,LaunchTime,InstanceLifecycle,Tags[?Key=='Name']|[0].Value]" \
+              --query "Reservations[].Instances[].[InstanceId,InstanceType,State.Name,LaunchTime,InstanceLifecycle,Tags[?Key=='Name']|[0].Value]" \
               --output table || echo "(none)"
             echo '```'
             echo ""
