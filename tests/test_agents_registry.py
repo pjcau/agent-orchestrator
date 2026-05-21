@@ -276,9 +276,7 @@ class TestHealthcareAgents:
             assert "_safety.md" in body, (
                 f"{name}: must reference _safety.md (shared safety contract)"
             )
-            assert "Hard Safety Rules" in body, (
-                f"{name}: must have a 'Hard Safety Rules' section"
-            )
+            assert "Hard Safety Rules" in body, f"{name}: must have a 'Hard Safety Rules' section"
 
     def test_safety_doc_contains_required_rules(self):
         """The shared _safety.md must contain the canonical rule set so the
