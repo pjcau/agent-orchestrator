@@ -29,7 +29,12 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install aiohttp
+        # The harness install pulls PyYAML and other deps that
+        # scripts/run_research_scout.py needs transitively via
+        # agent_orchestrator.core. aiohttp is for fetch_github_stars.py.
+        run: |
+          pip install -e .
+          pip install aiohttp
 
       - name: Fetch GitHub starred repos
         env:

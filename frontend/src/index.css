@@ -1539,7 +1539,11 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
 /* === Responsive === */
-@media (max-width: var(--bp-narrow)) {
+/* NOTE: CSS custom properties (var()) are NOT valid inside @media feature
+   values per spec — using them silently invalidates the entire block. Keep
+   the literal value in sync with --bp-narrow above (and frontend/src/lib/
+   breakpoints.ts) until @custom-media is widely supported. */
+@media (max-width: 900px) {
   .history-sidebar { display: none; }
   .sidebar { width: 260px; }
   .metric-group--cumulative { display: none; }
@@ -1889,7 +1893,9 @@ body {
 }
 .btn-hamburger:hover { border-color: var(--accent); color: var(--accent); }
 
-@media (max-width: var(--bp-compact)) {
+/* Keep this literal in sync with --bp-compact (and breakpoints.ts) — see
+   note above on why var() can't appear inside @media feature values. */
+@media (max-width: 600px) {
   /* --- 1. Right sidebar → slide-in drawer with backdrop --- */
   .sidebar-backdrop {
     display: block;

@@ -19,7 +19,11 @@ The dashboard body is a flex row with (left → right):
 
 - Keep responsive thresholds centralized in `frontend/src/lib/breakpoints.ts`.
 - For TypeScript runtime checks, use `BP.*` / `mq.*` (`useBreakpoint()` when inside components).
-- For CSS media queries, use shared variables in `frontend/src/index.css` (`--bp-*`) instead of hardcoded pixel literals.
+- For CSS, keep the `--bp-*` custom properties in `frontend/src/index.css` as documentation
+  / single source of truth, but **use the literal pixel value inside `@media`** —
+  `var()` is not permitted in media-feature values per spec and the entire block is
+  silently dropped. Keep the literal and the variable in sync. Pixel mismatch is
+  caught by `frontend/e2e/responsive-iphone.spec.ts`.
 
 ## Modular Architecture
 
