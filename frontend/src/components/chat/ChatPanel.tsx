@@ -10,6 +10,19 @@ import { PresetsBar } from "@/components/prompts/PresetsBar";
 import apiClient from "@/api/client";
 import type { ChatMessage } from "@/api/types";
 
+interface SendOpts {
+  text: string;
+  mode: ExecMode;
+  model: string;
+  provider: "openrouter" | "ollama";
+  useStreaming: boolean;
+  fileContext: string;
+  ragEnabled: boolean;
+  ragNamespace: string;
+}
+
+type SendOptsNoText = Omit<SendOpts, "text">;
+
 export function ChatPanel() {
   const {
     messages,
@@ -29,6 +42,10 @@ export function ChatPanel() {
   // AbortController for in-flight non-streaming POSTs so the Stop button can
   // cancel /api/prompt, /api/agent/run, and /api/team/run requests.
   const abortRef = useRef<AbortController | null>(null);
+  // Remember the opts of the last send so Regenerate can replay them with the
+  // same model / provider / mode / streaming preference without forcing the
+  // user to re-select anything in the input bar.
+  const lastSendOptsRef = useRef<SendOptsNoText | null>(null);
 
   const handleStop = useCallback(() => {
     // Close the streaming WS (server detects disconnect and stops generating)
@@ -68,17 +85,12 @@ export function ChatPanel() {
   }, [newConversation, setConversationId, addMessage]);
 
   const handleSend = useCallback(
-    async (opts: {
-      text: string;
-      mode: ExecMode;
-      model: string;
-      provider: "openrouter" | "ollama";
-      useStreaming: boolean;
-      fileContext: string;
-      ragEnabled: boolean;
-      ragNamespace: string;
-    }) => {
+    async (opts: SendOpts) => {
       const { text, mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace } = opts;
+      // Capture everything but the prompt text so Regenerate can replay.
+      lastSendOptsRef.current = {
+        mode, model, provider, useStreaming, fileContext, ragEnabled, ragNamespace,
+      };
 
       // Auto-create a conversation on first send so multi-turn memory works
       // without the user having to click "New Chat" first. The id is then
@@ -311,6 +323,31 @@ export function ChatPanel() {
     // ragEnabled and ragNamespace come from opts parameter, not closure
   );
 
+  const handleRegenerate = useCallback(
+    (assistantIndex: number) => {
+      if (isRunning) return; // Don't queue while a stream is in-flight.
+      const msgs = useAppStore.getState().messages;
+      // Walk back to the closest preceding user message.
+      let userIdx = -1;
+      for (let i = assistantIndex - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (m.role === "user" && typeof m.content === "string") {
+          userIdx = i;
+          break;
+        }
+      }
+      if (userIdx < 0) return;
+      const userText = msgs[userIdx].content as string;
+      const opts = lastSendOptsRef.current;
+      if (!opts) return; // No prior send opts (defensive — shouldn't happen).
+      // Drop the user message + any intermediate system bubbles + the
+      // assistant reply. handleSend will repopulate everything fresh.
+      useAppStore.getState().truncateMessagesFrom(userIdx);
+      void handleSend({ ...opts, text: userText });
+    },
+    [handleSend, isRunning],
+  );
+
   return (
     <div className="chat-panel">
       <div className="chat-panel__messages" role="log" aria-live="polite">
@@ -328,6 +365,11 @@ export function ChatPanel() {
               runId?: string;
               streaming?: boolean;
             }}
+            onRegenerate={
+              msg.role === "assistant" && typeof msg.content === "string"
+                ? () => handleRegenerate(i)
+                : undefined
+            }
           />
         ))}
         {isStreaming && streamBuffer && (

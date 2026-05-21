@@ -250,6 +250,36 @@ Formatting rules (`formatCost` in `ChatMessage.tsx`):
 
 For local providers (Ollama, vLLM) `input_cost_per_million = output_cost_per_million = 0`, so `$0` is correct. For OpenRouter, models with a `:free` suffix are priced at zero in `OpenRouterProvider.MODELS`; pick a non-`:free` model to see non-zero costs.
 
+## Assistant message actions
+
+Each completed assistant bubble carries a left-aligned action row **directly below** the `model · elapsed · cost` footer. The row is rendered by `ChatMessageActions` (`frontend/src/components/chat/ChatMessageActions.tsx`) and is mounted only when:
+
+- `role === "assistant"`,
+- the bubble is **not** streaming (`streaming !== true`), and
+- `content` is a non-empty string (the agent-step / tool-result variants are skipped for now).
+
+Six actions, left-to-right:
+
+| Icon       | Action          | Implementation |
+|------------|-----------------|----------------|
+| 📋 Copy    | Copy content    | `navigator.clipboard.writeText(content)` (raw markdown). A 1.5 s "Copied" inline pill confirms. |
+| ↗ Share    | Share online    | `POST https://rentry.co/api/new` with the markdown, receives `{ url }`, then `navigator.share({ url })` on platforms that expose Web Share API, otherwise `window.open(url, "_blank")`. Errors surface as a red "Share failed: …" pill. The agent-orchestrator backend is **not** involved. |
+| ▷ Speak    | Read aloud      | Web Speech API (`window.speechSynthesis`). Markdown is stripped before being fed to `SpeechSynthesisUtterance` so headings/code-fences are not pronounced. Toggles between play and stop; auto-stops on unmount. |
+| 👍 Like    | Positive rating | Toggles `messageFeedback[messageId] = "up"` in the Zustand store. Mutually exclusive with Dislike. Persisted in localStorage under `ao_msg_feedback`. |
+| 👎 Dislike | Negative rating | Same mechanism with `"down"`. Re-clicking the same kind clears the rating. |
+| ↻ Regen.   | Regenerate      | Wired from `ChatPanel.handleRegenerate(assistantIndex)`. Walks back to the closest preceding user message, calls `truncateMessagesFrom(userIdx)` to drop the user message + any intermediate system bubbles + the assistant reply, then replays `handleSend({ text: userText, ...lastSendOptsRef.current })`. The previous response is **replaced** in place. |
+
+Layout & sizing:
+
+- Desktop: 16 px icons in 30 × 30 px hit targets, 4 px gap.
+- Mobile (`max-width: 600px`): 18 px icons in 36 × 36 px hit targets, 6 px gap — slightly enlarged for thumb reach, **not** enormous (the row stays visually subordinate to the message content).
+- A thin `border-top` separates the row from the meta footer above it.
+- Active state (`.chat-action-btn--active`) is used for the thumbs while a rating is set, and for the speak button while TTS is playing.
+
+Feedback is intentionally **client-side only** for now — no `/api/feedback` endpoint. If server-side analytics on ratings become a requirement, add a `POST /api/feedback` route and emit from `setMessageFeedback`.
+
+Regenerate captures the `mode / model / provider / useStreaming / fileContext / ragEnabled / ragNamespace` snapshot from the last successful `handleSend` (kept in `lastSendOptsRef`), so the replay uses exactly the same configuration as the original send.
+
 ## File context transparency (D)
 
 To remove ambiguity about what the model is actually receiving, every attached file shows:

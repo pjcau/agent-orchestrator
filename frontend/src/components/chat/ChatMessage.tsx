@@ -1,6 +1,7 @@
 import type { ChatMessage as ChatMessageType, AssistantContent } from "@/api/types";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { HITLOptions, HITLInterrupt } from "@/components/common/HITLButtons";
+import { ChatMessageActions } from "./ChatMessageActions";
 
 interface ChatMessageProps {
   message: ChatMessageType & {
@@ -9,6 +10,12 @@ interface ChatMessageProps {
     runId?: string;
     streaming?: boolean;
   };
+  /**
+   * Called when the user clicks the Regenerate action on this assistant
+   * bubble. Wired by ChatPanel — when omitted (e.g. in tests or read-only
+   * views), the regenerate button is hidden.
+   */
+  onRegenerate?: () => void;
 }
 
 function formatNumber(n: number): string {
@@ -132,7 +139,7 @@ function ToolCallMessage({ content }: { content: string }) {
   return <div className="chat-system-msg">{content}</div>;
 }
 
-export function ChatMessageItem({ message }: ChatMessageProps) {
+export function ChatMessageItem({ message, onRegenerate }: ChatMessageProps) {
   const { role, content } = message;
   const hitlType = (message as ChatMessageProps["message"]).hitlType;
   const options = (message as ChatMessageProps["message"]).options;
@@ -185,6 +192,13 @@ export function ChatMessageItem({ message }: ChatMessageProps) {
               <span className="chat-bubble__meta-cost">{formatCost(message.cost_usd)}</span>
             )}
           </div>
+        )}
+        {!isStreaming && typeof content === "string" && content.length > 0 && (
+          <ChatMessageActions
+            messageId={String(message.timestamp ?? "")}
+            content={content}
+            onRegenerate={onRegenerate}
+          />
         )}
       </div>
     </div>

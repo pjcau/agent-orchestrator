@@ -102,6 +102,9 @@ interface AppState {
   ragEnabled: boolean;
   ragNamespace: string;
 
+  // Per-message feedback (persisted in localStorage). Keyed by message timestamp.
+  messageFeedback: Record<string, "up" | "down">;
+
   // Actions
   setWsConnected: (connected: boolean) => void;
   setSseMode: (mode: boolean) => void;
@@ -150,6 +153,19 @@ interface AppState {
   clearAttachedFiles: () => void;
   setRagEnabled: (b: boolean) => void;
   setRagNamespace: (s: string) => void;
+  /**
+   * Toggle thumbs-up/down on an assistant message. Re-clicking the same kind
+   * clears the rating. Persisted in localStorage so reload preserves it.
+   */
+  setMessageFeedback: (messageId: string, kind: "up" | "down") => void;
+  /** Remove a message at a given index — used by the Regenerate action. */
+  removeMessageAt: (index: number) => void;
+  /**
+   * Drop all messages with index >= `index`. Used by Regenerate to wipe the
+   * previous user message + any intermediate system bubbles + the assistant
+   * reply so the resend can repopulate them cleanly.
+   */
+  truncateMessagesFrom: (index: number) => void;
   setPresetsHidden: (hidden: boolean) => void;
   togglePresetsHidden: () => void;
   setBrowseOpen: (open: boolean) => void;
@@ -171,6 +187,9 @@ export const STORAGE_KEY_RAG_ENABLED = "ao_rag_enabled";
 
 /** localStorage key used to persist the RAG namespace preference. */
 export const STORAGE_KEY_RAG_NAMESPACE = "ao_rag_namespace";
+
+/** localStorage key used to persist per-message thumbs feedback. */
+export const STORAGE_KEY_MESSAGE_FEEDBACK = "ao_msg_feedback";
 
 /** Read the persisted conversation id from localStorage, or null. */
 function readPersistedConversationId(): string | null {
@@ -209,6 +228,35 @@ function readPersistedRagNamespace(): string {
     return window.localStorage.getItem(STORAGE_KEY_RAG_NAMESPACE) ?? "shared";
   } catch {
     return "shared";
+  }
+}
+
+/** Read the persisted per-message feedback map, or an empty record. */
+function readPersistedMessageFeedback(): Record<string, "up" | "down"> {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_MESSAGE_FEEDBACK);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object") {
+      // Trust shape — we control both ends. Drop any non up/down values defensively.
+      const out: Record<string, "up" | "down"> = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (v === "up" || v === "down") out[k] = v;
+      }
+      return out;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/** Persist the per-message feedback map. */
+function writePersistedMessageFeedback(map: Record<string, "up" | "down">): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY_MESSAGE_FEEDBACK, JSON.stringify(map));
+  } catch {
+    /* fail silently */
   }
 }
 
@@ -285,6 +333,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // RAG preferences (persisted, survive Reset)
   ragEnabled: readPersistedRagEnabled(),
   ragNamespace: readPersistedRagNamespace(),
+
+  // Per-message thumbs feedback (persisted in localStorage)
+  messageFeedback: readPersistedMessageFeedback(),
 
   // UI toggles (volatile — not persisted)
   presetsHidden: false,
@@ -648,6 +699,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ ragNamespace: s });
   },
+
+  setMessageFeedback: (messageId, kind) =>
+    set((state) => {
+      const current = state.messageFeedback[messageId];
+      const next = { ...state.messageFeedback };
+      if (current === kind) {
+        delete next[messageId];
+      } else {
+        next[messageId] = kind;
+      }
+      writePersistedMessageFeedback(next);
+      return { messageFeedback: next };
+    }),
+
+  removeMessageAt: (index) =>
+    set((state) => ({
+      messages: state.messages.filter((_, i) => i !== index),
+    })),
+
+  truncateMessagesFrom: (index) =>
+    set((state) => ({
+      messages: state.messages.slice(0, Math.max(0, index)),
+    })),
 
   reset: () => {
     // Persist: clear localStorage too

@@ -506,6 +506,63 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* --- Assistant message actions (Copy / Share / TTS / Like / Dislike / Regenerate) --- */
+.chat-bubble__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-top: 6px;
+  /* Subtle visual separation from the meta line above. */
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.chat-action-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.chat-action-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.chat-action-btn:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.chat-action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chat-action-btn--active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.chat-bubble__actions-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  align-self: center;
+}
+
 .chat-system-bubble {
   align-self: center;
   font-size: 11px;
@@ -2414,4 +2471,12 @@ body {
   .pricing-table { font-size: 12px; }
   .pricing-cost { font-size: 12px; }
   .pricing-search { min-height: 40px; font-size: 14px; }
+
+  /* Assistant message actions — slightly bigger tap target on mobile.
+     Keep the icons modest (18px in a 36px hit box) so the row stays
+     visually subordinate to the message content. */
+  .chat-bubble__actions { gap: 6px; margin-top: 8px; padding-top: 8px; }
+  .chat-action-btn { width: 36px; height: 36px; border-radius: 8px; }
+  .chat-action-btn svg { width: 18px; height: 18px; }
+  .chat-bubble__actions-status { font-size: 12px; }
 }
