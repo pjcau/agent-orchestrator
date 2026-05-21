@@ -1,0 +1,238 @@
+name: AWS Prune (terminate orphan resources)
+
+# Manually-triggered cleanup pipeline for orphan AWS resources surfaced by
+# the AWS Cost Audit workflow. Defaults to the orphan GitHub-Actions runner
+# i-01f4af542f7c8c38d (t2.micro, stopped since 2025-05-28, 30 GB EBS) that
+# the May 2026 audit found wasting ~$2.86/mo.
+#
+# SAFETY:
+#   • Requires `confirm: YES` (typed literally) to perform destructive ops.
+#   • Defaults to dry-run; the dry-run path prints the AWS CLI commands that
+#     WOULD execute and lists the instance + attached volumes + EIPs.
+#   • A pre-flight report is uploaded as an artifact AND printed to stdout so
+#     the action is traceable even after the run expires.
+#
+# TRIGGER:
+#   Actions → "AWS Prune (terminate orphan resources)" → "Run workflow"
+#   • instance_id   — defaults to the known orphan
+#   • region        — eu-west-1
+#   • dry_run       — "true" (default) or "false"
+#   • confirm       — must be exactly "YES" for dry_run=false to actually run
+#   • delete_volumes — also delete detached volumes after termination
+#                     (DeleteOnTermination usually handles attached ones)
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance_id:
+        description: 'EC2 instance ID to terminate'
+        required: true
+        default: 'i-01f4af542f7c8c38d'
+      region:
+        description: 'AWS region'
+        required: true
+        default: 'eu-west-1'
+      dry_run:
+        description: 'Dry run (print commands without executing)'
+        required: true
+        type: choice
+        default: 'true'
+        options:
+          - 'true'
+          - 'false'
+      confirm:
+        description: 'Type YES (uppercase) to confirm destructive action — required when dry_run=false'
+        required: false
+        default: ''
+      delete_orphan_volumes:
+        description: 'Also delete any orphan volumes the operation leaves behind'
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    name: Terminate orphan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      INSTANCE_ID: ${{ github.event.inputs.instance_id }}
+      AWS_REGION_TARGET: ${{ github.event.inputs.region }}
+      DRY_RUN: ${{ github.event.inputs.dry_run }}
+      CONFIRM: ${{ github.event.inputs.confirm }}
+      DELETE_ORPHAN: ${{ github.event.inputs.delete_orphan_volumes }}
+      REPORT: prune-report.md
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Pre-flight gate
+        run: |
+          {
+            echo "# AWS Prune — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            echo "- Instance: \`$INSTANCE_ID\`"
+            echo "- Region:   \`$AWS_REGION_TARGET\`"
+            echo "- dry_run:  \`$DRY_RUN\`"
+            echo "- delete_orphan_volumes: \`$DELETE_ORPHAN\`"
+            echo ""
+          } > "$REPORT"
+
+          if [ "$DRY_RUN" = "false" ] && [ "$CONFIRM" != "YES" ]; then
+            {
+              echo "## ABORT"
+              echo ""
+              echo "dry_run is false but confirm input is not the literal string \`YES\`."
+              echo "Re-run with confirm: YES to actually terminate the instance."
+            } >> "$REPORT"
+            cat "$REPORT"
+            exit 1
+          fi
+
+      - name: 1. Describe instance
+        run: |
+          {
+            echo "## 1. Instance to operate on"
+            echo '```'
+            aws ec2 describe-instances \
+              --region "$AWS_REGION_TARGET" \
+              --instance-ids "$INSTANCE_ID" \
+              --query "Reservations[].Instances[].[InstanceId,InstanceType,State.Name,LaunchTime,InstanceLifecycle,KeyName,Tags]" \
+              --output table
+            echo '```'
+            echo ""
+          } >> "$REPORT"
+
+      - name: 2. Attached volumes
+        id: vols
+        run: |
+          {
+            echo "## 2. Attached volumes (DeleteOnTermination decides their fate)"
+            echo '```'
+            aws ec2 describe-volumes \
+              --region "$AWS_REGION_TARGET" \
+              --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
+              --query "Volumes[].[VolumeId,Size,VolumeType,Attachments[0].Device,Attachments[0].DeleteOnTermination]" \
+              --output table
+            echo '```'
+            echo ""
+          } >> "$REPORT"
+
+          # Capture the volume IDs in case DeleteOnTermination is false and the
+          # caller asked for orphan cleanup after termination.
+          vol_ids=$(aws ec2 describe-volumes \
+            --region "$AWS_REGION_TARGET" \
+            --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
+            --query "Volumes[?Attachments[0].DeleteOnTermination==\`false\`].VolumeId" \
+            --output text)
+          echo "vol_ids=$vol_ids" >> "$GITHUB_OUTPUT"
+
+      - name: 3. Associated EIPs
+        run: |
+          {
+            echo "## 3. Associated Elastic IPs"
+            echo '```'
+            aws ec2 describe-addresses \
+              --region "$AWS_REGION_TARGET" \
+              --filters "Name=instance-id,Values=$INSTANCE_ID" \
+              --query "Addresses[].[PublicIp,AllocationId,AssociationId]" \
+              --output table || echo "(none)"
+            echo '```'
+            echo ""
+          } >> "$REPORT"
+
+      - name: 4. Plan
+        run: |
+          {
+            echo "## 4. Plan"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "**DRY RUN** — printing the AWS CLI commands that would run:"
+              echo ""
+              echo '```bash'
+              echo "aws ec2 terminate-instances --region $AWS_REGION_TARGET --instance-ids $INSTANCE_ID"
+              if [ "$DELETE_ORPHAN" = "true" ] && [ -n "${{ steps.vols.outputs.vol_ids }}" ]; then
+                for v in ${{ steps.vols.outputs.vol_ids }}; do
+                  echo "aws ec2 delete-volume --region $AWS_REGION_TARGET --volume-id $v"
+                done
+              fi
+              echo '```'
+            else
+              echo "**EXECUTING** (confirm=YES received)."
+            fi
+            echo ""
+          } >> "$REPORT"
+
+      - name: 5. Terminate
+        if: ${{ github.event.inputs.dry_run == 'false' }}
+        run: |
+          {
+            echo "## 5. Terminate result"
+            echo '```json'
+            aws ec2 terminate-instances \
+              --region "$AWS_REGION_TARGET" \
+              --instance-ids "$INSTANCE_ID"
+            echo '```'
+            echo ""
+          } >> "$REPORT"
+
+      - name: 6. Wait for termination
+        if: ${{ github.event.inputs.dry_run == 'false' }}
+        run: |
+          aws ec2 wait instance-terminated \
+            --region "$AWS_REGION_TARGET" \
+            --instance-ids "$INSTANCE_ID"
+          {
+            echo "## 6. State after termination"
+            echo '```'
+            aws ec2 describe-instances \
+              --region "$AWS_REGION_TARGET" \
+              --instance-ids "$INSTANCE_ID" \
+              --query "Reservations[].Instances[].[InstanceId,State.Name]" \
+              --output table
+            echo '```'
+            echo ""
+          } >> "$REPORT"
+
+      - name: 7. Cleanup orphan volumes
+        if: ${{ github.event.inputs.dry_run == 'false' && github.event.inputs.delete_orphan_volumes == 'true' }}
+        run: |
+          {
+            echo "## 7. Orphan volume cleanup"
+            if [ -z "${{ steps.vols.outputs.vol_ids }}" ]; then
+              echo "(no DeleteOnTermination=false volumes — nothing to do)"
+            else
+              for v in ${{ steps.vols.outputs.vol_ids }}; do
+                echo "Deleting $v..."
+                echo '```json'
+                aws ec2 delete-volume --region "$AWS_REGION_TARGET" --volume-id "$v" || true
+                echo '```'
+              done
+            fi
+            echo ""
+          } >> "$REPORT"
+
+      - name: Print and publish report
+        if: always()
+        run: |
+          echo "================== PRUNE REPORT START =================="
+          cat "$REPORT"
+          echo "=================== PRUNE REPORT END ==================="
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-prune-report
+          path: prune-report.md
+          retention-days: 90
