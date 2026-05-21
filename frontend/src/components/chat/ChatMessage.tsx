@@ -42,6 +42,21 @@ function formatCost(c: number): string {
   return `$${c.toFixed(2)}`;
 }
 
+/**
+ * Extract a copy/share/TTS-ready string from any assistant message shape.
+ * Single-agent and team runs deliver an AssistantContent with `steps`; chat
+ * mode delivers a plain markdown string. The actions bar needs the same kind
+ * of text in both cases so Copy / Share / Read-aloud behave identically.
+ */
+function extractActionContent(content: string | AssistantContent): string {
+  if (typeof content === "string") return content;
+  const steps = content.steps ?? [];
+  return steps
+    .map((s) => s.output)
+    .filter((o): o is string => typeof o === "string" && o.length > 0)
+    .join("\n\n");
+}
+
 function AgentStepMessage({ content }: { content: AssistantContent }) {
   const steps = content.steps ?? [];
   const costs = content.agent_costs ?? {};
@@ -166,6 +181,7 @@ export function ChatMessageItem({ message, onRegenerate }: ChatMessageProps) {
 
   // Assistant message
   const isStreaming = (message as ChatMessageProps["message"]).streaming;
+  const actionContent = extractActionContent(content);
 
   return (
     <div className="chat-bubble chat-bubble--assistant">
@@ -193,10 +209,10 @@ export function ChatMessageItem({ message, onRegenerate }: ChatMessageProps) {
             )}
           </div>
         )}
-        {!isStreaming && typeof content === "string" && content.length > 0 && (
+        {!isStreaming && actionContent.length > 0 && (
           <ChatMessageActions
             messageId={String(message.timestamp ?? "")}
-            content={content}
+            content={actionContent}
             onRegenerate={onRegenerate}
           />
         )}

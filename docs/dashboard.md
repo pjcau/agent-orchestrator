@@ -328,11 +328,11 @@ For local providers (Ollama, vLLM) `input_cost_per_million = output_cost_per_mil
 
 ## Assistant message actions
 
-Each completed assistant bubble carries a left-aligned action row **directly below** the `model · elapsed · cost` footer. The row is rendered by `ChatMessageActions` (`frontend/src/components/chat/ChatMessageActions.tsx`) and is mounted only when:
+Each completed assistant bubble carries a left-aligned action row **directly below** the `model · elapsed · cost` footer. The row is rendered by `ChatMessageActions` (`frontend/src/components/chat/ChatMessageActions.tsx`) and is mounted whenever:
 
 - `role === "assistant"`,
 - the bubble is **not** streaming (`streaming !== true`), and
-- `content` is a non-empty string (the agent-step / tool-result variants are skipped for now).
+- `extractActionContent(content)` yields a non-empty string. The helper in `ChatMessage.tsx` returns either the raw markdown (chat / prompt mode) or the `steps[].output` joined by `\n\n` (Single Agent and team-run, where `content` is an `AssistantContent`). The previous string-only guard meant single-agent and team replies had no actions; this fix makes Copy / Share / Read-aloud / feedback / Regenerate behave identically across modes.
 
 Six actions, left-to-right:
 

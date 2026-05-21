@@ -1084,7 +1084,14 @@ body {
    red, pulses softly, and swaps the glyph to "■" (stop). The transient
    notice row sits above the input row, mirroring the file-context pattern. */
 .btn-mic {
-  font-size: 14px;
+  /* Match the send button's hit-box and rounding so the input row reads as a
+     symmetric pair (mic on the left of the textarea, send on the right) on
+     both desktop and mobile. The mobile @media block overrides width/height
+     for both .btn-send and .btn-icon, so the pair stays aligned there too. */
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  font-size: 16px;
 }
 .btn-mic--listening {
   background: rgba(248, 81, 73, 0.18);

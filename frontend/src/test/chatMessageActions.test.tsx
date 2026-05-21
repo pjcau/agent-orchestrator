@@ -214,4 +214,56 @@ describe("ChatMessage assistant bubble — actions row", () => {
     const { container } = render(<ChatMessageItem message={msg} />);
     expect(container.querySelector(".chat-bubble__actions")).toBeNull();
   });
+
+  it("renders the actions row for a single-agent / team message with structured steps", () => {
+    // Single Agent and team-run replies arrive with AssistantContent
+    // instead of a plain string. The actions bar must still appear so the
+    // user can copy / share / read-aloud the agent's output.
+    const msg = {
+      role: "assistant" as const,
+      content: {
+        steps: [
+          { node: "agent", output: "## Differential\n- thing A\n- thing B" },
+        ],
+        usage: { output_tokens: 42, model: "deepseek/deepseek-v4-flash" },
+      },
+      model: "deepseek/deepseek-v4-flash",
+      timestamp: 999,
+    };
+    const { container } = render(<ChatMessageItem message={msg} />);
+    expect(container.querySelector(".chat-bubble__actions")).not.toBeNull();
+    expect(container.querySelectorAll(".chat-action-btn").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("hides the actions row when an AssistantContent message has no usable text", () => {
+    const msg = {
+      role: "assistant" as const,
+      content: { steps: [] },
+      timestamp: 1000,
+    };
+    const { container } = render(<ChatMessageItem message={msg} />);
+    expect(container.querySelector(".chat-bubble__actions")).toBeNull();
+  });
+
+  it("copies the joined step outputs when Copy is clicked on a multi-step message", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const msg = {
+      role: "assistant" as const,
+      content: {
+        steps: [
+          { node: "agent1", output: "first" },
+          { node: "agent2", output: "second" },
+        ],
+      },
+      timestamp: 1001,
+    };
+    render(<ChatMessageItem message={msg} />);
+    const copyBtn = screen.getByLabelText(/Copy response/i);
+    fireEvent.click(copyBtn);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("first\n\nsecond"));
+  });
 });
