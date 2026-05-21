@@ -73,6 +73,16 @@ async def list_openrouter_models(api_key: str) -> list[dict[str, str]]:
             "size": "$0.39/$2.34 · 397B MoE · 262K",
             "provider": "openrouter",
         },
+        {
+            "name": "deepseek/deepseek-v4-flash",
+            "size": "$0.112/$0.224 · MoE Flash · 1M",
+            "provider": "openrouter",
+        },
+        {
+            "name": "deepseek/deepseek-v4-pro",
+            "size": "$0.435/$0.87 · 1.6T MoE · 1M",
+            "provider": "openrouter",
+        },
         # --- Free models ---
         {
             "name": "qwen/qwen3-coder:free",
