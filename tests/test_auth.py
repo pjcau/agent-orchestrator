@@ -639,3 +639,81 @@ class TestPathTraversal:
         path = "..\\..\\etc\\passwd"
         parts = path.split("\\")
         assert ".." in parts
+
+
+# ---------------------------------------------------------------------------
+# Login / denied page — mobile-aware rendering
+# ---------------------------------------------------------------------------
+
+
+class TestLoginPageMobile:
+    """The login + denied pages are server-rendered HTML; iOS Safari was
+    laying them out at 980 px and shrinking the whole UI because there
+    was no viewport meta. These tests pin the responsive contract."""
+
+    def test_login_page_has_viewport_meta(self, monkeypatch):
+        from agent_orchestrator.dashboard.oauth_routes import _login_page_html
+
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "x")
+        html = _login_page_html()
+        assert 'name="viewport"' in html
+        assert "width=device-width" in html
+        assert "initial-scale=1" in html
+        # viewport-fit=cover is what lets env(safe-area-inset-*) actually
+        # produce non-zero values on iPhone.
+        assert "viewport-fit=cover" in html
+
+    def test_login_page_uses_dvh_not_vh(self, monkeypatch):
+        """100vh on iOS Safari was being computed against the largest
+        layout viewport, which pushed content under the URL bar. dvh
+        tracks the visible viewport correctly."""
+        from agent_orchestrator.dashboard.oauth_routes import _login_page_html
+
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "x")
+        html = _login_page_html()
+        assert "100dvh" in html
+
+    def test_login_page_respects_safe_area(self, monkeypatch):
+        from agent_orchestrator.dashboard.oauth_routes import _login_page_html
+
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "x")
+        html = _login_page_html()
+        # Safe-area on every side so the title isn't clipped by the notch
+        # and the buttons aren't covered by the home-indicator.
+        assert "safe-area-inset-top" in html
+        assert "safe-area-inset-bottom" in html
+        assert "safe-area-inset-left" in html
+        assert "safe-area-inset-right" in html
+
+    def test_login_buttons_are_not_fixed_width(self, monkeypatch):
+        """Old layout pinned `width: 250px`, which left a tiny touch
+        target on 360 px screens. Buttons must scale with the container."""
+        from agent_orchestrator.dashboard.oauth_routes import _login_page_html
+
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "x")
+        html = _login_page_html()
+        # No literal 250px button width
+        assert "width: 250px" not in html
+        # And the .btn rule explicitly opts into full-width
+        assert "width: 100%" in html
+
+    def test_login_buttons_have_minimum_tap_height(self, monkeypatch):
+        """iOS HIG recommends at least 44pt for touch targets."""
+        from agent_orchestrator.dashboard.oauth_routes import _login_page_html
+
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "x")
+        html = _login_page_html()
+        # Allow either 44px or 48px — current copy uses 48 to leave room
+        # for the icon line-height on Android.
+        assert "min-height: 48px" in html or "min-height: 44px" in html
+
+    def test_denied_page_has_viewport_meta(self):
+        from agent_orchestrator.dashboard.oauth_routes import _denied_page_html
+
+        html = _denied_page_html("octocat")
+        assert 'name="viewport"' in html
+        assert "width=device-width" in html
+        assert "viewport-fit=cover" in html
+        # And the long-login word-break so unusual emails don't push the
+        # container wider than the screen.
+        assert "word-break: break-all" in html

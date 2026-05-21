@@ -50,7 +50,13 @@ router = APIRouter()
 
 
 def _login_page_html() -> str:
-    """Login page with one button per configured OAuth provider."""
+    """Login page with one button per configured OAuth provider.
+
+    Mobile-aware: the viewport meta tag opts into device-width rendering
+    (without it, iOS Safari laid out at 980px and shrank the whole page).
+    Buttons go full-width on phones (capped at 320px on landscape /
+    tablets) and respect the iPhone safe-area on the top/sides.
+    """
     github_enabled = bool(os.environ.get("OAUTH_CLIENT_ID"))
     google_enabled = bool(os.environ.get("GOOGLE_OAUTH_CLIENT_ID"))
 
@@ -69,24 +75,43 @@ def _login_page_html() -> str:
         buttons = "<p>No OAuth providers configured.</p>"
 
     return f"""<!DOCTYPE html>
-<html><head><title>Login — Agent Orchestrator</title>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a2e">
+<title>Login — Agent Orchestrator</title>
 <style>
-  body {{ font-family: system-ui; display: flex; justify-content: center;
-         align-items: center; min-height: 100vh; margin: 0;
-         background: #1a1a2e; color: #e0e0e0; }}
-  .container {{ text-align: center; padding: 2rem; }}
-  h1 {{ margin-bottom: 2rem; }}
+  *, *::before, *::after {{ box-sizing: border-box; }}
+  html, body {{ height: 100%; }}
+  body {{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         display: flex; justify-content: center;
+         align-items: center; min-height: 100dvh; margin: 0;
+         background: #1a1a2e; color: #e0e0e0;
+         padding: max(16px, env(safe-area-inset-top))
+                 max(16px, env(safe-area-inset-right))
+                 max(16px, env(safe-area-inset-bottom))
+                 max(16px, env(safe-area-inset-left)); }}
+  .container {{ text-align: center; width: 100%; max-width: 360px; }}
+  h1 {{ margin: 0 0 2rem; font-size: clamp(20px, 6vw, 28px);
+        letter-spacing: -0.3px; }}
   .btn {{ display: flex; align-items: center; justify-content: center; gap: 10px;
-          padding: 12px 24px; margin: 12px auto; border-radius: 8px;
+          padding: 14px 20px; margin: 12px 0; border-radius: 10px;
           text-decoration: none; color: white; font-size: 16px;
-          width: 250px; }}
+          font-weight: 500;
+          width: 100%; min-height: 48px;
+          transition: opacity 0.15s, transform 0.1s; }}
+  .btn:active {{ transform: scale(0.98); }}
+  .btn:hover {{ opacity: 0.9; }}
   .github {{ background: #24292e; }}
   .google {{ background: #ffffff; color: #3c4043;
              border: 1px solid #dadce0; }}
   .google-g {{ font-weight: 700; color: #4285f4;
                 font-family: "Product Sans", Roboto, Arial, sans-serif; }}
-  .btn:hover {{ opacity: 0.9; }}
   .denied {{ color: #ff6b6b; margin-top: 1rem; }}
+  /* On wider screens widen the field a bit so each button looks intentional. */
+  @media (min-width: 480px) {{
+    .container {{ max-width: 320px; }}
+  }}
 </style></head>
 <body><div class="container">
   <h1>Agent Orchestrator</h1>
@@ -95,23 +120,45 @@ def _login_page_html() -> str:
 
 
 def _denied_page_html(login: str) -> str:
-    """Page shown when a user is not approved."""
+    """Page shown when a user is not approved.
+
+    Mirrors the responsive setup of the login page so the message and
+    "Try again" link don't wrap awkwardly under the iPhone notch.
+    """
     return f"""<!DOCTYPE html>
-<html><head><title>Access Denied — Agent Orchestrator</title>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a2e">
+<title>Access Denied — Agent Orchestrator</title>
 <style>
-  body {{ font-family: system-ui; display: flex; justify-content: center;
-         align-items: center; min-height: 100vh; margin: 0;
-         background: #1a1a2e; color: #e0e0e0; }}
-  .container {{ text-align: center; padding: 2rem; max-width: 500px; }}
-  h1 {{ color: #ff6b6b; }}
-  .login {{ color: #4fc3f7; font-weight: bold; }}
+  *, *::before, *::after {{ box-sizing: border-box; }}
+  html, body {{ height: 100%; }}
+  body {{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         display: flex; justify-content: center;
+         align-items: center; min-height: 100dvh; margin: 0;
+         background: #1a1a2e; color: #e0e0e0;
+         padding: max(16px, env(safe-area-inset-top))
+                 max(16px, env(safe-area-inset-right))
+                 max(16px, env(safe-area-inset-bottom))
+                 max(16px, env(safe-area-inset-left)); }}
+  .container {{ text-align: center; width: 100%; max-width: 500px;
+                 padding: 1rem; }}
+  h1 {{ color: #ff6b6b; font-size: clamp(20px, 6vw, 28px); margin: 0 0 1rem; }}
+  p {{ margin: 0.75rem 0; line-height: 1.5; }}
+  .login {{ color: #4fc3f7; font-weight: bold; word-break: break-all; }}
   a {{ color: #4fc3f7; }}
+  a.try-again {{ display: inline-block; margin-top: 0.5rem;
+                  padding: 12px 20px; border: 1px solid #4fc3f7;
+                  border-radius: 8px; text-decoration: none;
+                  min-height: 44px; min-width: 120px;
+                  line-height: 20px; }}
 </style></head>
 <body><div class="container">
   <h1>Access Denied</h1>
   <p>User <span class="login">{login}</span> is not authorized.</p>
   <p>Ask the admin to approve your GitHub account.</p>
-  <p><a href="/login">Try again</a></p>
+  <p><a class="try-again" href="/login">Try again</a></p>
 </div></body></html>"""
 
 
