@@ -158,21 +158,83 @@ class JobLogger:
                 continue
         return records
 
-    def list_sessions(self) -> list[dict[str, Any]]:
-        """List all job sessions with summary info (excludes empty dirs)."""
+    # ------------------------------------------------------------------
+    # Ownership (per-user history isolation) — Phase 7.15
+    # ------------------------------------------------------------------
+    #
+    # Each session dir may carry a sidecar `.owner` file containing a
+    # single line — the canonical owner identifier (typically the logged-
+    # in user's email from the JWT `sub` claim). The dashboard writes it
+    # at session-create time and reads it for filtering. Sessions without
+    # the file are treated as `_ANON_OWNER` ("shared"), which preserves
+    # backwards compatibility with pre-existing on-disk sessions AND with
+    # dev mode (ALLOW_DEV_MODE=true), where there is no authenticated
+    # user. Only an explicit owner match unlocks ownership-gated
+    # endpoints; the shared bucket stays visible to everyone.
+
+    _ANON_OWNER = "shared"
+    _OWNER_FILE = ".owner"
+
+    def set_session_owner(self, owner: str | None) -> None:
+        """Record the owner of the CURRENT session, if not already set.
+
+        Idempotent: subsequent calls on the same session with a different
+        owner are ignored. ``None`` / empty string falls back to the
+        shared anonymous owner. The session directory is created if it
+        doesn't exist yet (the owner file is the first persisted
+        artefact of an authenticated session)."""
+        canonical = (owner or self._ANON_OWNER).strip() or self._ANON_OWNER
+        self._ensure_dir()
+        owner_path = self._session_dir / self._OWNER_FILE
+        if owner_path.exists():
+            return
+        try:
+            owner_path.write_text(canonical, encoding="utf-8")
+        except OSError:
+            pass  # never crash a team_run because of an ownership write
+
+    def get_session_owner(self, session_id: str) -> str:
+        """Return the owner of a session, or ``"shared"`` if not labelled."""
+        owner_file = self._base_dir / f"job_{session_id}" / self._OWNER_FILE
+        try:
+            return owner_file.read_text(encoding="utf-8").strip() or self._ANON_OWNER
+        except OSError:
+            return self._ANON_OWNER
+
+    def user_can_access(self, session_id: str, user: str | None) -> bool:
+        """Authorisation gate: a session is visible to its owner AND to
+        anyone when the session is in the shared bucket. ``user=None`` is
+        treated as the shared user (dev / unauthenticated)."""
+        owner = self.get_session_owner(session_id)
+        viewer = (user or self._ANON_OWNER).strip() or self._ANON_OWNER
+        return owner == self._ANON_OWNER or owner == viewer
+
+    def list_sessions(self, user: str | None = None) -> list[dict[str, Any]]:
+        """List job sessions visible to *user* (None → shared/dev mode).
+
+        A session is included when:
+          - it has at least one file (empty dirs are filtered)
+          - AND its owner equals *user* OR is the shared anonymous bucket.
+        """
+        viewer = (user or self._ANON_OWNER).strip() or self._ANON_OWNER
         sessions: list[dict[str, Any]] = []
         if not self._base_dir.exists():
             return sessions
         for d in sorted(self._base_dir.iterdir(), reverse=True):
             if not d.is_dir() or not d.name.startswith("job_"):
                 continue
-            # Skip empty directories (they'll be cleaned up)
-            if not any(d.iterdir()):
+            # Skip empty directories (they'll be cleaned up). The sidecar
+            # .owner file does NOT count as content for this check.
+            content = [c for c in d.iterdir() if c.name != self._OWNER_FILE]
+            if not content:
                 continue
-            session_id = d.name[4:]  # strip "job_" prefix
+            session_id = d.name[4:]
+            # Ownership filter.
+            owner = self.get_session_owner(session_id)
+            if not (owner == self._ANON_OWNER or owner == viewer):
+                continue
             json_files = sorted(d.glob("*.json"))
             record_count = len(json_files)
-            # Extract summary from first and last records
             first_prompt = ""
             last_type = ""
             if json_files:
@@ -183,8 +245,8 @@ class JobLogger:
                     last_type = last.get("job_type", "")
                 except (json.JSONDecodeError, OSError):
                     pass
-            # Count non-json files (agent-created files)
-            all_files = [f for f in d.iterdir() if f.is_file() and f.suffix != ".json"]
+            all_files = [f for f in d.iterdir()
+                         if f.is_file() and f.suffix != ".json" and f.name != self._OWNER_FILE]
             sessions.append(
                 {
                     "session_id": session_id,
@@ -194,6 +256,7 @@ class JobLogger:
                     "first_prompt": first_prompt,
                     "last_type": last_type,
                     "is_current": session_id == self._session_id,
+                    "owner": owner,
                 }
             )
         return sessions

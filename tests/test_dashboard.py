@@ -2075,3 +2075,71 @@ class TestUploadEndpoint:
             )
 
         assert resp.status_code == 400
+
+
+class TestPerUserHistory:
+    """Phase 7.15 — per-user history isolation on the JobLogger."""
+
+    def test_anonymous_session_visible_to_everyone(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=str(tmp_path))
+        logger.touch()
+        logger.log("team_run", {"task": "anon work"})
+        assert logger.get_session_owner(logger.session_id) == "shared"
+        # Both an authed user and a passer-by see the session.
+        assert any(s["session_id"] == logger.session_id
+                   for s in logger.list_sessions(user="alice@example.com"))
+        assert any(s["session_id"] == logger.session_id
+                   for s in logger.list_sessions(user=None))
+
+    def test_owned_session_only_visible_to_owner(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=str(tmp_path))
+        logger.touch()
+        logger.set_session_owner("alice@example.com")
+        logger.log("team_run", {"task": "alice work"})
+        sid = logger.session_id
+
+        alice_sees = [s["session_id"] for s in logger.list_sessions(user="alice@example.com")]
+        bob_sees = [s["session_id"] for s in logger.list_sessions(user="bob@example.com")]
+        anon_sees = [s["session_id"] for s in logger.list_sessions(user=None)]
+
+        assert sid in alice_sees
+        assert sid not in bob_sees     # cross-user isolation
+        assert sid not in anon_sees    # logged-out viewers can't see owned sessions
+
+    def test_set_session_owner_is_idempotent(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=str(tmp_path))
+        logger.touch()
+        logger.set_session_owner("alice@example.com")
+        logger.set_session_owner("bob@example.com")   # ignored
+        assert logger.get_session_owner(logger.session_id) == "alice@example.com"
+
+    def test_user_can_access_gate(self, tmp_path):
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=str(tmp_path))
+        logger.touch()
+        logger.set_session_owner("alice@example.com")
+        sid = logger.session_id
+        assert logger.user_can_access(sid, "alice@example.com") is True
+        assert logger.user_can_access(sid, "bob@example.com") is False
+        assert logger.user_can_access(sid, None) is False
+        # An unlabelled session (no .owner file) is shared → everyone passes.
+        logger2 = JobLogger(jobs_dir=str(tmp_path))
+        logger2.touch()
+        logger2.log("team_run", {"task": "no owner"})
+        sid2 = logger2.session_id
+        assert logger.user_can_access(sid2, "anyone@example.com") is True
+        assert logger.user_can_access(sid2, None) is True
+
+    def test_list_sessions_ignores_owner_file_for_emptiness(self, tmp_path):
+        """A session containing ONLY the .owner sidecar is still empty
+        and must not appear in the list."""
+        from agent_orchestrator.dashboard.job_logger import JobLogger
+        logger = JobLogger(jobs_dir=str(tmp_path))
+        logger.touch()
+        logger.set_session_owner("alice@example.com")
+        # No log() call → only .owner exists in the dir.
+        sids = [s["session_id"] for s in logger.list_sessions(user="alice@example.com")]
+        assert logger.session_id not in sids
