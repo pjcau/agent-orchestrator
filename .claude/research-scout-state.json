@@ -1,13 +1,5 @@
 {
   "processed": {
-    "https://github.com/m1k1o/neko": {
-      "processed_at": "2026-03-12T12:00:00.000000+00:00",
-      "summary": "m1k1o/neko",
-      "improvements": [
-        "Real-time Execution Streaming (implemented as CompiledGraph.astream)",
-        "Ephemeral Session Storage (implemented as SessionStore)"
-      ]
-    },
     "https://github.com/robert-mcdermott/ai-knowledge-graph": {
       "processed_at": "2026-04-25T03:07:49.957224+00:00",
       "summary": "robert-mcdermott/ai-knowledge-graph",
@@ -82,7 +74,12 @@
       "processed_at": "2026-05-09T03:11:47.724685+00:00",
       "summary": "automataIA/graphrag-rs",
       "improvements": []
+    },
+    "https://github.com/mixelpixx/KiCAD-MCP-Server": {
+      "processed_at": "2026-05-22T03:13:38.470087+00:00",
+      "summary": "mixelpixx/KiCAD-MCP-Server",
+      "improvements": []
     }
   },
-  "last_run": "2026-05-09T03:11:47.725138+00:00"
+  "last_run": "2026-05-22T03:13:38.470569+00:00"
 }

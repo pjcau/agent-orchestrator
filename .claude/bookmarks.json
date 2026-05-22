@@ -262,5 +262,35 @@
     "added": "2026-05-02T19:21:02Z",
     "source": "github-star",
     "notes": ""
+  },
+  {
+    "url": "https://github.com/RyanCodrai/turbovec",
+    "added": "2026-05-21T19:10:12Z",
+    "source": "github-star",
+    "notes": "A vector index built on TurboQuant, written in Rust with Python bindings | Language: Python | Topics: ann, avx512, embedding, embeddings, faiss"
+  },
+  {
+    "url": "https://github.com/HKUDS/CLI-Anything",
+    "added": "2026-05-15T19:43:58Z",
+    "source": "github-star",
+    "notes": "\"CLI-Anything: Making ALL Software Agent-Native\" -- CLI-Hub: https://clianything.cc/ | Language: Python"
+  },
+  {
+    "url": "https://github.com/poloclub/transformer-explainer",
+    "added": "2026-05-11T15:51:18Z",
+    "source": "github-star",
+    "notes": "Transformer Explained Visually: Learn How LLM Transformer Models Work with Interactive Visualization | Language: JavaScript | Topics: deep-learning, generative-ai, gpt, langauge-model, llm"
+  },
+  {
+    "url": "https://github.com/Pinperepette/MacPersistenceChecker",
+    "added": "2026-05-09T17:54:41Z",
+    "source": "github-star",
+    "notes": "macOS persistence mechanism scanner with code signature verification and timeline tracking. | Language: Swift"
+  },
+  {
+    "url": "https://github.com/floci-io/floci",
+    "added": "2026-05-09T16:00:33Z",
+    "source": "github-star",
+    "notes": "Light, fluffy, and always free - The AWS Local Emulator alternative | Language: Java | Topics: aws, aws-emulation, devops, docker, ec2"
   }
 ]
