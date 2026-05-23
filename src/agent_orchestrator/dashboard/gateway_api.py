@@ -71,6 +71,7 @@ def _check_session_access(session_id: str, request: Request) -> JSONResponse | N
         return JSONResponse(content={"error": "Session not found"}, status_code=404)
     return None
 
+
 # ---------------------------------------------------------------------------
 # Module-level shared state for MCP registry
 # (populated lazily per-request from app.state when used standalone)

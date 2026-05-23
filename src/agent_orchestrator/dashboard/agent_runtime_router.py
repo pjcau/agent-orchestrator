@@ -767,11 +767,13 @@ async def team_run(body: dict, request: Request):
     active_jobs[job_id]["future"] = future
     # session_id is in the response so a polling client can immediately point
     # at /api/jobs/<session_id>/files instead of guessing via /api/jobs/list.
-    return JSONResponse(content={
-        "job_id": job_id,
-        "session_id": session_id,
-        "status": "started",
-    })
+    return JSONResponse(
+        content={
+            "job_id": job_id,
+            "session_id": session_id,
+            "status": "started",
+        }
+    )
 
 
 @runtime_router.post("/api/team/{job_id}/cancel")

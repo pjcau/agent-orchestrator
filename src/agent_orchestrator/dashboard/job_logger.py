@@ -245,8 +245,11 @@ class JobLogger:
                     last_type = last.get("job_type", "")
                 except (json.JSONDecodeError, OSError):
                     pass
-            all_files = [f for f in d.iterdir()
-                         if f.is_file() and f.suffix != ".json" and f.name != self._OWNER_FILE]
+            all_files = [
+                f
+                for f in d.iterdir()
+                if f.is_file() and f.suffix != ".json" and f.name != self._OWNER_FILE
+            ]
             sessions.append(
                 {
                     "session_id": session_id,
