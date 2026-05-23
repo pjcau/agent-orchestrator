@@ -3,8 +3,6 @@ import type { ModelsResponse, AgentsResponse } from "@/api/types";
 import { WorkspaceFilePicker } from "@/components/files/WorkspaceFilePicker";
 import { useAppStore } from "@/stores/useAppStore";
 import { useAgents } from "@/api/hooks";
-import apiClient from "@/api/client";
-import type { AxiosError } from "axios";
 import { maybeCompressImage } from "@/lib/compressImage";
 import {
   useSpeechRecognition,
@@ -301,14 +299,43 @@ export function ChatInput({
       const toUpload = await maybeCompressImage(file);
       const form = new FormData();
       form.append("file", toUpload);
-      // The browser must generate `multipart/form-data; boundary=<random>`
-      // itself for FormData bodies. apiClient defaults to
-      // `Content-Type: application/json` (see api/client.ts); without
-      // this override axios keeps that header and the backend rejects
-      // with "Content-Type must be multipart/form-data". Setting the
-      // header to undefined on this call deletes the instance default
-      // and the browser fills in the correct value with boundary.
-      const resp = await apiClient.post<{
+      // Use native fetch — NOT the shared apiClient — for this one call.
+      // The apiClient instance defaults to `Content-Type: application/json`
+      // (see api/client.ts), and getting axios v1 to *delete* that header
+      // for a single request reliably across browsers (especially iOS
+      // Safari) is brittle. With fetch + FormData, the browser unconditionally
+      // emits `multipart/form-data; boundary=<random>` itself, which is what
+      // FastAPI needs. `credentials: 'include'` keeps the OAuth session cookie;
+      // X-API-Key is forwarded if present so we don't lose API-key auth.
+      const apiKey = (() => {
+        try {
+          return localStorage.getItem("api_key");
+        } catch {
+          return null;
+        }
+      })();
+      const headers: Record<string, string> = {};
+      if (apiKey) headers["X-API-Key"] = apiKey;
+      const fetchResp = await fetch("/api/upload", {
+        method: "POST",
+        body: form,
+        credentials: "include",
+        headers,
+      });
+      if (!fetchResp.ok) {
+        // 413 (body too large), 401, 500 — try to read a JSON error body;
+        // fall back to status text so the user sees something useful.
+        let serverMsg = `${fetchResp.status} ${fetchResp.statusText}`;
+        try {
+          const body = await fetchResp.json();
+          if (body?.error) serverMsg = body.error;
+        } catch {
+          // non-JSON body (e.g. nginx 413 HTML page) — keep status text
+        }
+        setUploadError(serverMsg);
+        return;
+      }
+      const data = (await fetchResp.json()) as {
         success: boolean;
         filename: string;
         file_type?: string;
@@ -317,10 +344,7 @@ export function ChatInput({
         page_count?: number | null;
         row_count?: number | null;
         error?: string;
-      }>("/api/upload", form, {
-        headers: { "Content-Type": undefined as unknown as string },
-      });
-      const data = resp.data;
+      };
       if (!data.success) {
         setUploadError(data.error ?? "Upload failed");
         return;
@@ -334,12 +358,12 @@ export function ChatInput({
         truncated: false,
       });
     } catch (err) {
-      const ax = err as AxiosError<{ error?: string }>;
-      const serverMsg =
-        (ax.response?.data && (ax.response.data as { error?: string }).error) ||
-        ax.message ||
-        String(err);
-      setUploadError(serverMsg);
+      // Network-level failure (offline, DNS, CORS preflight, body too big +
+      // nginx closed the connection without a response) — fetch rejects with
+      // a TypeError("Failed to fetch"). Surface that to the user instead of
+      // the generic "AxiosError" they'd see otherwise.
+      const msg = err instanceof Error ? err.message : String(err);
+      setUploadError(`Network error: ${msg}`);
     } finally {
       setUploadingName(null);
     }

@@ -1,10 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+/**
+ * Upload flow test. The component now uses native `fetch` for the upload
+ * (NOT the shared axios apiClient), so we mock `globalThis.fetch` here.
+ *
+ * Why fetch and not axios: the apiClient instance sets a default
+ * `Content-Type: application/json`, and getting axios v1 to reliably
+ * *delete* that header for a single FormData request across browsers
+ * (especially iOS Safari) is brittle. fetch + FormData always emits
+ * `multipart/form-data; boundary=<random>` — exactly what FastAPI needs.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-// Mock WS context (ChatPanel inside ChatInput's tree needs it via DashboardPage —
-// but here we render ChatInput directly so we don't need WS at all).
 
 vi.mock("@/api/client", () => ({
   default: {
@@ -19,7 +26,6 @@ vi.mock("@/api/client", () => ({
   },
 }));
 
-import apiClient from "@/api/client";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { useAppStore } from "@/stores/useAppStore";
 
@@ -33,11 +39,31 @@ const baseModels = {
   openrouter: [{ name: "openai/gpt-4o", size: "" }],
 };
 
+/** Build a fake Response with the given JSON body & status. */
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? "OK" : "Error",
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+    headers: new Headers({ "Content-Type": "application/json" }),
+  } as unknown as Response;
+}
+
 describe("ChatInput — C2 file upload via /api/upload", () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     useAppStore.getState().reset();
     useAppStore.getState().clearAttachedFiles();
-    vi.mocked(apiClient.post).mockReset();
+    fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   /**
@@ -54,10 +80,7 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
         const el = realCreate(tag);
         if (tag === "input") {
           captured = el as HTMLInputElement;
-          // Stub click() so we can synthesise the change event
           (captured as HTMLInputElement).click = () => {
-            // Drop the test file into files (jsdom does not allow direct
-            // assignment, but defineProperty works)
             Object.defineProperty(captured, "files", {
               value: [file],
               configurable: true,
@@ -69,23 +92,21 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
       });
 
     const user = userEvent.setup();
-    await user.click(
-      screen.getByTitle(/Upload local file/i)
-    );
+    await user.click(screen.getByTitle(/Upload local file/i));
     spy.mockRestore();
   }
 
-  it("POSTs /api/upload with FormData and adds resulting markdown to attachedFiles", async () => {
-    vi.mocked(apiClient.post).mockResolvedValueOnce({
-      data: {
+  it("POSTs /api/upload with FormData (no manual Content-Type) and adds markdown to attachedFiles", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
         success: true,
         filename: "report.pdf",
         file_type: "pdf",
         markdown_content: "# Report\n\nHello.",
         markdown_path: "/tmp/report.md",
         page_count: 1,
-      },
-    });
+      })
+    );
 
     render(
       <ChatInput
@@ -100,18 +121,15 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
     const file = new File(["dummy"], "report.pdf", { type: "application/pdf" });
     await simulateFileSelect(file);
 
-    await waitFor(() => {
-      expect(vi.mocked(apiClient.post)).toHaveBeenCalledTimes(1);
-    });
-    const [url, body, config] = vi.mocked(apiClient.post).mock.calls[0];
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("/api/upload");
-    expect(body).toBeInstanceOf(FormData);
-    // The instance default is `application/json`. To get the browser to
-    // emit `multipart/form-data; boundary=...` we explicitly set
-    // Content-Type to `undefined` on this call — that deletes the default
-    // and axios lets the browser pick the value (with proper boundary).
-    expect(config?.headers).toBeDefined();
-    expect((config!.headers as Record<string, unknown>)["Content-Type"]).toBeUndefined();
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(init.credentials).toBe("include");
+    // We must NOT set Content-Type — the browser auto-generates
+    // `multipart/form-data; boundary=...`. Manual override broke iOS Safari.
+    expect(init.headers?.["Content-Type"]).toBeUndefined();
 
     await waitFor(() => {
       const files = useAppStore.getState().attachedFiles;
@@ -125,28 +143,43 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
     });
   });
 
-  it("shows an error chip and does not attach the file when /api/upload fails (e.g. truly unsupported format)", async () => {
-    vi.mocked(apiClient.post).mockRejectedValueOnce({
-      response: { data: { error: "Unsupported file format" }, status: 400 },
-      message: "Request failed with status code 400",
-    });
+  it("forwards X-API-Key from localStorage when present (API-key auth)", async () => {
+    localStorage.setItem("api_key", "test-key-123");
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        success: true,
+        filename: "x.pdf",
+        file_type: "pdf",
+        markdown_content: "x",
+        markdown_path: "/tmp/x.md",
+      })
+    );
 
     render(
-      <ChatInput
-        models={baseModels}
-        isDisabled={false}
-        onSend={vi.fn()}
-        onNewChat={vi.fn()}
-      />,
+      <ChatInput models={baseModels} isDisabled={false} onSend={vi.fn()} onNewChat={vi.fn()} />,
       { wrapper }
     );
 
-    // Use a format that has no extractor (zip, exe, …). Image formats are
-    // now handled by the OCR pipeline, so they reach the success path.
-    const file = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], "data.zip", {
-      type: "application/zip",
-    });
-    await simulateFileSelect(file);
+    await simulateFileSelect(new File(["x"], "x.pdf", { type: "application/pdf" }));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init.headers?.["X-API-Key"]).toBe("test-key-123");
+    localStorage.removeItem("api_key");
+  });
+
+  it("shows error chip when the server returns a non-OK status with a JSON body", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "Unsupported file format" }, 400));
+
+    render(
+      <ChatInput models={baseModels} isDisabled={false} onSend={vi.fn()} onNewChat={vi.fn()} />,
+      { wrapper }
+    );
+
+    await simulateFileSelect(
+      new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], "data.zip", {
+        type: "application/zip",
+      })
+    );
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(/Unsupported file format/i);
@@ -154,24 +187,42 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
     expect(useAppStore.getState().attachedFiles).toHaveLength(0);
   });
 
+  it("falls back to status text when the error response is not JSON (nginx 413)", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 413,
+      statusText: "Request Entity Too Large",
+      json: async () => {
+        throw new Error("not json");
+      },
+      headers: new Headers(),
+    } as unknown as Response);
+
+    render(
+      <ChatInput models={baseModels} isDisabled={false} onSend={vi.fn()} onNewChat={vi.fn()} />,
+      { wrapper }
+    );
+
+    await simulateFileSelect(new File(["big"], "big.pdf", { type: "application/pdf" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/413.*Request Entity Too Large/i);
+    });
+  });
+
   it("attaches an image file with file_type=image once OCR extracted text", async () => {
-    vi.mocked(apiClient.post).mockResolvedValueOnce({
-      data: {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
         success: true,
         filename: "screenshot.png",
         file_type: "image",
         markdown_content: "# OCR text from `screenshot.png`\n\nHello from OCR",
         markdown_path: "/tmp/screenshot.md",
-      },
-    });
+      })
+    );
 
     render(
-      <ChatInput
-        models={baseModels}
-        isDisabled={false}
-        onSend={vi.fn()}
-        onNewChat={vi.fn()}
-      />,
+      <ChatInput models={baseModels} isDisabled={false} onSend={vi.fn()} onNewChat={vi.fn()} />,
       { wrapper }
     );
 
@@ -192,27 +243,34 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
     });
   });
 
-  it("shows error message from server when upload returns success:false", async () => {
-    vi.mocked(apiClient.post).mockResolvedValueOnce({
-      data: { success: false, error: "File too large" },
-    });
+  it("shows server error when /api/upload returns 200 with success:false", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ success: false, error: "File too large" }));
 
     render(
-      <ChatInput
-        models={baseModels}
-        isDisabled={false}
-        onSend={vi.fn()}
-        onNewChat={vi.fn()}
-      />,
+      <ChatInput models={baseModels} isDisabled={false} onSend={vi.fn()} onNewChat={vi.fn()} />,
       { wrapper }
     );
 
-    const file = new File(["x"], "huge.pdf", { type: "application/pdf" });
-    await simulateFileSelect(file);
+    await simulateFileSelect(new File(["x"], "huge.pdf", { type: "application/pdf" }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(/File too large/i);
     });
     expect(useAppStore.getState().attachedFiles).toHaveLength(0);
+  });
+
+  it("surfaces TypeError(\"Failed to fetch\") as a network-error message", async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    render(
+      <ChatInput models={baseModels} isDisabled={false} onSend={vi.fn()} onNewChat={vi.fn()} />,
+      { wrapper }
+    );
+
+    await simulateFileSelect(new File(["x"], "x.pdf", { type: "application/pdf" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/Network error.*Failed to fetch/i);
+    });
   });
 });
