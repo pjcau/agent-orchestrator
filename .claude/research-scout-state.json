@@ -79,7 +79,12 @@
       "processed_at": "2026-05-22T03:13:38.470087+00:00",
       "summary": "mixelpixx/KiCAD-MCP-Server",
       "improvements": []
+    },
+    "https://github.com/ministackorg/ministack": {
+      "processed_at": "2026-05-23T03:11:07.455816+00:00",
+      "summary": "ministackorg/ministack",
+      "improvements": []
     }
   },
-  "last_run": "2026-05-22T03:13:38.470569+00:00"
+  "last_run": "2026-05-23T03:11:07.455876+00:00"
 }

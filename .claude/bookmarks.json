@@ -292,5 +292,11 @@
     "added": "2026-05-09T16:00:33Z",
     "source": "github-star",
     "notes": "Light, fluffy, and always free - The AWS Local Emulator alternative | Language: Java | Topics: aws, aws-emulation, devops, docker, ec2"
+  },
+  {
+    "url": "https://github.com/virgiliojr94/book-to-skill",
+    "added": "2026-05-22T21:15:50Z",
+    "source": "github-star",
+    "notes": "Turn any technical book PDF into a Claude Code skill — ready to study, reference, and use while you work. | Language: Python"
   }
 ]
