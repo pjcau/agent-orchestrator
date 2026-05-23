@@ -58,6 +58,17 @@ def _safe_log(value: str) -> str:
     return str(value).replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
+def _current_user_id(request: Request) -> str | None:
+    """Return the canonical owner id for the request, or ``None`` if the
+    request is unauthenticated (dev mode / API-key access). Used by
+    Phase 7.15 to label per-user session ownership."""
+    user = getattr(request.state, "user", None)
+    if not isinstance(user, dict):
+        return None
+    sub = user.get("sub") or user.get("email") or user.get("github_login")
+    return str(sub).strip() if sub else None
+
+
 runtime_router = APIRouter(tags=["runtime"])
 
 # Allowed Ollama URL prefixes (SSRF protection)
@@ -593,6 +604,14 @@ async def team_run(body: dict, request: Request):
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     provider = _make_provider(model, provider_type, ollama_url, openrouter_key)
 
+    # Phase 7.15 — record the authenticated user as the session owner so the
+    # /api/jobs/* endpoints can filter history per-user. Falls back to the
+    # shared bucket in dev mode (no JWT) or API-key access.
+    owner = _current_user_id(request)
+    job_logger.touch()  # rotates session if expired; capture session_id AFTER
+    job_logger.set_session_owner(owner)
+    session_id = job_logger.session_id
+
     # Evict completed/failed jobs to prevent unbounded growth (keep last 20)
     finished = [k for k, v in active_jobs.items() if v["status"] != "running"]
     for k in finished[:-20]:
@@ -601,6 +620,8 @@ async def team_run(body: dict, request: Request):
     active_jobs[job_id] = {
         "status": "running",
         "task": task_desc,
+        "session_id": session_id,
+        "owner": owner,
         "result": None,
         # `future` is set right after asyncio.create_task() below so
         # /api/team/{job_id}/cancel can reach into the active task.
@@ -744,7 +765,13 @@ async def team_run(body: dict, request: Request):
 
     future = asyncio.create_task(_run_in_background())
     active_jobs[job_id]["future"] = future
-    return JSONResponse(content={"job_id": job_id, "status": "started"})
+    # session_id is in the response so a polling client can immediately point
+    # at /api/jobs/<session_id>/files instead of guessing via /api/jobs/list.
+    return JSONResponse(content={
+        "job_id": job_id,
+        "session_id": session_id,
+        "status": "started",
+    })
 
 
 @runtime_router.post("/api/team/{job_id}/cancel")

@@ -44,6 +44,33 @@ logger = logging.getLogger(__name__)
 
 gateway_router = APIRouter(prefix="/api", tags=["gateway"])
 
+
+# ---------------------------------------------------------------------------
+# Per-user session ownership (Phase 7.15)
+# ---------------------------------------------------------------------------
+
+
+def _current_user_id(request: Request) -> str | None:
+    """Return the canonical owner id (email) for the request, or None when
+    unauthenticated (dev mode / API-key access)."""
+    user = getattr(request.state, "user", None)
+    if not isinstance(user, dict):
+        return None
+    sub = user.get("sub") or user.get("email") or user.get("github_login")
+    return str(sub).strip() if sub else None
+
+
+def _check_session_access(session_id: str, request: Request) -> JSONResponse | None:
+    """Authorisation gate for /api/jobs/{session_id}/* endpoints.
+
+    Returns ``None`` on allow, or a 404 JSONResponse on deny. We pick 404
+    (rather than 403) on purpose: a foreign owner shouldn't be able to
+    probe which session_ids exist on the server."""
+    job_logger = request.app.state.job_logger
+    if not job_logger.user_can_access(session_id, _current_user_id(request)):
+        return JSONResponse(content={"error": "Session not found"}, status_code=404)
+    return None
+
 # ---------------------------------------------------------------------------
 # Module-level shared state for MCP registry
 # (populated lazily per-request from app.state when used standalone)
@@ -302,15 +329,23 @@ async def session_history(request: Request):
 
 @gateway_router.get("/jobs/list")
 async def jobs_list(request: Request):
-    """List all job sessions."""
+    """List sessions visible to the authenticated user.
+
+    Phase 7.15: the dashboard JobLogger now labels each session with the
+    JWT ``sub`` (email) of the user who first wrote to it. ``list_sessions``
+    returns the requester's own sessions plus the shared/anonymous pool
+    (which keeps dev mode working without auth)."""
     job_logger = request.app.state.job_logger
-    sessions = job_logger.list_sessions()
+    sessions = job_logger.list_sessions(user=_current_user_id(request))
     return JSONResponse(content={"sessions": sessions})
 
 
 @gateway_router.get("/jobs/{session_id}")
 async def jobs_detail(session_id: str, request: Request):
     """Load all records from a specific session."""
+    deny = _check_session_access(session_id, request)
+    if deny is not None:
+        return deny
     job_logger = request.app.state.job_logger
     records = job_logger.load_session(session_id)
     if not records:
@@ -321,6 +356,9 @@ async def jobs_detail(session_id: str, request: Request):
 @gateway_router.post("/jobs/{session_id}/switch")
 async def jobs_switch(session_id: str, request: Request):
     """Switch to an existing session to continue work in it."""
+    deny = _check_session_access(session_id, request)
+    if deny is not None:
+        return deny
     job_logger = request.app.state.job_logger
     ok = job_logger.switch_session(session_id)
     if not ok:
@@ -347,6 +385,9 @@ async def jobs_restore_conversation(session_id: str, request: Request):
 
     Returns the conversation_id (new or recovered from records).
     """
+    deny = _check_session_access(session_id, request)
+    if deny is not None:
+        return deny
     from ..core.conversation import ConversationMessage
 
     job_logger = request.app.state.job_logger
@@ -422,6 +463,9 @@ async def jobs_delete(session_id: str, request: Request):
     """Delete a session and its files. DB metrics are preserved."""
     import shutil
 
+    deny = _check_session_access(session_id, request)
+    if deny is not None:
+        return deny
     job_logger = request.app.state.job_logger
     session_dir = job_logger._base_dir / f"job_{session_id}"
     if not session_dir.exists() or not session_dir.is_dir():
@@ -448,6 +492,10 @@ async def jobs_delete(session_id: str, request: Request):
 async def jobs_files(session_id: str, request: Request):
     """List all files in a session directory (recursive tree)."""
     from pathlib import Path
+
+    deny = _check_session_access(session_id, request)
+    if deny is not None:
+        return deny
 
     job_logger = request.app.state.job_logger
     session_dir = job_logger._base_dir / f"job_{session_id}"
@@ -501,6 +549,9 @@ async def jobs_files(session_id: str, request: Request):
 @gateway_router.get("/jobs/{session_id}/files/{filename:path}")
 async def jobs_file_content(session_id: str, filename: str, request: Request):
     """Read content of a file in a session directory."""
+    deny = _check_session_access(session_id, request)
+    if deny is not None:
+        return deny
     job_logger = request.app.state.job_logger
     session_dir = job_logger._base_dir / f"job_{session_id}"
     target = (session_dir / filename).resolve()
@@ -522,6 +573,9 @@ async def jobs_file_content(session_id: str, filename: str, request: Request):
 @gateway_router.get("/jobs/{session_id}/download")
 async def jobs_download_zip(session_id: str, request: Request):
     """Download entire session as a ZIP archive (recursive — includes subdirs)."""
+    deny = _check_session_access(session_id, request)
+    if deny is not None:
+        return deny
     import io
     import zipfile
 
