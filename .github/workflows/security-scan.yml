@@ -115,7 +115,10 @@ jobs:
     name: Secret Scan (TruffleHog)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      # Pinned to v5: actions/checkout@v6 has a regression where fetch-depth: 0
+      # fails with "could not read Username" because credentials are not wired
+      # into the full-history fetch. See community discussion #183817.
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
