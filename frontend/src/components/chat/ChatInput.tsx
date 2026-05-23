@@ -254,6 +254,14 @@ export function ChatInput({
       return;
     }
 
+    // If the mic is still recording when the user sends, stop it. Otherwise
+    // the recognizer keeps running in the background, eventually appends a
+    // late "final" chunk to the now-empty textarea, and leaves the red
+    // "listening" indicator on — which users perceive as a stuck mic.
+    if (isListening) {
+      stopListening();
+    }
+
     const fileContext = attachedFiles
       .map((f) => `--- ${f.path} ---\n${f.content}`)
       .join("\n\n");
@@ -263,7 +271,7 @@ export function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming, ragEnabled, ragNamespace, agent]);
+  }, [text, isDisabled, model, attachedFiles, onSend, mode, provider, useStreaming, ragEnabled, ragNamespace, agent, isListening, stopListening]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
