@@ -106,10 +106,12 @@ describe("ChatInput — C2 file upload via /api/upload", () => {
     const [url, body, config] = vi.mocked(apiClient.post).mock.calls[0];
     expect(url).toBe("/api/upload");
     expect(body).toBeInstanceOf(FormData);
-    // We must NOT set Content-Type manually — the browser auto-generates
-    // `multipart/form-data; boundary=...` for a FormData body, and
-    // overriding it strips the boundary (which broke iOS Safari uploads).
-    expect(config?.headers?.["Content-Type"]).toBeUndefined();
+    // The instance default is `application/json`. To get the browser to
+    // emit `multipart/form-data; boundary=...` we explicitly set
+    // Content-Type to `undefined` on this call — that deletes the default
+    // and axios lets the browser pick the value (with proper boundary).
+    expect(config?.headers).toBeDefined();
+    expect((config!.headers as Record<string, unknown>)["Content-Type"]).toBeUndefined();
 
     await waitFor(() => {
       const files = useAppStore.getState().attachedFiles;

@@ -293,12 +293,13 @@ export function ChatInput({
       const toUpload = await maybeCompressImage(file);
       const form = new FormData();
       form.append("file", toUpload);
-      // IMPORTANT: do NOT set Content-Type manually. Browsers + axios
-      // generate `multipart/form-data; boundary=<random>` automatically
-      // when the request body is a FormData. Setting it ourselves
-      // strips the boundary and the server gets a body it can't parse
-      // — on iOS Safari this surfaces as a generic "Network Error",
-      // which is what users reported for iPhone photo uploads.
+      // The browser must generate `multipart/form-data; boundary=<random>`
+      // itself for FormData bodies. apiClient defaults to
+      // `Content-Type: application/json` (see api/client.ts); without
+      // this override axios keeps that header and the backend rejects
+      // with "Content-Type must be multipart/form-data". Setting the
+      // header to undefined on this call deletes the instance default
+      // and the browser fills in the correct value with boundary.
       const resp = await apiClient.post<{
         success: boolean;
         filename: string;
@@ -308,7 +309,9 @@ export function ChatInput({
         page_count?: number | null;
         row_count?: number | null;
         error?: string;
-      }>("/api/upload", form);
+      }>("/api/upload", form, {
+        headers: { "Content-Type": undefined as unknown as string },
+      });
       const data = resp.data;
       if (!data.success) {
         setUploadError(data.error ?? "Upload failed");
