@@ -23,7 +23,7 @@ from pathlib import Path
 # Constants
 # ---------------------------------------------------------------------------
 
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB (covers iPhone Live Photos / 48 MP shots)
 MAX_PDF_PAGES = 50
 MAX_SPREADSHEET_ROWS = 10_000
 
@@ -105,6 +105,14 @@ class DocumentConverter:
         ".bmp": "_convert_image",
         ".tiff": "_convert_image",
         ".tif": "_convert_image",
+        # iPhone-default formats (iOS 11+). The frontend tries to re-encode
+        # to JPEG client-side via canvas (see frontend/src/lib/compressImage.ts);
+        # this branch is only reached if compression was bypassed (curl,
+        # browsers without canvas support, etc.). _convert_image attempts the
+        # OCR pipeline via Pillow + pillow-heif if installed; otherwise it
+        # raises `DependencyMissingError` with a helpful message.
+        ".heic": "_convert_image",
+        ".heif": "_convert_image",
     }
 
     def __init__(self, output_dir: str | None = None) -> None:
@@ -416,6 +424,24 @@ class DocumentConverter:
                 "apt-get install tesseract-ocr (Linux) "
                 "or brew install tesseract (macOS)."
             ) from exc
+
+        # HEIC/HEIF (iPhone-default) need `pillow-heif` registered as a
+        # Pillow plugin. Best-effort: try to import; if missing AND the
+        # file is HEIC, raise a friendly DependencyMissingError so the
+        # user sees something other than "Unsupported format".
+        ext = path.suffix.lower()
+        if ext in (".heic", ".heif"):
+            try:
+                from pillow_heif import register_heif_opener  # type: ignore[import-not-found]
+
+                register_heif_opener()
+            except ImportError as exc:
+                raise DependencyMissingError(
+                    "HEIC/HEIF images need the optional 'pillow-heif' "
+                    "dependency. Either install it server-side (pip install "
+                    "pillow-heif) or set the iPhone to capture in JPEG: "
+                    "Settings → Camera → Formats → 'Most Compatible'."
+                ) from exc
 
         try:
             with Image.open(str(path)) as image:

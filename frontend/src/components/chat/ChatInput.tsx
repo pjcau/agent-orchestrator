@@ -5,6 +5,7 @@ import { useAppStore } from "@/stores/useAppStore";
 import { useAgents } from "@/api/hooks";
 import apiClient from "@/api/client";
 import type { AxiosError } from "axios";
+import { maybeCompressImage } from "@/lib/compressImage";
 import {
   useSpeechRecognition,
   type SpeechErrorCode,
@@ -281,8 +282,23 @@ export function ChatInput({
     setUploadError(null);
     setUploadingName(file.name);
     try {
+      // Client-side image compression. Solves three problems at once:
+      //   1. iPhone photos default to HEIC, which the backend doesn't
+      //      decode. The canvas pipeline on iOS Safari renders HEIC
+      //      natively (the OS provides decoding) and exports JPEG.
+      //   2. Live Photos / 4K HDR can hit 15-25 MB; nginx default body
+      //      cap is 1 MB and bumping it isn't enough on poor mobile
+      //      networks. A 2048-px JPEG @ 0.85 quality is <1 MB.
+      //   3. Faster upload + cheaper to keep server-side.
+      const toUpload = await maybeCompressImage(file);
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", toUpload);
+      // IMPORTANT: do NOT set Content-Type manually. Browsers + axios
+      // generate `multipart/form-data; boundary=<random>` automatically
+      // when the request body is a FormData. Setting it ourselves
+      // strips the boundary and the server gets a body it can't parse
+      // — on iOS Safari this surfaces as a generic "Network Error",
+      // which is what users reported for iPhone photo uploads.
       const resp = await apiClient.post<{
         success: boolean;
         filename: string;
@@ -292,9 +308,7 @@ export function ChatInput({
         page_count?: number | null;
         row_count?: number | null;
         error?: string;
-      }>("/api/upload", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      }>("/api/upload", form);
       const data = resp.data;
       if (!data.success) {
         setUploadError(data.error ?? "Upload failed");
@@ -323,6 +337,10 @@ export function ChatInput({
   const handleFileAttach = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
+    // `accept` opens the iOS native camera/photo picker directly and
+    // hints the OS about acceptable file types. Without it, iPhone
+    // Safari shows a generic picker and uploads HEIC by default.
+    input.accept = "image/*,application/pdf,.csv,.xlsx,.xls,.docx,.txt,.md,.json,.heic,.heif";
     input.onchange = () => {
       const file = input.files?.[0];
       if (file) uploadFile(file);
