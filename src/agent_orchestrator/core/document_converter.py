@@ -413,22 +413,11 @@ class DocumentConverter:
         is not interpreted. For real vision support, route the image through
         a multimodal provider (e.g. Claude Sonnet, GPT-4o) instead.
         """
-        try:
-            import pytesseract
-            from PIL import Image
-        except ImportError as exc:
-            raise DependencyMissingError(
-                "Image OCR requires 'pytesseract' and 'Pillow', plus the "
-                "'tesseract' system binary. Install with: "
-                "pip install 'agent-orchestrator[images]' and "
-                "apt-get install tesseract-ocr (Linux) "
-                "or brew install tesseract (macOS)."
-            ) from exc
-
         # HEIC/HEIF (iPhone-default) need `pillow-heif` registered as a
-        # Pillow plugin. Best-effort: try to import; if missing AND the
-        # file is HEIC, raise a friendly DependencyMissingError so the
-        # user sees something other than "Unsupported format".
+        # Pillow plugin. Check FIRST — before the pytesseract/Pillow import
+        # block — so iPhone users get the actionable HEIC message instead
+        # of the generic OCR-deps error when both are missing (the user
+        # can dodge BOTH installs by switching iPhone to JPEG capture).
         ext = path.suffix.lower()
         if ext in (".heic", ".heif"):
             try:
@@ -442,6 +431,18 @@ class DocumentConverter:
                     "pillow-heif) or set the iPhone to capture in JPEG: "
                     "Settings → Camera → Formats → 'Most Compatible'."
                 ) from exc
+
+        try:
+            import pytesseract
+            from PIL import Image
+        except ImportError as exc:
+            raise DependencyMissingError(
+                "Image OCR requires 'pytesseract' and 'Pillow', plus the "
+                "'tesseract' system binary. Install with: "
+                "pip install 'agent-orchestrator[images]' and "
+                "apt-get install tesseract-ocr (Linux) "
+                "or brew install tesseract (macOS)."
+            ) from exc
 
         try:
             with Image.open(str(path)) as image:
