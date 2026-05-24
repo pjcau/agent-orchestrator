@@ -298,5 +298,11 @@
     "added": "2026-05-22T21:15:50Z",
     "source": "github-star",
     "notes": "Turn any technical book PDF into a Claude Code skill — ready to study, reference, and use while you work. | Language: Python"
+  },
+  {
+    "url": "https://github.com/D4Vinci/Scrapling",
+    "added": "2026-05-23T06:21:01Z",
+    "source": "github-star",
+    "notes": "🕷️ An adaptive Web Scraping framework that handles everything from a single request to a full-scale crawl! | Language: Python | Topics: ai, ai-scraping, automation, crawler, crawling"
   }
 ]
