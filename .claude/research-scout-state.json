@@ -89,7 +89,12 @@
       "processed_at": "2026-05-24T03:12:27.534205+00:00",
       "summary": "autorope/donkeycar",
       "improvements": []
+    },
+    "https://github.com/pracdata/awesome-open-source-data-engineering": {
+      "processed_at": "2026-05-25T03:14:47.928141+00:00",
+      "summary": "pracdata/awesome-open-source-data-engineering",
+      "improvements": []
     }
   },
-  "last_run": "2026-05-24T03:12:27.534262+00:00"
+  "last_run": "2026-05-25T03:14:47.928192+00:00"
 }

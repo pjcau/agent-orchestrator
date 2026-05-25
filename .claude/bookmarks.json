@@ -304,5 +304,53 @@
     "added": "2026-05-23T06:21:01Z",
     "source": "github-star",
     "notes": "🕷️ An adaptive Web Scraping framework that handles everything from a single request to a full-scale crawl! | Language: Python | Topics: ai, ai-scraping, automation, crawler, crawling"
+  },
+  {
+    "url": "https://github.com/Lum1104/Understand-Anything",
+    "added": "2026-05-24T20:22:36Z",
+    "source": "github-star",
+    "notes": "Graphs that teach > graphs that impress. Turn any code into an interactive knowledge graph you can explore, search, and ask questions about. Works with Claude Code, Codex, Cursor, Copilot, Gemini CLI, | Language: TypeScript | Topics: antigravity-skills, business-knowledge, claude-code, claude-skills, codebase-analysis"
+  },
+  {
+    "url": "https://github.com/google/eng-practices",
+    "added": "2026-05-24T20:13:44Z",
+    "source": "github-star",
+    "notes": "Google's Engineering Practices documentation"
+  },
+  {
+    "url": "https://github.com/EliaAlberti/cpr-compress-preserve-resume",
+    "added": "2026-05-24T19:23:38Z",
+    "source": "github-star",
+    "notes": "Persistent memory for Claude Code. Save, search, and restore conversation context across sessions."
+  },
+  {
+    "url": "https://github.com/humanlayer/12-factor-agents",
+    "added": "2026-05-24T19:21:17Z",
+    "source": "github-star",
+    "notes": "What are the principles we can use to build LLM-powered software that is actually good enough to put in the hands of production customers? | Language: TypeScript | Topics: 12-factor, 12-factor-agents, agents, ai, context-window"
+  },
+  {
+    "url": "https://github.com/supertone-inc/supertonic",
+    "added": "2026-05-24T19:18:57Z",
+    "source": "github-star",
+    "notes": "Lightning-Fast, On-Device, Multilingual TTS — running natively via ONNX. | Language: Swift | Topics: cpp, csharp, flutter, go, ios"
+  },
+  {
+    "url": "https://github.com/tinyhumansai/openhuman",
+    "added": "2026-05-24T19:16:40Z",
+    "source": "github-star",
+    "notes": "Your Personal AI super intelligence. Private, Simple and extremely powerful. | Language: Rust"
+  },
+  {
+    "url": "https://github.com/colbymchenry/codegraph",
+    "added": "2026-05-24T19:15:59Z",
+    "source": "github-star",
+    "notes": "Pre-indexed code knowledge graph for Claude Code, Codex, Cursor, OpenCode, and Hermes Agent — fewer tokens, fewer tool calls, 100% local | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/pguso/ai-agents-from-scratch",
+    "added": "2026-05-24T16:51:11Z",
+    "source": "github-star",
+    "notes": "Demystify AI agents by building them yourself. Local LLMs, no black boxes, real understanding of function calling, memory, and ReAct patterns. | Language: JavaScript | Topics: ai-agents, educational, function-calling, llm, llm-agent"
   }
 ]
