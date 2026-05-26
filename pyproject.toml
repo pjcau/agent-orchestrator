@@ -37,14 +37,14 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.42.0",
     "opentelemetry-semantic-conventions>=0.49b0",
 ]
-langfuse = ["langfuse>=2.0"]
+langfuse = ["langfuse>=4.6.1"]
 phoenix = ["arize-phoenix-otel>=0.5"]
 
 # --- Rust acceleration (optional — falls back to pure Python) ---
 rust = ["agent-orchestrator-rust"]
 
 # --- Combined extras ---
-all = ["anthropic>=0.40", "openai>=2.37.0", "google-generativeai>=0.8", "asyncpg>=0.31.0", "fastapi>=0.115", "uvicorn[standard]>=0.47.0", "websockets>=16.0", "httpx>=0.27", "authlib>=1.7.2", "PyJWT>=2.12.1", "itsdangerous>=2.2.0", "bcrypt>=5.0.0", "python-multipart>=0.0.20", "cryptography>=46.0.7", "pytesseract>=0.3.10", "Pillow>=10.0", "opentelemetry-api>=1.41.1", "opentelemetry-sdk>=1.27", "opentelemetry-instrumentation-fastapi>=0.48b0", "opentelemetry-instrumentation-httpx>=0.63b0", "opentelemetry-exporter-otlp-proto-http>=1.42.0", "opentelemetry-semantic-conventions>=0.49b0", "langfuse>=2.0", "arize-phoenix-otel>=0.5"]
+all = ["anthropic>=0.40", "openai>=2.37.0", "google-generativeai>=0.8", "asyncpg>=0.31.0", "fastapi>=0.115", "uvicorn[standard]>=0.47.0", "websockets>=16.0", "httpx>=0.27", "authlib>=1.7.2", "PyJWT>=2.12.1", "itsdangerous>=2.2.0", "bcrypt>=5.0.0", "python-multipart>=0.0.20", "cryptography>=46.0.7", "pytesseract>=0.3.10", "Pillow>=10.0", "opentelemetry-api>=1.41.1", "opentelemetry-sdk>=1.27", "opentelemetry-instrumentation-fastapi>=0.48b0", "opentelemetry-instrumentation-httpx>=0.63b0", "opentelemetry-exporter-otlp-proto-http>=1.42.0", "opentelemetry-semantic-conventions>=0.49b0", "langfuse>=4.6.1", "arize-phoenix-otel>=0.5"]
 dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
