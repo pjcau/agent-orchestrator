@@ -221,7 +221,7 @@ jobs:
           cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aws-cost-audit-report
           path: audit-report.md
