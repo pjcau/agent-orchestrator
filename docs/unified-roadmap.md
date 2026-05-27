@@ -604,6 +604,18 @@ The match matrix has only one ⚠️ row left and zero ❌. Realistic next steps
 2. **Wire P2 Evaluator into CI**: add a small smoke suite as a GitHub Action gate that fails on regression > 5%.
 3. **Swap RAG defaults**: HashEmbedder is dev-only; production should use `LocalEmbeddingProvider` (sentence-transformers) or `OpenAIEmbeddingProvider`. PgVector backend instead of `InMemoryKnowledgeStore` once usage grows.
 4. **v1.4 — Reference-matrix gap closure** — see below.
+5. **`ago` Rust CLI** — local→remote client, see below.
+
+### Rust CLI (`ago`)
+
+Provider-agnostic, single-binary client that lets a local project talk to a remote orchestrator the same way `gh` talks to GitHub. Lives in [`cli/`](../cli/) at repo root. Full design + security model in [docs/cli.md](cli.md).
+
+| Phase | Scope | Status (2026-05-27) |
+|---|---|---|
+| 1 — Skeleton + auth | `login` / `logout` / `whoami` / `config`, OS-keychain token storage, rustls-only HTTP, `/api/cli/v1/whoami` server endpoint | **shipped on `experiment/rust-cli`** |
+| 2 — Core execution | Device-flow OAuth (RFC 8628), `ago run "<task>"` with SSE streaming, agent/skill flags, `.ago.yaml` project preset, `--json` output | planned |
+| 3 — Observability & UX | `ago jobs list/get/cancel`, `ago logs --follow`, progress bars, shell completions | planned |
+| 4 — Hardening & release | `cargo audit`/`deny`/`vet` in CI, cross-compile (mac arm/x64, linux x64/arm64 musl, windows), signed releases via `cosign` + SBOM, Homebrew tap, GitHub Release v0.1.0 | planned |
 
 ---
 

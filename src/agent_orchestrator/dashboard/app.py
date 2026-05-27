@@ -46,6 +46,8 @@ from .agent_runtime_router import runtime_router
 from .knowledge_routes import knowledge_router
 from .evals_routes import evals_router
 from .personalized_memory_routes import memory_router
+from .cli_routes import cli_router
+from .cli_device_flow import InMemoryDeviceFlowStore
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
@@ -275,6 +277,22 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         _PM(store_holder[0], memory_filter=_memory_filter) if store_holder[0] is not None else None
     )
 
+    # ── Device-flow OAuth (RFC 8628) for `ago login --device` ──────────
+    # The Postgres-backed store is selected automatically when DATABASE_URL
+    # is configured — that makes the pairing state shared across workers
+    # and survives restarts. Without DATABASE_URL we fall back to the
+    # in-process store, which is fine for single-worker dev/test setups
+    # but loses pending pairings on restart.
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if database_url:
+        from .cli_device_flow_postgres import PostgresDeviceFlowStore
+
+        app.state.device_flow_store = PostgresDeviceFlowStore(database_url)
+    else:
+        app.state.device_flow_store = InMemoryDeviceFlowStore()
+    # Approved CLI tokens are stateless JWTs minted by `create_cli_token`
+    # — no per-token server-side storage. See dashboard/auth.py.
+
     # ── Knowledge / RAG (P1) ────────────────────────────────────────────
     # The knowledge subsystem is a single shared (embedder, store) pair
     # plus the Ingester / Retriever orchestrators. Defaults are dependency
@@ -435,6 +453,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Personalized memory endpoints (/api/user-memory/users/*) — P4
     app.include_router(memory_router)
+
+    # Rust CLI client endpoints (/api/cli/v1/*) — consumed by the `ago` CLI
+    app.include_router(cli_router)
 
     # Agent execution, WebSocket streaming, SSE (/api/prompt, /api/agent/run,
     # /api/team/*, /ws, /ws/stream)

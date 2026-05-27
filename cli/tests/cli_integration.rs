@@ -1,0 +1,509 @@
+//! Black-box integration tests that exec the `ago` binary.
+//!
+//! These tests rely on `assert_cmd` to run the compiled binary against a
+//! mock HTTP server. We isolate every test from the user's real config and
+//! keychain by pointing `--config` at a temp file and setting `AGO_TOKEN`.
+
+use assert_cmd::Command;
+use predicates::str::contains;
+use tempfile::tempdir;
+use wiremock::matchers::{header, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+fn ago() -> Command {
+    Command::cargo_bin("ago").expect("binary built")
+}
+
+#[test]
+fn version_flag() {
+    ago()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(contains("ago"));
+}
+
+#[test]
+fn help_lists_commands() {
+    ago()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(contains("login"))
+        .stdout(contains("logout"))
+        .stdout(contains("whoami"))
+        .stdout(contains("config"))
+        .stdout(contains("run"))
+        .stdout(contains("completions"));
+}
+
+#[test]
+fn completions_zsh_emits_compdef() {
+    ago()
+        .args(["completions", "zsh"])
+        .assert()
+        .success()
+        .stdout(contains("#compdef ago"));
+}
+
+#[test]
+fn completions_bash_emits_complete() {
+    ago()
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(contains("complete -F"));
+}
+
+#[test]
+fn completions_fish_emits_complete() {
+    ago()
+        .args(["completions", "fish"])
+        .assert()
+        .success()
+        .stdout(contains("complete -c ago"));
+}
+
+#[test]
+fn config_set_and_show() {
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            "https://example.com",
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .args(["--config", cfg.to_str().unwrap(), "config", "show"])
+        .assert()
+        .success()
+        .stdout(contains("https://example.com"));
+}
+
+#[test]
+fn config_set_rejects_remote_http() {
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            "http://example.com",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("https"));
+}
+
+#[test]
+fn whoami_without_server_fails_cleanly() {
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .env("AGO_TOKEN", "x")
+        .env_remove("AGO_API_KEY")
+        .args(["--config", cfg.to_str().unwrap(), "whoami"])
+        .assert()
+        .failure()
+        .stderr(contains("no server configured"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn whoami_against_mock_server() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/cli/v1/whoami"))
+        .and(header("X-API-Key", "deadbeef"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "email": "alice@example.com",
+            "role": "developer",
+            "server_version": "0.2.0"
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "deadbeef")
+        .args(["--config", cfg.to_str().unwrap(), "whoami"])
+        .assert()
+        .success()
+        .stdout(contains("alice@example.com"))
+        .stdout(contains("developer"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn jobs_list_renders_table() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/jobs/list"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sessions": [
+                {"session_id": "20260527_001", "records": 3, "files": 1, "last_type": "agent_run", "first_prompt": "build hello world"},
+                {"session_id": "20260527_002", "records": 5, "files": 0, "last_type": "team_run", "first_prompt": "refactor module"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args(["--config", cfg.to_str().unwrap(), "jobs", "list"])
+        .assert()
+        .success()
+        .stdout(contains("20260527_001"))
+        .stdout(contains("build hello world"))
+        .stdout(contains("SESSION"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn jobs_cancel_posts_to_team_endpoint() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/team/job-xyz/cancel"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "job_id": "job-xyz",
+            "status": "running",
+            "cancelled": true
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "jobs",
+            "cancel",
+            "job-xyz",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("cancelling"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn jobs_show_renders_records() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/jobs/abc"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "session_id": "abc",
+            "records": [
+                {"job_type": "agent_run", "task": "first task"},
+                {"job_type": "agent_run", "task": "second task"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args(["--config", cfg.to_str().unwrap(), "jobs", "show", "abc"])
+        .assert()
+        .success()
+        .stdout(contains("first task"))
+        .stdout(contains("second task"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_command_renders_output() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "ALL_GOOD",
+            "elapsed_s": 0.5
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "test-model",
+            "do the thing",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("ALL_GOOD"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_command_stream_mode() {
+    let mock = MockServer::start().await;
+    let body = concat!(
+        "event: start\n",
+        "data: {\"run_id\":\"abc\"}\n",
+        "\n",
+        "event: complete\n",
+        "data: {\"success\":true,\"output\":\"STREAMED\"}\n",
+        "\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/api/cli/v1/run"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(body, "text/event-stream"),
+        )
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "m",
+            "--stream",
+            "task",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("STREAMED"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_command_json_mode() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "X"
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "m",
+            "--json",
+            "task",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("\"success\""))
+        .stdout(contains("\"output\""));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ago_yaml_preset_is_used_when_flags_omitted() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "agent": "preset-backend",
+            "model": "preset-claude",
+            "provider": "anthropic",
+            "max_steps": 17
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "FROM_PRESET"
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    // Project preset lives in the cwd we pass to the child process.
+    let project_dir = tempdir().unwrap();
+    std::fs::write(
+        project_dir.path().join(".ago.yaml"),
+        "agent: preset-backend\nmodel: preset-claude\nprovider: anthropic\nmax_steps: 17\n",
+    )
+    .unwrap();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .current_dir(project_dir.path())
+        .args(["--config", cfg.to_str().unwrap(), "run", "task from cwd"])
+        .assert()
+        .success()
+        .stdout(contains("FROM_PRESET"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn whoami_rejects_bad_token() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/cli/v1/whoami"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "wrong")
+        .args(["--config", cfg.to_str().unwrap(), "whoami"])
+        .assert()
+        .failure()
+        .stderr(contains("authentication rejected"));
+}

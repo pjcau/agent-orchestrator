@@ -412,6 +412,19 @@
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/clarification.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/skills/clarification_skill.py"
           ]
+        },
+        {
+          "name": "CLI Routes",
+          "files": [
+            "dashboard/cli_routes.py"
+          ],
+          "cx": 720,
+          "cy": 540,
+          "size": 26,
+          "description": "/api/cli/v1/* endpoints consumed by the `ago` Rust CLI (see docs/cli.md).",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/dashboard/cli_routes.py"
+          ]
         }
       ]
     },
@@ -663,6 +676,6 @@
   ],
   "stats": {
     "total_clusters": 6,
-    "total_items": 40
+    "total_items": 41
   }
 }

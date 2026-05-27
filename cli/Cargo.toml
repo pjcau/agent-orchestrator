@@ -1,0 +1,70 @@
+[package]
+name = "ago"
+version = "0.1.0"
+edition = "2021"
+description = "Agent Orchestrator CLI — talk to a remote orchestrator from your local project."
+license = "MIT"
+repository = "https://github.com/jonnycau/agent-orchestrator"
+rust-version = "1.75"
+readme = "README.md"
+keywords = ["cli", "ai", "agents", "orchestrator", "llm"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "ago"
+path = "src/main.rs"
+
+[lib]
+name = "ago"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+thiserror = "1"
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "stream", "http2"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+serde_yaml = "0.9"
+# Keyring features are activated per target so static musl Linux builds do
+# not pull in libsecret/DBus. On musl the keyring is inert at runtime —
+# users must use the AGO_TOKEN env var. Documented in docs/cli.md.
+keyring = { version = "3", default-features = false }
+zeroize = { version = "1.7", features = ["derive"] }
+secrecy = { version = "0.10", features = ["serde"] }
+directories = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
+eventsource-stream = "0.2"
+futures-util = "0.3"
+open = { version = "5", default-features = false }
+indicatif = "0.17"
+rustyline = { version = "14", default-features = false, features = ["with-file-history"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+keyring = { version = "3", default-features = false, features = ["linux-native"] }
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

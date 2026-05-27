@@ -36,6 +36,7 @@ const sidebars = {
         'roadmap/q1q2-sprint',
         'roadmap/v140-gap-closure',
         'roadmap/v150-repair-loop',
+        'roadmap/v160-rust-cli',
       ],
     },
     {
