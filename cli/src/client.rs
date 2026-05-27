@@ -1,7 +1,10 @@
 use crate::error::{AgoError, Result};
+use eventsource_stream::Eventsource;
+use futures_util::stream::{Stream, StreamExt};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 use std::time::Duration;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -34,6 +37,13 @@ pub struct AgentRunRequest<'a> {
 #[derive(Debug, Clone)]
 pub struct AgentRunResponse {
     pub raw: serde_json::Value,
+}
+
+/// A single Server-Sent Event from `/api/cli/v1/run`.
+#[derive(Debug, Clone)]
+pub struct RunEvent {
+    pub event: String,
+    pub data: serde_json::Value,
 }
 
 impl AgentRunResponse {
@@ -93,6 +103,48 @@ impl ApiClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base, path)
+    }
+
+    /// POST /api/cli/v1/run — streaming single-agent task execution.
+    ///
+    /// Returns a `Stream` of `RunEvent` items. The stream ends after the
+    /// `complete` event is delivered (or on error). The CLI is responsible
+    /// for inspecting `RunEvent::Complete` to determine final success.
+    pub async fn agent_run_stream(
+        &self,
+        req: &AgentRunRequest<'_>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<RunEvent>> + Send>>> {
+        let resp = self
+            .http
+            .post(self.url("/api/cli/v1/run"))
+            .timeout(RUN_TIMEOUT)
+            .header(ACCEPT, "text/event-stream")
+            .json(req)
+            .send()
+            .await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AgoError::ServerError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+        let stream = resp.bytes_stream().eventsource().map(|item| match item {
+            Ok(event) => {
+                let data: serde_json::Value = serde_json::from_str(&event.data)
+                    .unwrap_or(serde_json::Value::String(event.data));
+                Ok(RunEvent {
+                    event: event.event,
+                    data,
+                })
+            }
+            Err(e) => Err(AgoError::Network(format!("sse parse error: {e}"))),
+        });
+        Ok(Box::pin(stream))
     }
 
     /// POST /api/agent/run — blocking single-agent task execution.

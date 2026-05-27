@@ -113,4 +113,12 @@ pub struct RunArgs {
     /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
     pub json: bool,
+
+    /// Stream events from the server as they happen (SSE).
+    ///
+    /// When set, the CLI uses `/api/cli/v1/run` and prints progress events
+    /// to stderr as the agent runs. When unset (default), the CLI calls the
+    /// blocking `/api/agent/run` endpoint and waits for the final JSON.
+    #[arg(long)]
+    pub stream: bool,
 }

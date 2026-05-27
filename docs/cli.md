@@ -54,7 +54,7 @@ access — no separate identity store.
 | `ago login [--server URL] [--key-env VAR] [--with-stdin]` | Persist an API key in the OS keychain after validating it against `/api/cli/v1/whoami`. |
 | `ago logout [--server URL]` | Remove the stored token for the active or given server. |
 | `ago whoami` | Print the authenticated identity from the server. |
-| `ago run "<task>" --agent NAME --model ID [--provider TYPE] [--max-steps N] [--json]` | Execute a single-agent task. Reads task from stdin if omitted. Phase 2a is blocking JSON (no token streaming yet — that lands in Phase 2b). |
+| `ago run "<task>" --agent NAME --model ID [--provider TYPE] [--max-steps N] [--json] [--stream]` | Execute a single-agent task. Reads task from stdin if omitted. Default is blocking against `/api/agent/run`; `--stream` switches to SSE via the dedicated `/api/cli/v1/run` endpoint and renders progress events to stderr. |
 
 ## Security model
 
@@ -94,15 +94,35 @@ PRs touching `cli/**`, and manual dispatch.
 | 3 | `ago jobs list/get/cancel`, `ago logs --follow`, indicatif progress, shell completions | — |
 | 4 | Cross-compile matrix (macOS arm/x64, Linux x64/arm64 musl, Windows), signed releases via cosign + SBOM, Homebrew tap | release v0.1.0 |
 
+## SSE event shape (`/api/cli/v1/run`)
+
+```
+event: start
+data: {"run_id": "...", "agent": "...", "model": "...", "provider": "..."}
+
+event: agent.spawn
+data: {"agent": "backend", "node": null, "data": {...}, "ts": ...}
+
+event: agent.tool_call
+data: {...}
+
+# Periodic ": keepalive" comments are sent on idle to keep proxies open.
+
+event: complete
+data: {"run_id": "...", "success": true, "output": "...", "elapsed_s": ...,
+       "total_input_tokens": ..., "total_output_tokens": ..., "total_cost_usd": ...}
+```
+
+The endpoint allocates a private `EventBus` per request — concurrent CLI runs
+cannot leak events into each other's streams, and dashboard event feeds are
+isolated from CLI runs by design.
+
 ## Limits acknowledged in current revision
 
 - Login uses an **API key paste** instead of the full device-flow promised in
-  the design discussion. Device-flow is deferred to Phase 2b. The token
-  validation step still proves the key works before storing it, so the
-  security guarantee — "no token persisted unless the server accepts it" —
-  already holds.
-- `ago run` is currently **blocking** against the existing `/api/agent/run`
-  endpoint. Token-level SSE streaming arrives in Phase 2b once a dedicated
-  `/api/cli/v1/run` SSE endpoint lands.
+  the design discussion. Device-flow lands in Phase 2c. The token validation
+  step still proves the key works before storing it, so the security
+  guarantee — "no token persisted unless the server accepts it" — already
+  holds.
 - No `--local` fallback (subprocess Python `client.py`) yet.
 - No update channel; rely on `brew upgrade` / `cargo install --force`.

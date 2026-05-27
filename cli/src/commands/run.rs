@@ -1,7 +1,8 @@
 use crate::cli::RunArgs;
-use crate::client::{AgentRunRequest, AgentRunResponse};
+use crate::client::{AgentRunRequest, AgentRunResponse, RunEvent};
 use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
+use futures_util::StreamExt;
 use std::io::{IsTerminal, Read};
 
 pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
@@ -20,24 +21,34 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     })?;
 
     let client = rt.api_client()?;
-    let resp = client
-        .agent_run(&AgentRunRequest {
-            agent,
-            task: &task,
-            model,
-            provider: &args.provider,
-            max_steps: args.max_steps,
-        })
-        .await?;
+    let req = AgentRunRequest {
+        agent,
+        task: &task,
+        model,
+        provider: &args.provider,
+        max_steps: args.max_steps,
+    };
 
-    if args.json {
+    if args.stream {
+        run_streaming(&client, &req, args.json).await
+    } else {
+        run_blocking(&client, &req, args.json).await
+    }
+}
+
+async fn run_blocking(
+    client: &crate::client::ApiClient,
+    req: &AgentRunRequest<'_>,
+    json: bool,
+) -> Result<()> {
+    let resp = client.agent_run(req).await?;
+    if json {
         let stdout = std::io::stdout();
         serde_json::to_writer(&stdout, &resp.raw).map_err(|e| AgoError::Other(e.to_string()))?;
         println!();
     } else {
         render_human(&resp);
     }
-
     if matches!(resp.success(), Some(false)) {
         return Err(AgoError::Other(
             resp.error()
@@ -46,6 +57,82 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+async fn run_streaming(
+    client: &crate::client::ApiClient,
+    req: &AgentRunRequest<'_>,
+    json: bool,
+) -> Result<()> {
+    let mut stream = client.agent_run_stream(req).await?;
+    let mut final_payload: Option<serde_json::Value> = None;
+    let show_progress = !json && std::io::stderr().is_terminal();
+
+    while let Some(item) = stream.next().await {
+        let event = item?;
+        if json {
+            let line = serde_json::json!({"event": event.event, "data": event.data});
+            println!(
+                "{}",
+                serde_json::to_string(&line).map_err(|e| AgoError::Other(e.to_string()))?
+            );
+        }
+        match event.event.as_str() {
+            "complete" => {
+                final_payload = Some(event.data);
+                break;
+            }
+            other => {
+                if show_progress {
+                    render_progress_event(other, &event);
+                }
+            }
+        }
+    }
+
+    let payload = final_payload
+        .ok_or_else(|| AgoError::Other("server closed stream before completion".into()))?;
+    let resp = AgentRunResponse { raw: payload };
+
+    if !json {
+        render_human(&resp);
+    }
+    if matches!(resp.success(), Some(false)) {
+        return Err(AgoError::Other(
+            resp.error()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "agent run failed".into()),
+        ));
+    }
+    Ok(())
+}
+
+fn render_progress_event(kind: &str, event: &RunEvent) {
+    let agent = event
+        .data
+        .get("agent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let data = event
+        .data
+        .get("data")
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            let mut parts: Vec<String> = m
+                .iter()
+                .filter(|(k, _)| !matches!(k.as_str(), "tool" | "result"))
+                .take(3)
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            parts.sort();
+            parts.join(" ")
+        })
+        .unwrap_or_default();
+    if data.is_empty() {
+        eprintln!("· {kind} [{agent}]");
+    } else {
+        eprintln!("· {kind} [{agent}] {data}");
+    }
 }
 
 fn resolve_task(arg: Option<&str>) -> Result<String> {
@@ -153,6 +240,7 @@ mod tests {
                 provider: "anthropic".into(),
                 max_steps: 7,
                 json: false,
+                stream: false,
             },
         )
         .await
@@ -182,6 +270,7 @@ mod tests {
                 provider: "ollama".into(),
                 max_steps: 10,
                 json: false,
+                stream: false,
             },
         )
         .await
@@ -201,6 +290,7 @@ mod tests {
                 provider: "ollama".into(),
                 max_steps: 10,
                 json: false,
+                stream: false,
             },
         )
         .await
@@ -229,6 +319,83 @@ mod tests {
                 provider: "ollama".into(),
                 max_steps: 10,
                 json: false,
+                stream: false,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, AgoError::Other(_)));
+    }
+
+    #[tokio::test]
+    async fn run_streaming_consumes_sse_events() {
+        let server = MockServer::start().await;
+        // wiremock supports raw string bodies — emit a complete SSE stream
+        // with start + complete events.
+        let body = concat!(
+            "event: start\n",
+            "data: {\"run_id\":\"abc\"}\n",
+            "\n",
+            "event: agent.spawn\n",
+            "data: {\"agent\":\"backend\"}\n",
+            "\n",
+            "event: complete\n",
+            "data: {\"success\":true,\"output\":\"done\"}\n",
+            "\n",
+        );
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/run"))
+            .and(header("X-API-Key", "k"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(body, "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let (rt, _d) = rt_with(&server.uri(), None);
+        super::run(
+            &rt,
+            RunArgs {
+                task: Some("x".into()),
+                agent: Some("backend".into()),
+                model: Some("m".into()),
+                provider: "ollama".into(),
+                max_steps: 10,
+                json: false,
+                stream: true,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_streaming_without_complete_event_errors() {
+        let server = MockServer::start().await;
+        let body = concat!("event: start\n", "data: {\"run_id\":\"abc\"}\n", "\n",);
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/run"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(body, "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let (rt, _d) = rt_with(&server.uri(), None);
+        let err = super::run(
+            &rt,
+            RunArgs {
+                task: Some("x".into()),
+                agent: Some("backend".into()),
+                model: Some("m".into()),
+                provider: "ollama".into(),
+                max_steps: 10,
+                json: false,
+                stream: true,
             },
         )
         .await
@@ -254,6 +421,7 @@ mod tests {
                 provider: "ollama".into(),
                 max_steps: 10,
                 json: false,
+                stream: false,
             },
         )
         .await

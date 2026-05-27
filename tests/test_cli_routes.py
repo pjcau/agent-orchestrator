@@ -7,6 +7,8 @@ routers.  This keeps them fast and independent of the full dashboard build.
 
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
@@ -109,8 +111,156 @@ def test_whoami_uses_session_user_when_present(monkeypatch):
 
 def test_cli_routes_are_not_in_exempt_list():
     """Sanity check — CLI endpoints MUST be behind the auth middleware."""
-    for path in ("/api/cli/v1/whoami", "/api/cli/v1/version"):
+    for path in ("/api/cli/v1/whoami", "/api/cli/v1/version", "/api/cli/v1/run"):
         for prefix in APIKeyMiddleware.EXEMPT_PREFIXES:
             assert not path.startswith(prefix), (
                 f"CLI path {path} must not match exempt prefix {prefix}"
             )
+
+
+# ---------------------------------------------------------------------------
+# /api/cli/v1/run SSE streaming
+# ---------------------------------------------------------------------------
+
+
+def _parse_sse(stream: bytes) -> list[dict]:
+    """Parse an SSE text/event-stream payload into a list of {event, data}."""
+    events: list[dict] = []
+    current_event = "message"
+    current_data: list[str] = []
+    for line in stream.decode("utf-8").splitlines() + [""]:
+        if not line:
+            if current_data:
+                payload = "\n".join(current_data)
+                try:
+                    parsed = json.loads(payload)
+                except Exception:
+                    parsed = payload
+                events.append({"event": current_event, "data": parsed})
+                current_data = []
+                current_event = "message"
+            continue
+        if line.startswith(":"):  # comment / keepalive
+            continue
+        if line.startswith("event:"):
+            current_event = line[len("event:") :].strip()
+        elif line.startswith("data:"):
+            current_data.append(line[len("data:") :].strip())
+    return events
+
+
+def _install_quick_provider(monkeypatch):
+    """Patch _make_provider so the CLI run endpoint executes a fast stub."""
+    from agent_orchestrator.core.provider import (
+        Completion,
+        ModelCapabilities,
+        Provider,
+        StreamChunk,
+        Usage,
+    )
+
+    class QuickProvider(Provider):
+        @property
+        def model_id(self):
+            return "quick-1"
+
+        @property
+        def capabilities(self):
+            return ModelCapabilities(
+                max_context=4096,
+                supports_tools=False,
+                supports_streaming=False,
+                max_output_tokens=64,
+            )
+
+        @property
+        def input_cost_per_million(self) -> float:
+            return 0.0
+
+        @property
+        def output_cost_per_million(self) -> float:
+            return 0.0
+
+        async def complete(self, messages, *, tools=None, system=None, max_tokens=64):
+            return Completion(
+                content="hello",
+                tool_calls=[],
+                stop_reason="end_turn",
+                usage=Usage(input_tokens=3, output_tokens=2, cost_usd=0.0),
+            )
+
+        async def stream(self, messages, *, tools=None, system=None, max_tokens=64):
+            yield StreamChunk(content="hello", stop_reason="end_turn")
+
+    monkeypatch.setattr(
+        "agent_orchestrator.dashboard.cli_routes._make_provider",
+        lambda *args, **kwargs: QuickProvider(),
+    )
+
+
+def test_run_requires_required_fields(monkeypatch):
+    monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
+    client = TestClient(_make_app(["secret-key"]))
+    resp = client.post(
+        "/api/cli/v1/run",
+        headers={"X-API-Key": "secret-key"},
+        json={"agent": "backend"},
+    )
+    assert resp.status_code == 400
+
+
+def test_run_requires_auth(monkeypatch):
+    monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
+    client = TestClient(_make_app(["secret-key"]))
+    resp = client.post(
+        "/api/cli/v1/run",
+        json={"agent": "backend", "task": "x", "model": "m"},
+    )
+    assert resp.status_code == 401
+
+
+def test_run_streams_start_and_complete(monkeypatch):
+    monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
+    _install_quick_provider(monkeypatch)
+    client = TestClient(_make_app(["secret-key"]))
+    with client.stream(
+        "POST",
+        "/api/cli/v1/run",
+        headers={"X-API-Key": "secret-key"},
+        json={
+            "agent": "backend",
+            "task": "say hello",
+            "model": "quick-1",
+            "provider": "ollama",
+            "max_steps": 2,
+        },
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        body = b"".join(chunk for chunk in resp.iter_bytes())
+
+    events = _parse_sse(body)
+    assert events, f"expected events, got {body!r}"
+    assert events[0]["event"] == "start"
+    assert "run_id" in events[0]["data"]
+    assert events[-1]["event"] == "complete"
+    final = events[-1]["data"]
+    assert final.get("success") is True
+    assert "output" in final or "result" in final or final.get("steps") is not None
+
+
+def test_run_invalid_provider_returns_400(monkeypatch):
+    monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
+
+    def _explode(*args, **kwargs):
+        raise RuntimeError("nope")
+
+    monkeypatch.setattr("agent_orchestrator.dashboard.cli_routes._make_provider", _explode)
+    client = TestClient(_make_app(["secret-key"]))
+    resp = client.post(
+        "/api/cli/v1/run",
+        headers={"X-API-Key": "secret-key"},
+        json={"agent": "backend", "task": "x", "model": "m"},
+    )
+    assert resp.status_code == 400
+    assert "nope" in resp.text

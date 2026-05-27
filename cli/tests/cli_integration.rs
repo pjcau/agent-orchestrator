@@ -177,6 +177,61 @@ async fn run_command_renders_output() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn run_command_stream_mode() {
+    let mock = MockServer::start().await;
+    let body = concat!(
+        "event: start\n",
+        "data: {\"run_id\":\"abc\"}\n",
+        "\n",
+        "event: complete\n",
+        "data: {\"success\":true,\"output\":\"STREAMED\"}\n",
+        "\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/api/cli/v1/run"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(body, "text/event-stream"),
+        )
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "m",
+            "--stream",
+            "task",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("STREAMED"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn run_command_json_mode() {
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
