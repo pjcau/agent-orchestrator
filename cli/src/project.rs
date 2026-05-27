@@ -29,6 +29,23 @@ pub struct ProjectPreset {
     pub model: Option<String>,
     pub provider: Option<String>,
     pub max_steps: Option<u32>,
+    /// Tune the `@file` / `@dir` expansion budget. Optional — built-in safe
+    /// defaults apply when missing.
+    pub context: Option<ContextOverrides>,
+}
+
+/// Per-project overrides for `@`-reference expansion. Any field that is
+/// `None` keeps the built-in default. `exclude_extra` is *appended* to the
+/// hard-coded deny-list (secrets / lockfiles / heavy artifacts) — there is
+/// no way to weaken the built-in safety patterns from .ago.yaml.
+#[derive(Debug, Default, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ContextOverrides {
+    pub max_file_bytes: Option<usize>,
+    pub max_total_bytes: Option<usize>,
+    pub max_refs: Option<usize>,
+    #[serde(default)]
+    pub exclude_extra: Vec<String>,
 }
 
 impl ProjectPreset {
@@ -69,6 +86,35 @@ impl ProjectPreset {
                     "{}: max_steps must be between 1 and 200, got {ms}",
                     path.display()
                 )));
+            }
+        }
+        if let Some(ctx) = parsed.context.as_ref() {
+            // Reasonable upper bounds — protect against typos like
+            // `max_total_bytes: 1_000_000_000` that would auto-cap a single
+            // turn at 1 GB. The hard ceiling is 1 MB per file / 5 MB total.
+            if let Some(n) = ctx.max_file_bytes {
+                if n == 0 || n > 1_000_000 {
+                    return Err(AgoError::Config(format!(
+                        "{}: context.max_file_bytes must be in 1..=1_000_000, got {n}",
+                        path.display()
+                    )));
+                }
+            }
+            if let Some(n) = ctx.max_total_bytes {
+                if n == 0 || n > 5_000_000 {
+                    return Err(AgoError::Config(format!(
+                        "{}: context.max_total_bytes must be in 1..=5_000_000, got {n}",
+                        path.display()
+                    )));
+                }
+            }
+            if let Some(n) = ctx.max_refs {
+                if n == 0 || n > 256 {
+                    return Err(AgoError::Config(format!(
+                        "{}: context.max_refs must be in 1..=256, got {n}",
+                        path.display()
+                    )));
+                }
             }
         }
         Ok(parsed)
@@ -157,6 +203,30 @@ mod tests {
     fn out_of_range_max_steps_rejected() {
         let dir = tempdir().unwrap();
         write(&dir.path().join(".ago.yaml"), "max_steps: 0\n");
+        let err = ProjectPreset::discover(dir.path(), None).unwrap_err();
+        assert!(matches!(err, AgoError::Config(_)));
+    }
+
+    #[test]
+    fn context_overrides_parse() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join(".ago.yaml"),
+            "agent: a\nmodel: m\ncontext:\n  max_file_bytes: 4000\n  exclude_extra:\n    - \"**/foo/**\"\n",
+        );
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        let ctx = preset.context.as_ref().unwrap();
+        assert_eq!(ctx.max_file_bytes, Some(4000));
+        assert_eq!(ctx.exclude_extra, vec!["**/foo/**".to_string()]);
+    }
+
+    #[test]
+    fn context_out_of_range_rejected() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join(".ago.yaml"),
+            "context:\n  max_file_bytes: 5000000\n",
+        );
         let err = ProjectPreset::discover(dir.path(), None).unwrap_err();
         assert!(matches!(err, AgoError::Config(_)));
     }

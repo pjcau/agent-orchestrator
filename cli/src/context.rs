@@ -50,28 +50,76 @@ impl Default for ContextConfig {
     }
 }
 
+impl ContextConfig {
+    /// Apply overrides from `.ago.yaml context:`. Unset fields keep the
+    /// built-in default. `exclude_extra` is APPENDED to the default
+    /// deny-list — there is no API to weaken the built-in safety patterns
+    /// (no `exclude_replace`), by design.
+    pub fn apply_overrides(mut self, ov: &crate::project::ContextOverrides) -> Self {
+        if let Some(n) = ov.max_file_bytes {
+            self.max_file_bytes = n;
+        }
+        if let Some(n) = ov.max_total_bytes {
+            self.max_total_bytes = n;
+        }
+        if let Some(n) = ov.max_refs {
+            self.max_refs = n;
+        }
+        if !ov.exclude_extra.is_empty() {
+            let mut b = GlobSetBuilder::new();
+            // Rebuild from defaults...
+            for p in DEFAULT_EXCLUDE_PATTERNS {
+                if let Ok(g) = Glob::new(p) {
+                    b.add(g);
+                }
+            }
+            // ...then append the project extras.
+            for p in &ov.exclude_extra {
+                if let Ok(g) = Glob::new(p) {
+                    b.add(g);
+                }
+            }
+            if let Ok(set) = b.build() {
+                self.exclude = set;
+            }
+        }
+        self
+    }
+
+    /// Resolve a `ContextConfig` from the runtime's project preset (if any).
+    /// Built-in defaults when no `.ago.yaml` or no `context:` block.
+    pub fn from_runtime(rt: &crate::runtime::Runtime) -> Self {
+        let base = Self::default();
+        match rt.project.as_ref().and_then(|p| p.context.as_ref()) {
+            Some(ov) => base.apply_overrides(ov),
+            None => base,
+        }
+    }
+}
+
+const DEFAULT_EXCLUDE_PATTERNS: &[&str] = &[
+    "**/.env",
+    "**/.env.*",
+    "**/.git/**",
+    "**/secrets/**",
+    "**/*secret*",
+    "**/*credential*",
+    "**/node_modules/**",
+    "**/target/**",
+    "**/dist/**",
+    "**/.next/**",
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/.DS_Store",
+    "**/Cargo.lock",
+    "**/package-lock.json",
+    "**/yarn.lock",
+];
+
 fn build_default_exclude() -> GlobSet {
-    let patterns = [
-        "**/.env",
-        "**/.env.*",
-        "**/.git/**",
-        "**/secrets/**",
-        "**/*secret*",
-        "**/*credential*",
-        "**/node_modules/**",
-        "**/target/**",
-        "**/dist/**",
-        "**/.next/**",
-        "**/.venv/**",
-        "**/__pycache__/**",
-        "**/*.pyc",
-        "**/.DS_Store",
-        "**/Cargo.lock",        // big and noisy
-        "**/package-lock.json", // big and noisy
-        "**/yarn.lock",         // big and noisy
-    ];
     let mut b = GlobSetBuilder::new();
-    for p in patterns {
+    for p in DEFAULT_EXCLUDE_PATTERNS {
         if let Ok(g) = Glob::new(p) {
             b.add(g);
         }

@@ -486,6 +486,7 @@ mod tests {
                 model: Some("preset-model".into()),
                 provider: Some("preset-provider".into()),
                 max_steps: Some(42),
+                context: None,
             },
             None,
         );
@@ -529,6 +530,7 @@ mod tests {
                 model: Some("preset-m".into()),
                 provider: None,
                 max_steps: None,
+                context: None,
             },
             None,
         );

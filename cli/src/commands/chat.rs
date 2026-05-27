@@ -65,7 +65,7 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
 
         // ---- slash commands ----
         if let Some(rest) = trimmed.strip_prefix(':') {
-            match handle_slash(rest, &mut settings, &mut conversation_id) {
+            match handle_slash(rest, &mut settings, &mut conversation_id, rt) {
                 SlashOutcome::Continue => continue,
                 SlashOutcome::Quit => break,
                 SlashOutcome::Reset => {
@@ -80,7 +80,7 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
 
         // ---- @file / @dir expansion (client-side, before sending) ----
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let ctx_cfg = ContextConfig::default();
+        let ctx_cfg = ContextConfig::from_runtime(rt);
         let (expanded, report) = match expand_refs(trimmed, &cwd, &ctx_cfg) {
             Ok(pair) => pair,
             Err(e) => {
@@ -187,6 +187,7 @@ fn handle_slash(
     body: &str,
     settings: &mut ChatSettings,
     conversation_id: &mut String,
+    rt: &Runtime,
 ) -> SlashOutcome {
     let mut parts = body.splitn(2, char::is_whitespace);
     let cmd = parts.next().unwrap_or("").trim();
@@ -201,6 +202,7 @@ fn handle_slash(
                  \x20 :model <id>           switch model\n\
                  \x20 :provider <type>      switch provider (anthropic / openai / openrouter / ollama / ...)\n\
                  \x20 :max-steps <N>        cap agent steps per turn (agent mode only)\n\
+                 \x20 :context              show @file / @dir context limits\n\
                  \x20 :reset                start a new conversation thread\n\
                  \x20 :clear                alias of :reset\n\
                  \x20 :info                 show current settings\n\
@@ -220,6 +222,19 @@ fn handle_slash(
                 settings.max_steps,
                 conversation_id
             );
+            SlashOutcome::Continue
+        }
+        "context" | "ctx" => {
+            let cfg = ContextConfig::from_runtime(rt);
+            println!(
+                "max_file_bytes: {}\nmax_total_bytes: {}\nmax_refs: {}",
+                cfg.max_file_bytes, cfg.max_total_bytes, cfg.max_refs
+            );
+            if let Some(path) = rt.project_path.as_ref() {
+                println!("from: {} (.ago.yaml context: block)", path.display());
+            } else {
+                println!("from: built-in defaults (no .ago.yaml found)");
+            }
             SlashOutcome::Continue
         }
         "mode" => {
@@ -526,6 +541,10 @@ fn ensure_history_path() -> Option<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::MemoryStorage;
+    use crate::config::Config;
+    use std::sync::Arc;
+    use tempfile::tempdir;
 
     fn cs() -> ChatSettings {
         ChatSettings {
@@ -537,36 +556,49 @@ mod tests {
         }
     }
 
+    fn dummy_rt() -> (Runtime, tempfile::TempDir) {
+        let dir = tempdir().unwrap();
+        let cfg_path = dir.path().join("cfg.toml");
+        let storage = Arc::new(MemoryStorage::new());
+        (
+            Runtime::with_components(Config::default(), cfg_path, storage),
+            dir,
+        )
+    }
+
     #[test]
     fn slash_mode_switch() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
-        handle_slash("mode prompt", &mut s, &mut c);
+        handle_slash("mode prompt", &mut s, &mut c, &rt);
         assert_eq!(s.mode, ChatMode::Prompt);
-        handle_slash("mode agent", &mut s, &mut c);
+        handle_slash("mode agent", &mut s, &mut c, &rt);
         assert_eq!(s.mode, ChatMode::Agent);
     }
 
     #[test]
     fn slash_mode_unknown_keeps_current() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
-        handle_slash("mode bogus", &mut s, &mut c);
+        handle_slash("mode bogus", &mut s, &mut c, &rt);
         assert_eq!(s.mode, ChatMode::Agent);
-        handle_slash("mode", &mut s, &mut c);
+        handle_slash("mode", &mut s, &mut c, &rt);
         assert_eq!(s.mode, ChatMode::Agent);
     }
 
     #[test]
     fn slash_quit_exits() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
         assert!(matches!(
-            handle_slash("quit", &mut s, &mut c),
+            handle_slash("quit", &mut s, &mut c, &rt),
             SlashOutcome::Quit
         ));
         assert!(matches!(
-            handle_slash("exit", &mut s, &mut c),
+            handle_slash("exit", &mut s, &mut c, &rt),
             SlashOutcome::Quit
         ));
     }
@@ -574,24 +606,27 @@ mod tests {
     #[test]
     fn slash_model_updates_settings() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
-        handle_slash("model qwen2.5:3b", &mut s, &mut c);
+        handle_slash("model qwen2.5:3b", &mut s, &mut c, &rt);
         assert_eq!(s.model, "qwen2.5:3b");
     }
 
     #[test]
     fn slash_model_no_arg_is_noop() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
-        handle_slash("model", &mut s, &mut c);
+        handle_slash("model", &mut s, &mut c, &rt);
         assert_eq!(s.model, "m");
     }
 
     #[test]
     fn slash_reset_mints_new_conversation_id() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
-        let outcome = handle_slash("reset", &mut s, &mut c);
+        let outcome = handle_slash("reset", &mut s, &mut c, &rt);
         assert!(matches!(outcome, SlashOutcome::Reset));
         assert_ne!(c, "abc");
     }
@@ -599,20 +634,22 @@ mod tests {
     #[test]
     fn slash_max_steps_range_check() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
-        handle_slash("max-steps 0", &mut s, &mut c);
+        handle_slash("max-steps 0", &mut s, &mut c, &rt);
         assert_eq!(s.max_steps, 10);
-        handle_slash("max-steps 5", &mut s, &mut c);
+        handle_slash("max-steps 5", &mut s, &mut c, &rt);
         assert_eq!(s.max_steps, 5);
-        handle_slash("max-steps 9999", &mut s, &mut c);
+        handle_slash("max-steps 9999", &mut s, &mut c, &rt);
         assert_eq!(s.max_steps, 5);
     }
 
     #[test]
     fn slash_unknown_does_not_crash() {
         let mut s = cs();
+        let (rt, _d) = dummy_rt();
         let mut c = "abc".to_string();
-        let outcome = handle_slash("nonsense", &mut s, &mut c);
+        let outcome = handle_slash("nonsense", &mut s, &mut c, &rt);
         assert!(matches!(outcome, SlashOutcome::Continue));
     }
 }
