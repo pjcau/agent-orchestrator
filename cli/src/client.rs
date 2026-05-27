@@ -20,7 +20,7 @@ pub struct WhoamiResponse {
     pub server_version: Option<String>,
 }
 
-/// Request payload for `POST /api/agent/run`.
+/// Request payload for `POST /api/agent/run` and `POST /api/cli/v1/run`.
 #[derive(Debug, Serialize)]
 pub struct AgentRunRequest<'a> {
     pub agent: &'a str,
@@ -28,6 +28,10 @@ pub struct AgentRunRequest<'a> {
     pub model: &'a str,
     pub provider: &'a str,
     pub max_steps: u32,
+    /// Optional conversation thread ID — sent by `ago chat` so the server's
+    /// ConversationManager restores prior turns across the same session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<&'a str>,
 }
 
 /// Response from `POST /api/agent/run`.
@@ -110,11 +114,23 @@ impl ApiClient {
             v.set_sensitive(true);
             headers.insert("X-API-Key", v);
         }
-        let http = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .user_agent(USER_AGENT_VALUE)
             .default_headers(headers)
             .timeout(DEFAULT_TIMEOUT)
-            .https_only(should_force_https(server))
+            .https_only(should_force_https(server));
+        // Dev-only escape hatch for self-signed local dashboards (e.g. the
+        // docker-compose dashboard that ships with the orchestrator). Opt-in
+        // per process via env var — never persisted in any config file, and
+        // a single-line warning is emitted to stderr so it cannot fly under
+        // the radar in CI logs.
+        if std::env::var("AGO_INSECURE").is_ok_and(|v| !v.is_empty() && v != "0") {
+            eprintln!(
+                "\x1b[33mwarning:\x1b[0m AGO_INSECURE=1 — TLS certificate validation is disabled. Use only against trusted local servers."
+            );
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        let http = builder
             .build()
             .map_err(|e| AgoError::Network(e.to_string()))?;
         Ok(Self {

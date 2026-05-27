@@ -86,6 +86,7 @@ cd cli && cargo install --path . --locked
 | `ago jobs list [--limit N] [--json]` | Show recent server sessions with record counts and the first prompt. |
 | `ago jobs show <session_id> [--json]` | Print the records of a single session (job log). |
 | `ago jobs cancel <job_id>` | Request cancellation of a running team job. |
+| `ago chat [--agent N] [--model ID] [--provider T] [--max-steps N] [--no-progress]` | Interactive REPL. Resolves settings once at startup, streams responses, keeps server-side conversation context across turns. Slash commands: `:help`, `:info`, `:agent`, `:model`, `:provider`, `:max-steps`, `:reset`/`:clear`, `:quit`/`:exit`. |
 | `ago completions <shell>` | Emit a shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`). |
 
 ## Security model
@@ -246,14 +247,63 @@ The endpoint allocates a private `EventBus` per request — concurrent CLI runs
 cannot leak events into each other's streams, and dashboard event feeds are
 isolated from CLI runs by design.
 
+## `ago chat` — interactive REPL
+
+```text
+$ ago chat
+ago 0.1.0 — chat mode
+connected to https://localhost:5005
+agent: backend · model: qwen2.5-coder:7b · provider: ollama · max_steps: 10
+conversation: f3a9c2 · type :help for slash commands
+
+> what's 2+2?
+4
+— 1.34s  35↑/2↓ tokens
+
+> :model qwen2.5:3b
+✓ model = qwen2.5:3b
+
+> :reset
+✓ new conversation_id = ...
+
+> :quit
+```
+
+Inputs prefixed with `:` are slash commands (see table above); anything
+else is sent to the active agent with the current conversation_id so the
+server's `ConversationManager` restores prior turns. History is persisted
+to `${XDG_DATA_HOME:-~/.local/share}/io.agent-orchestrator.ago/chat-history`
+so arrow-up works across sessions. The `AGO_INSECURE=1` dev escape hatch
+behaves the same as for `ago run`.
+
+## v0.3 backlog (deferred from v0.2)
+
+Captured here so contributors know what's planned but explicitly out of
+scope right now:
+
+| Feature | Why deferred |
+|---|---|
+| `@file` references in chat prompts | Needs a client-side prompt rewriter + safe size cap. ~80 LoC. |
+| `AGO.md` project instructions auto-loaded | Mirrors Claude's `CLAUDE.md`; needs to be injected as a system message — server-side change. |
+| `--resume` to continue last conversation | Persist `last_conversation_id` in `~/.config/ago/state.toml`. Small. |
+| `ago logs <id> --follow` | Server SSE endpoint filtered by `job_id`. |
+| Per-token revocation denylist | Server change; today rotate `JWT_SECRET_KEY` to invalidate. |
+| Code-fence syntax highlighting in REPL | Pure UX polish via `bat` / `syntect`. |
+| Image/file paste attach | Multipart upload + server endpoint to receive blobs. |
+| Tool approval prompts (`accept-edits` mode) | Server needs a pause-and-await-approval mid-run; currently runs straight through. |
+| Conversation branch / compact / export | Server change; new endpoints. |
+| MCP / hook configuration via CLI | Already lives in the dashboard; CLI surface would duplicate. |
+| Homebrew tap | Distribution polish. |
+| cosign signing on release artifacts | Provenance polish. |
+
 ## Limits acknowledged in current revision
 
 - Token revocation requires `JWT_SECRET_KEY` rotation (no per-token
-  denylist yet). Acceptable as long as token lifetime is short or
-  compromised tokens are rare; a denylist may land later if needed.
-- `ago logs <id> --follow` is **not implemented yet** — for now use
-  `ago jobs show <session_id>` to read a session's records once it has
-  finished. Live tailing of an active team job needs a server-side SSE
-  endpoint filtered by `job_id` and will land alongside Phase 4 or v0.2.
+  denylist yet).
+- `ago chat` keeps conversation context server-side but files written
+  by agent tools land in the session dir on the server, not the CLI's
+  cwd. Read them via `ago jobs show <session_id>` for now.
+- `ago logs <id> --follow` not implemented (see v0.3 backlog).
 - No `--local` fallback (subprocess Python `client.py`) yet.
-- No update channel; rely on `brew upgrade` / `cargo install --force`.
+- No update channel; rely on `cargo install --force` / re-download
+  from the GitHub Release.

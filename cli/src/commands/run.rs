@@ -55,6 +55,7 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
         model: &model_string,
         provider: &provider_string,
         max_steps,
+        conversation_id: None,
     };
 
     if args.stream {

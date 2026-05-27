@@ -2,6 +2,7 @@ use crate::cli::Command;
 use crate::error::Result;
 use crate::runtime::Runtime;
 
+pub mod chat;
 pub mod completions;
 pub mod config;
 pub mod jobs;
@@ -18,6 +19,7 @@ pub async fn dispatch(rt: &Runtime, cmd: Command) -> Result<()> {
         Command::Config(args) => config::run(rt, args),
         Command::Run(args) => run::run(rt, args).await,
         Command::Jobs(args) => jobs::run(rt, args).await,
+        Command::Chat(args) => chat::run(rt, args).await,
         Command::Completions(args) => completions::run(args),
     }
 }

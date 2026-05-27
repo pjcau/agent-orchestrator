@@ -381,6 +381,7 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
     model = (body.get("model") or "").strip()
     provider_type = (body.get("provider") or "ollama").strip()
     max_steps = int(body.get("max_steps") or 10)
+    conv_id = (body.get("conversation_id") or "").strip() or None
     if not agent_name or not task_desc or not model:
         return JSONResponse(
             content={"success": False, "error": "agent, task and model are required"},
@@ -407,6 +408,11 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
     run_id = uuid.uuid4().hex
     private_bus = EventBus()  # isolated event channel for this request
 
+    # Pick up the shared ConversationManager so multi-turn `ago chat`
+    # sessions actually see prior exchanges. Falls back to None when the
+    # dashboard was bootstrapped without one (e.g. in unit tests).
+    conv_manager = getattr(request.app.state, "conv_manager", None) if conv_id else None
+
     async def _generator() -> AsyncIterator[bytes]:
         queue = private_bus.subscribe()
         yield _sse(
@@ -416,6 +422,7 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
                 "agent": agent_name,
                 "model": model,
                 "provider": provider_type,
+                "conversation_id": conv_id,
             },
         )
 
@@ -435,8 +442,8 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
                 working_directory=None,
                 usage_db=None,
                 session_id=run_id,
-                conversation_id=None,
-                conversation_manager=None,
+                conversation_id=conv_id,
+                conversation_manager=conv_manager,
                 sandbox=None,
             )
         )

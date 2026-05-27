@@ -38,6 +38,12 @@ pub enum Command {
     Run(RunArgs),
     /// Inspect or cancel jobs/sessions on the active server.
     Jobs(JobsArgs),
+    /// Start an interactive chat session (REPL).
+    ///
+    /// Resolves agent/model/provider once at startup (CLI flags > .ago.yaml >
+    /// config), opens a conversation, then loops reading user input and
+    /// streaming responses. Slash commands: `:help` to list.
+    Chat(ChatArgs),
     /// Print a shell completion script for `ago`.
     ///
     /// Pipe the output to your shell's completion path, e.g.
@@ -76,6 +82,29 @@ pub enum JobsAction {
         /// Job id of the running team task (UUID printed by `ago run` or the dashboard).
         job_id: String,
     },
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ChatArgs {
+    /// Agent name. Falls back to `.ago.yaml` / `default_agent` if omitted.
+    #[arg(long, value_name = "NAME")]
+    pub agent: Option<String>,
+
+    /// Model identifier (provider-specific).
+    #[arg(long, value_name = "ID")]
+    pub model: Option<String>,
+
+    /// Provider type (anthropic, openai, openrouter, google, ollama).
+    #[arg(long, value_name = "TYPE")]
+    pub provider: Option<String>,
+
+    /// Maximum agent steps per turn (server-side cap).
+    #[arg(long, value_name = "N", default_value_t = 10)]
+    pub max_steps: u32,
+
+    /// Disable the indicatif spinner (useful when output is piped).
+    #[arg(long)]
+    pub no_progress: bool,
 }
 
 #[derive(Debug, clap::Args)]
