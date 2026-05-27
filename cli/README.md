@@ -5,14 +5,39 @@ Talk to a remote Agent Orchestrator from any local project.
 > Status: **experimental** — Phase 1 ships `login`, `logout`, `whoami`, `config`.
 > `run` and SSE streaming arrive in Phase 2.
 
-## Install (from source)
+## Install
+
+### Prebuilt binaries (recommended)
+
+Open the
+[latest GitHub Release](https://github.com/pjcau/agent-orchestrator/releases/latest),
+pick the archive for your platform, extract it, and put `ago` on
+your `$PATH` (e.g. `/usr/local/bin` on Unix).
+
+Available targets:
+
+| Target | Archive |
+|---|---|
+| macOS arm64 (M-series) | `ago-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| macOS x86_64 (Intel) | `ago-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 (static musl) | `ago-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz` |
+| Linux arm64 (static musl) | `ago-vX.Y.Z-aarch64-unknown-linux-musl.tar.gz` |
+| Windows x86_64 | `ago-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+
+Each archive ships an `ago.sha256` sidecar next to the binary, and a
+combined `SHA256SUMS` is published next to the release assets — check
+either before installing.
+
+> **Linux musl users:** the binary is fully static so it runs on
+> Alpine, distroless, etc., but the OS keychain backend is not linked.
+> Set `AGO_TOKEN` instead of relying on `ago login`'s keychain storage.
+
+### From source
 
 ```bash
 cd cli
 cargo install --path . --locked
 ```
-
-This puts `ago` on your `$PATH`.
 
 ## Authenticate
 
