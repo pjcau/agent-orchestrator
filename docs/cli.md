@@ -86,7 +86,8 @@ cd cli && cargo install --path . --locked
 | `ago jobs list [--limit N] [--json]` | Show recent server sessions with record counts and the first prompt. |
 | `ago jobs show <session_id> [--json]` | Print the records of a single session (job log). |
 | `ago jobs cancel <job_id>` | Request cancellation of a running team job. |
-| `ago chat [--mode agent\|prompt] [--agent N] [--model ID] [--provider T] [--max-steps N] [--no-progress]` | Interactive REPL. `--mode agent` (default) routes through the tool-using agent loop (`/api/cli/v1/run`); `--mode prompt` does a direct LLM completion (`/api/prompt`) — better for chat-style models. Slash commands: `:mode`, `:agent`, `:model`, `:provider`, `:max-steps`, `:reset`/`:clear`, `:info`, `:help`, `:quit`/`:exit`. |
+| `ago chat [--mode agent\|prompt] [--agent N] [--model ID] [--provider T] [--max-steps N] [--no-progress]` | Interactive REPL. `--mode agent` (default) routes through the tool-using agent loop (`/api/cli/v1/run`); `--mode prompt` does a direct LLM completion (`/api/prompt`) — better for chat-style models. Slash commands: `:mode`, `:agent`, `:model`, `:provider`, `:max-steps`, `:reset`/`:clear`, `:info`, `:help`, `:quit`/`:exit`. **Supports `@file` / `@dir/` references in any input — see below.** |
+| `ago run "<task>"` (and all variants) | Same `@file` / `@dir/` expansion as `ago chat` happens on the task string before sending. |
 | `ago completions <shell>` | Emit a shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`). |
 
 ## Security model
@@ -126,6 +127,45 @@ PRs touching `cli/**`, and manual dispatch.
 | 1.5 / 2 | Device-flow OAuth (RFC 8628), `ago run` with SSE streaming, `.ago.yaml` project preset | Phase 2 of the [unified roadmap](unified-roadmap.md#rust-cli-ago) |
 | 3 | `ago jobs list/get/cancel`, `ago logs --follow`, indicatif progress, shell completions | — |
 | 4 | Cross-compile matrix (macOS arm/x64, Linux x64/arm64 musl, Windows), signed releases via cosign + SBOM, Homebrew tap | release v0.1.0 |
+
+## `@file` and `@dir` references (v0.3+)
+
+Any input to `ago chat` or `ago run` can include `@<path>` tokens. The CLI
+reads the file or directory on **your local machine** before sending the
+prompt — so the security boundary stays at the CLI: you choose exactly
+what leaves your filesystem.
+
+```text
+> explain @src/main.rs to me
+> compare @./Cargo.toml and @cli/Cargo.toml
+> what files are in @src/        (trailing slash → directory listing)
+```
+
+Each resolved reference is appended to the prompt as a labeled code block
+the LLM can quote back. Stderr surfaces a one-line report per ref:
+
+```
+· included @src/main.rs (4321 B)
+· skipped @.env — excluded by safety pattern
+· included @src/ (812 B)
+```
+
+**Defaults (override via `.ago.yaml` `context:` block in v0.3.1):**
+
+| Setting | Default | Rationale |
+|---|---|---|
+| max bytes per file | 8 KB | Caps a single file at ~2K tokens |
+| max bytes total per turn | 50 KB | ~12K tokens total |
+| max refs per turn | 16 | Backstop against pathological inputs |
+| exclude patterns | `.env*`, `.git/`, `secrets/**`, `*secret*`, `node_modules/**`, `target/**`, `dist/**`, `.venv/**`, `__pycache__/`, `Cargo.lock`, `package-lock.json`, `yarn.lock`, … | Never leak credentials or heavy artifacts |
+
+Bare mentions like `@alice` or `alice@example.com` are **not** treated as
+references — the CLI requires `/` or `.` in the token AND a real file/dir
+to resolve before expansion.
+
+**Token cost example** with `tencent/hy3-preview` ($0.066/M input):
+including 3 files totaling ~15K tokens across 10 chat turns ≈ **$0.011**
+(~1.1¢) without caching. Provider prompt-caching support lands in v0.3.1.
 
 ## Per-project preset (`.ago.yaml`)
 

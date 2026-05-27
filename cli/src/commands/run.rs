@@ -1,5 +1,6 @@
 use crate::cli::RunArgs;
 use crate::client::{AgentRunRequest, AgentRunResponse, RunEvent};
+use crate::context::{expand_refs, ContextConfig};
 use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
 use futures_util::StreamExt;
@@ -8,7 +9,22 @@ use std::io::{IsTerminal, Read};
 use std::time::Duration;
 
 pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
-    let task = resolve_task(args.task.as_deref())?;
+    let raw_task = resolve_task(args.task.as_deref())?;
+    // Expand @file / @dir references client-side. Local files are read on the
+    // CLI's machine and inlined into the prompt before crossing the wire.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let (task, report) = expand_refs(&raw_task, &cwd, &ContextConfig::default())?;
+    for r in &report.resolved {
+        eprintln!(
+            "\x1b[2m· included {} ({} B{})\x1b[0m",
+            r.token,
+            r.bytes,
+            if r.truncated { " [truncated]" } else { "" }
+        );
+    }
+    for s in &report.skipped {
+        eprintln!("\x1b[33m· skipped {} — {:?}\x1b[0m", s.token, s.reason);
+    }
     let preset = rt.project.as_ref();
 
     // Resolution: CLI flag > .ago.yaml > global config / built-in default.

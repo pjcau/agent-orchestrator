@@ -10,6 +10,7 @@
 
 use crate::cli::{ChatArgs, ChatMode};
 use crate::client::{AgentRunRequest, AgentRunResponse, ApiClient, PromptRequest, RunEvent};
+use crate::context::{expand_refs, ContextConfig, ExpandReport, SkipReason};
 use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
 use futures_util::StreamExt;
@@ -77,12 +78,26 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
             }
         }
 
+        // ---- @file / @dir expansion (client-side, before sending) ----
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let ctx_cfg = ContextConfig::default();
+        let (expanded, report) = match expand_refs(trimmed, &cwd, &ctx_cfg) {
+            Ok(pair) => pair,
+            Err(e) => {
+                eprintln!("\x1b[31merror:\x1b[0m @ref expansion failed: {e}");
+                continue;
+            }
+        };
+        if !report.resolved.is_empty() || !report.skipped.is_empty() {
+            print_expand_report(&report);
+        }
+
         // ---- forward to server ----
         match send_turn(
             &client,
             &settings,
             &conversation_id,
-            trimmed,
+            &expanded,
             args.no_progress,
         )
         .await
@@ -422,6 +437,30 @@ async fn send_turn_agent(
         eprintln!("{footer}");
     }
     Ok(stats)
+}
+
+fn print_expand_report(report: &ExpandReport) {
+    for r in &report.resolved {
+        let kind = match r.kind {
+            crate::context::RefKind::File => "file",
+            crate::context::RefKind::Directory => "dir",
+        };
+        let trunc = if r.truncated { " [truncated]" } else { "" };
+        eprintln!(
+            "\x1b[2m· included {kind} {} ({} B{trunc})\x1b[0m",
+            r.token, r.bytes
+        );
+    }
+    for s in &report.skipped {
+        let reason = match &s.reason {
+            SkipReason::NotFound => "not found".to_string(),
+            SkipReason::Excluded => "excluded by safety pattern".to_string(),
+            SkipReason::TooManyRefs => "max @refs per turn reached".to_string(),
+            SkipReason::TotalSizeExceeded => "total context size cap reached".to_string(),
+            SkipReason::ReadError(e) => format!("read error: {e}"),
+        };
+        eprintln!("\x1b[33m· skipped {} — {reason}\x1b[0m", s.token);
+    }
 }
 
 fn make_spinner() -> ProgressBar {
