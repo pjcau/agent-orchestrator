@@ -29,7 +29,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 serde_yaml = "0.9"
-keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+# Keyring features are activated per target so static musl Linux builds do
+# not pull in libsecret/DBus. On musl the keyring is inert at runtime —
+# users must use the AGO_TOKEN env var. Documented in docs/cli.md.
+keyring = { version = "3", default-features = false }
 zeroize = { version = "1.7", features = ["derive"] }
 secrecy = { version = "0.10", features = ["serde"] }
 directories = "5"
@@ -47,6 +50,15 @@ tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+keyring = { version = "3", default-features = false, features = ["linux-native"] }
 
 [profile.release]
 opt-level = "z"

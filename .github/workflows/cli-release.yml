@@ -1,0 +1,158 @@
+name: cli-release
+
+# Triggered on:
+#   - v* tag pushes  → produce a real GitHub Release with prebuilt
+#     binaries for the 5-target matrix.
+#   - manual dispatch → useful for verifying the cross-compile matrix
+#     without cutting a release. Manual runs upload the artifacts to the
+#     workflow run but do NOT create a GitHub Release.
+#
+# Targets shipped for v0.1.0:
+#   * aarch64-apple-darwin       (macOS, Apple Silicon)
+#   * x86_64-apple-darwin        (macOS, Intel)
+#   * x86_64-unknown-linux-musl  (Linux, static)
+#   * aarch64-unknown-linux-musl (Linux ARM, static)
+#   * x86_64-pc-windows-msvc     (Windows)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required only by softprops/action-gh-release
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            archive: tar.gz
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            archive: tar.gz
+            apt-packages: musl-tools
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-latest
+            archive: tar.gz
+            use-cross: true
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+          key: ${{ matrix.target }}
+
+      - name: Install apt packages
+        if: matrix.apt-packages
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt-packages }}
+
+      - name: Install cross (for ${{ matrix.target }})
+        if: matrix.use-cross
+        run: cargo install cross --locked --git https://github.com/cross-rs/cross --rev v0.2.5
+
+      - name: Build (native)
+        if: ${{ !matrix.use-cross }}
+        working-directory: cli
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.use-cross
+        working-directory: cli
+        run: cross build --release --locked --target ${{ matrix.target }}
+
+      - name: Stage release artifact (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          name="ago-${{ github.ref_name }}-${{ matrix.target }}"
+          staging="${RUNNER_TEMP}/${name}"
+          mkdir -p "${staging}"
+          cp "cli/target/${{ matrix.target }}/release/ago" "${staging}/ago"
+          cp cli/README.md docs/cli.md "${staging}/"
+          # SHA256 of the binary itself, computed before tar-ing.
+          sha256sum "${staging}/ago" > "${staging}/ago.sha256"
+          tar -C "${RUNNER_TEMP}" -czf "${name}.tar.gz" "${name}"
+          echo "ARTIFACT=${name}.tar.gz" >> "${GITHUB_ENV}"
+          echo "ARTIFACT_NAME=${name}" >> "${GITHUB_ENV}"
+
+      - name: Stage release artifact (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $name = "ago-${{ github.ref_name }}-${{ matrix.target }}"
+          $staging = Join-Path $env:RUNNER_TEMP $name
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item "cli/target/${{ matrix.target }}/release/ago.exe" -Destination "$staging/ago.exe"
+          Copy-Item "cli/README.md", "docs/cli.md" -Destination $staging
+          Get-FileHash "$staging/ago.exe" -Algorithm SHA256 | Format-Table -HideTableHeaders Hash, Path > "$staging/ago.exe.sha256"
+          Compress-Archive -Path $staging -DestinationPath "$name.zip"
+          Add-Content $env:GITHUB_ENV "ARTIFACT=$name.zip"
+          Add-Content $env:GITHUB_ENV "ARTIFACT_NAME=$name"
+
+      - name: Upload artifact to workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT }}
+          if-no-files-found: error
+
+  release:
+    name: github release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten + compute combined checksums
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          find artifacts -mindepth 2 -maxdepth 2 -type f \
+            \( -name '*.tar.gz' -o -name '*.zip' \) \
+            -exec cp {} dist/ \;
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS 2>/dev/null || true
+          ls -la
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ago ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
