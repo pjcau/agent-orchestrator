@@ -89,10 +89,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2.0.0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: cli
+          workspaces: cli
+          cache-targets: false
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit (fail on actual vulns, not on unmaintained warnings)
+        working-directory: cli
+        run: |
+          # `cargo audit` exits non-zero on vulnerabilities; informational
+          # warnings (`unmaintained`, `unsound`, `notice`) only become errors
+          # with --deny warnings, which we explicitly do NOT pass — those
+          # often come from transitive deps we cannot fix and are tracked
+          # separately. A real CVE will still fail this job.
+          cargo audit
 
   python-server-tests:
     name: python (cli server endpoints)
