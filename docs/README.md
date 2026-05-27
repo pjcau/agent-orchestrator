@@ -41,6 +41,7 @@ python scripts/generate_feature_map.py        # writes static/feature-map.json
 |-----|----------------|
 | [agents.md](agents.md) | 30 agents organised by category, cross-dependencies, skills map, research scout workflow |
 | [dashboard.md](dashboard.md) | Dashboard UI: multi-category routing, conversation persistence, MCP server/client, SSE streaming, async team run, session explorer, memory, metrics, modular architecture |
+| [cli.md](cli.md) | `ago` Rust CLI client — single-binary, talks to a remote orchestrator over `/api/cli/v1/*`. OS-keychain token storage, rustls-only HTTP. |
 
 ## Security, Observability, Operations
 

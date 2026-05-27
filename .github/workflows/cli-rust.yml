@@ -1,0 +1,79 @@
+name: cli-rust
+
+on:
+  push:
+    branches: [main, "experiment/**"]
+    paths:
+      - "cli/**"
+      - ".github/workflows/cli-rust.yml"
+  pull_request:
+    paths:
+      - "cli/**"
+      - ".github/workflows/cli-rust.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+      - name: Check formatting
+        working-directory: cli
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clippy
+        run: rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: Clippy (deny warnings)
+        working-directory: cli
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: Build
+        working-directory: cli
+        run: cargo build --locked --verbose
+      - name: Test
+        working-directory: cli
+        # Tests on Linux/Windows do not have a keychain backend; the integration
+        # tests bypass keyring entirely via AGO_TOKEN, but unit tests in
+        # `auth::tests` only touch MemoryStorage, so this works portably.
+        run: cargo test --locked --verbose
+
+  audit:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: cli

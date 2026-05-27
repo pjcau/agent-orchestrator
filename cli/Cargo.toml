@@ -1,0 +1,51 @@
+[package]
+name = "ago"
+version = "0.1.0"
+edition = "2021"
+description = "Agent Orchestrator CLI — talk to a remote orchestrator from your local project."
+license = "MIT"
+repository = "https://github.com/jonnycau/agent-orchestrator"
+rust-version = "1.75"
+readme = "README.md"
+keywords = ["cli", "ai", "agents", "orchestrator", "llm"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "ago"
+path = "src/main.rs"
+
+[lib]
+name = "ago"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+thiserror = "1"
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "stream", "http2"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+zeroize = { version = "1.7", features = ["derive"] }
+secrecy = { version = "0.10", features = ["serde"] }
+directories = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

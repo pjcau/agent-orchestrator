@@ -46,6 +46,7 @@ from .agent_runtime_router import runtime_router
 from .knowledge_routes import knowledge_router
 from .evals_routes import evals_router
 from .personalized_memory_routes import memory_router
+from .cli_routes import cli_router
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
@@ -435,6 +436,9 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
 
     # Personalized memory endpoints (/api/user-memory/users/*) — P4
     app.include_router(memory_router)
+
+    # Rust CLI client endpoints (/api/cli/v1/*) — consumed by the `ago` CLI
+    app.include_router(cli_router)
 
     # Agent execution, WebSocket streaming, SSE (/api/prompt, /api/agent/run,
     # /api/team/*, /ws, /ws/stream)

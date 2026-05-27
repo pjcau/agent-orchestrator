@@ -624,6 +624,19 @@ Full design + sprint shape: [website roadmap → v1.4](https://pjcau.github.io/a
 
 ---
 
+## v1.6 — `ago` Rust CLI (Q3 2026, in progress)
+
+Single-binary Rust CLI living in [`cli/`](../cli/) that lets a local project talk to a remote orchestrator via `/api/cli/v1/*` endpoints (same model as `gh`, `vercel`, `claude`). Tokens in the OS keychain, TLS via `rustls` only, no plaintext on disk. Full design + security model: [docs/cli.md](cli.md).
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | `login`/`logout`/`whoami`/`config` + server `/api/cli/v1/whoami` + keychain storage | ✅ on `experiment/rust-cli` |
+| 2 | Device-flow OAuth (RFC 8628), `ago run` + SSE streaming, `.ago.yaml` preset | planned |
+| 3 | `jobs`, `logs --follow`, progress UX, shell completions | planned |
+| 4 | cargo-audit/deny in CI, cross-compile (mac/linux/windows), cosign + SBOM, Homebrew tap, GH Release v0.1.0 | planned |
+
+---
+
 ## v1.5 P1 — Workspace Repair Loop (Q3 2026, in progress)
 
 Verify-and-retry pipeline wrapped around `run_team()`. Motivated by `docs/learning-path-tests/2026-05-16_task-tracker.md` (a single `psycopg<3` typo dropped the score from ~79 to 32.5/100). See `docs/architecture-repair-loop.md` for the full design.

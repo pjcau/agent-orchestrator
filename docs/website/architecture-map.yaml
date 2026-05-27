@@ -199,6 +199,12 @@ clusters:
         cy: 720
         size: 28
         description: Ask-the-user loop when intent is ambiguous.
+      - name: CLI Routes
+        files: [dashboard/cli_routes.py]
+        cx: 720
+        cy: 540
+        size: 26
+        description: /api/cli/v1/* endpoints consumed by the `ago` Rust CLI (see docs/cli.md).
 
   - id: observability
     label: Observability
