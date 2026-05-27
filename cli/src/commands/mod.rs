@@ -2,7 +2,9 @@ use crate::cli::Command;
 use crate::error::Result;
 use crate::runtime::Runtime;
 
+pub mod completions;
 pub mod config;
+pub mod jobs;
 pub mod login;
 pub mod logout;
 pub mod run;
@@ -15,5 +17,7 @@ pub async fn dispatch(rt: &Runtime, cmd: Command) -> Result<()> {
         Command::Whoami => whoami::run(rt).await,
         Command::Config(args) => config::run(rt, args),
         Command::Run(args) => run::run(rt, args).await,
+        Command::Jobs(args) => jobs::run(rt, args).await,
+        Command::Completions(args) => completions::run(args),
     }
 }

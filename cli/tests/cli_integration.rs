@@ -32,7 +32,36 @@ fn help_lists_commands() {
         .stdout(contains("login"))
         .stdout(contains("logout"))
         .stdout(contains("whoami"))
-        .stdout(contains("config"));
+        .stdout(contains("config"))
+        .stdout(contains("run"))
+        .stdout(contains("completions"));
+}
+
+#[test]
+fn completions_zsh_emits_compdef() {
+    ago()
+        .args(["completions", "zsh"])
+        .assert()
+        .success()
+        .stdout(contains("#compdef ago"));
+}
+
+#[test]
+fn completions_bash_emits_complete() {
+    ago()
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(contains("complete -F"));
+}
+
+#[test]
+fn completions_fish_emits_complete() {
+    ago()
+        .args(["completions", "fish"])
+        .assert()
+        .success()
+        .stdout(contains("complete -c ago"));
 }
 
 #[test]
@@ -128,6 +157,126 @@ async fn whoami_against_mock_server() {
         .success()
         .stdout(contains("alice@example.com"))
         .stdout(contains("developer"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn jobs_list_renders_table() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/jobs/list"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sessions": [
+                {"session_id": "20260527_001", "records": 3, "files": 1, "last_type": "agent_run", "first_prompt": "build hello world"},
+                {"session_id": "20260527_002", "records": 5, "files": 0, "last_type": "team_run", "first_prompt": "refactor module"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args(["--config", cfg.to_str().unwrap(), "jobs", "list"])
+        .assert()
+        .success()
+        .stdout(contains("20260527_001"))
+        .stdout(contains("build hello world"))
+        .stdout(contains("SESSION"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn jobs_cancel_posts_to_team_endpoint() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/team/job-xyz/cancel"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "job_id": "job-xyz",
+            "status": "running",
+            "cancelled": true
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "jobs",
+            "cancel",
+            "job-xyz",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("cancelling"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn jobs_show_renders_records() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/jobs/abc"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "session_id": "abc",
+            "records": [
+                {"job_type": "agent_run", "task": "first task"},
+                {"job_type": "agent_run", "task": "second task"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args(["--config", cfg.to_str().unwrap(), "jobs", "show", "abc"])
+        .assert()
+        .success()
+        .stdout(contains("first task"))
+        .stdout(contains("second task"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

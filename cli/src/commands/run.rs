@@ -3,7 +3,9 @@ use crate::client::{AgentRunRequest, AgentRunResponse, RunEvent};
 use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
 use futures_util::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{IsTerminal, Read};
+use std::time::Duration;
 
 pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     let task = resolve_task(args.task.as_deref())?;
@@ -101,6 +103,8 @@ async fn run_streaming(
     let mut stream = client.agent_run_stream(req).await?;
     let mut final_payload: Option<serde_json::Value> = None;
     let show_progress = !json && std::io::stderr().is_terminal();
+    let spinner = show_progress.then(make_spinner);
+    let mut step_count: u64 = 0;
 
     while let Some(item) = stream.next().await {
         let event = item?;
@@ -117,13 +121,17 @@ async fn run_streaming(
                 break;
             }
             other => {
-                if show_progress {
-                    render_progress_event(other, &event);
+                step_count += 1;
+                if let Some(pb) = &spinner {
+                    update_spinner(pb, other, &event, step_count);
                 }
             }
         }
     }
 
+    if let Some(pb) = spinner {
+        pb.finish_and_clear();
+    }
     let payload = final_payload
         .ok_or_else(|| AgoError::Other("server closed stream before completion".into()))?;
     let resp = AgentRunResponse { raw: payload };
@@ -141,32 +149,30 @@ async fn run_streaming(
     Ok(())
 }
 
-fn render_progress_event(kind: &str, event: &RunEvent) {
+fn make_spinner() -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template("{spinner:.cyan} {elapsed_precise} {prefix:.dim} {msg}")
+            .unwrap()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
+    );
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb.set_prefix("running");
+    pb
+}
+
+fn update_spinner(pb: &ProgressBar, kind: &str, event: &RunEvent, step: u64) {
     let agent = event
         .data
         .get("agent")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let data = event
-        .data
-        .get("data")
-        .and_then(|v| v.as_object())
-        .map(|m| {
-            let mut parts: Vec<String> = m
-                .iter()
-                .filter(|(k, _)| !matches!(k.as_str(), "tool" | "result"))
-                .take(3)
-                .map(|(k, v)| format!("{k}={v}"))
-                .collect();
-            parts.sort();
-            parts.join(" ")
-        })
-        .unwrap_or_default();
-    if data.is_empty() {
-        eprintln!("· {kind} [{agent}]");
+    let label = if agent.is_empty() {
+        format!("[{step:>3}] {kind}")
     } else {
-        eprintln!("· {kind} [{agent}] {data}");
-    }
+        format!("[{step:>3}] {kind} ({agent})")
+    };
+    pb.set_message(label);
 }
 
 fn resolve_task(arg: Option<&str>) -> Result<String> {

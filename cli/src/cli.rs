@@ -36,6 +36,56 @@ pub enum Command {
     Config(ConfigArgs),
     /// Run a task against an agent on the active server.
     Run(RunArgs),
+    /// Inspect or cancel jobs/sessions on the active server.
+    Jobs(JobsArgs),
+    /// Print a shell completion script for `ago`.
+    ///
+    /// Pipe the output to your shell's completion path, e.g.
+    /// `ago completions zsh > ~/.zfunc/_ago` and add `fpath+=~/.zfunc` to
+    /// your `.zshrc`.
+    Completions(CompletionsArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct CompletionsArgs {
+    /// Target shell (`bash`, `zsh`, `fish`, `powershell`, `elvish`).
+    #[arg(value_enum)]
+    pub shell: clap_complete::Shell,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct JobsArgs {
+    #[command(subcommand)]
+    pub action: JobsAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum JobsAction {
+    /// List recent job sessions on the server.
+    List(JobsListArgs),
+    /// Show the records of a single session.
+    Show {
+        /// Session id (the value printed by `ago jobs list`).
+        session_id: String,
+        /// Emit raw JSON instead of a human-readable summary.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Cancel an in-flight team run.
+    Cancel {
+        /// Job id of the running team task (UUID printed by `ago run` or the dashboard).
+        job_id: String,
+    },
+}
+
+#[derive(Debug, clap::Args)]
+pub struct JobsListArgs {
+    /// Limit the number of sessions returned.
+    #[arg(long, value_name = "N", default_value_t = 20)]
+    pub limit: usize,
+    /// Emit raw JSON instead of a human-readable table.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, clap::Args)]

@@ -253,6 +253,61 @@ impl ApiClient {
         })
     }
 
+    /// GET /api/jobs/list — return all recorded job sessions.
+    pub async fn jobs_list(&self) -> Result<serde_json::Value> {
+        self.get_json("/api/jobs/list").await
+    }
+
+    /// GET /api/jobs/{session_id} — return the records of a single session.
+    pub async fn jobs_show(&self, session_id: &str) -> Result<serde_json::Value> {
+        let path = format!("/api/jobs/{}", url_encode(session_id));
+        self.get_json(&path).await
+    }
+
+    /// POST /api/team/{job_id}/cancel — request cancellation of an active team run.
+    pub async fn job_cancel(&self, job_id: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .http
+            .post(self.url(&format!("/api/team/{}/cancel", url_encode(job_id))))
+            .send()
+            .await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(AgoError::Other(format!("job {job_id} not found")));
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AgoError::ServerError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+        let parsed: serde_json::Value = resp.json().await.map_err(AgoError::from)?;
+        Ok(parsed)
+    }
+
+    async fn get_json(&self, path: &str) -> Result<serde_json::Value> {
+        let resp = self.http.get(self.url(path)).send().await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(AgoError::Other(format!("not found: {path}")));
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AgoError::ServerError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+        resp.json().await.map_err(AgoError::from)
+    }
+
     /// POST /api/agent/run — blocking single-agent task execution.
     ///
     /// Phase 2a uses the existing dashboard endpoint as-is. A dedicated
@@ -304,6 +359,10 @@ impl ApiClient {
         })?;
         Ok(parsed)
     }
+}
+
+fn url_encode(s: &str) -> String {
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
 fn should_force_https(server: &str) -> bool {

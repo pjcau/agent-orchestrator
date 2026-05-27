@@ -55,7 +55,11 @@ access — no separate identity store.
 | `ago login --device [--server URL] [--no-browser]` | RFC 8628 device-flow: the CLI prints a URL + pairing code, opens it in your browser, polls until you approve, then stores the ephemeral token in the keychain. |
 | `ago logout [--server URL]` | Remove the stored token for the active or given server. |
 | `ago whoami` | Print the authenticated identity from the server. |
-| `ago run "<task>" --agent NAME --model ID [--provider TYPE] [--max-steps N] [--json] [--stream]` | Execute a single-agent task. Reads task from stdin if omitted. Default is blocking against `/api/agent/run`; `--stream` switches to SSE via the dedicated `/api/cli/v1/run` endpoint and renders progress events to stderr. |
+| `ago run "<task>" --agent NAME --model ID [--provider TYPE] [--max-steps N] [--json] [--stream]` | Execute a single-agent task. Reads task from stdin if omitted. Default is blocking against `/api/agent/run`; `--stream` switches to SSE via the dedicated `/api/cli/v1/run` endpoint and renders a live progress spinner on a tty. |
+| `ago jobs list [--limit N] [--json]` | Show recent server sessions with record counts and the first prompt. |
+| `ago jobs show <session_id> [--json]` | Print the records of a single session (job log). |
+| `ago jobs cancel <job_id>` | Request cancellation of a running team job. |
+| `ago completions <shell>` | Emit a shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`). |
 
 ## Security model
 
@@ -219,6 +223,10 @@ isolated from CLI runs by design.
 
 - Token revocation requires `JWT_SECRET_KEY` rotation (no per-token
   denylist yet). Acceptable as long as token lifetime is short or
-  compromised tokens are rare; a denylist may land in Phase 3 if needed.
+  compromised tokens are rare; a denylist may land later if needed.
+- `ago logs <id> --follow` is **not implemented yet** — for now use
+  `ago jobs show <session_id>` to read a session's records once it has
+  finished. Live tailing of an active team job needs a server-side SSE
+  endpoint filtered by `job_id` and will land alongside Phase 4 or v0.2.
 - No `--local` fallback (subprocess Python `client.py`) yet.
 - No update channel; rely on `brew upgrade` / `cargo install --force`.

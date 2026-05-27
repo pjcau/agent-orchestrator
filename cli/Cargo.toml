@@ -39,6 +39,7 @@ url = "2"
 eventsource-stream = "0.2"
 futures-util = "0.3"
 open = { version = "5", default-features = false }
+indicatif = "0.17"
 
 [dev-dependencies]
 wiremock = "0.6"
