@@ -327,8 +327,9 @@ fn scan_tokens(input: &str) -> Vec<(String, String)> {
         }
         let raw = &input[start..j];
         // Heuristic: require the candidate to look like a path — contain a
-        // `/` or `.` or end in `/`. Plain `@alice` mentions are skipped.
-        if raw.contains('/') || raw.contains('.') {
+        // `/`, `\`, `:` (drive letter on Windows) or `.`. Plain `@alice`
+        // mentions are skipped.
+        if raw.contains('/') || raw.contains('\\') || raw.contains(':') || raw.contains('.') {
             let token = format!("@{raw}");
             out.push((token, raw.to_string()));
         }
@@ -338,7 +339,16 @@ fn scan_tokens(input: &str) -> Vec<(String, String)> {
 }
 
 fn is_path_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'-' | b'_' | b'~' | b'+' | b'@' | b'#')
+    // `\` is the Windows path separator and `:` shows up in drive letters
+    // (`C:\Users\...`). Including them keeps `@C:\foo\bar` parseable on
+    // Windows. On Unix they cause no false positives — `\` never resolves
+    // to a real path so the token is silently dropped at expansion time,
+    // and `:` in a Unix filename is rare but legal.
+    b.is_ascii_alphanumeric()
+        || matches!(
+            b,
+            b'/' | b'\\' | b':' | b'.' | b'-' | b'_' | b'~' | b'+' | b'@' | b'#'
+        )
 }
 
 fn resolve_path(cwd: &Path, raw: &str) -> Option<PathBuf> {
