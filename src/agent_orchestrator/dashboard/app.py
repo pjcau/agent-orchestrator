@@ -47,7 +47,7 @@ from .knowledge_routes import knowledge_router
 from .evals_routes import evals_router
 from .personalized_memory_routes import memory_router
 from .cli_routes import cli_router
-from .cli_device_flow import DeviceFlowStore
+from .cli_device_flow import InMemoryDeviceFlowStore
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
@@ -278,12 +278,20 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     )
 
     # ── Device-flow OAuth (RFC 8628) for `ago login --device` ──────────
-    # Shared per-app state so concurrent requests on the same worker see
-    # the same pending pairings. Process-local — across multi-worker
-    # deployments the CLI must hit the same worker for create + token
-    # (sticky session or single-worker). See docs/cli.md.
-    app.state.device_flow_store = DeviceFlowStore()
-    app.state.ephemeral_api_keys: dict[str, dict] = {}
+    # The Postgres-backed store is selected automatically when DATABASE_URL
+    # is configured — that makes the pairing state shared across workers
+    # and survives restarts. Without DATABASE_URL we fall back to the
+    # in-process store, which is fine for single-worker dev/test setups
+    # but loses pending pairings on restart.
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if database_url:
+        from .cli_device_flow_postgres import PostgresDeviceFlowStore
+
+        app.state.device_flow_store = PostgresDeviceFlowStore(database_url)
+    else:
+        app.state.device_flow_store = InMemoryDeviceFlowStore()
+    # Approved CLI tokens are stateless JWTs minted by `create_cli_token`
+    # — no per-token server-side storage. See dashboard/auth.py.
 
     # ── Knowledge / RAG (P1) ────────────────────────────────────────────
     # The knowledge subsystem is a single shared (embedder, store) pair

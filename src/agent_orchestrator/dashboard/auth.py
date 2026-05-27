@@ -51,28 +51,78 @@ except ImportError:
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_SECONDS = 14400  # 4 hours
 
+# CLI tokens minted via device-flow login. Long-lived but rotatable: the user
+# can re-run `ago login --device` at any time to get a fresh token. The TTL
+# is overridable via env so deployments with stricter policies can shorten it.
+CLI_TOKEN_DEFAULT_TTL_SECONDS = 30 * 24 * 3600  # 30 days
+
 
 def _get_jwt_secret() -> str:
     return os.environ.get("JWT_SECRET_KEY", "")
 
 
-def create_session_token(user_info: dict[str, Any]) -> str:
-    """Create a JWT session token from user info (email, name, provider, role, github_login)."""
+def _cli_token_ttl() -> int:
+    raw = os.environ.get("AGO_CLI_TOKEN_TTL_SECONDS", "").strip()
+    if not raw:
+        return CLI_TOKEN_DEFAULT_TTL_SECONDS
+    try:
+        ttl = int(raw)
+    except ValueError:
+        logger.warning("invalid AGO_CLI_TOKEN_TTL_SECONDS=%r — using default", raw)
+        return CLI_TOKEN_DEFAULT_TTL_SECONDS
+    return max(60, ttl)
+
+
+def create_session_token(
+    user_info: dict[str, Any],
+    *,
+    expiry_seconds: int | None = None,
+    provider_override: str | None = None,
+) -> str:
+    """Create a JWT session token from user info.
+
+    Used by both the browser session (default 4 h) and ``ago login --device``
+    (``expiry_seconds = _cli_token_ttl()``, ``provider_override = "device-flow"``).
+    """
     if not HAS_JWT:
         raise RuntimeError("PyJWT is required for session tokens: pip install PyJWT")
     secret = _get_jwt_secret()
     if not secret:
         raise RuntimeError("JWT_SECRET_KEY environment variable is required")
+    ttl = expiry_seconds if expiry_seconds is not None else JWT_EXPIRY_SECONDS
     payload = {
-        "sub": user_info.get("email", ""),
+        "sub": user_info.get("email", "") or user_info.get("sub", ""),
         "name": user_info.get("name", ""),
-        "provider": user_info.get("provider", "unknown"),
+        "provider": provider_override or user_info.get("provider", "unknown"),
         "github_login": user_info.get("github_login", ""),
         "role": user_info.get("role", "viewer"),
         "iat": int(time.time()),
-        "exp": int(time.time()) + JWT_EXPIRY_SECONDS,
+        "exp": int(time.time()) + ttl,
     }
     return pyjwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
+
+
+def create_cli_token(user_info: dict[str, Any]) -> str:
+    """Mint a long-lived JWT for `ago login --device`.
+
+    Returned to the CLI by ``/api/cli/v1/auth/device-poll`` once a logged-in
+    browser approves the pairing. The token is stateless — no per-token row
+    on the server — so it survives restarts and works across workers.
+    """
+    return create_session_token(
+        user_info,
+        expiry_seconds=_cli_token_ttl(),
+        provider_override="device-flow",
+    )
+
+
+def _looks_like_jwt(value: str) -> bool:
+    """Quick gate to avoid running HMAC verify on every gibberish header.
+
+    A compact JWT always has exactly two dots separating three base64url
+    segments. Cheaper than asking PyJWT to fail.
+    """
+    return value.count(".") == 2 and not value.endswith(".")
 
 
 def verify_session_token(token: str) -> dict[str, Any] | None:
@@ -244,20 +294,18 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if any(request.url.path.startswith(p) for p in self.EXEMPT_PREFIXES):
             return await call_next(request)
 
-        # Check API key (header only — never query params to avoid log leaks)
+        # Check API key (header only — never query params to avoid log leaks).
         api_key = request.headers.get("X-API-Key")
-        if api_key and api_key in self.api_keys:
-            return await call_next(request)
-
-        # Check ephemeral API keys issued via device-flow OAuth (RFC 8628).
-        # These live on ``request.app.state.ephemeral_api_keys`` as
-        # ``token -> user_info``. See ``dashboard/cli_device_flow.py``.
         if api_key:
-            ephemeral = getattr(request.app.state, "ephemeral_api_keys", None)
-            if isinstance(ephemeral, dict):
-                user_info = ephemeral.get(api_key)
-                if user_info:
-                    request.state.user = user_info
+            if api_key in self.api_keys:
+                return await call_next(request)
+            # Try as a JWT (issued by device-flow login). Stateless — no
+            # per-token storage on the server, so this works cross-restart
+            # and cross-worker by construction.
+            if _looks_like_jwt(api_key):
+                user = verify_session_token(api_key)
+                if user and user.get("role"):
+                    request.state.user = user
                     return await call_next(request)
 
         # Check JWT session cookie
@@ -295,14 +343,11 @@ def check_ws_auth(request: Request, api_keys: set[str] | None = None) -> dict | 
     if api_keys and api_key and api_key in api_keys:
         return {"role": "developer", "name": "api-key-user"}
 
-    # Ephemeral device-flow API key
-    if api_key:
-        ephemeral = getattr(getattr(request, "app", None), "state", None)
-        ephemeral_keys = getattr(ephemeral, "ephemeral_api_keys", None) if ephemeral else None
-        if isinstance(ephemeral_keys, dict):
-            user_info = ephemeral_keys.get(api_key)
-            if user_info:
-                return dict(user_info)
+    # Device-flow JWT — stateless, no app.state lookup required.
+    if api_key and _looks_like_jwt(api_key):
+        user = verify_session_token(api_key)
+        if user and user.get("role"):
+            return dict(user)
 
     # JWT session cookie
     session_token = request.cookies.get("auth_session")

@@ -148,21 +148,49 @@ How the four endpoints split:
 | `GET /api/cli/v1/auth/device?user_code=…` | JWT session required | Browser — render approval page |
 | `POST /api/cli/v1/auth/device/approve` | JWT session required | Browser — submit approval |
 
-Approving binds the resulting **ephemeral API token** (`ago_eph_…`) to the
-authenticated user's identity (`name`, `email`, `role`). The token is stored
-in `app.state.ephemeral_api_keys` and the auth middleware accepts it on
-subsequent requests until the process restarts.
+### Token model
 
-Limitations to be aware of:
+Approving binds the resulting **JWT** (signed with `JWT_SECRET_KEY`) to the
+authenticated user's identity (`name`, `email`, `role`, `provider:
+"device-flow"`). The middleware accepts the JWT in either `Authorization`
+(future) or `X-API-Key` (current). The token is **stateless** — no per-token
+row on the server — so it works:
 
-- Ephemeral tokens are **in-memory only** — a server restart invalidates
-  them. The CLI will report `authentication rejected` and the user re-runs
-  `ago login --device`. Phase 3 will move this to the existing user_store.
-- For multi-worker deployments, the CLI must hit the same worker for both
-  `device-start` and `device-poll`. Use sticky sessions or a single-worker
-  deployment until Phase 3 lifts state to a shared backend.
-- The browser approval requires an existing OAuth session — set
-  `OAUTH_CLIENT_ID` (GitHub) or `GOOGLE_OAUTH_CLIENT_ID` on the dashboard.
+- **Across restarts.** Anyone holding a valid JWT continues to authenticate
+  as long as `JWT_SECRET_KEY` does not change.
+- **Across workers.** No shared in-memory state is consulted on each
+  request; every worker that knows the secret accepts the same JWT.
+
+Default TTL is **30 days** — override with `AGO_CLI_TOKEN_TTL_SECONDS`. To
+revoke a leaked token, rotate `JWT_SECRET_KEY` (invalidates *all* tokens —
+session cookies included). A future phase will add a small denylist for
+per-token revocation without secret rotation.
+
+### Pairing state (multi-worker correctness)
+
+The pairing-state store (the `device_code → user_info` mapping used
+between `device-start` and `device-poll`) is pluggable:
+
+| Store | Multi-worker | Restart-safe | Selected when |
+|---|---|---|---|
+| `InMemoryDeviceFlowStore` (default) | ❌ — per-process state | ❌ | `DATABASE_URL` is unset |
+| `PostgresDeviceFlowStore` | ✅ | ✅ | `DATABASE_URL` is set |
+
+The Postgres backend creates a `cli_device_flows` table lazily on first
+use (no manual migration) and reaps expired rows via `cleanup`. Schema is
+flat — `device_code` PK, `user_code` unique, `status`, JSONB
+`user_info`, plus timestamps.
+
+### Production checklist
+
+For a hardened multi-worker deployment:
+
+- Set `JWT_SECRET_KEY` to a 32+ byte random string (rotate at incident).
+- Set `DATABASE_URL` so the pairing store is shared and persistent.
+- Set `OAUTH_CLIENT_ID` (GitHub) or `GOOGLE_OAUTH_CLIENT_ID` so the
+  browser-side approval page can authenticate the user.
+- Optional: set `AGO_CLI_TOKEN_TTL_SECONDS` shorter than the 30-day
+  default for stricter rotation policies.
 
 ## SSE event shape (`/api/cli/v1/run`)
 
@@ -189,10 +217,8 @@ isolated from CLI runs by design.
 
 ## Limits acknowledged in current revision
 
-- Device-flow ephemeral tokens are **in-memory only** — server restart
-  invalidates them (re-run `ago login --device`). Persistence lands in
-  Phase 3.
-- Multi-worker deployments need sticky sessions for the two anonymous
-  device-flow endpoints until the store is moved to a shared backend.
+- Token revocation requires `JWT_SECRET_KEY` rotation (no per-token
+  denylist yet). Acceptable as long as token lifetime is short or
+  compromised tokens are rare; a denylist may land in Phase 3 if needed.
 - No `--local` fallback (subprocess Python `client.py`) yet.
 - No update channel; rely on `brew upgrade` / `cargo install --force`.

@@ -25,12 +25,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from .agent_runner import run_agent
 from .agents_registry import get_agent_registry
+from .auth import create_cli_token
 from .cli_device_flow import (
     STATUS_APPROVED,
     STATUS_DENIED,
     STATUS_EXPIRED,
     STATUS_PENDING,
     DeviceFlowStore,
+    InMemoryDeviceFlowStore,
     normalize_user_code,
 )
 from .events import EventBus
@@ -87,23 +89,13 @@ async def whoami(request: Request) -> dict[str, Any]:
 
 
 def _store(request: Request) -> DeviceFlowStore:
-    """Return the per-app DeviceFlowStore, creating it lazily on first use."""
+    """Return the per-app DeviceFlowStore, creating an in-memory one on first use."""
     state = request.app.state
     store: DeviceFlowStore | None = getattr(state, "device_flow_store", None)
     if store is None:
-        store = DeviceFlowStore()
+        store = InMemoryDeviceFlowStore()
         state.device_flow_store = store
     return store
-
-
-def _ephemeral_keys(request: Request) -> dict[str, dict[str, Any]]:
-    """Return the per-app ephemeral API-key dict, creating it lazily."""
-    state = request.app.state
-    keys: dict[str, dict[str, Any]] | None = getattr(state, "ephemeral_api_keys", None)
-    if keys is None:
-        keys = {}
-        state.ephemeral_api_keys = keys
-    return keys
 
 
 def _verification_uri(request: Request) -> str:
@@ -145,10 +137,8 @@ async def device_token(body: dict, request: Request) -> JSONResponse:
     store = _store(request)
     flow = await store.lookup_by_device_code(device_code)
     if flow is None:
-        return JSONResponse(
-            {"error": "unknown_device_code"},
-            status_code=404,
-        )
+        return JSONResponse({"error": "unknown_device_code"}, status_code=404)
+
     import time as _t
 
     now = _t.time()
@@ -156,9 +146,9 @@ async def device_token(body: dict, request: Request) -> JSONResponse:
         return JSONResponse({"error": STATUS_EXPIRED}, status_code=400)
     # RFC 8628 §3.5 — slow_down: enforce the polling interval.
     if flow.last_poll_at and now - flow.last_poll_at < max(flow.interval - 1, 1):
-        flow.last_poll_at = now
+        await store.record_poll(device_code, now)
         return JSONResponse({"error": "slow_down"}, status_code=400)
-    flow.last_poll_at = now
+    await store.record_poll(device_code, now)
 
     if flow.status == STATUS_PENDING:
         return JSONResponse({"error": STATUS_PENDING}, status_code=400)
@@ -167,23 +157,12 @@ async def device_token(body: dict, request: Request) -> JSONResponse:
     if flow.status == STATUS_EXPIRED:
         return JSONResponse({"error": STATUS_EXPIRED}, status_code=400)
     if flow.status == STATUS_APPROVED:
-        # consume_token removes the flow so the same device_code is single-use.
-        snapshot = await store.consume_token(device_code)
-        if snapshot is None or snapshot.access_token is None:
+        # Atomic read+remove — the same device_code is single-use.
+        snapshot = await store.consume(device_code)
+        if snapshot is None or snapshot.status != STATUS_APPROVED or not snapshot.user_info:
             return JSONResponse({"error": STATUS_EXPIRED}, status_code=400)
-        # Register the ephemeral key in the auth middleware's lookup table.
-        keys = _ephemeral_keys(request)
-        keys[snapshot.access_token] = {
-            **(snapshot.user_info or {}),
-            "role": (snapshot.user_info or {}).get("role") or "developer",
-            "provider": "device-flow",
-        }
-        return JSONResponse(
-            {
-                "access_token": snapshot.access_token,
-                "token_type": "Bearer",
-            }
-        )
+        token = create_cli_token(snapshot.user_info)
+        return JSONResponse({"access_token": token, "token_type": "Bearer"})
     # Defensive — keeps the switch closed.
     return JSONResponse({"error": "server_error"}, status_code=500)
 
@@ -307,7 +286,10 @@ async def device_approval_submit(request: Request) -> HTMLResponse:
             status_code=410,
         )
     if decision == "deny":
-        await store.deny(code)
+        try:
+            await store.deny(code)
+        except KeyError:
+            pass
         return HTMLResponse(
             _HTML_HEAD + "<main><h1>Pairing cancelled</h1><p>You can close this tab.</p></main>"
         )
