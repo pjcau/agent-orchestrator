@@ -1,0 +1,71 @@
+# cargo-deny configuration for the `ago` Rust CLI.
+#
+# Verified locally via:   cargo deny check
+# Verified in CI via:     .github/workflows/cli-rust.yml -> cargo-deny job
+#
+# Three independent gates run on every push:
+#   1. advisories — fail on known CVEs (informational warnings allowed).
+#   2. licenses   — restrict to OSS licenses compatible with redistribution.
+#   3. bans       — flag duplicate versions of the same crate (size + audit
+#                   surface), and bans crates we want to keep out for good
+#                   reasons (e.g. unmaintained alternatives).
+#
+# `sources` is left at defaults — only crates.io is allowed.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+# Hard-fail on actual vulnerabilities; informational warnings
+# (unmaintained / unsound / notice) are surfaced but do not fail CI.
+yanked = "deny"
+ignore = [
+    # number_prefix is unmaintained as of RUSTSEC-2025-0119. Reaches us
+    # transitively through indicatif. No security impact; tracked here
+    # so cargo-deny surfaces it on every build and we re-evaluate when
+    # indicatif drops it.
+    "RUSTSEC-2025-0119",
+]
+
+[licenses]
+version = 2
+# Allow the standard mix of permissive OSS licenses. MPL-2.0 is OK
+# because the binary only links to such crates — no source mixing.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "OpenSSL",
+]
+confidence-threshold = 0.93
+
+[[licenses.exceptions]]
+# `ring` ships under an OpenSSL-equivalent custom license; allow it.
+allow = ["ISC", "MIT", "OpenSSL"]
+name = "ring"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Tighten over time — for v0.1 we accept noise from transitive
+# duplicates that we cannot influence.
+skip = []
+skip-tree = []
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

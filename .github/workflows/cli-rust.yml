@@ -106,6 +106,20 @@ jobs:
           # separately. A real CVE will still fail this job.
           cargo audit
 
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: cli/Cargo.toml
+          arguments: --all-features
+          # Verify the four gates separately so a license violation does not
+          # mask an advisory and vice-versa. Each gate is configured in
+          # cli/deny.toml.
+          command: check advisories licenses bans sources
+
   python-server-tests:
     name: python (cli server endpoints)
     runs-on: ubuntu-latest
