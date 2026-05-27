@@ -52,6 +52,7 @@ access — no separate identity store.
 |---|---|
 | `ago config set/get/show/path` | Inspect/modify `~/.config/ago/config.toml` (mode 0600). |
 | `ago login [--server URL] [--key-env VAR] [--with-stdin]` | Persist an API key in the OS keychain after validating it against `/api/cli/v1/whoami`. |
+| `ago login --device [--server URL] [--no-browser]` | RFC 8628 device-flow: the CLI prints a URL + pairing code, opens it in your browser, polls until you approve, then stores the ephemeral token in the keychain. |
 | `ago logout [--server URL]` | Remove the stored token for the active or given server. |
 | `ago whoami` | Print the authenticated identity from the server. |
 | `ago run "<task>" --agent NAME --model ID [--provider TYPE] [--max-steps N] [--json] [--stream]` | Execute a single-agent task. Reads task from stdin if omitted. Default is blocking against `/api/agent/run`; `--stream` switches to SSE via the dedicated `/api/cli/v1/run` endpoint and renders progress events to stderr. |
@@ -120,6 +121,49 @@ The schema rejects unknown keys (`#[serde(deny_unknown_fields)]`) and validates
 the `server` URL the same way `ago config set server` does — typos fail at
 load time instead of being silently ignored.
 
+## Device-flow OAuth (RFC 8628)
+
+`ago login --device` is the recommended way to authenticate from a new
+device — the API key never appears in your terminal, shell history, or
+clipboard.
+
+```
+$ ago login --device --server https://orch.example.com
+To authorize this device, open:
+    https://orch.example.com/api/cli/v1/auth/device?user_code=ABCD-EFGH
+
+and confirm the pairing code:  ABCD-EFGH
+
+Waiting for approval (Ctrl-C to cancel)...
+....
+Authenticated as alice@example.com on https://orch.example.com
+```
+
+How the four endpoints split:
+
+| Endpoint | Auth | Used by |
+|---|---|---|
+| `POST /api/cli/v1/auth/device-start` | **anonymous** (in `EXEMPT_PREFIXES`) | CLI — request a pairing |
+| `POST /api/cli/v1/auth/device-poll` | **anonymous** (in `EXEMPT_PREFIXES`) | CLI — poll for the token |
+| `GET /api/cli/v1/auth/device?user_code=…` | JWT session required | Browser — render approval page |
+| `POST /api/cli/v1/auth/device/approve` | JWT session required | Browser — submit approval |
+
+Approving binds the resulting **ephemeral API token** (`ago_eph_…`) to the
+authenticated user's identity (`name`, `email`, `role`). The token is stored
+in `app.state.ephemeral_api_keys` and the auth middleware accepts it on
+subsequent requests until the process restarts.
+
+Limitations to be aware of:
+
+- Ephemeral tokens are **in-memory only** — a server restart invalidates
+  them. The CLI will report `authentication rejected` and the user re-runs
+  `ago login --device`. Phase 3 will move this to the existing user_store.
+- For multi-worker deployments, the CLI must hit the same worker for both
+  `device-start` and `device-poll`. Use sticky sessions or a single-worker
+  deployment until Phase 3 lifts state to a shared backend.
+- The browser approval requires an existing OAuth session — set
+  `OAUTH_CLIENT_ID` (GitHub) or `GOOGLE_OAUTH_CLIENT_ID` on the dashboard.
+
 ## SSE event shape (`/api/cli/v1/run`)
 
 ```
@@ -145,10 +189,10 @@ isolated from CLI runs by design.
 
 ## Limits acknowledged in current revision
 
-- Login uses an **API key paste** instead of the full device-flow promised in
-  the design discussion. Device-flow lands in Phase 2c. The token validation
-  step still proves the key works before storing it, so the security
-  guarantee — "no token persisted unless the server accepts it" — already
-  holds.
+- Device-flow ephemeral tokens are **in-memory only** — server restart
+  invalidates them (re-run `ago login --device`). Persistence lands in
+  Phase 3.
+- Multi-worker deployments need sticky sessions for the two anonymous
+  device-flow endpoints until the store is moved to a shared backend.
 - No `--local` fallback (subprocess Python `client.py`) yet.
 - No update channel; rely on `brew upgrade` / `cargo install --force`.

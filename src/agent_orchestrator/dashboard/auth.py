@@ -192,8 +192,22 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     Static files, health check, and auth routes are always allowed.
     """
 
-    # Paths that bypass authentication (no WebSocket — those check auth themselves)
-    EXEMPT_PREFIXES = ("/assets", "/health", "/auth/", "/login", "/api/models", "/metrics")
+    # Paths that bypass authentication (no WebSocket — those check auth themselves).
+    # The two `/api/cli/v1/auth/device-*` entries are the anonymous bootstrap
+    # endpoints of the RFC 8628 device-flow: the *browser-facing* approval
+    # routes at `/api/cli/v1/auth/device` and `.../approve` are explicitly
+    # NOT exempt — they require a JWT session cookie to attribute approval
+    # to a real user.
+    EXEMPT_PREFIXES = (
+        "/assets",
+        "/health",
+        "/auth/",
+        "/login",
+        "/api/models",
+        "/metrics",
+        "/api/cli/v1/auth/device-start",
+        "/api/cli/v1/auth/device-poll",
+    )
 
     def __init__(self, app, api_keys: list[str] | None = None) -> None:
         super().__init__(app)
@@ -235,6 +249,17 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if api_key and api_key in self.api_keys:
             return await call_next(request)
 
+        # Check ephemeral API keys issued via device-flow OAuth (RFC 8628).
+        # These live on ``request.app.state.ephemeral_api_keys`` as
+        # ``token -> user_info``. See ``dashboard/cli_device_flow.py``.
+        if api_key:
+            ephemeral = getattr(request.app.state, "ephemeral_api_keys", None)
+            if isinstance(ephemeral, dict):
+                user_info = ephemeral.get(api_key)
+                if user_info:
+                    request.state.user = user_info
+                    return await call_next(request)
+
         # Check JWT session cookie
         session_token = request.cookies.get("auth_session")
         if session_token:
@@ -259,17 +284,25 @@ def check_ws_auth(request: Request, api_keys: set[str] | None = None) -> dict | 
     """Check authentication for WebSocket connections.
 
     Must be called BEFORE ws.accept(). Returns user dict or None.
-    Checks: X-API-Key header, auth_session cookie, or dev mode.
+    Checks: X-API-Key header, ephemeral device-flow key, auth_session cookie, or dev mode.
     """
     # Dev mode
     if os.environ.get("ALLOW_DEV_MODE", "").lower() == "true":
         return {"role": "admin", "name": "dev-mode", "github_login": "dev"}
 
     # API key from header
-    if api_keys:
-        api_key = request.headers.get("X-API-Key")
-        if api_key and api_key in api_keys:
-            return {"role": "developer", "name": "api-key-user"}
+    api_key = request.headers.get("X-API-Key")
+    if api_keys and api_key and api_key in api_keys:
+        return {"role": "developer", "name": "api-key-user"}
+
+    # Ephemeral device-flow API key
+    if api_key:
+        ephemeral = getattr(getattr(request, "app", None), "state", None)
+        ephemeral_keys = getattr(ephemeral, "ephemeral_api_keys", None) if ephemeral else None
+        if isinstance(ephemeral_keys, dict):
+            user_info = ephemeral_keys.get(api_key)
+            if user_info:
+                return dict(user_info)
 
     # JWT session cookie
     session_token = request.cookies.get("auth_session")

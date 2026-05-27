@@ -1,30 +1,31 @@
 use crate::auth::validate_token;
 use crate::cli::LoginArgs;
-use crate::client::ApiClient;
+use crate::client::{ApiClient, DevicePollOutcome};
 use crate::config::validate_server_url;
 use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
 use secrecy::SecretString;
 use std::io::{BufRead, IsTerminal, Write};
+use std::time::Duration;
 
 pub async fn run(rt: &Runtime, args: LoginArgs) -> Result<()> {
     let server = resolve_server(rt, args.server.as_deref())?;
     validate_server_url(&server)?;
 
-    let raw_token = read_token(args.key_env.as_deref(), args.with_stdin)?;
-    validate_token(&raw_token)?;
-    let token = SecretString::from(raw_token);
-
-    // Validate against the server before persisting — fail-closed.
-    let client = ApiClient::new(&server, Some(token.clone()))?;
-    let me = client.whoami().await?;
+    let token = if args.device {
+        device_flow(&server, args.no_browser).await?
+    } else {
+        api_key_login(args.key_env.as_deref(), args.with_stdin, &server).await?
+    };
 
     rt.storage.save(&server, &token)?;
-
     let mut cfg = rt.config.clone();
     cfg.set("server", &server)?;
     cfg.save(&rt.config_path)?;
 
+    let me = ApiClient::new(&server, Some(token.clone()))?
+        .whoami()
+        .await?;
     let identity = me
         .email
         .or(me.name)
@@ -37,10 +38,85 @@ fn resolve_server(rt: &Runtime, override_server: Option<&str>) -> Result<String>
     if let Some(s) = override_server {
         return Ok(s.to_string());
     }
-    if let Some(s) = rt.config.server.as_deref() {
+    if let Some(s) = rt.effective_server() {
         return Ok(s.to_string());
     }
     Err(AgoError::NoServer)
+}
+
+async fn api_key_login(
+    key_env: Option<&str>,
+    with_stdin: bool,
+    server: &str,
+) -> Result<SecretString> {
+    let raw_token = read_token(key_env, with_stdin)?;
+    validate_token(&raw_token)?;
+    let token = SecretString::from(raw_token);
+    let client = ApiClient::new(server, Some(token.clone()))?;
+    let _ = client.whoami().await?;
+    Ok(token)
+}
+
+async fn device_flow(server: &str, no_browser: bool) -> Result<SecretString> {
+    let client = ApiClient::new(server, None)?;
+    let auth = client.device_authorization().await?;
+    let url = auth
+        .verification_uri_complete
+        .clone()
+        .unwrap_or_else(|| format!("{}?user_code={}", auth.verification_uri, auth.user_code));
+    eprintln!();
+    eprintln!("To authorize this device, open:");
+    eprintln!("    {url}");
+    eprintln!();
+    eprintln!("and confirm the pairing code:  {}", auth.user_code);
+    eprintln!();
+    if !no_browser {
+        // Best-effort browser open; failure is non-fatal — the user can copy
+        // the URL by hand.
+        if let Err(e) = open::that_detached(&url) {
+            tracing::debug!(error = %e, "failed to open browser");
+        }
+    }
+    eprintln!("Waiting for approval (Ctrl-C to cancel)...");
+
+    let mut interval = auth.interval.max(1);
+    let started = std::time::Instant::now();
+    let deadline = Duration::from_secs(auth.expires_in);
+    loop {
+        tokio::time::sleep(Duration::from_secs(interval)).await;
+        if started.elapsed() > deadline {
+            return Err(AgoError::Other(
+                "device-flow expired before approval".into(),
+            ));
+        }
+        match client.device_token(&auth.device_code).await? {
+            DevicePollOutcome::Approved { access_token } => {
+                eprintln!();
+                return Ok(SecretString::from(access_token));
+            }
+            DevicePollOutcome::Pending => {
+                eprint!(".");
+                let _ = std::io::stderr().flush();
+            }
+            DevicePollOutcome::SlowDown => {
+                interval += 5;
+                tracing::debug!(interval, "received slow_down");
+            }
+            DevicePollOutcome::Denied => {
+                return Err(AgoError::Other("user denied the device pairing".into()));
+            }
+            DevicePollOutcome::Expired => {
+                return Err(AgoError::Other(
+                    "device-flow expired before approval".into(),
+                ));
+            }
+            DevicePollOutcome::Unknown => {
+                return Err(AgoError::Other(
+                    "server forgot the device_code (was the server restarted?)".into(),
+                ));
+            }
+        }
+    }
 }
 
 fn read_token(env_var: Option<&str>, with_stdin: bool) -> Result<String> {
@@ -108,6 +184,8 @@ mod tests {
             server: None,
             key_env: Some(var.to_string()),
             with_stdin: false,
+            device: false,
+            no_browser: false,
         };
         super::run(&rt, args).await.unwrap();
         std::env::remove_var(var);
@@ -132,6 +210,8 @@ mod tests {
             server: None,
             key_env: Some(var.to_string()),
             with_stdin: false,
+            device: false,
+            no_browser: false,
         };
         let err = super::run(&rt, args).await.unwrap_err();
         std::env::remove_var(var);
@@ -153,6 +233,8 @@ mod tests {
                 server: None,
                 key_env: Some(var.to_string()),
                 with_stdin: false,
+                device: false,
+                no_browser: false,
             },
         )
         .await

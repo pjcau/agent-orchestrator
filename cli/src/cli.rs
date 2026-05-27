@@ -52,6 +52,18 @@ pub struct LoginArgs {
     /// Pipe the API key on stdin instead of prompting (for headless / CI usage).
     #[arg(long)]
     pub with_stdin: bool,
+
+    /// Authenticate via the RFC 8628 OAuth device flow.
+    ///
+    /// The CLI prints a verification URL and a short user code; the user
+    /// approves the pairing in a browser logged into the dashboard, and the
+    /// CLI polls the server for the resulting ephemeral API token.
+    #[arg(long)]
+    pub device: bool,
+
+    /// When using --device, do NOT attempt to open the browser automatically.
+    #[arg(long)]
+    pub no_browser: bool,
 }
 
 #[derive(Debug, clap::Args)]

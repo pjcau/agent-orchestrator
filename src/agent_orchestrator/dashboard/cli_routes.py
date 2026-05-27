@@ -13,6 +13,7 @@ there is no associated user identity, so we return a generic ``api-key`` role.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import os
@@ -20,10 +21,18 @@ import uuid
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from .agent_runner import run_agent
 from .agents_registry import get_agent_registry
+from .cli_device_flow import (
+    STATUS_APPROVED,
+    STATUS_DENIED,
+    STATUS_EXPIRED,
+    STATUS_PENDING,
+    DeviceFlowStore,
+    normalize_user_code,
+)
 from .events import EventBus
 from .graphs import _make_provider
 
@@ -70,6 +79,250 @@ async def whoami(request: Request) -> dict[str, Any]:
         "provider": "api-key",
         "server_version": _server_version(request),
     }
+
+
+# ---------------------------------------------------------------------------
+# Device-flow OAuth (RFC 8628) — used by `ago login --device`.
+# ---------------------------------------------------------------------------
+
+
+def _store(request: Request) -> DeviceFlowStore:
+    """Return the per-app DeviceFlowStore, creating it lazily on first use."""
+    state = request.app.state
+    store: DeviceFlowStore | None = getattr(state, "device_flow_store", None)
+    if store is None:
+        store = DeviceFlowStore()
+        state.device_flow_store = store
+    return store
+
+
+def _ephemeral_keys(request: Request) -> dict[str, dict[str, Any]]:
+    """Return the per-app ephemeral API-key dict, creating it lazily."""
+    state = request.app.state
+    keys: dict[str, dict[str, Any]] | None = getattr(state, "ephemeral_api_keys", None)
+    if keys is None:
+        keys = {}
+        state.ephemeral_api_keys = keys
+    return keys
+
+
+def _verification_uri(request: Request) -> str:
+    base = os.environ.get("BASE_URL") or str(request.base_url).rstrip("/")
+    return f"{base}/api/cli/v1/auth/device"
+
+
+@cli_router.post("/auth/device-start")
+async def device_authorization(request: Request) -> dict[str, Any]:
+    """Start a device-authorization flow (RFC 8628 §3.1).
+
+    Anyone with the dashboard's API key — or a JWT session — can start a
+    flow. The pairing only becomes useful once a logged-in browser visits
+    ``GET /api/cli/v1/auth/device?user_code=...`` and approves it.
+    """
+    store = _store(request)
+    flow = await store.create()
+    return flow.public_dict(_verification_uri(request))
+
+
+@cli_router.post("/auth/device-poll")
+async def device_token(body: dict, request: Request) -> JSONResponse:
+    """Poll for the access token (RFC 8628 §3.4).
+
+    Returns:
+        200 ``{"access_token": "..."}`` when the user has approved the flow.
+        400 ``{"error": "authorization_pending"}`` while the user has not
+            yet approved.
+        400 ``{"error": "access_denied"}`` if the user rejected the request.
+        400 ``{"error": "expired_token"}`` if the request expired.
+        404 ``{"error": "unknown_device_code"}`` if the device_code is bogus.
+    """
+    device_code = str(body.get("device_code") or "").strip()
+    if not device_code:
+        return JSONResponse(
+            {"error": "invalid_request", "error_description": "device_code is required"},
+            status_code=400,
+        )
+    store = _store(request)
+    flow = await store.lookup_by_device_code(device_code)
+    if flow is None:
+        return JSONResponse(
+            {"error": "unknown_device_code"},
+            status_code=404,
+        )
+    import time as _t
+
+    now = _t.time()
+    if flow.is_expired(now) and flow.status != STATUS_APPROVED:
+        return JSONResponse({"error": STATUS_EXPIRED}, status_code=400)
+    # RFC 8628 §3.5 — slow_down: enforce the polling interval.
+    if flow.last_poll_at and now - flow.last_poll_at < max(flow.interval - 1, 1):
+        flow.last_poll_at = now
+        return JSONResponse({"error": "slow_down"}, status_code=400)
+    flow.last_poll_at = now
+
+    if flow.status == STATUS_PENDING:
+        return JSONResponse({"error": STATUS_PENDING}, status_code=400)
+    if flow.status == STATUS_DENIED:
+        return JSONResponse({"error": STATUS_DENIED}, status_code=400)
+    if flow.status == STATUS_EXPIRED:
+        return JSONResponse({"error": STATUS_EXPIRED}, status_code=400)
+    if flow.status == STATUS_APPROVED:
+        # consume_token removes the flow so the same device_code is single-use.
+        snapshot = await store.consume_token(device_code)
+        if snapshot is None or snapshot.access_token is None:
+            return JSONResponse({"error": STATUS_EXPIRED}, status_code=400)
+        # Register the ephemeral key in the auth middleware's lookup table.
+        keys = _ephemeral_keys(request)
+        keys[snapshot.access_token] = {
+            **(snapshot.user_info or {}),
+            "role": (snapshot.user_info or {}).get("role") or "developer",
+            "provider": "device-flow",
+        }
+        return JSONResponse(
+            {
+                "access_token": snapshot.access_token,
+                "token_type": "Bearer",
+            }
+        )
+    # Defensive — keeps the switch closed.
+    return JSONResponse({"error": "server_error"}, status_code=500)
+
+
+# ---- Browser-facing approval endpoint ------------------------------------
+#
+# The CLI prints ``verification_uri_complete`` for the user; clicking the URL
+# lands here. The middleware ensures the user has a valid JWT session before
+# reaching this code — anonymous browsers are redirected to ``/login``.
+#
+# RFC 8628 §3.3 recommends a confirmation step. We follow that: GET shows a
+# minimal HTML form; POST does the actual approval. This prevents accidental
+# approvals via prefetchers / link previews.
+
+
+_HTML_HEAD = (
+    "<!doctype html>"
+    "<meta charset='utf-8'>"
+    "<title>Authorize CLI device</title>"
+    "<style>"
+    "body{font-family:system-ui;background:#0b1220;color:#e6edf3;"
+    "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}"
+    "main{background:#161b22;border:1px solid #30363d;border-radius:12px;"
+    "padding:28px 34px;max-width:440px;width:90%}"
+    "h1{font-size:18px;margin:0 0 8px;font-weight:600}"
+    "p{margin:6px 0;color:#9da7b3;font-size:14px;line-height:1.5}"
+    "code{background:#0b1220;padding:2px 6px;border-radius:4px;"
+    "border:1px solid #30363d;font-size:13px}"
+    ".row{display:flex;gap:8px;margin-top:18px}"
+    "button{flex:1;padding:10px 14px;border-radius:6px;border:1px solid #30363d;"
+    "background:#21262d;color:#e6edf3;cursor:pointer;font-size:14px}"
+    "button.primary{background:#238636;border-color:#2ea043}"
+    "button.primary:hover{background:#2ea043}"
+    "form{display:contents}"
+    ".ok{color:#3fb950}.err{color:#f85149}"
+    "</style>"
+)
+
+
+@cli_router.get("/auth/device", response_class=HTMLResponse)
+async def device_approval_page(request: Request) -> HTMLResponse:
+    user = getattr(request.state, "user", None)
+    if not user:
+        # The auth middleware should have intercepted this; defensive fallback.
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1>Sign in required</h1>"
+            "<p>Sign in to the dashboard first, then re-open the CLI link.</p></main>",
+            status_code=401,
+        )
+    raw_code = request.query_params.get("user_code", "")
+    code = normalize_user_code(raw_code) if raw_code else ""
+    if not code:
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1>Enter pairing code</h1>"
+            "<p>Open the link the CLI printed, or run <code>ago login --device</code> again.</p>"
+            "<form method='post' action='/api/cli/v1/auth/device/approve'>"
+            "<input name='user_code' placeholder='XXXX-XXXX' "
+            "style='width:100%;padding:10px;border-radius:6px;border:1px solid #30363d;"
+            "background:#0b1220;color:#e6edf3;font-size:14px' autofocus required>"
+            "<div class='row'><button class='primary' type='submit'>Continue</button></div>"
+            "</form></main>",
+            status_code=400,
+        )
+    store = _store(request)
+    flow = await store.lookup_by_user_code(code)
+    if flow is None or flow.is_expired(0 if False else __import__("time").time()):
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1>Code not recognised or expired</h1>"
+            "<p>Run <code>ago login --device</code> again on your device.</p></main>",
+            status_code=410,
+        )
+    if flow.status == STATUS_APPROVED:
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1 class='ok'>Already approved</h1>"
+            "<p>This pairing has already been completed. Your CLI should now be logged in.</p></main>"
+        )
+    if flow.status == STATUS_DENIED:
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1 class='err'>Pairing previously denied</h1>"
+            "<p>Run <code>ago login --device</code> again to start over.</p></main>",
+            status_code=410,
+        )
+    safe_code = html.escape(code)
+    safe_name = html.escape(
+        (user.get("name") or user.get("sub") or "you") if isinstance(user, dict) else "you"
+    )
+    return HTMLResponse(
+        _HTML_HEAD + "<main>"
+        f"<h1>Authorize CLI for {safe_name}?</h1>"
+        f"<p>The CLI requested permission to act as <code>{safe_name}</code> using "
+        f"the device pairing code <code>{safe_code}</code>.</p>"
+        "<p>Approve only if you started <code>ago login --device</code> on the same device.</p>"
+        "<form method='post' action='/api/cli/v1/auth/device/approve'>"
+        f"<input type='hidden' name='user_code' value='{safe_code}'>"
+        "<div class='row'>"
+        "<button type='submit' name='decision' value='deny'>Cancel</button>"
+        "<button class='primary' type='submit' name='decision' value='approve'>Approve</button>"
+        "</div></form></main>"
+    )
+
+
+@cli_router.post("/auth/device/approve", response_class=HTMLResponse)
+async def device_approval_submit(request: Request) -> HTMLResponse:
+    user = getattr(request.state, "user", None)
+    if not user:
+        return HTMLResponse(_HTML_HEAD + "<main><h1>Sign in required</h1></main>", status_code=401)
+    form = await request.form()
+    raw_code = str(form.get("user_code") or "")
+    code = normalize_user_code(raw_code)
+    decision = str(form.get("decision") or "approve")
+    if not code:
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1 class='err'>Invalid pairing code</h1></main>",
+            status_code=400,
+        )
+    store = _store(request)
+    flow = await store.lookup_by_user_code(code)
+    if flow is None:
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1 class='err'>Pairing code not found</h1></main>",
+            status_code=410,
+        )
+    if decision == "deny":
+        await store.deny(code)
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1>Pairing cancelled</h1><p>You can close this tab.</p></main>"
+        )
+    try:
+        await store.approve(code, dict(user))
+    except KeyError:
+        return HTMLResponse(
+            _HTML_HEAD + "<main><h1 class='err'>Could not approve</h1>"
+            "<p>The code may have expired or been used already.</p></main>",
+            status_code=410,
+        )
+    return HTMLResponse(
+        _HTML_HEAD + "<main><h1 class='ok'>Device approved</h1>"
+        "<p>Return to your terminal — the CLI should be authenticated within a few seconds.</p></main>"
+    )
 
 
 @cli_router.get("/version")

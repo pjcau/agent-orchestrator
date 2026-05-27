@@ -46,6 +46,28 @@ pub struct RunEvent {
     pub data: serde_json::Value,
 }
 
+/// Response from `POST /api/cli/v1/auth/device` — start of an RFC 8628 flow.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceAuthResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: Option<String>,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+/// Outcome of polling `POST /api/cli/v1/auth/token`.
+#[derive(Debug, Clone)]
+pub enum DevicePollOutcome {
+    Pending,
+    SlowDown,
+    Approved { access_token: String },
+    Denied,
+    Expired,
+    Unknown,
+}
+
 impl AgentRunResponse {
     pub fn success(&self) -> Option<bool> {
         self.raw.get("success")?.as_bool()
@@ -145,6 +167,90 @@ impl ApiClient {
             Err(e) => Err(AgoError::Network(format!("sse parse error: {e}"))),
         });
         Ok(Box::pin(stream))
+    }
+
+    /// POST /api/cli/v1/auth/device-start — start an RFC 8628 device flow.
+    ///
+    /// This endpoint is anonymous on the server side — the trust boundary is
+    /// the browser-side approval step, which still requires a valid
+    /// dashboard session.
+    pub async fn device_authorization(&self) -> Result<DeviceAuthResponse> {
+        let resp = self
+            .http
+            .post(self.url("/api/cli/v1/auth/device-start"))
+            .json(&serde_json::json!({}))
+            .send()
+            .await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AgoError::ServerError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+        let parsed: DeviceAuthResponse = resp.json().await.map_err(AgoError::from)?;
+        Ok(parsed)
+    }
+
+    /// POST /api/cli/v1/auth/token — poll once for the access token.
+    ///
+    /// Maps the RFC 8628 error codes to a `DevicePollOutcome` enum so the
+    /// caller can drive a polling loop without re-parsing the HTTP layer.
+    pub async fn device_token(&self, device_code: &str) -> Result<DevicePollOutcome> {
+        let resp = self
+            .http
+            .post(self.url("/api/cli/v1/auth/device-poll"))
+            .json(&serde_json::json!({ "device_code": device_code }))
+            .send()
+            .await?;
+        let status = resp.status();
+        let body_text = resp.text().await.map_err(AgoError::from)?;
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(DevicePollOutcome::Unknown);
+        }
+        if status.is_success() {
+            #[derive(Deserialize)]
+            struct Body {
+                access_token: String,
+            }
+            let parsed: Body =
+                serde_json::from_str(&body_text).map_err(|e| AgoError::ServerError {
+                    status: status.as_u16(),
+                    message: format!("malformed JSON response: {e}"),
+                })?;
+            return Ok(DevicePollOutcome::Approved {
+                access_token: parsed.access_token,
+            });
+        }
+        // Server returns 400 with `{error: "authorization_pending|...}`.
+        #[derive(Deserialize)]
+        struct Err400 {
+            error: String,
+        }
+        let parsed: Err400 =
+            serde_json::from_str(&body_text).map_err(|e| AgoError::ServerError {
+                status: status.as_u16(),
+                message: format!("malformed JSON response: {e}"),
+            })?;
+        Ok(match parsed.error.as_str() {
+            "authorization_pending" => DevicePollOutcome::Pending,
+            "slow_down" => DevicePollOutcome::SlowDown,
+            "access_denied" => DevicePollOutcome::Denied,
+            "expired_token" => DevicePollOutcome::Expired,
+            other => {
+                return Err(AgoError::ServerError {
+                    status: status.as_u16(),
+                    message: format!("unexpected device-flow error: {other}"),
+                });
+            }
+        })
     }
 
     /// POST /api/agent/run — blocking single-agent task execution.
@@ -283,5 +389,127 @@ mod tests {
     fn rejects_remote_http() {
         let err = ApiClient::new("http://evil.com", None).unwrap_err();
         assert!(matches!(err, AgoError::InsecureServerUrl));
+    }
+
+    #[tokio::test]
+    async fn device_authorization_parses_pair() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/auth/device-start"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "device_code": "DEV-CODE",
+                "user_code": "ABCD-EFGH",
+                "verification_uri": "https://x.io/api/cli/v1/auth/device",
+                "verification_uri_complete": "https://x.io/api/cli/v1/auth/device?user_code=ABCD-EFGH",
+                "expires_in": 600,
+                "interval": 5
+            })))
+            .mount(&server)
+            .await;
+
+        let client = ApiClient::new(&server.uri(), None).unwrap();
+        let auth = client.device_authorization().await.unwrap();
+        assert_eq!(auth.device_code, "DEV-CODE");
+        assert_eq!(auth.user_code, "ABCD-EFGH");
+        assert_eq!(auth.interval, 5);
+    }
+
+    #[tokio::test]
+    async fn device_token_maps_pending() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/auth/device-poll"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({ "error": "authorization_pending" })),
+            )
+            .mount(&server)
+            .await;
+        let client = ApiClient::new(&server.uri(), None).unwrap();
+        let outcome = client.device_token("dc").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::Pending));
+    }
+
+    #[tokio::test]
+    async fn device_token_maps_slow_down() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/auth/device-poll"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({ "error": "slow_down" })),
+            )
+            .mount(&server)
+            .await;
+        let client = ApiClient::new(&server.uri(), None).unwrap();
+        let outcome = client.device_token("dc").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::SlowDown));
+    }
+
+    #[tokio::test]
+    async fn device_token_maps_denied() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/auth/device-poll"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({ "error": "access_denied" })),
+            )
+            .mount(&server)
+            .await;
+        let client = ApiClient::new(&server.uri(), None).unwrap();
+        let outcome = client.device_token("dc").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::Denied));
+    }
+
+    #[tokio::test]
+    async fn device_token_maps_expired() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/auth/device-poll"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({ "error": "expired_token" })),
+            )
+            .mount(&server)
+            .await;
+        let client = ApiClient::new(&server.uri(), None).unwrap();
+        let outcome = client.device_token("dc").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::Expired));
+    }
+
+    #[tokio::test]
+    async fn device_token_maps_unknown_device_code() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/auth/device-poll"))
+            .respond_with(
+                ResponseTemplate::new(404)
+                    .set_body_json(serde_json::json!({ "error": "unknown_device_code" })),
+            )
+            .mount(&server)
+            .await;
+        let client = ApiClient::new(&server.uri(), None).unwrap();
+        let outcome = client.device_token("dc").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::Unknown));
+    }
+
+    #[tokio::test]
+    async fn device_token_maps_approved() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/cli/v1/auth/device-poll"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "access_token": "ago_eph_xyz" })),
+            )
+            .mount(&server)
+            .await;
+        let client = ApiClient::new(&server.uri(), None).unwrap();
+        let outcome = client.device_token("dc").await.unwrap();
+        match outcome {
+            DevicePollOutcome::Approved { access_token } => assert_eq!(access_token, "ago_eph_xyz"),
+            other => panic!("unexpected: {other:?}"),
+        }
     }
 }

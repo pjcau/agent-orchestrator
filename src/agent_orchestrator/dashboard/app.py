@@ -47,6 +47,7 @@ from .knowledge_routes import knowledge_router
 from .evals_routes import evals_router
 from .personalized_memory_routes import memory_router
 from .cli_routes import cli_router
+from .cli_device_flow import DeviceFlowStore
 from .sse import RunManager
 
 logger = logging.getLogger(__name__)
@@ -275,6 +276,14 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     app.state.personalized_memory = (
         _PM(store_holder[0], memory_filter=_memory_filter) if store_holder[0] is not None else None
     )
+
+    # ── Device-flow OAuth (RFC 8628) for `ago login --device` ──────────
+    # Shared per-app state so concurrent requests on the same worker see
+    # the same pending pairings. Process-local — across multi-worker
+    # deployments the CLI must hit the same worker for create + token
+    # (sticky session or single-worker). See docs/cli.md.
+    app.state.device_flow_store = DeviceFlowStore()
+    app.state.ephemeral_api_keys: dict[str, dict] = {}
 
     # ── Knowledge / RAG (P1) ────────────────────────────────────────────
     # The knowledge subsystem is a single shared (embedder, store) pair
