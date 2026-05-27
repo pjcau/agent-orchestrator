@@ -352,5 +352,29 @@
     "added": "2026-05-24T16:51:11Z",
     "source": "github-star",
     "notes": "Demystify AI agents by building them yourself. Local LLMs, no black boxes, real understanding of function calling, memory, and ReAct patterns. | Language: JavaScript | Topics: ai-agents, educational, function-calling, llm, llm-agent"
+  },
+  {
+    "url": "https://github.com/microsoft/Webwright",
+    "added": "2026-05-26T17:26:22Z",
+    "source": "github-star",
+    "notes": "A simple SWE style browser agent framework that achieves SOTA results on long horizon web tasks.  | Language: Python"
+  },
+  {
+    "url": "https://github.com/TamimEhsan/AlgorithmVisualizer",
+    "added": "2026-05-26T11:35:25Z",
+    "source": "github-star",
+    "notes": "A better visualization of different algorithms made with React | Language: JavaScript | Topics: algorithm, algorithm-visualization, algorithm-visualizer, algorithms, binary-search"
+  },
+  {
+    "url": "https://github.com/0xNyk/council-of-high-intelligence",
+    "added": "2026-05-26T11:23:08Z",
+    "source": "github-star",
+    "notes": "18 AI personas deliberate your hardest decisions across multiple LLM providers. Aristotle, Feynman, Kahneman, Torvalds & more — structured multi-round deliberation with genuine model diversity. One co | Language: Shell | Topics: ai-agents, claude, claude-code, decision-making, deliberation"
+  },
+  {
+    "url": "https://github.com/iii-hq/iii",
+    "added": "2026-05-26T11:17:26Z",
+    "source": "github-star",
+    "notes": "Effortlessly compose, extend, and observe every service in real-time for the first time ever. | Language: Rust | Topics: agents, ai, api, backend, developer-tools"
   }
 ]
