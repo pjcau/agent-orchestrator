@@ -44,6 +44,12 @@ pub enum Command {
     /// config), opens a conversation, then loops reading user input and
     /// streaming responses. Slash commands: `:help` to list.
     Chat(ChatArgs),
+    /// Manage prompt caching (Anthropic provider in v0.4.1+).
+    ///
+    /// Subcommands: `enable` / `disable` toggle the per-turn cache hint;
+    /// `purge` resets the conversation thread so the next request rebuilds
+    /// the cache; `status` shows the current state.
+    Cache(CacheArgs),
     /// Print a shell completion script for `ago`.
     ///
     /// Pipe the output to your shell's completion path, e.g.
@@ -57,6 +63,25 @@ pub struct CompletionsArgs {
     /// Target shell (`bash`, `zsh`, `fish`, `powershell`, `elvish`).
     #[arg(value_enum)]
     pub shell: clap_complete::Shell,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct CacheArgs {
+    #[command(subcommand)]
+    pub action: CacheAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CacheAction {
+    /// Turn the per-turn cache hint on (default state).
+    Enable,
+    /// Turn the per-turn cache hint off — every turn sends fresh context.
+    Disable,
+    /// Drop the current conversation thread; provider cache (e.g. Anthropic
+    /// prompt cache, 5-min TTL) expires naturally for the old prefix.
+    Purge,
+    /// Show whether caching is enabled + the active conversation id (if any).
+    Status,
 }
 
 #[derive(Debug, clap::Args)]

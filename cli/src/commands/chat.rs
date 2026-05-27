@@ -203,6 +203,7 @@ fn handle_slash(
                  \x20 :provider <type>      switch provider (anthropic / openai / openrouter / ollama / ...)\n\
                  \x20 :max-steps <N>        cap agent steps per turn (agent mode only)\n\
                  \x20 :context              show @file / @dir context limits\n\
+                 \x20 :cache <on|off|purge|status>  manage prompt caching (v0.4.1 wires server)\n\
                  \x20 :reset                start a new conversation thread\n\
                  \x20 :clear                alias of :reset\n\
                  \x20 :info                 show current settings\n\
@@ -222,6 +223,42 @@ fn handle_slash(
                 settings.max_steps,
                 conversation_id
             );
+            SlashOutcome::Continue
+        }
+        "cache" => {
+            // Live-toggle the cache hint without leaving chat. Persisted to
+            // the user config so it survives the session.
+            let cur = rt.config.cache_is_enabled();
+            match arg {
+                "on" | "enable" | "true" => {
+                    let mut cfg = rt.config.clone();
+                    if cfg.set("cache_enabled", "true").is_ok() {
+                        let _ = cfg.save(&rt.config_path);
+                    }
+                    println!("✓ cache = on");
+                }
+                "off" | "disable" | "false" => {
+                    let mut cfg = rt.config.clone();
+                    if cfg.set("cache_enabled", "false").is_ok() {
+                        let _ = cfg.save(&rt.config_path);
+                    }
+                    println!("✓ cache = off");
+                }
+                "purge" => {
+                    // Equivalent to :reset for the purposes of cache TTL —
+                    // the provider sees a fresh prefix on the next turn.
+                    *conversation_id = uuid::Uuid::new_v4().to_string();
+                    println!("✓ cache purged — new conversation_id = {conversation_id}");
+                    return SlashOutcome::Reset;
+                }
+                "status" | "" => {
+                    println!("cache: {} (config: {})", cur, rt.config_path.display());
+                    println!("note: server-side cache_control insertion lands in v0.4.1");
+                }
+                other => {
+                    eprintln!("usage: :cache <on|off|purge|status>  (got {other})");
+                }
+            }
             SlashOutcome::Continue
         }
         "context" | "ctx" => {

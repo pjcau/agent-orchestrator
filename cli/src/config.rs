@@ -19,6 +19,13 @@ pub struct Config {
     /// Optional default agent for `ago run` (used by future phases).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_agent: Option<String>,
+
+    /// When true, the CLI hints prompt-caching to the server on every
+    /// turn that includes `@file` / `@dir` refs. Server-side wiring
+    /// (Anthropic cache_control markers) lands in v0.4.1; v0.4.0 already
+    /// surfaces the toggle so users can opt-in early.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_enabled: Option<bool>,
 }
 
 impl Config {
@@ -63,6 +70,19 @@ impl Config {
                 self.default_agent = Some(value.to_string());
                 Ok(())
             }
+            "cache_enabled" => {
+                let v = match value.to_lowercase().as_str() {
+                    "true" | "on" | "yes" | "1" => true,
+                    "false" | "off" | "no" | "0" => false,
+                    _ => {
+                        return Err(AgoError::Config(format!(
+                            "cache_enabled must be true/false (got {value:?})"
+                        )));
+                    }
+                };
+                self.cache_enabled = Some(v);
+                Ok(())
+            }
             other => Err(AgoError::Config(format!("unknown config key: {other}"))),
         }
     }
@@ -71,8 +91,17 @@ impl Config {
         match key {
             "server" => Ok(self.server.clone().unwrap_or_default()),
             "default_agent" => Ok(self.default_agent.clone().unwrap_or_default()),
+            "cache_enabled" => Ok(self
+                .cache_enabled
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "true".to_string())),
             other => Err(AgoError::Config(format!("unknown config key: {other}"))),
         }
+    }
+
+    /// Resolved value with default. Cache is enabled by default.
+    pub fn cache_is_enabled(&self) -> bool {
+        self.cache_enabled.unwrap_or(true)
     }
 }
 
@@ -183,6 +212,31 @@ mod tests {
         std::fs::write(&path, "server = \"https://x.io\"\nrogue_field = 42\n").unwrap();
         let err = Config::load_or_default(&path).unwrap_err();
         assert!(matches!(err, AgoError::Config(_)));
+    }
+
+    #[test]
+    fn cache_enabled_accepts_boolean_shorthands() {
+        let mut cfg = Config::default();
+        for v in ["true", "on", "yes", "1"] {
+            cfg.set("cache_enabled", v).unwrap();
+            assert!(cfg.cache_is_enabled(), "expected enabled for {v}");
+        }
+        for v in ["false", "off", "no", "0"] {
+            cfg.set("cache_enabled", v).unwrap();
+            assert!(!cfg.cache_is_enabled(), "expected disabled for {v}");
+        }
+    }
+
+    #[test]
+    fn cache_enabled_defaults_to_true_when_unset() {
+        let cfg = Config::default();
+        assert!(cfg.cache_is_enabled());
+    }
+
+    #[test]
+    fn cache_enabled_rejects_garbage() {
+        let mut cfg = Config::default();
+        assert!(cfg.set("cache_enabled", "maybe").is_err());
     }
 
     #[cfg(unix)]
