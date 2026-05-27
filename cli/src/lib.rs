@@ -8,6 +8,7 @@ pub mod client;
 pub mod commands;
 pub mod config;
 pub mod error;
+pub mod project;
 
 use clap::Parser;
 use std::io::IsTerminal;
@@ -61,6 +62,7 @@ pub mod runtime {
     use crate::client::ApiClient;
     use crate::config::Config;
     use crate::error::Result;
+    use crate::project::ProjectPreset;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -68,6 +70,8 @@ pub mod runtime {
         pub config: Config,
         pub config_path: PathBuf,
         pub storage: Arc<dyn TokenStorage>,
+        pub project: Option<ProjectPreset>,
+        pub project_path: Option<PathBuf>,
     }
 
     impl Runtime {
@@ -79,10 +83,19 @@ pub mod runtime {
             let config = Config::load_or_default(&config_path)?;
             let storage: Arc<dyn TokenStorage> =
                 Arc::new(EnvOverrideStorage::new(KeyringStorage::new("ago-cli")));
+            let (project_path, project) = match std::env::current_dir() {
+                Ok(cwd) => match ProjectPreset::discover(&cwd, None)? {
+                    Some((p, preset)) => (Some(p), Some(preset)),
+                    None => (None, None),
+                },
+                Err(_) => (None, None),
+            };
             Ok(Self {
                 config,
                 config_path,
                 storage,
+                project,
+                project_path,
             })
         }
 
@@ -95,13 +108,27 @@ pub mod runtime {
                 config,
                 config_path,
                 storage,
+                project: None,
+                project_path: None,
             }
         }
 
+        pub fn with_project(mut self, preset: ProjectPreset, path: Option<PathBuf>) -> Self {
+            self.project = Some(preset);
+            self.project_path = path;
+            self
+        }
+
+        /// Effective server URL: `.ago.yaml > config.toml`.
+        pub fn effective_server(&self) -> Option<&str> {
+            self.project
+                .as_ref()
+                .and_then(|p| p.server.as_deref())
+                .or(self.config.server.as_deref())
+        }
+
         pub fn server_url(&self) -> Result<&str> {
-            self.config
-                .server
-                .as_deref()
+            self.effective_server()
                 .ok_or(crate::error::AgoError::NoServer)
         }
 

@@ -7,26 +7,52 @@ use std::io::{IsTerminal, Read};
 
 pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     let task = resolve_task(args.task.as_deref())?;
-    let agent = args
+    let preset = rt.project.as_ref();
+
+    // Resolution: CLI flag > .ago.yaml > global config / built-in default.
+    let agent_string = args
         .agent
-        .as_deref()
-        .or(rt.config.default_agent.as_deref())
+        .clone()
+        .or_else(|| preset.and_then(|p| p.agent.clone()))
+        .or_else(|| rt.config.default_agent.clone())
         .ok_or_else(|| {
             AgoError::Config(
-                "no agent specified — pass --agent NAME or set default_agent in config".into(),
+                "no agent specified — pass --agent NAME, set agent in .ago.yaml, or default_agent in config"
+                    .into(),
             )
         })?;
-    let model = args.model.as_deref().ok_or_else(|| {
-        AgoError::Config("no model specified — pass --model ID (e.g. claude-sonnet-4-6)".into())
-    })?;
+    let model_string = args
+        .model
+        .clone()
+        .or_else(|| preset.and_then(|p| p.model.clone()))
+        .ok_or_else(|| {
+            AgoError::Config(
+                "no model specified — pass --model ID or set model in .ago.yaml".into(),
+            )
+        })?;
+    // For provider/max_steps the CLI uses clap defaults. We only fall back to
+    // the preset when the user did NOT explicitly pass the flag — clap does
+    // not natively tell us that, so we treat the clap default as a sentinel.
+    let provider_string = if args.provider == default_provider() {
+        preset
+            .and_then(|p| p.provider.clone())
+            .unwrap_or_else(default_provider)
+    } else {
+        args.provider.clone()
+    };
+    let max_steps = if args.max_steps == default_max_steps() {
+        preset.and_then(|p| p.max_steps).unwrap_or(args.max_steps)
+    } else {
+        args.max_steps
+    };
 
     let client = rt.api_client()?;
     let req = AgentRunRequest {
-        agent,
+        agent: &agent_string,
         task: &task,
-        model,
-        provider: &args.provider,
-        max_steps: args.max_steps,
+        model: &model_string,
+        provider: &provider_string,
+        max_steps,
     };
 
     if args.stream {
@@ -34,6 +60,14 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     } else {
         run_blocking(&client, &req, args.json).await
     }
+}
+
+fn default_provider() -> String {
+    "ollama".to_string()
+}
+
+fn default_max_steps() -> u32 {
+    10
 }
 
 async fn run_blocking(
@@ -401,6 +435,95 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, AgoError::Other(_)));
+    }
+
+    #[tokio::test]
+    async fn run_uses_project_preset_when_flags_omitted() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/agent/run"))
+            .and(body_partial_json(serde_json::json!({
+                "agent": "preset-agent",
+                "model": "preset-model",
+                "provider": "preset-provider",
+                "max_steps": 42
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "success": true,
+                "output": "ok"
+            })))
+            .mount(&server)
+            .await;
+
+        let (mut rt, _d) = rt_with(&server.uri(), None);
+        rt = rt.with_project(
+            crate::project::ProjectPreset {
+                server: None,
+                agent: Some("preset-agent".into()),
+                model: Some("preset-model".into()),
+                provider: Some("preset-provider".into()),
+                max_steps: Some(42),
+            },
+            None,
+        );
+
+        super::run(
+            &rt,
+            RunArgs {
+                task: Some("x".into()),
+                agent: None,
+                model: None,
+                provider: "ollama".into(), // clap default — treated as sentinel
+                max_steps: 10,             // clap default — treated as sentinel
+                json: false,
+                stream: false,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn cli_flag_wins_over_preset() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/agent/run"))
+            .and(body_partial_json(
+                serde_json::json!({ "agent": "explicit", "model": "explicit-model" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "success": true,
+                "output": "ok"
+            })))
+            .mount(&server)
+            .await;
+
+        let (mut rt, _d) = rt_with(&server.uri(), None);
+        rt = rt.with_project(
+            crate::project::ProjectPreset {
+                server: None,
+                agent: Some("preset".into()),
+                model: Some("preset-m".into()),
+                provider: None,
+                max_steps: None,
+            },
+            None,
+        );
+
+        super::run(
+            &rt,
+            RunArgs {
+                task: Some("x".into()),
+                agent: Some("explicit".into()),
+                model: Some("explicit-model".into()),
+                provider: "ollama".into(),
+                max_steps: 10,
+                json: false,
+                stream: false,
+            },
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

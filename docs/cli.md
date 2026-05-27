@@ -94,6 +94,32 @@ PRs touching `cli/**`, and manual dispatch.
 | 3 | `ago jobs list/get/cancel`, `ago logs --follow`, indicatif progress, shell completions | — |
 | 4 | Cross-compile matrix (macOS arm/x64, Linux x64/arm64 musl, Windows), signed releases via cosign + SBOM, Homebrew tap | release v0.1.0 |
 
+## Per-project preset (`.ago.yaml`)
+
+Drop a `.ago.yaml` (or `.ago.yml`) at the root of any project and the CLI will
+pick it up automatically — the file is searched walking up from the current
+working directory.
+
+```yaml
+# .ago.yaml
+server: https://orch.example.com   # optional — overrides ~/.config/ago/config.toml
+agent: backend
+model: claude-sonnet-4-6
+provider: anthropic
+max_steps: 20
+```
+
+Resolution order (highest priority first):
+
+1. The CLI flag (`--agent`, `--model`, `--provider`, `--max-steps`).
+2. `.ago.yaml` walked up from `cwd`.
+3. Global config (`~/.config/ago/config.toml`: `server`, `default_agent`).
+4. Built-in defaults.
+
+The schema rejects unknown keys (`#[serde(deny_unknown_fields)]`) and validates
+the `server` URL the same way `ago config set server` does — typos fail at
+load time instead of being silently ignored.
+
 ## SSE event shape (`/api/cli/v1/run`)
 
 ```

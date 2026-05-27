@@ -278,6 +278,56 @@ async fn run_command_json_mode() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn ago_yaml_preset_is_used_when_flags_omitted() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "agent": "preset-backend",
+            "model": "preset-claude",
+            "provider": "anthropic",
+            "max_steps": 17
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "FROM_PRESET"
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    // Project preset lives in the cwd we pass to the child process.
+    let project_dir = tempdir().unwrap();
+    std::fs::write(
+        project_dir.path().join(".ago.yaml"),
+        "agent: preset-backend\nmodel: preset-claude\nprovider: anthropic\nmax_steps: 17\n",
+    )
+    .unwrap();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .current_dir(project_dir.path())
+        .args(["--config", cfg.to_str().unwrap(), "run", "task from cwd"])
+        .assert()
+        .success()
+        .stdout(contains("FROM_PRESET"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn whoami_rejects_bad_token() {
     let mock = MockServer::start().await;
     Mock::given(method("GET"))
