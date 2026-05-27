@@ -17,7 +17,11 @@ name: cli-release
 on:
   push:
     tags:
-      - "v*"
+      # Tag pattern is namespaced (`ago-v...`) because this repository
+      # already uses `v*` for orchestrator-wide releases. Keeping the
+      # CLI tagging distinct prevents accidental release-job triggers
+      # when the orchestrator is tagged, and vice-versa.
+      - "ago-v*"
   workflow_dispatch:
 
 permissions:
@@ -63,11 +67,11 @@ jobs:
       - name: Compute release name
         shell: bash
         run: |
-          # On tag pushes ref_name is `v0.1.0` (filename-safe).
-          # On branch dry-runs it is `experiment/rust-cli` — the slash
-          # would break tar/zip paths, so we substitute it with a dash.
-          ref="${GITHUB_REF_NAME//\//-}"
-          echo "RELEASE_NAME=ago-${ref}" >> "${GITHUB_ENV}"
+          # The tag pattern is `ago-v...` so ref_name is already a
+          # filename-safe release name (e.g. `ago-v0.1.0`). On manual
+          # dispatch from a branch the ref_name may contain `/` — replace
+          # with `-` so tar/zip paths stay valid.
+          echo "RELEASE_NAME=${GITHUB_REF_NAME//\//-}" >> "${GITHUB_ENV}"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

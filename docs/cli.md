@@ -50,8 +50,10 @@ access — no separate identity store.
 
 ### Prebuilt binaries
 
-`v0.1.0` is the first tagged release. Pick the archive for your platform
-from [the GitHub Release](https://github.com/pjcau/agent-orchestrator/releases/tag/v0.1.0),
+`ago-v0.1.0` is the first tagged release. CLI release tags are
+namespaced (`ago-v...`) so they do not collide with the orchestrator's
+own version tags. Pick the archive for your platform from
+[the GitHub Release](https://github.com/pjcau/agent-orchestrator/releases/tag/ago-v0.1.0),
 extract it, and put `ago` on `$PATH`:
 
 | Target | Archive |

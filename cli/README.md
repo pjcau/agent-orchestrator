@@ -18,11 +18,11 @@ Available targets:
 
 | Target | Archive |
 |---|---|
-| macOS arm64 (M-series) | `ago-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
-| macOS x86_64 (Intel) | `ago-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
-| Linux x86_64 (static musl) | `ago-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz` |
-| Linux arm64 (static musl) | `ago-vX.Y.Z-aarch64-unknown-linux-musl.tar.gz` |
-| Windows x86_64 | `ago-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+| macOS arm64 (M-series) | `ago-vX.Y.Z (e.g. ago-v0.1.0)-aarch64-apple-darwin.tar.gz` |
+| macOS x86_64 (Intel) | `ago-vX.Y.Z (e.g. ago-v0.1.0)-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 (static musl) | `ago-vX.Y.Z (e.g. ago-v0.1.0)-x86_64-unknown-linux-musl.tar.gz` |
+| Linux arm64 (static musl) | `ago-vX.Y.Z (e.g. ago-v0.1.0)-aarch64-unknown-linux-musl.tar.gz` |
+| Windows x86_64 | `ago-vX.Y.Z (e.g. ago-v0.1.0)-x86_64-pc-windows-msvc.zip` |
 
 Each archive ships an `ago.sha256` sidecar next to the binary, and a
 combined `SHA256SUMS` is published next to the release assets — check
