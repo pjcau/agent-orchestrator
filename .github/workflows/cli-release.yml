@@ -64,6 +64,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute release name
+        shell: bash
+        run: |
+          # On tag pushes ref_name is `v0.1.0` (filename-safe).
+          # On branch dry-runs it is `experiment/rust-cli` — the slash
+          # would break tar/zip paths, so we substitute it with a dash.
+          ref="${GITHUB_REF_NAME//\//-}"
+          echo "RELEASE_NAME=ago-${ref}" >> "${GITHUB_ENV}"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -97,13 +106,13 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          name="ago-${{ github.ref_name }}-${{ matrix.target }}"
+          name="${RELEASE_NAME}-${{ matrix.target }}"
           staging="${RUNNER_TEMP}/${name}"
           mkdir -p "${staging}"
           cp "cli/target/${{ matrix.target }}/release/ago" "${staging}/ago"
           cp cli/README.md docs/cli.md "${staging}/"
           # SHA256 of the binary itself, computed before tar-ing.
-          sha256sum "${staging}/ago" > "${staging}/ago.sha256"
+          ( cd "${staging}" && sha256sum ago > ago.sha256 )
           tar -C "${RUNNER_TEMP}" -czf "${name}.tar.gz" "${name}"
           echo "ARTIFACT=${name}.tar.gz" >> "${GITHUB_ENV}"
           echo "ARTIFACT_NAME=${name}" >> "${GITHUB_ENV}"
@@ -112,7 +121,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $name = "ago-${{ github.ref_name }}-${{ matrix.target }}"
+          $name = "$env:RELEASE_NAME-${{ matrix.target }}"
           $staging = Join-Path $env:RUNNER_TEMP $name
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
           Copy-Item "cli/target/${{ matrix.target }}/release/ago.exe" -Destination "$staging/ago.exe"
