@@ -46,6 +46,31 @@ Authentication is delegated to the existing `APIKeyMiddleware`, so the CLI
 re-uses the same API keys configured for browser/programmatic dashboard
 access — no separate identity store.
 
+## Install
+
+### Prebuilt binaries
+
+`v0.1.0` is the first tagged release. Pick the archive for your platform
+from [the GitHub Release](https://github.com/pjcau/agent-orchestrator/releases/tag/v0.1.0),
+extract it, and put `ago` on `$PATH`:
+
+| Target | Archive |
+|---|---|
+| macOS arm64 (M-series) | `ago-v0.1.0-aarch64-apple-darwin.tar.gz` |
+| macOS x86_64 (Intel) | `ago-v0.1.0-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 (static musl) | `ago-v0.1.0-x86_64-unknown-linux-musl.tar.gz` |
+| Linux arm64 (static musl) | `ago-v0.1.0-aarch64-unknown-linux-musl.tar.gz` |
+| Windows x86_64 | `ago-v0.1.0-x86_64-pc-windows-msvc.zip` |
+
+Verify against `SHA256SUMS` (or the per-archive `ago.sha256` inside
+each tarball) before installing.
+
+### From source
+
+```bash
+cd cli && cargo install --path . --locked
+```
+
 ## Shipped surface
 
 | Command | Description |

@@ -18,15 +18,6 @@ on:
   push:
     tags:
       - "v*"
-    # Pre-tag dry-run: exercise the matrix on the release branch BEFORE
-    # we cut a real tag. The `release` job below is gated on a `v*` ref,
-    # so dry-runs build the artifacts but do NOT publish a Release.
-    # Remove this branch entry once v0.1.0 ships.
-    branches:
-      - "experiment/rust-cli"
-    paths:
-      - "cli/**"
-      - ".github/workflows/cli-release.yml"
   workflow_dispatch:
 
 permissions:
