@@ -131,6 +131,98 @@ async fn whoami_against_mock_server() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn run_command_renders_output() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .and(header("X-API-Key", "k"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "ALL_GOOD",
+            "elapsed_s": 0.5
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "test-model",
+            "do the thing",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("ALL_GOOD"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_command_json_mode() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "X"
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "m",
+            "--json",
+            "task",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("\"success\""))
+        .stdout(contains("\"output\""));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn whoami_rejects_bad_token() {
     let mock = MockServer::start().await;
     Mock::given(method("GET"))

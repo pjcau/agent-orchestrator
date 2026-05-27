@@ -46,7 +46,7 @@ Authentication is delegated to the existing `APIKeyMiddleware`, so the CLI
 re-uses the same API keys configured for browser/programmatic dashboard
 access — no separate identity store.
 
-## Phase 1 surface
+## Shipped surface
 
 | Command | Description |
 |---|---|
@@ -54,6 +54,7 @@ access — no separate identity store.
 | `ago login [--server URL] [--key-env VAR] [--with-stdin]` | Persist an API key in the OS keychain after validating it against `/api/cli/v1/whoami`. |
 | `ago logout [--server URL]` | Remove the stored token for the active or given server. |
 | `ago whoami` | Print the authenticated identity from the server. |
+| `ago run "<task>" --agent NAME --model ID [--provider TYPE] [--max-steps N] [--json]` | Execute a single-agent task. Reads task from stdin if omitted. Phase 2a is blocking JSON (no token streaming yet — that lands in Phase 2b). |
 
 ## Security model
 
@@ -93,12 +94,15 @@ PRs touching `cli/**`, and manual dispatch.
 | 3 | `ago jobs list/get/cancel`, `ago logs --follow`, indicatif progress, shell completions | — |
 | 4 | Cross-compile matrix (macOS arm/x64, Linux x64/arm64 musl, Windows), signed releases via cosign + SBOM, Homebrew tap | release v0.1.0 |
 
-## Limits acknowledged in v0.1
+## Limits acknowledged in current revision
 
 - Login uses an **API key paste** instead of the full device-flow promised in
-  the design discussion. Device-flow is deferred to Phase 2 to keep Phase 1
-  shippable. The token validation step still proves the key works before
-  storing it, so the security guarantee — "no token persisted unless the
-  server accepts it" — already holds.
-- No `--local` fallback (subprocess Python `client.py`) — punted to Phase 2.
+  the design discussion. Device-flow is deferred to Phase 2b. The token
+  validation step still proves the key works before storing it, so the
+  security guarantee — "no token persisted unless the server accepts it" —
+  already holds.
+- `ago run` is currently **blocking** against the existing `/api/agent/run`
+  endpoint. Token-level SSE streaming arrives in Phase 2b once a dedicated
+  `/api/cli/v1/run` SSE endpoint lands.
+- No `--local` fallback (subprocess Python `client.py`) yet.
 - No update channel; rely on `brew upgrade` / `cargo install --force`.

@@ -34,6 +34,8 @@ pub enum Command {
     Whoami,
     /// Inspect or modify the CLI configuration.
     Config(ConfigArgs),
+    /// Run a task against an agent on the active server.
+    Run(RunArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -83,4 +85,32 @@ pub enum ConfigAction {
     },
     /// Print the path to the active config file.
     Path,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct RunArgs {
+    /// The task description to send to the agent. Reads from stdin when omitted.
+    #[arg(value_name = "TASK")]
+    pub task: Option<String>,
+
+    /// Agent name to run against (e.g. "backend"). Falls back to `default_agent`
+    /// from the config, then errors if neither is set.
+    #[arg(long, value_name = "NAME")]
+    pub agent: Option<String>,
+
+    /// Model identifier (provider-specific, e.g. "claude-sonnet-4-6").
+    #[arg(long, value_name = "ID")]
+    pub model: Option<String>,
+
+    /// Provider type. One of: anthropic, openai, openrouter, google, ollama.
+    #[arg(long, value_name = "TYPE", default_value = "ollama")]
+    pub provider: String,
+
+    /// Maximum number of agent steps before the server aborts the run.
+    #[arg(long, value_name = "N", default_value_t = 10)]
+    pub max_steps: u32,
+
+    /// Emit machine-readable JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
 }

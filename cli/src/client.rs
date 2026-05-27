@@ -1,10 +1,11 @@
 use crate::error::{AgoError, Result};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use secrecy::{ExposeSecret, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+const RUN_TIMEOUT: Duration = Duration::from_secs(600);
 const USER_AGENT_VALUE: &str = concat!("ago-cli/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Deserialize)]
@@ -14,6 +15,49 @@ pub struct WhoamiResponse {
     pub role: Option<String>,
     pub provider: Option<String>,
     pub server_version: Option<String>,
+}
+
+/// Request payload for `POST /api/agent/run`.
+#[derive(Debug, Serialize)]
+pub struct AgentRunRequest<'a> {
+    pub agent: &'a str,
+    pub task: &'a str,
+    pub model: &'a str,
+    pub provider: &'a str,
+    pub max_steps: u32,
+}
+
+/// Response from `POST /api/agent/run`.
+///
+/// The dashboard returns a free-form dict; we hold the full JSON and expose
+/// helpers for the fields the CLI cares about in human-render mode.
+#[derive(Debug, Clone)]
+pub struct AgentRunResponse {
+    pub raw: serde_json::Value,
+}
+
+impl AgentRunResponse {
+    pub fn success(&self) -> Option<bool> {
+        self.raw.get("success")?.as_bool()
+    }
+    pub fn output(&self) -> Option<&str> {
+        self.raw.get("output")?.as_str()
+    }
+    pub fn error(&self) -> Option<&str> {
+        self.raw.get("error")?.as_str()
+    }
+    pub fn elapsed_s(&self) -> Option<f64> {
+        self.raw.get("elapsed_s")?.as_f64()
+    }
+    pub fn total_input_tokens(&self) -> Option<u64> {
+        self.raw.get("total_input_tokens")?.as_u64()
+    }
+    pub fn total_output_tokens(&self) -> Option<u64> {
+        self.raw.get("total_output_tokens")?.as_u64()
+    }
+    pub fn total_cost_usd(&self) -> Option<f64> {
+        self.raw.get("total_cost_usd")?.as_f64()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +93,37 @@ impl ApiClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base, path)
+    }
+
+    /// POST /api/agent/run — blocking single-agent task execution.
+    ///
+    /// Phase 2a uses the existing dashboard endpoint as-is. A dedicated
+    /// streaming endpoint at `/api/cli/v1/run` lands in Phase 2b.
+    pub async fn agent_run(&self, req: &AgentRunRequest<'_>) -> Result<AgentRunResponse> {
+        let resp = self
+            .http
+            .post(self.url("/api/agent/run"))
+            .timeout(RUN_TIMEOUT)
+            .json(req)
+            .send()
+            .await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        let body_text = resp.text().await.map_err(AgoError::from)?;
+        if !status.is_success() {
+            return Err(AgoError::ServerError {
+                status: status.as_u16(),
+                message: body_text,
+            });
+        }
+        let raw: serde_json::Value =
+            serde_json::from_str(&body_text).map_err(|e| AgoError::ServerError {
+                status: status.as_u16(),
+                message: format!("malformed JSON response: {e}"),
+            })?;
+        Ok(AgentRunResponse { raw })
     }
 
     /// GET /api/cli/v1/whoami — used by `ago login` to validate and by `ago whoami`.

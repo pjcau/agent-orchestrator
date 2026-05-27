@@ -5,6 +5,7 @@ use crate::runtime::Runtime;
 pub mod config;
 pub mod login;
 pub mod logout;
+pub mod run;
 pub mod whoami;
 
 pub async fn dispatch(rt: &Runtime, cmd: Command) -> Result<()> {
@@ -13,5 +14,6 @@ pub async fn dispatch(rt: &Runtime, cmd: Command) -> Result<()> {
         Command::Logout(args) => logout::run(rt, args),
         Command::Whoami => whoami::run(rt).await,
         Command::Config(args) => config::run(rt, args),
+        Command::Run(args) => run::run(rt, args).await,
     }
 }
