@@ -20,6 +20,47 @@ pub struct WhoamiResponse {
     pub server_version: Option<String>,
 }
 
+/// Request payload for `POST /api/prompt` — direct LLM completion, no agent loop.
+#[derive(Debug, Serialize)]
+pub struct PromptRequest<'a> {
+    pub prompt: &'a str,
+    pub model: &'a str,
+    pub provider: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<&'a str>,
+}
+
+/// Loose response wrapper for `POST /api/prompt`. Keeps the full JSON so
+/// future server fields (RAG metadata, citations) flow through unchanged.
+#[derive(Debug, Clone)]
+pub struct PromptResponse {
+    pub raw: serde_json::Value,
+}
+
+impl PromptResponse {
+    pub fn success(&self) -> Option<bool> {
+        self.raw.get("success")?.as_bool()
+    }
+    pub fn output(&self) -> Option<&str> {
+        self.raw.get("output")?.as_str()
+    }
+    pub fn error(&self) -> Option<&str> {
+        self.raw.get("error")?.as_str()
+    }
+    pub fn elapsed_s(&self) -> Option<f64> {
+        self.raw.get("elapsed_s")?.as_f64()
+    }
+    pub fn input_tokens(&self) -> Option<u64> {
+        self.raw.get("usage")?.get("input_tokens")?.as_u64()
+    }
+    pub fn output_tokens(&self) -> Option<u64> {
+        self.raw.get("usage")?.get("output_tokens")?.as_u64()
+    }
+    pub fn cost_usd(&self) -> Option<f64> {
+        self.raw.get("usage")?.get("cost_usd")?.as_f64()
+    }
+}
+
 /// Request payload for `POST /api/agent/run` and `POST /api/cli/v1/run`.
 #[derive(Debug, Serialize)]
 pub struct AgentRunRequest<'a> {
@@ -267,6 +308,38 @@ impl ApiClient {
                 });
             }
         })
+    }
+
+    /// POST /api/prompt — direct LLM completion (no agent loop, no tools).
+    ///
+    /// Suitable for chat-style models. The response shape is whatever
+    /// `dashboard.agent_runtime_router.prompt` returns: success / output /
+    /// usage{input_tokens, output_tokens, cost_usd} / elapsed_s.
+    pub async fn prompt(&self, req: &PromptRequest<'_>) -> Result<PromptResponse> {
+        let resp = self
+            .http
+            .post(self.url("/api/prompt"))
+            .timeout(RUN_TIMEOUT)
+            .json(req)
+            .send()
+            .await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        let body_text = resp.text().await.map_err(AgoError::from)?;
+        if !status.is_success() {
+            return Err(AgoError::ServerError {
+                status: status.as_u16(),
+                message: body_text,
+            });
+        }
+        let raw: serde_json::Value =
+            serde_json::from_str(&body_text).map_err(|e| AgoError::ServerError {
+                status: status.as_u16(),
+                message: format!("malformed JSON response: {e}"),
+            })?;
+        Ok(PromptResponse { raw })
     }
 
     /// GET /api/jobs/list — return all recorded job sessions.

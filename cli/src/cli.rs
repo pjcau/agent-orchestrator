@@ -84,9 +84,33 @@ pub enum JobsAction {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ChatMode {
+    /// Run through the agent loop (tools, multi-step) via `/api/cli/v1/run`.
+    Agent,
+    /// Direct LLM completion — no tools, no step counter — via `/api/prompt`.
+    /// Better suited to chat-only models that should NOT be using shell_exec.
+    Prompt,
+}
+
+impl std::fmt::Display for ChatMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ChatMode::Agent => "agent",
+            ChatMode::Prompt => "prompt",
+        })
+    }
+}
+
 #[derive(Debug, clap::Args)]
 pub struct ChatArgs {
+    /// Conversation style: `agent` (default) drives the tool-using agent loop;
+    /// `prompt` calls the LLM directly without tools.
+    #[arg(long, value_enum, default_value_t = ChatMode::Agent)]
+    pub mode: ChatMode,
+
     /// Agent name. Falls back to `.ago.yaml` / `default_agent` if omitted.
+    /// Ignored in `--mode prompt`.
     #[arg(long, value_name = "NAME")]
     pub agent: Option<String>,
 
@@ -98,7 +122,7 @@ pub struct ChatArgs {
     #[arg(long, value_name = "TYPE")]
     pub provider: Option<String>,
 
-    /// Maximum agent steps per turn (server-side cap).
+    /// Maximum agent steps per turn (server-side cap). Ignored in prompt mode.
     #[arg(long, value_name = "N", default_value_t = 10)]
     pub max_steps: u32,
 

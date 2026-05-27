@@ -86,7 +86,7 @@ cd cli && cargo install --path . --locked
 | `ago jobs list [--limit N] [--json]` | Show recent server sessions with record counts and the first prompt. |
 | `ago jobs show <session_id> [--json]` | Print the records of a single session (job log). |
 | `ago jobs cancel <job_id>` | Request cancellation of a running team job. |
-| `ago chat [--agent N] [--model ID] [--provider T] [--max-steps N] [--no-progress]` | Interactive REPL. Resolves settings once at startup, streams responses, keeps server-side conversation context across turns. Slash commands: `:help`, `:info`, `:agent`, `:model`, `:provider`, `:max-steps`, `:reset`/`:clear`, `:quit`/`:exit`. |
+| `ago chat [--mode agent\|prompt] [--agent N] [--model ID] [--provider T] [--max-steps N] [--no-progress]` | Interactive REPL. `--mode agent` (default) routes through the tool-using agent loop (`/api/cli/v1/run`); `--mode prompt` does a direct LLM completion (`/api/prompt`) — better for chat-style models. Slash commands: `:mode`, `:agent`, `:model`, `:provider`, `:max-steps`, `:reset`/`:clear`, `:info`, `:help`, `:quit`/`:exit`. |
 | `ago completions <shell>` | Emit a shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`). |
 
 ## Security model

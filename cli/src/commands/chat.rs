@@ -8,8 +8,8 @@
 //! `:max-steps`. `:reset` mints a new conversation_id, `:clear` is an
 //! alias. `:info`/`:help`/`:quit` round out the v0.2 surface.
 
-use crate::cli::ChatArgs;
-use crate::client::{AgentRunRequest, AgentRunResponse, ApiClient, RunEvent};
+use crate::cli::{ChatArgs, ChatMode};
+use crate::client::{AgentRunRequest, AgentRunResponse, ApiClient, PromptRequest, RunEvent};
 use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
 use futures_util::StreamExt;
@@ -120,6 +120,7 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
 
 #[derive(Debug, Clone)]
 struct ChatSettings {
+    mode: ChatMode,
     agent: String,
     model: String,
     provider: String,
@@ -129,17 +130,15 @@ struct ChatSettings {
 impl ChatSettings {
     fn resolve(rt: &Runtime, args: &ChatArgs) -> Result<Self> {
         let preset = rt.project.as_ref();
+        // Agent is mandatory in `agent` mode, optional in `prompt` mode.
+        // We still resolve a default so `:mode agent` later works without
+        // forcing the user to restart.
         let agent = args
             .agent
             .clone()
             .or_else(|| preset.and_then(|p| p.agent.clone()))
             .or_else(|| rt.config.default_agent.clone())
-            .ok_or_else(|| {
-                AgoError::Config(
-                    "no agent — pass --agent, set agent in .ago.yaml, or default_agent in config"
-                        .into(),
-                )
-            })?;
+            .unwrap_or_else(|| "backend".to_string());
         let model = args
             .model
             .clone()
@@ -154,6 +153,7 @@ impl ChatSettings {
             .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
         let max_steps = preset.and_then(|p| p.max_steps).unwrap_or(args.max_steps);
         Ok(Self {
+            mode: args.mode,
             agent,
             model,
             provider,
@@ -181,10 +181,11 @@ fn handle_slash(
         "" | "help" => {
             println!(
                 "Slash commands:\n\
-                 \x20 :agent <name>         switch agent\n\
+                 \x20 :mode <agent|prompt>  switch routing (agent loop vs direct LLM)\n\
+                 \x20 :agent <name>         switch agent (agent mode only)\n\
                  \x20 :model <id>           switch model\n\
                  \x20 :provider <type>      switch provider (anthropic / openai / openrouter / ollama / ...)\n\
-                 \x20 :max-steps <N>        cap agent steps per turn\n\
+                 \x20 :max-steps <N>        cap agent steps per turn (agent mode only)\n\
                  \x20 :reset                start a new conversation thread\n\
                  \x20 :clear                alias of :reset\n\
                  \x20 :info                 show current settings\n\
@@ -196,13 +197,33 @@ fn handle_slash(
         "quit" | "exit" => SlashOutcome::Quit,
         "info" => {
             println!(
-                "agent: {}\nmodel: {}\nprovider: {}\nmax_steps: {}\nconversation_id: {}",
+                "mode: {}\nagent: {}\nmodel: {}\nprovider: {}\nmax_steps: {}\nconversation_id: {}",
+                settings.mode,
                 settings.agent,
                 settings.model,
                 settings.provider,
                 settings.max_steps,
                 conversation_id
             );
+            SlashOutcome::Continue
+        }
+        "mode" => {
+            match arg {
+                "agent" => {
+                    settings.mode = ChatMode::Agent;
+                    println!("✓ mode = agent (tool-using agent loop)");
+                }
+                "prompt" => {
+                    settings.mode = ChatMode::Prompt;
+                    println!("✓ mode = prompt (direct LLM, no tools)");
+                }
+                "" => {
+                    eprintln!("usage: :mode <agent|prompt>");
+                }
+                other => {
+                    eprintln!("unknown mode: {other} (try agent or prompt)");
+                }
+            }
             SlashOutcome::Continue
         }
         "agent" => {
@@ -267,6 +288,77 @@ struct TurnStats {
 }
 
 async fn send_turn(
+    client: &ApiClient,
+    settings: &ChatSettings,
+    conversation_id: &str,
+    task: &str,
+    no_progress: bool,
+) -> Result<TurnStats> {
+    match settings.mode {
+        ChatMode::Agent => {
+            send_turn_agent(client, settings, conversation_id, task, no_progress).await
+        }
+        ChatMode::Prompt => {
+            send_turn_prompt(client, settings, conversation_id, task, no_progress).await
+        }
+    }
+}
+
+async fn send_turn_prompt(
+    client: &ApiClient,
+    settings: &ChatSettings,
+    conversation_id: &str,
+    prompt: &str,
+    no_progress: bool,
+) -> Result<TurnStats> {
+    let show_progress = !no_progress && std::io::stderr().is_terminal();
+    let spinner = show_progress.then(|| {
+        let pb = make_spinner();
+        pb.set_message(format!(
+            "[prompt] {} via {}",
+            settings.model, settings.provider
+        ));
+        pb
+    });
+    let req = PromptRequest {
+        prompt,
+        model: &settings.model,
+        provider: &settings.provider,
+        conversation_id: Some(conversation_id),
+    };
+    let resp = client.prompt(&req).await;
+    if let Some(pb) = spinner {
+        pb.finish_and_clear();
+    }
+    let resp = resp?;
+    if let Some(output) = resp.output() {
+        println!("{output}");
+    }
+    if let Some(err) = resp.error() {
+        eprintln!("error: {err}");
+    }
+    let stats = TurnStats {
+        input_tokens: resp.input_tokens().unwrap_or(0),
+        output_tokens: resp.output_tokens().unwrap_or(0),
+        cost_usd: resp.cost_usd().unwrap_or(0.0),
+    };
+    if let Some(elapsed) = resp.elapsed_s() {
+        let mut footer = format!("— {elapsed:.2}s");
+        if stats.input_tokens + stats.output_tokens > 0 {
+            footer.push_str(&format!(
+                "  {}↑/{}↓ tokens",
+                stats.input_tokens, stats.output_tokens
+            ));
+        }
+        if stats.cost_usd > 0.0 {
+            footer.push_str(&format!("  ${:.4}", stats.cost_usd));
+        }
+        eprintln!("{footer}");
+    }
+    Ok(stats)
+}
+
+async fn send_turn_agent(
     client: &ApiClient,
     settings: &ChatSettings,
     conversation_id: &str,
@@ -367,8 +459,8 @@ fn print_banner(rt: &Runtime, s: &ChatSettings, conv: &str) -> Result<()> {
     println!("ago {} — chat mode", env!("CARGO_PKG_VERSION"));
     println!("connected to {server}");
     println!(
-        "agent: {} · model: {} · provider: {} · max_steps: {}",
-        s.agent, s.model, s.provider, s.max_steps
+        "mode: {} · agent: {} · model: {} · provider: {} · max_steps: {}",
+        s.mode, s.agent, s.model, s.provider, s.max_steps
     );
     println!("conversation: {} · type :help for slash commands", conv);
     println!();
@@ -398,11 +490,32 @@ mod tests {
 
     fn cs() -> ChatSettings {
         ChatSettings {
+            mode: ChatMode::Agent,
             agent: "a".into(),
             model: "m".into(),
             provider: "ollama".into(),
             max_steps: 10,
         }
+    }
+
+    #[test]
+    fn slash_mode_switch() {
+        let mut s = cs();
+        let mut c = "abc".to_string();
+        handle_slash("mode prompt", &mut s, &mut c);
+        assert_eq!(s.mode, ChatMode::Prompt);
+        handle_slash("mode agent", &mut s, &mut c);
+        assert_eq!(s.mode, ChatMode::Agent);
+    }
+
+    #[test]
+    fn slash_mode_unknown_keeps_current() {
+        let mut s = cs();
+        let mut c = "abc".to_string();
+        handle_slash("mode bogus", &mut s, &mut c);
+        assert_eq!(s.mode, ChatMode::Agent);
+        handle_slash("mode", &mut s, &mut c);
+        assert_eq!(s.mode, ChatMode::Agent);
     }
 
     #[test]
