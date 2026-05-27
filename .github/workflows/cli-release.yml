@@ -140,7 +140,11 @@ jobs:
 
   release:
     name: github release
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Match the trigger above (`refs/tags/ago-v*`) — the previous value
+    # was `refs/tags/v*` and silently skipped the release job when the
+    # CLI tag was namespaced. ago-v0.1.0 had to be published manually
+    # from the artifacts as a result.
+    if: startsWith(github.ref, 'refs/tags/ago-v')
     needs: build
     runs-on: ubuntu-latest
     steps:
