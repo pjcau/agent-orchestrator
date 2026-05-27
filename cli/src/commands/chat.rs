@@ -81,8 +81,8 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         // ---- @file / @dir expansion (client-side, before sending) ----
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let ctx_cfg = ContextConfig::from_runtime(rt);
-        let (expanded, report) = match expand_refs(trimmed, &cwd, &ctx_cfg) {
-            Ok(pair) => pair,
+        let (user_prompt, cache_context, report) = match expand_refs(trimmed, &cwd, &ctx_cfg) {
+            Ok(triple) => triple,
             Err(e) => {
                 eprintln!("\x1b[31merror:\x1b[0m @ref expansion failed: {e}");
                 continue;
@@ -91,13 +91,25 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         if !report.resolved.is_empty() || !report.skipped.is_empty() {
             print_expand_report(&report);
         }
+        // Only send cache_context to the server when caching is enabled.
+        // Otherwise concat into the prompt as v0.3.x did — server has no
+        // way to discount the tokens but everything still works.
+        let (final_prompt, server_cache) =
+            if rt.config.cache_is_enabled() && !cache_context.is_empty() {
+                (user_prompt, Some(cache_context))
+            } else if !cache_context.is_empty() {
+                (format!("{user_prompt}\n\n---\n{cache_context}"), None)
+            } else {
+                (user_prompt, None)
+            };
 
         // ---- forward to server ----
         match send_turn(
             &client,
             &settings,
             &conversation_id,
-            &expanded,
+            &final_prompt,
+            server_cache.as_deref(),
             args.no_progress,
         )
         .await
@@ -359,14 +371,31 @@ async fn send_turn(
     settings: &ChatSettings,
     conversation_id: &str,
     task: &str,
+    cache_context: Option<&str>,
     no_progress: bool,
 ) -> Result<TurnStats> {
     match settings.mode {
         ChatMode::Agent => {
-            send_turn_agent(client, settings, conversation_id, task, no_progress).await
+            send_turn_agent(
+                client,
+                settings,
+                conversation_id,
+                task,
+                cache_context,
+                no_progress,
+            )
+            .await
         }
         ChatMode::Prompt => {
-            send_turn_prompt(client, settings, conversation_id, task, no_progress).await
+            send_turn_prompt(
+                client,
+                settings,
+                conversation_id,
+                task,
+                cache_context,
+                no_progress,
+            )
+            .await
         }
     }
 }
@@ -376,6 +405,7 @@ async fn send_turn_prompt(
     settings: &ChatSettings,
     conversation_id: &str,
     prompt: &str,
+    cache_context: Option<&str>,
     no_progress: bool,
 ) -> Result<TurnStats> {
     let show_progress = !no_progress && std::io::stderr().is_terminal();
@@ -392,6 +422,7 @@ async fn send_turn_prompt(
         model: &settings.model,
         provider: &settings.provider,
         conversation_id: Some(conversation_id),
+        cache_context,
     };
     let resp = client.prompt(&req).await;
     if let Some(pb) = spinner {
@@ -430,6 +461,7 @@ async fn send_turn_agent(
     settings: &ChatSettings,
     conversation_id: &str,
     task: &str,
+    cache_context: Option<&str>,
     no_progress: bool,
 ) -> Result<TurnStats> {
     let req = AgentRunRequest {
@@ -439,6 +471,7 @@ async fn send_turn_agent(
         provider: &settings.provider,
         max_steps: settings.max_steps,
         conversation_id: Some(conversation_id),
+        cache_context,
     };
     let show_progress = !no_progress && std::io::stderr().is_terminal();
     let spinner = show_progress.then(make_spinner);

@@ -11,6 +11,7 @@ import logging
 import os
 import re
 
+from ..core.cache_context import current_cache_context
 from ..core.provider import Completion, Message, ModelCapabilities, ToolDefinition
 from .openai import OpenAIProvider
 
@@ -363,3 +364,55 @@ class OpenRouterProvider(OpenAIProvider):
         """Extract 'can only afford N' tokens from a 402 error message."""
         match = re.search(r"can only afford (\d+)", error_msg)
         return int(match.group(1)) if match else None
+
+    def _convert_messages(self, messages: list[Message], system: str | None) -> list[dict]:
+        """Override to inject Anthropic-style `cache_control` markers when a
+        cacheable prefix has been set on the request via the
+        :mod:`core.cache_context` ContextVar.
+
+        OpenRouter forwards ``cache_control: {type: "ephemeral"}`` to providers
+        that support it (Anthropic native, Tencent Hy3 via OpenRouter's own
+        caching layer, plus a growing list of routed providers). Providers
+        that do not support it simply ignore the field — there is no
+        request-shape regression.
+
+        The cacheable block is rendered as part of the ``system`` payload so
+        the user → assistant message alternation stays untouched. The system
+        text is split into two content blocks:
+
+          1. The original system prompt (un-marked, recomputed per turn).
+          2. The CLI's ``cache_context`` (marked ephemeral) — for an
+             `ago chat` session this is the @file / @dir expansion.
+
+        When no cache context is set, behaviour is identical to the
+        OpenAI-compatible base class — the system stays a plain string.
+        """
+        cache = current_cache_context()
+        if not cache:
+            return super()._convert_messages(messages, system)
+
+        # Build the base result first, then patch the system message into a
+        # two-block list with cache_control on the @file portion.
+        result = super()._convert_messages(messages, system)
+        cache_block: dict = {
+            "type": "text",
+            "text": cache,
+            "cache_control": {"type": "ephemeral"},
+        }
+        if result and result[0].get("role") == "system":
+            existing = result[0].get("content")
+            if isinstance(existing, str):
+                result[0]["content"] = [
+                    {"type": "text", "text": existing},
+                    cache_block,
+                ]
+            elif isinstance(existing, list):
+                existing.append(cache_block)
+            else:
+                result[0]["content"] = [cache_block]
+        else:
+            result.insert(
+                0,
+                {"role": "system", "content": [cache_block]},
+            )
+        return result

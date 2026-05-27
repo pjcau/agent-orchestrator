@@ -13,7 +13,17 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     // Expand @file / @dir references client-side. Local files are read on the
     // CLI's machine and inlined into the prompt before crossing the wire.
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let (task, report) = expand_refs(&raw_task, &cwd, &ContextConfig::default())?;
+    let (task_only, cache_context, report) =
+        expand_refs(&raw_task, &cwd, &ContextConfig::from_runtime(rt))?;
+    // When caching is opted out, fold the expansion back into the prompt so
+    // the server still sees the @-ref content (just without the discount).
+    let (task, cache_payload) = if rt.config.cache_is_enabled() && !cache_context.is_empty() {
+        (task_only, Some(cache_context))
+    } else if !cache_context.is_empty() {
+        (format!("{task_only}\n\n---\n{cache_context}"), None)
+    } else {
+        (task_only, None)
+    };
     for r in &report.resolved {
         eprintln!(
             "\x1b[2m· included {} ({} B{})\x1b[0m",
@@ -72,6 +82,7 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
         provider: &provider_string,
         max_steps,
         conversation_id: None,
+        cache_context: cache_payload.as_deref(),
     };
 
     if args.stream {

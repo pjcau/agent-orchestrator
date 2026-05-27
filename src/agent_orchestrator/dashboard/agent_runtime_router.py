@@ -40,6 +40,11 @@ from agent_orchestrator.core.verifiers import (
     WorkspaceCoherenceVerifier,
 )
 
+from agent_orchestrator.core.cache_context import (
+    reset_cache_context,
+    set_cache_context,
+)
+
 from .agent_runner import run_agent, run_team
 from .agents_registry import get_agent_registry
 from .auth import check_ws_auth
@@ -288,6 +293,15 @@ async def prompt(body: dict, request: Request):
     graph_type = body.get("graph_type", "auto")
     conv_id = body.get("conversation_id")
     file_context = body.get("file_context", "")
+    # `ago` CLI v0.4.1+ may send a `cache_context` body field containing the
+    # @file / @dir expansion to be marked cacheable by the underlying LLM
+    # provider. Set it on a ContextVar so OpenRouterProvider can pick it up
+    # without the kwarg having to be threaded through run_graph + the agent
+    # loop. ContextVars are task-scoped — no explicit reset needed because
+    # FastAPI runs each request as its own asyncio.Task and the modification
+    # is discarded when the task ends.
+    cache_ctx = (body.get("cache_context") or "").strip() or None
+    set_cache_context(cache_ctx)
     # P1 RAG: optional toggle. When true the dashboard fetches relevant
     # chunks from the configured namespace before calling the LLM and
     # prepends them to the prompt as a "Retrieved context" block.
@@ -434,6 +448,8 @@ async def agent_run(body: dict, request: Request):
     tools = body.get("tools")
     max_steps = body.get("max_steps", 10)
     conv_id = body.get("conversation_id")
+    # Cacheable @-ref prefix forwarded to OpenRouterProvider via ContextVar.
+    set_cache_context((body.get("cache_context") or "").strip() or None)
 
     if not agent_name or not task_desc:
         return JSONResponse(
@@ -587,6 +603,9 @@ async def team_run(body: dict, request: Request):
     model = body.get("model", "")
     provider_type = body.get("provider", "openrouter")
     conv_id_team = body.get("conversation_id")
+    # Set cacheable prefix BEFORE asyncio.create_task() below so the
+    # background _run_in_background task inherits the ContextVar value.
+    set_cache_context((body.get("cache_context") or "").strip() or None)
 
     if not task_desc:
         return JSONResponse(

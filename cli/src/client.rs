@@ -28,6 +28,12 @@ pub struct PromptRequest<'a> {
     pub provider: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<&'a str>,
+    /// Cacheable prefix containing the @file / @dir expansion. When the
+    /// provider supports it (OpenRouter and Anthropic in v0.4.1+), the
+    /// server marks this block with `cache_control: ephemeral` so repeated
+    /// turns pay 10–50% of input cost on the repeated bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_context: Option<&'a str>,
 }
 
 /// Loose response wrapper for `POST /api/prompt`. Keeps the full JSON so
@@ -73,6 +79,11 @@ pub struct AgentRunRequest<'a> {
     /// ConversationManager restores prior turns across the same session.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<&'a str>,
+    /// Cacheable prefix (see `PromptRequest::cache_context`). When set on
+    /// an agent run, the server forwards it as a cache marker to the
+    /// underlying provider so multi-turn agent loops re-use the prefix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_context: Option<&'a str>,
 }
 
 /// Response from `POST /api/agent/run`.

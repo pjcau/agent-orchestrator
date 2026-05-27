@@ -169,15 +169,30 @@ pub enum SkipReason {
 /// Walk the input string, find every `@<path>` token whose path exists on
 /// disk, and produce an expanded prompt + a report.
 ///
-/// Tokens are recognised as: `@` followed by characters that look like a
-/// path — either starting with `/` or `.` or containing at least one `/`
-/// or `.` AND resolving to an existing file/dir. Bare `@alice` mentions
-/// are left untouched.
-pub fn expand_refs(input: &str, cwd: &Path, cfg: &ContextConfig) -> Result<(String, ExpandReport)> {
+/// Returns a triple `(prompt, cache_context, report)`:
+///   - `prompt` is the original user input unchanged (a small benefit for
+///     downstream display, but mostly so the server can render exactly what
+///     the user typed without the appended @-ref blocks).
+///   - `cache_context` is the concatenation of every resolved @-ref's
+///     content, formatted with labeled code-fences. The server, when
+///     `cache_enabled` is on AND the provider supports it (OpenRouter,
+///     Anthropic), marks this string with `cache_control: ephemeral` so
+///     subsequent turns repeating the same prefix pay 10–50% of input cost.
+///   - `report` is a per-token resolved / skipped log for stderr.
+///
+/// When no @-refs resolve, `cache_context` is empty and the caller can
+/// fall back to sending only `prompt`. When the server does not honour
+/// `cache_context`, it concatenates `cache_context` to `prompt` exactly as
+/// `ago` v0.3.x did — no behaviour regression.
+pub fn expand_refs(
+    input: &str,
+    cwd: &Path,
+    cfg: &ContextConfig,
+) -> Result<(String, String, ExpandReport)> {
     let mut report = ExpandReport::default();
     let tokens = scan_tokens(input);
     if tokens.is_empty() {
-        return Ok((input.to_string(), report));
+        return Ok((input.to_string(), String::new(), report));
     }
 
     let mut total_bytes = 0usize;
@@ -284,14 +299,9 @@ pub fn expand_refs(input: &str, cwd: &Path, cfg: &ContextConfig) -> Result<(Stri
         }
     }
 
-    let mut out = String::with_capacity(input.len() + appended.len());
-    out.push_str(input);
-    if !appended.is_empty() {
-        out.push_str("\n\n---\n");
-        out.push_str(appended.trim_end());
-        out.push('\n');
-    }
-    Ok((out, report))
+    // `prompt` stays the original user input; the appended blocks live in
+    // `cache_context` so the server can mark them cacheable independently.
+    Ok((input.to_string(), appended.trim_end().to_string(), report))
 }
 
 /// Find every `@<token>` candidate in the input. We do NOT verify path
@@ -432,7 +442,7 @@ mod tests {
     #[test]
     fn no_refs_returns_input_unchanged() {
         let dir = tempdir().unwrap();
-        let (out, rep) = expand_refs("hello world", dir.path(), &cfg_default()).unwrap();
+        let (out, _cache, rep) = expand_refs("hello world", dir.path(), &cfg_default()).unwrap();
         assert_eq!(out, "hello world");
         assert!(rep.resolved.is_empty());
     }
@@ -440,7 +450,8 @@ mod tests {
     #[test]
     fn bare_mention_not_treated_as_path() {
         let dir = tempdir().unwrap();
-        let (out, rep) = expand_refs("send email to @alice", dir.path(), &cfg_default()).unwrap();
+        let (out, _cache, rep) =
+            expand_refs("send email to @alice", dir.path(), &cfg_default()).unwrap();
         assert_eq!(out, "send email to @alice");
         assert!(rep.resolved.is_empty());
         assert!(rep.skipped.is_empty());
@@ -450,10 +461,13 @@ mod tests {
     fn file_ref_inlines_content() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("hello.txt"), "world").unwrap();
-        let (out, rep) = expand_refs("read @hello.txt please", dir.path(), &cfg_default()).unwrap();
-        assert!(out.contains("read @hello.txt please"));
-        assert!(out.contains("[@hello.txt]"));
-        assert!(out.contains("world"));
+        let (out, cache, rep) =
+            expand_refs("read @hello.txt please", dir.path(), &cfg_default()).unwrap();
+        // Prompt stays unchanged.
+        assert_eq!(out, "read @hello.txt please");
+        // Inlined content lives in cache_context (opt-in caching).
+        assert!(cache.contains("[@hello.txt]"));
+        assert!(cache.contains("world"));
         assert_eq!(rep.resolved.len(), 1);
         assert!(matches!(rep.resolved[0].kind, RefKind::File));
     }
@@ -461,7 +475,8 @@ mod tests {
     #[test]
     fn missing_file_is_reported() {
         let dir = tempdir().unwrap();
-        let (out, rep) = expand_refs("show @does/not.exist", dir.path(), &cfg_default()).unwrap();
+        let (out, _cache, rep) =
+            expand_refs("show @does/not.exist", dir.path(), &cfg_default()).unwrap();
         assert_eq!(out, "show @does/not.exist");
         assert_eq!(rep.skipped.len(), 1);
         assert!(matches!(rep.skipped[0].reason, SkipReason::NotFound));
@@ -475,10 +490,10 @@ mod tests {
         fs::create_dir(dir.path().join("sub")).unwrap();
         let target = format!("@{}/", dir.path().display());
         let prompt = format!("look at {target}");
-        let (out, rep) = expand_refs(&prompt, dir.path(), &cfg_default()).unwrap();
-        assert!(out.contains("a.txt"));
-        assert!(out.contains("b.txt"));
-        assert!(out.contains("sub/"));
+        let (_out, cache, rep) = expand_refs(&prompt, dir.path(), &cfg_default()).unwrap();
+        assert!(cache.contains("a.txt"));
+        assert!(cache.contains("b.txt"));
+        assert!(cache.contains("sub/"));
         assert_eq!(rep.resolved.len(), 1);
         assert!(matches!(rep.resolved[0].kind, RefKind::Directory));
     }
@@ -487,8 +502,8 @@ mod tests {
     fn exclude_pattern_skips_dotenv() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join(".env"), "SECRET=1").unwrap();
-        let (out, rep) = expand_refs("look at @.env", dir.path(), &cfg_default()).unwrap();
-        assert!(!out.contains("SECRET=1"));
+        let (_out, cache, rep) = expand_refs("look at @.env", dir.path(), &cfg_default()).unwrap();
+        assert!(!cache.contains("SECRET=1"));
         assert_eq!(rep.skipped.len(), 1);
         assert!(matches!(rep.skipped[0].reason, SkipReason::Excluded));
     }
@@ -502,8 +517,8 @@ mod tests {
             max_file_bytes: 100,
             ..ContextConfig::default()
         };
-        let (out, rep) = expand_refs("see @big.txt", dir.path(), &cfg).unwrap();
-        assert!(out.contains("(truncated to 100 bytes)"));
+        let (_out, cache, rep) = expand_refs("see @big.txt", dir.path(), &cfg).unwrap();
+        assert!(cache.contains("(truncated to 100 bytes)"));
         assert_eq!(rep.resolved.len(), 1);
         assert!(rep.resolved[0].truncated);
     }
@@ -519,7 +534,7 @@ mod tests {
             max_file_bytes: 1000,
             ..ContextConfig::default()
         };
-        let (_, rep) = expand_refs(
+        let (_, _cache, rep) = expand_refs(
             "see @f0.txt @f1.txt @f2.txt @f3.txt @f4.txt",
             dir.path(),
             &cfg,
@@ -544,7 +559,7 @@ mod tests {
             max_refs: 3,
             ..ContextConfig::default()
         };
-        let (_, rep) = expand_refs(&prompt, dir.path(), &cfg).unwrap();
+        let (_, _cache, rep) = expand_refs(&prompt, dir.path(), &cfg).unwrap();
         assert_eq!(rep.resolved.len(), 3);
         assert!(rep
             .skipped
@@ -557,10 +572,10 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("a.txt"), "AAA").unwrap();
         fs::write(dir.path().join("b.txt"), "BBB").unwrap();
-        let (out, rep) =
+        let (_out, cache, rep) =
             expand_refs("compare @a.txt and @b.txt", dir.path(), &cfg_default()).unwrap();
-        let a = out.find("AAA").unwrap();
-        let b = out.find("BBB").unwrap();
+        let a = cache.find("AAA").unwrap();
+        let b = cache.find("BBB").unwrap();
         assert!(a < b);
         assert_eq!(rep.resolved.len(), 2);
     }
@@ -568,9 +583,10 @@ mod tests {
     #[test]
     fn email_address_not_split_into_ref() {
         let dir = tempdir().unwrap();
-        let (out, rep) =
+        let (out, cache, rep) =
             expand_refs("ping alice@example.com please", dir.path(), &cfg_default()).unwrap();
         assert_eq!(out, "ping alice@example.com please");
+        assert!(cache.is_empty());
         assert!(rep.resolved.is_empty());
     }
 }

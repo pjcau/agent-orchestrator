@@ -23,6 +23,8 @@ from typing import Any, AsyncIterator
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from agent_orchestrator.core.cache_context import set_cache_context
+
 from .agent_runner import run_agent
 from .agents_registry import get_agent_registry
 from .auth import create_cli_token
@@ -382,6 +384,8 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
     provider_type = (body.get("provider") or "ollama").strip()
     max_steps = int(body.get("max_steps") or 10)
     conv_id = (body.get("conversation_id") or "").strip() or None
+    # Cacheable @-ref prefix → OpenRouterProvider via ContextVar.
+    set_cache_context((body.get("cache_context") or "").strip() or None)
     if not agent_name or not task_desc or not model:
         return JSONResponse(
             content={"success": False, "error": "agent, task and model are required"},

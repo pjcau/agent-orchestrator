@@ -140,3 +140,61 @@ def test_deepseek_v4_pro_ranked_above_flash_in_fallback():
     assert "deepseek/deepseek-v4-pro" in order
     assert "deepseek/deepseek-v4-flash" in order
     assert order.index("deepseek/deepseek-v4-pro") < order.index("deepseek/deepseek-v4-flash")
+
+
+# ---------------------------------------------------------------------------
+# Cache context injection — v0.4.1
+# ---------------------------------------------------------------------------
+
+
+def test_convert_messages_no_cache_ctx_matches_base():
+    """Without a cache context, the converted messages must equal whatever
+    the OpenAI-compatible base produced — no behaviour change for users
+    who do not opt in to caching."""
+    from agent_orchestrator.core.cache_context import set_cache_context
+    from agent_orchestrator.core.provider import Message, Role
+
+    set_cache_context(None)
+    p = OpenRouterProvider(model="qwen/qwen3.6-plus", api_key="test")
+    msgs = [Message(role=Role.USER, content="hello")]
+    out = p._convert_messages(msgs, "be brief")
+    assert out == [
+        {"role": "system", "content": "be brief"},
+        {"role": "user", "content": "hello"},
+    ]
+
+
+def test_convert_messages_injects_cache_control_on_system():
+    """When cache_context is set, the system message is split into two
+    content blocks: the original prompt + the cacheable context with
+    cache_control: {type: ephemeral}."""
+    from agent_orchestrator.core.cache_context import set_cache_context
+    from agent_orchestrator.core.provider import Message, Role
+
+    set_cache_context("FILE CONTEXT BLOB")
+    p = OpenRouterProvider(model="qwen/qwen3.6-plus", api_key="test")
+    msgs = [Message(role=Role.USER, content="hello")]
+    out = p._convert_messages(msgs, "be brief")
+    system = out[0]
+    assert system["role"] == "system"
+    assert isinstance(system["content"], list)
+    assert system["content"][0] == {"type": "text", "text": "be brief"}
+    cache_block = system["content"][1]
+    assert cache_block["text"] == "FILE CONTEXT BLOB"
+    assert cache_block["cache_control"] == {"type": "ephemeral"}
+    set_cache_context(None)  # reset for other tests
+
+
+def test_convert_messages_synthesises_system_when_absent():
+    """If no system prompt is provided, the cache_control block becomes the
+    sole entry of a fresh system message."""
+    from agent_orchestrator.core.cache_context import set_cache_context
+    from agent_orchestrator.core.provider import Message, Role
+
+    set_cache_context("BLOB")
+    p = OpenRouterProvider(model="qwen/qwen3.6-plus", api_key="test")
+    out = p._convert_messages([Message(role=Role.USER, content="hi")], None)
+    assert out[0]["role"] == "system"
+    assert out[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert out[0]["content"][0]["text"] == "BLOB"
+    set_cache_context(None)
