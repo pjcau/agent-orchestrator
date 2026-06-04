@@ -67,12 +67,15 @@ impl Instructions {
     /// truncation cap. The CLI uses `ContextConfig.max_file_bytes` here so
     /// the doc obeys the same per-file ceiling as any `@file` ref.
     pub fn load(path: &Path, max_bytes: usize) -> Result<Self> {
-        let raw = std::fs::read(path).map_err(|e| {
-            AgoError::Config(format!("read {}: {e}", path.display()))
-        })?;
+        let raw = std::fs::read(path)
+            .map_err(|e| AgoError::Config(format!("read {}: {e}", path.display())))?;
         let original_bytes = raw.len();
         let truncated = original_bytes > max_bytes;
-        let slice = if truncated { &raw[..max_bytes] } else { &raw[..] };
+        let slice = if truncated {
+            &raw[..max_bytes]
+        } else {
+            &raw[..]
+        };
         // Replace invalid UTF-8 with U+FFFD so weird files do not poison
         // the prompt; a binary AGO.md is user error but we keep going.
         let content = String::from_utf8_lossy(slice).into_owned();
@@ -90,7 +93,10 @@ impl Instructions {
     /// came from.
     pub fn as_cache_block(&self) -> String {
         let mut s = String::with_capacity(self.content.len() + 64);
-        s.push_str(&format!("\n[AGO.md] project instructions: {}\n", self.path.display()));
+        s.push_str(&format!(
+            "\n[AGO.md] project instructions: {}\n",
+            self.path.display()
+        ));
         s.push_str("```markdown\n");
         s.push_str(&self.content);
         if !self.content.ends_with('\n') {

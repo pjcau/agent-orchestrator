@@ -18,10 +18,8 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     // Prepend AGO.md (if any) so the cacheable prefix has the stable
     // project instructions first and the per-turn @ref content second —
     // best layout for prompt-cache hits.
-    let cache_context = crate::instructions::Instructions::merge_with_refs(
-        rt.instructions.as_ref(),
-        &refs_cache,
-    );
+    let cache_context =
+        crate::instructions::Instructions::merge_with_refs(rt.instructions.as_ref(), &refs_cache);
     if let Some(doc) = rt.instructions.as_ref() {
         eprintln!(
             "\x1b[2m· loaded AGO.md ({} B{})\x1b[0m",
@@ -160,9 +158,7 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     // needs the run/run_blocking helpers to return the resolved id.
     if outcome.is_ok() {
         if let Some(id) = resume_id.as_deref() {
-            if let Err(e) =
-                crate::state::persist_conversation(&rt.state_path, &server_url, id)
-            {
+            if let Err(e) = crate::state::persist_conversation(&rt.state_path, &server_url, id) {
                 tracing::debug!("state.toml save failed: {e}");
             }
         }

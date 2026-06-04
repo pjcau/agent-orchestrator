@@ -114,8 +114,10 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         // the per-turn @ref content. AGO.md goes first so the byte prefix
         // stays stable across turns — the OpenRouter prompt cache only
         // discounts a *common* prefix.
-        let cache_context =
-            crate::instructions::Instructions::merge_with_refs(rt.instructions.as_ref(), &refs_cache);
+        let cache_context = crate::instructions::Instructions::merge_with_refs(
+            rt.instructions.as_ref(),
+            &refs_cache,
+        );
         // Only send cache_context to the server when caching is enabled.
         // Otherwise concat into the prompt as v0.3.x did — server has no
         // way to discount the tokens but everything still works.

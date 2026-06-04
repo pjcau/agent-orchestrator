@@ -102,7 +102,11 @@ impl std::fmt::Display for SemVer {
         if self.pre.is_empty() {
             write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
         } else {
-            write!(f, "{}.{}.{}-{}", self.major, self.minor, self.patch, self.pre)
+            write!(
+                f,
+                "{}.{}.{}-{}",
+                self.major, self.minor, self.patch, self.pre
+            )
         }
     }
 }
@@ -175,7 +179,10 @@ async fn update(force: bool) -> Result<()> {
     })?;
     let release = latest_release().await?;
     if !force && release.version <= current {
-        println!("ago {} is already the latest release — nothing to do", current);
+        println!(
+            "ago {} is already the latest release — nothing to do",
+            current
+        );
         return Ok(());
     }
     let asset = pick_asset(&release, target)?;
@@ -224,9 +231,8 @@ fn pick_asset(release: &Release, target: &str) -> Result<Asset> {
 }
 
 async fn latest_release() -> Result<Release> {
-    let url = format!(
-        "https://api.github.com/repos/{RELEASE_OWNER}/{RELEASE_REPO}/releases?per_page=20"
-    );
+    let url =
+        format!("https://api.github.com/repos/{RELEASE_OWNER}/{RELEASE_REPO}/releases?per_page=20");
     let http = build_http()?;
     let resp = http
         .get(&url)
@@ -293,10 +299,7 @@ async fn download(url: &str) -> Result<Vec<u8>> {
         .await
         .map_err(|e| AgoError::Other(format!("download: {e}")))?;
     if !resp.status().is_success() {
-        return Err(AgoError::Other(format!(
-            "download: HTTP {}",
-            resp.status()
-        )));
+        return Err(AgoError::Other(format!("download: HTTP {}", resp.status())));
     }
     let bytes = resp
         .bytes()
@@ -308,10 +311,8 @@ async fn download(url: &str) -> Result<Vec<u8>> {
 /// Extract the `ago[.exe]` binary from the downloaded archive into a
 /// temp file. Returns the temp file path; the caller does the swap.
 fn extract_binary_to_tmp(bytes: &[u8], asset_name: &str) -> Result<std::path::PathBuf> {
-    let staging_dir = std::env::temp_dir().join(format!(
-        "ago-update-{}",
-        uuid::Uuid::new_v4().as_simple()
-    ));
+    let staging_dir =
+        std::env::temp_dir().join(format!("ago-update-{}", uuid::Uuid::new_v4().as_simple()));
     std::fs::create_dir_all(&staging_dir).map_err(AgoError::from)?;
     let staged = if asset_name.ends_with(".zip") {
         extract_zip(bytes, &staging_dir)?
@@ -329,8 +330,8 @@ fn extract_binary_to_tmp(bytes: &[u8], asset_name: &str) -> Result<std::path::Pa
 fn extract_zip(bytes: &[u8], dest: &std::path::Path) -> Result<std::path::PathBuf> {
     use std::io::Read;
     let reader = std::io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|e| AgoError::Other(format!("invalid zip: {e}")))?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|e| AgoError::Other(format!("invalid zip: {e}")))?;
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -373,9 +374,8 @@ fn extract_tar_gz(bytes: &[u8], dest: &std::path::Path) -> Result<std::path::Pat
             break;
         }
         let name = parse_tar_name(header);
-        let size = parse_tar_size(header).ok_or_else(|| {
-            AgoError::Other("tar: corrupt size field in header".into())
-        })?;
+        let size = parse_tar_size(header)
+            .ok_or_else(|| AgoError::Other("tar: corrupt size field in header".into()))?;
         let typeflag = header[156];
         pos += 512;
         let file_start = pos;
@@ -394,8 +394,7 @@ fn extract_tar_gz(bytes: &[u8], dest: &std::path::Path) -> Result<std::path::Pat
         let basename = name.rsplit('/').next().unwrap_or(&name);
         if basename == "ago" {
             let target = dest.join("ago");
-            std::fs::write(&target, &decompressed[file_start..file_end])
-                .map_err(AgoError::from)?;
+            std::fs::write(&target, &decompressed[file_start..file_end]).map_err(AgoError::from)?;
             return Ok(target);
         }
     }
@@ -421,7 +420,9 @@ fn parse_tar_size(header: &[u8]) -> Option<usize> {
 #[cfg(unix)]
 fn set_executable(path: &std::path::Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let mut perm = std::fs::metadata(path).map_err(AgoError::from)?.permissions();
+    let mut perm = std::fs::metadata(path)
+        .map_err(AgoError::from)?
+        .permissions();
     perm.set_mode(0o755);
     std::fs::set_permissions(path, perm).map_err(AgoError::from)?;
     Ok(())
@@ -441,10 +442,7 @@ fn replace_binary(new: &std::path::Path, target: &std::path::Path) -> Result<()>
     let target_dir = target.parent().ok_or_else(|| {
         AgoError::Other(format!("target has no parent dir: {}", target.display()))
     })?;
-    let staged = target_dir.join(format!(
-        ".ago-staged-{}",
-        uuid::Uuid::new_v4().as_simple()
-    ));
+    let staged = target_dir.join(format!(".ago-staged-{}", uuid::Uuid::new_v4().as_simple()));
     std::fs::copy(new, &staged).map_err(AgoError::from)?;
     let _ = std::fs::remove_file(new); // best effort, tmp file
     #[cfg(unix)]
@@ -453,10 +451,7 @@ fn replace_binary(new: &std::path::Path, target: &std::path::Path) -> Result<()>
     }
     #[cfg(not(unix))]
     {
-        let backup = target_dir.join(format!(
-            ".ago-old-{}",
-            uuid::Uuid::new_v4().as_simple()
-        ));
+        let backup = target_dir.join(format!(".ago-old-{}", uuid::Uuid::new_v4().as_simple()));
         std::fs::rename(target, &backup).map_err(AgoError::from)?;
         std::fs::rename(&staged, target).map_err(AgoError::from)?;
         // Best-effort cleanup: deleting the locked .old usually fails on
@@ -481,7 +476,11 @@ mod tests {
                 pre: String::new()
             })
         );
-        assert_eq!(parse_tag("v1.2.3"), None, "orchestrator tag must be filtered");
+        assert_eq!(
+            parse_tag("v1.2.3"),
+            None,
+            "orchestrator tag must be filtered"
+        );
         assert_eq!(parse_tag("ago-vbad"), None);
     }
 
