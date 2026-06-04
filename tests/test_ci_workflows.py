@@ -166,6 +166,69 @@ class TestDeployWorkflowAlerts:
         )
 
 
+class TestAutoMergeMaintenanceWorkflow:
+    """`.github/workflows/auto-merge-maintenance.yml` — weekly deps/ci/docs auto-merge."""
+
+    @pytest.fixture
+    def wf(self) -> dict:
+        return _load("auto-merge-maintenance.yml")
+
+    def test_runs_weekly(self, wf: dict) -> None:
+        on = _on_block(wf)
+        assert "schedule" in on, "auto-merge must run on a schedule"
+        crons = [entry["cron"] for entry in on["schedule"]]
+        # Weekly cron: day-of-week field (5th) must pin a single weekday.
+        assert any(c.split()[4] not in ("*", "?") for c in crons), (
+            f"Expected a weekly cron pinned to a weekday, got {crons}"
+        )
+
+    def test_allows_manual_dispatch_with_dry_run(self, wf: dict) -> None:
+        on = _on_block(wf)
+        assert "workflow_dispatch" in on, "Manual dispatch must be available"
+        inputs = on["workflow_dispatch"]["inputs"]
+        assert "dry_run" in inputs, "Must expose a dry_run input for safe inspection"
+
+    def test_grants_pr_and_contents_write(self, wf: dict) -> None:
+        perms = wf.get("permissions", {})
+        assert perms.get("pull-requests") == "write", "Need pull-requests:write to merge PRs"
+        assert perms.get("contents") == "write", "Need contents:write to merge into the branch"
+
+    def test_serializes_runs(self, wf: dict) -> None:
+        concurrency = wf.get("concurrency")
+        assert concurrency is not None, "Must declare a concurrency block"
+        assert concurrency.get("cancel-in-progress") is False, (
+            "Must not cancel an in-progress merge run mid-flight"
+        )
+
+    def test_only_targets_maintenance_prefixes(self, wf: dict) -> None:
+        """Regression guard: the title filter must stay scoped to deps/ci/docs.
+
+        Loosening this regex (e.g. to match `feat:` or an empty prefix) would
+        let the weekly job auto-merge feature PRs without human review.
+        """
+        run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
+        assert "^(deps|ci|docs)" in run, (
+            "Eligibility regex must be anchored to the deps/ci/docs prefixes"
+        )
+
+    def test_skips_prs_with_failing_or_missing_checks(self, wf: dict) -> None:
+        run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
+        # A PR with zero reported checks must be skipped, not merged blind.
+        assert "no checks reported" in run, "Must skip PRs that report no checks"
+        # Only SUCCESS/NEUTRAL/SKIPPED count as green.
+        assert "SUCCESS" in run and "NEUTRAL" in run and "SKIPPED" in run
+
+    def test_requests_rebase_for_conflicting_dependabot_prs(self, wf: dict) -> None:
+        run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
+        assert "@dependabot rebase" in run, (
+            "Conflicting Dependabot PRs must be nudged to rebase for the next run"
+        )
+
+    def test_uses_squash_merge(self, wf: dict) -> None:
+        run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
+        assert "--squash" in run, "Maintenance bumps should land as single squash commits"
+
+
 class TestEC2RestartWorkflow:
     """`.github/workflows/ec2-restart.yml` — emergency instance restart."""
 

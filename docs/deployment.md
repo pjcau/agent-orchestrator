@@ -246,6 +246,38 @@ This drops all build cache (next deploy rebuilds from scratch, +5–10 min).
 
 Set them in **repo → Settings → Secrets and variables → Actions**.
 
+### Automated Maintenance Merges
+
+`.github/workflows/auto-merge-maintenance.yml` keeps low-risk housekeeping PRs
+from piling up. It runs **every Monday at 06:00 UTC** (and on-demand via
+**Run workflow → dry_run**) using only the built-in `GITHUB_TOKEN`.
+
+A PR is auto-merged (squash, branch deleted) only when **all** of these hold:
+
+- Its title starts with `deps:`, `deps(...):`, `ci:` or `docs:` — the prefix
+  convention Dependabot and our docs PRs follow. Nothing else is eligible, so
+  feature PRs never merge without review.
+- It is not a draft.
+- It reports at least one check and **every** check is green
+  (`SUCCESS` / `NEUTRAL` / `SKIPPED`). Any `FAILURE` or still-`PENDING` check
+  disqualifies it.
+- `mergeable == MERGEABLE` and `mergeStateStatus == CLEAN` (no conflicts,
+  no unmet branch-protection rules).
+
+If a Dependabot PR is conflicting, the job posts `@dependabot rebase` instead of
+merging, so the branch is clean for the next weekly run. The `dry_run` input
+lists what *would* happen without merging anything. A `concurrency` group
+serializes runs so two invocations never race on the same PRs.
+
+Structural guards live in `tests/test_ci_workflows.py`
+(`TestAutoMergeMaintenanceWorkflow`) — they pin the weekly cron, the write
+permissions, the deps/ci/docs-only title filter, and the all-checks-green gate.
+
+> **Workflow-file bumps**: PRs that edit files under `.github/workflows/` merge
+> fine from the scheduled job (the Actions `GITHUB_TOKEN` is a GitHub App token),
+> but **cannot** be merged from a local `gh` session whose OAuth token lacks the
+> `workflow` scope — merge those from the GitHub UI or the weekly run.
+
 ## SSL Certificate Renewal
 
 Certificates auto-renew via the `certbot` container (checks every 12h). To manually renew:

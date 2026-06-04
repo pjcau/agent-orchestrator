@@ -1,0 +1,108 @@
+name: Auto-merge Maintenance PRs
+
+# Weekly housekeeping: squash-merge every open deps / ci / docs PR whose
+# checks are all green and that has no merge conflicts. Conflicting Dependabot
+# PRs get a rebase request so they are clean for the next run.
+#
+# Only PRs whose title starts with `deps:`, `deps(...):`, `ci:` or `docs:`
+# are eligible — this is the prefix convention Dependabot and our docs PRs use.
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List eligible PRs without merging'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-maintenance
+  cancel-in-progress: false
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge eligible maintenance PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          # Title prefixes we treat as low-risk maintenance.
+          TITLE_RE='^(deps|ci|docs)(\(.*\))?:'
+
+          prs=$(gh pr list --state open --limit 100 \
+            --json number,title,isDraft,mergeable,mergeStateStatus,author,statusCheckRollup)
+
+          echo "$prs" | jq -c '.[]' | while read -r pr; do
+            n=$(echo "$pr"      | jq -r '.number')
+            title=$(echo "$pr"  | jq -r '.title')
+            draft=$(echo "$pr"  | jq -r '.isDraft')
+            mergeable=$(echo "$pr"   | jq -r '.mergeable')
+            state=$(echo "$pr"  | jq -r '.mergeStateStatus')
+            author=$(echo "$pr" | jq -r '.author.login')
+
+            # Eligibility: maintenance title prefix only.
+            if ! echo "$title" | grep -qE "$TITLE_RE"; then
+              continue
+            fi
+
+            if [ "$draft" = "true" ]; then
+              echo "⏭️  #$n skip (draft) — $title"; continue
+            fi
+
+            # Any failing / pending / missing check disqualifies the PR.
+            bad=$(echo "$pr" | jq '[.statusCheckRollup[]?
+              | (.conclusion // .state // "PENDING")
+              | ascii_upcase
+              | select(. != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED")] | length')
+            total=$(echo "$pr" | jq '[.statusCheckRollup[]?] | length')
+
+            if [ "$total" -eq 0 ]; then
+              echo "⏭️  #$n skip (no checks reported) — $title"; continue
+            fi
+            if [ "$bad" -ne 0 ]; then
+              echo "⏭️  #$n skip ($bad check(s) not green) — $title"; continue
+            fi
+
+            # Conflicts: ask Dependabot to rebase so the next run is clean.
+            if [ "$mergeable" = "CONFLICTING" ] || [ "$state" = "DIRTY" ]; then
+              if echo "$author" | grep -qi dependabot; then
+                if [ "$DRY_RUN" = "true" ]; then
+                  echo "🔄 #$n would request rebase (conflict) — $title"
+                else
+                  gh pr comment "$n" --body "@dependabot rebase" >/dev/null
+                  echo "🔄 #$n rebase requested (conflict) — $title"
+                fi
+              else
+                echo "⏭️  #$n skip (conflict, not Dependabot) — $title"
+              fi
+              continue
+            fi
+
+            if [ "$mergeable" != "MERGEABLE" ] || [ "$state" != "CLEAN" ]; then
+              echo "⏭️  #$n skip (mergeable=$mergeable state=$state) — $title"; continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "✅ #$n would merge — $title"
+              continue
+            fi
+
+            if gh pr merge "$n" --squash --delete-branch >/dev/null 2>&1; then
+              echo "✅ #$n merged — $title"
+            else
+              echo "❌ #$n merge failed — $title"
+            fi
+          done | tee "$GITHUB_STEP_SUMMARY"
