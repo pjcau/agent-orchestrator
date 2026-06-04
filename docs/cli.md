@@ -117,16 +117,52 @@ cd cli && cargo install --path . --locked
 
 CI: [`.github/workflows/cli-rust.yml`](../.github/workflows/cli-rust.yml) runs
 `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` on
-ubuntu/macos/windows, and `cargo audit` on every push to `experiment/**`,
-PRs touching `cli/**`, and manual dispatch.
+ubuntu/macos/windows, `cargo audit`, and **`cargo deny check`** (advisories +
+licenses + bans + sources, configured in [`cli/deny.toml`](../cli/deny.toml))
+on every push to `main` / `experiment/**`, PRs touching `cli/**`, and
+manual dispatch.
+
+## Release artifact verification (v0.5.1+)
+
+Every release tagged `ago-v*` produces a 5-target matrix
+([`.github/workflows/cli-release.yml`](../.github/workflows/cli-release.yml)).
+Each target ships three companion files:
+
+| File | Verifies |
+|---|---|
+| `SHA256SUMS` | Archive integrity (`sha256sum -c SHA256SUMS`) |
+| `<archive>.sig` + `<archive>.cert` | Cosign keyless signature — proves the archive was built by this repo's GitHub Actions run |
+| `<archive>.cdx.json` | CycloneDX 1.5 SBOM listing every transitive dependency for supply-chain audit |
+
+**Verify the signature** (cosign ≥ 2.0):
+
+```bash
+cosign verify-blob \
+  --certificate ago-v0.5.1-x86_64-unknown-linux-musl.tar.gz.cert \
+  --signature   ago-v0.5.1-x86_64-unknown-linux-musl.tar.gz.sig \
+  --certificate-identity-regexp 'https://github.com/jonnycau/agent-orchestrator/.+' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ago-v0.5.1-x86_64-unknown-linux-musl.tar.gz
+```
+
+A successful run prints `Verified OK`. The cert identity is the workflow URL
+of the build job, so a third party can audit exactly which run produced the
+artifact — no shared keys, no `keys.openpgp.org` round-trip.
+
+**Audit the SBOM** with any CycloneDX consumer:
+
+```bash
+jq '.components[] | {name, version, licenses}' ago-v0.5.1-x86_64-unknown-linux-musl.cdx.json
+# Or load into dependency-track / OWASP Dependency-Check / Trivy.
+```
 
 ## Next phases
 
 | Phase | Adds | ETA |
 |---|---|---|
-| 1.5 / 2 | Device-flow OAuth (RFC 8628), `ago run` with SSE streaming, `.ago.yaml` project preset | Phase 2 of the [unified roadmap](unified-roadmap.md#rust-cli-ago) |
-| 3 | `ago jobs list/get/cancel`, `ago logs --follow`, indicatif progress, shell completions | — |
-| 4 | Cross-compile matrix (macOS arm/x64, Linux x64/arm64 musl, Windows), signed releases via cosign + SBOM, Homebrew tap | release v0.1.0 |
+| 1.5 / 2 | Device-flow OAuth (RFC 8628), `ago run` with SSE streaming, `.ago.yaml` project preset | ✅ shipped (v0.1.0–v0.3.x) |
+| 3 | `ago jobs list/get/cancel`, `ago logs --follow`, indicatif progress, shell completions | ✅ shipped (v0.1.0–v0.4.x) except `ago logs --follow` (deferred to v0.6.0) |
+| 4 | Cross-compile matrix (macOS arm/x64, Linux x64/arm64 musl, Windows), signed releases via cosign + SBOM | ✅ shipped (v0.5.1) — Homebrew tap explicitly not planned (use `cargo install --path cli` or the GitHub Release artifact) |
 
 ## `@file` and `@dir` references (v0.3+)
 

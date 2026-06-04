@@ -25,7 +25,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # required only by softprops/action-gh-release
+  contents: write   # required by softprops/action-gh-release
+  id-token: write   # required by sigstore/cosign-installer for keyless OIDC signing
 
 env:
   CARGO_TERM_COLOR: always
@@ -131,11 +132,50 @@ jobs:
           Add-Content $env:GITHUB_ENV "ARTIFACT=$name.zip"
           Add-Content $env:GITHUB_ENV "ARTIFACT_NAME=$name"
 
+      # SBOM generation: a CycloneDX JSON document listing every transitive
+      # dependency. Uses syft (fast, native binary) so we don't pay the cost
+      # of a second cargo invocation. The SBOM is per-target because the
+      # dependency closure can differ slightly across cross-compile targets
+      # (e.g. macOS-only keyring backends).
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: cli/
+          format: cyclonedx-json
+          output-file: ${{ env.ARTIFACT_NAME }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # Cosign keyless signing — the GitHub OIDC token attests that this
+      # workflow run produced the artifact. Signatures + certificates are
+      # uploaded alongside the .tar.gz/.zip and verifiable via
+      #   cosign verify-blob --certificate-identity '<workflow-url>' ...
+      # which a downloader can run with no shared key material.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
+
+      - name: Sign artifact (cosign keyless)
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euxo pipefail
+          cosign sign-blob --yes \
+            --output-signature "${ARTIFACT}.sig" \
+            --output-certificate "${ARTIFACT}.cert" \
+            "${ARTIFACT}"
+
       - name: Upload artifact to workflow run
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT }}
+          path: |
+            ${{ env.ARTIFACT }}
+            ${{ env.ARTIFACT }}.sig
+            ${{ env.ARTIFACT }}.cert
+            ${{ env.ARTIFACT_NAME }}.cdx.json
           if-no-files-found: error
 
   release:
@@ -160,10 +200,18 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p dist
+          # Take .tar.gz, .zip, plus the cosign sig/cert and the CycloneDX
+          # SBOM for each target. Everything sits at depth 2 inside the
+          # downloaded artifact tree (one dir per matrix job).
           find artifacts -mindepth 2 -maxdepth 2 -type f \
-            \( -name '*.tar.gz' -o -name '*.zip' \) \
+            \( -name '*.tar.gz' -o -name '*.zip' \
+              -o -name '*.sig' -o -name '*.cert' \
+              -o -name '*.cdx.json' \) \
             -exec cp {} dist/ \;
           cd dist
+          # SHA256SUMS covers the user-facing archives. Signatures and SBOMs
+          # are validated through their own mechanisms (cosign / CycloneDX)
+          # so they don't go in this file.
           sha256sum *.tar.gz *.zip > SHA256SUMS 2>/dev/null || true
           ls -la
 
@@ -174,7 +222,30 @@ jobs:
           name: ago ${{ github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          body: |
+            ## Verification
+
+            **Checksum:** download `SHA256SUMS` and run
+            `sha256sum -c SHA256SUMS` against the archive you downloaded.
+
+            **Cosign signature (keyless, GitHub OIDC):**
+
+            ```bash
+            cosign verify-blob \
+              --certificate <archive>.cert \
+              --signature <archive>.sig \
+              --certificate-identity-regexp 'https://github.com/jonnycau/agent-orchestrator/.+' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              <archive>
+            ```
+
+            **SBOM:** each target ships a CycloneDX 1.5 JSON document
+            (`<archive>.cdx.json`) listing every transitive dependency
+            for supply-chain audits.
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.sig
+            dist/*.cert
+            dist/*.cdx.json
             dist/SHA256SUMS
