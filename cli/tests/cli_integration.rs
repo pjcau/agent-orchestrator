@@ -572,6 +572,117 @@ async fn run_resume_forwards_stored_conversation_id() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn jobs_download_extracts_zip_to_dir() {
+    use std::io::Write;
+    // Build a small ZIP in memory the way the server would produce it.
+    let mut buf = Vec::new();
+    {
+        let mut zw = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zw.start_file("hello.txt", opts).unwrap();
+        zw.write_all(b"hi from session").unwrap();
+        zw.start_file("nested/deeper.json", opts).unwrap();
+        zw.write_all(br#"{"ok":true}"#).unwrap();
+        zw.finish().unwrap();
+    }
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/jobs/abc123/download"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/zip")
+                .set_body_bytes(buf.clone()),
+        )
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    let extract_dir = dir.path().join("out");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "jobs",
+            "download",
+            "abc123",
+            "--dir",
+            extract_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(extract_dir.join("hello.txt")).unwrap(),
+        "hi from session"
+    );
+    assert_eq!(
+        std::fs::read_to_string(extract_dir.join("nested").join("deeper.json")).unwrap(),
+        r#"{"ok":true}"#
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn jobs_download_refuses_to_overwrite_without_force() {
+    let mock = MockServer::start().await;
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    let extract_dir = dir.path().join("out");
+    // Pre-populate destination so the empty-check trips before we even
+    // hit the server (no Mock::given registered for /download).
+    std::fs::create_dir_all(&extract_dir).unwrap();
+    std::fs::write(extract_dir.join("preexisting.txt"), "keep me").unwrap();
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "jobs",
+            "download",
+            "abc123",
+            "--dir",
+            extract_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("not empty"));
+
+    // Pre-existing file must be untouched after the failure.
+    assert_eq!(
+        std::fs::read_to_string(extract_dir.join("preexisting.txt")).unwrap(),
+        "keep me"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn run_resume_falls_through_when_state_empty() {
     let mock = MockServer::start().await;
     // Match any request (no body_partial_json on conversation_id) since

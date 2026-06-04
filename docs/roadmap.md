@@ -637,6 +637,7 @@ Single-binary Rust CLI living in [`cli/`](../cli/) that lets a local project tal
 | 5 | `ago chat` REPL (v0.2.0), `@file`/`@dir/` refs (v0.3.0), `.ago.yaml context:` (v0.3.1), Windows paths (v0.3.2), `cache` subcommand + OpenRouter `cache_control` plumbing (v0.4.0–v0.4.1), recursive `@dir/**` content (v0.4.2) | ✅ Done (v0.4.2) |
 | 6 | `--resume` (state.toml per-server `conversation_id`), `AGO.md` auto-load (client-side cache_context prefix), code-fence colouring in REPL output, `--no-color` flag (v0.5.0) | ✅ Done (v0.5.0) |
 | 4 (re-opened) | Release hardening — cargo-deny on every push (advisories/licenses/bans/sources), cosign keyless signing of every release archive via GitHub OIDC, CycloneDX 1.5 SBOM per target uploaded to the GitHub Release (v0.5.1). Homebrew tap explicitly NOT planned per the GitHub-only distribution policy. | ✅ Done (v0.5.1) |
+| 7 | `ago jobs download <session_id>` (ZIP fetch + zip-slip-safe extraction with `--dir` / `--force`); `ago self check` and `ago self update` against GitHub Releases API for the current target triple (v0.5.2) | ✅ Done (v0.5.2) |
 
 ---
 

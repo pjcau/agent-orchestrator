@@ -10,6 +10,7 @@ pub mod jobs;
 pub mod login;
 pub mod logout;
 pub mod run;
+pub mod self_cmd;
 pub mod whoami;
 
 pub async fn dispatch(rt: &Runtime, cmd: Command) -> Result<()> {
@@ -23,5 +24,6 @@ pub async fn dispatch(rt: &Runtime, cmd: Command) -> Result<()> {
         Command::Chat(args) => chat::run(rt, args).await,
         Command::Cache(args) => cache::run(rt, args),
         Command::Completions(args) => completions::run(args),
+        Command::SelfCmd(args) => self_cmd::run(rt, args).await,
     }
 }

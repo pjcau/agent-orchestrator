@@ -1,6 +1,6 @@
 [package]
 name = "ago"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 description = "Agent Orchestrator CLI — talk to a remote orchestrator from your local project."
 license = "MIT"
@@ -46,6 +46,16 @@ open = { version = "5", default-features = false }
 indicatif = "0.17"
 rustyline = { version = "14", default-features = false, features = ["with-file-history"] }
 uuid = { version = "1", features = ["v4"] }
+# ZIP extraction for `ago jobs download` (server returns the session as a
+# zip stream) and for `ago self update` (Windows release archives). The
+# default features drop rare-format readers we do not need; deflate alone
+# covers everything the orchestrator produces.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# Manual `tar.gz` decompression for `ago self update` (Linux/macOS release
+# archives ship as `.tar.gz`). zip pulls flate2 transitively but we
+# declare it explicitly so the GzDecoder import in self_cmd.rs is a
+# load-bearing dep rather than an implementation detail of zip.
+flate2 = "1"
 
 [dev-dependencies]
 wiremock = "0.6"
@@ -53,6 +63,10 @@ tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+# Integration tests need to build a ZIP byte stream that mimics what the
+# server's `/api/jobs/{id}/download` endpoint returns. Default features
+# are fine here — only dev artefacts.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }

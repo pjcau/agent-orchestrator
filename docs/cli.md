@@ -384,6 +384,52 @@ to `${XDG_DATA_HOME:-~/.local/share}/io.agent-orchestrator.ago/chat-history`
 so arrow-up works across sessions. The `AGO_INSECURE=1` dev escape hatch
 behaves the same as for `ago run`.
 
+## `ago jobs download` (v0.5.2+)
+
+Pull a completed session's artifacts (files written by agent tools) to a
+local directory:
+
+```bash
+ago jobs download <session_id>                       # → ./.ago-sync/<session_id>/
+ago jobs download <session_id> --dir ./my-results    # explicit destination
+ago jobs download <session_id> --dir ./out --force   # overwrite existing files
+```
+
+Under the hood: `GET /api/jobs/<session_id>/download` returns the session
+as a ZIP stream; the CLI extracts it locally with strict path-safety
+checks (no `..` traversal, no absolute paths). Without `--force`, the
+command refuses to write into a non-empty destination so re-runs do not
+silently clobber local edits.
+
+**Limitation:** the session_id must reference a run registered with the
+server's `job_logger` — i.e. a run launched **from the dashboard**.
+`ago run` invocations use an isolated event bus and write to a tmp
+directory the server does not expose. Wiring `ago run` artefacts into
+the same flow is a v0.6.0 server-side change.
+
+## `ago self check` / `ago self update` (v0.5.2+)
+
+The CLI can self-upgrade from the GitHub Releases page:
+
+```bash
+ago self check     # prints: "ago 0.5.2 → 0.6.0 available — run `ago self update`"
+ago self update    # downloads the right archive for this target, extracts, swaps
+```
+
+- Target triple is detected at compile time (matches the five-target
+  cli-release matrix); a binary built for an unlisted target tells you
+  to install manually.
+- Archive is downloaded, the `ago` binary inside is extracted to a
+  temp file, then atomically swapped in via `rename(2)` (Unix) or a
+  rename-aside dance (Windows).
+- **Cosign verification is NOT run automatically.** If you need
+  supply-chain proof, download the archive + its `.sig` / `.cert`
+  manually and run `cosign verify-blob` as documented above. This will
+  be hooked into `self update` once a pure-Rust cosign verifier is
+  feasible.
+- `--force` reinstalls even when already up-to-date (useful after a
+  macOS code-sign mishap).
+
 ## `AGO.md` — project instructions auto-load (v0.5.0+)
 
 Drop an `AGO.md` (or `.ago.md` fallback) at the root of any project and
@@ -454,9 +500,9 @@ scope right now:
 | Tool approval prompts (`accept-edits` mode) | Deferred to v0.6.0 — needs server pause-and-await-approval |
 | Conversation branch / compact / export | Deferred to v0.6.0 — needs persistence endpoints |
 | MCP / hook configuration via CLI | Out of scope — already lives in the dashboard |
-| Sync-back agent files → CLI cwd | Deferred to v0.5.x — server already exposes `/api/jobs/{id}/files`; CLI needs to consume it post-run |
-| `--local` fallback (subprocess `client.py`) | Deferred to v0.5.x |
-| Auto-update channel | Deferred to v0.5.x — check GitHub Releases API + `ago self update` |
+| Sync-back agent files → CLI cwd | ✅ Done (v0.5.2) for dashboard-launched sessions via `ago jobs download` — `ago run` runs still pending v0.6.0 server change |
+| `--local` fallback (subprocess `client.py`) | Deferred to v0.5.3 |
+| Auto-update channel | ✅ Done (v0.5.2) via `ago self check` / `ago self update` |
 | Homebrew tap | Not planned — install via `cargo install --path cli` or download the GitHub Release artifact |
 
 ## Limits acknowledged in current revision
@@ -465,11 +511,10 @@ scope right now:
   denylist yet).
 - `ago chat` keeps conversation context server-side but files written
   by agent tools land in the session dir on the server, not the CLI's
-  cwd. Read them via `ago jobs show <session_id>` for now. Sync-back to
-  cwd is on the v0.5.x roadmap.
+  cwd. Pull them with `ago jobs download <session_id> --dir <where>`
+  (v0.5.2+) for dashboard-initiated sessions. `ago run` runs are not
+  yet exposed under `/api/jobs/...` — v0.6.0 server change.
 - `ago logs <id> --follow` not implemented — `/api/cli/v1/run` uses an
   isolated EventBus not registered in the server's `run_manager`.
   Deferred to v0.6.0 with a server change.
-- No `--local` fallback (subprocess Python `client.py`) yet — v0.5.x.
-- No update channel; rely on `cargo install --force` / re-download
-  from the GitHub Release. Auto-update lands in v0.5.x.
+- No `--local` fallback (subprocess Python `client.py`) yet — v0.5.3.

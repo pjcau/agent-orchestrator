@@ -364,6 +364,29 @@ impl ApiClient {
         self.get_json(&path).await
     }
 
+    /// GET /api/jobs/{session_id}/download — fetch the entire session as a
+    /// ZIP archive. Returns the raw bytes (callers extract them).
+    pub async fn download_session_zip(&self, session_id: &str) -> Result<Vec<u8>> {
+        let path = format!("/api/jobs/{}/download", url_encode(session_id));
+        let resp = self.http.get(self.url(&path)).send().await?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AgoError::AuthRejected);
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(AgoError::Other(format!("session {session_id} not found")));
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AgoError::ServerError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+        let bytes = resp.bytes().await.map_err(AgoError::from)?;
+        Ok(bytes.to_vec())
+    }
+
     /// POST /api/team/{job_id}/cancel — request cancellation of an active team run.
     pub async fn job_cancel(&self, job_id: &str) -> Result<serde_json::Value> {
         let resp = self

@@ -62,6 +62,36 @@ pub enum Command {
     /// `ago completions zsh > ~/.zfunc/_ago` and add `fpath+=~/.zfunc` to
     /// your `.zshrc`.
     Completions(CompletionsArgs),
+    /// Self-management: check for / install a new `ago` release.
+    ///
+    /// `check` queries the GitHub Releases API and prints the latest
+    /// version vs. the running one. `update` downloads the matching
+    /// archive for the current target triple, extracts the binary, and
+    /// atomically replaces the running executable.
+    #[command(name = "self")]
+    SelfCmd(SelfArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct SelfArgs {
+    #[command(subcommand)]
+    pub action: SelfAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SelfAction {
+    /// Check the GitHub Releases API for a newer `ago` and print the result.
+    Check,
+    /// Download and install the latest `ago` release for the current target.
+    ///
+    /// Skips the install when the running version is already the latest.
+    /// Pass `--force` to reinstall the same version (useful after a
+    /// codesign mishap on macOS).
+    Update {
+        /// Reinstall even when the running version is already the latest.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -112,6 +142,25 @@ pub enum JobsAction {
     Cancel {
         /// Job id of the running team task (UUID printed by `ago run` or the dashboard).
         job_id: String,
+    },
+    /// Download a completed session's artifacts as a local directory tree.
+    ///
+    /// Fetches the session ZIP from `/api/jobs/<session_id>/download`
+    /// and extracts it under `--dir` (default `./.ago-sync/<session_id>/`).
+    /// Only works for sessions that were registered with the server-side
+    /// `job_logger` (dashboard-initiated runs). `ago run` runs use an
+    /// isolated EventBus and write to a tmp directory the server does not
+    /// expose — see the v0.6.0 deferral note in docs/cli.md.
+    Download {
+        /// Session id (the value printed by `ago jobs list`).
+        session_id: String,
+        /// Destination directory. Defaults to `./.ago-sync/<session_id>/`.
+        #[arg(long, value_name = "DIR")]
+        dir: Option<PathBuf>,
+        /// Overwrite existing files in the destination. Without this flag
+        /// the command refuses to write when the target dir is non-empty.
+        #[arg(long)]
+        force: bool,
     },
 }
 
