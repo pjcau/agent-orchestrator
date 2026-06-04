@@ -275,6 +275,15 @@ Structural guards live in `tests/test_ci_workflows.py`
 (`TestAutoMergeMaintenanceWorkflow`) — they pin the weekly cron, the write
 permissions, the deps/ci/docs-only title filter, and the all-checks-green gate.
 
+**Grouped Dependabot updates.** Per-package PRs that edit the same manifest
+(`pyproject.toml`, `package.json`, a shared workflow file) conflict with each
+other and can only land one-per-rebase-cycle — so a backlog of single-package
+bumps never clears in one run. `.github/dependabot.yml` therefore groups every
+update of an ecosystem (`pip`, `github-actions`, `npm`, `docker`) into a single
+catch-all PR covering minor/patch/**major**, so each weekly batch is one
+conflict-free PR the auto-merge job can land outright. Guarded by
+`tests/test_dependabot_config.py`.
+
 > **Workflow-file bumps**: PRs that edit files under `.github/workflows/` merge
 > fine from the scheduled job (the Actions `GITHUB_TOKEN` is a GitHub App token),
 > but **cannot** be merged from a local `gh` session whose OAuth token lacks the

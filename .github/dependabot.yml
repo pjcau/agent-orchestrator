@@ -13,11 +13,16 @@ updates:
     commit-message:
       prefix: "deps"
     groups:
-      # Group minor/patch updates into a single PR
-      python-minor:
+      # Single PR for ALL pip updates (minor/patch/major). Per-package PRs
+      # editing the same pyproject.toml region conflict with each other and
+      # can only land one-per-rebase-cycle — grouping eliminates that cascade.
+      python:
+        patterns:
+          - "*"
         update-types:
           - "minor"
           - "patch"
+          - "major"
 
   # GitHub Actions versions
   - package-ecosystem: "github-actions"
@@ -31,6 +36,15 @@ updates:
       - "ci"
     commit-message:
       prefix: "ci"
+    groups:
+      # Single PR for all action bumps — they edit the same workflow files.
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+          - "major"
 
   # Docker base images
   - package-ecosystem: "docker"
@@ -43,6 +57,14 @@ updates:
       - "docker"
     commit-message:
       prefix: "docker"
+    groups:
+      docker-dashboard:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+          - "major"
 
   - package-ecosystem: "docker"
     directory: "/docker/docs"
@@ -54,6 +76,14 @@ updates:
       - "docker"
     commit-message:
       prefix: "docker"
+    groups:
+      docker-docs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+          - "major"
 
   # npm dependencies (docs site)
   - package-ecosystem: "npm"
@@ -67,3 +97,13 @@ updates:
       - "docs"
     commit-message:
       prefix: "deps(docs)"
+    groups:
+      # Single PR for all npm updates — react/react-dom etc. share
+      # package.json / package-lock.json and conflict per-package otherwise.
+      npm:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+          - "major"
