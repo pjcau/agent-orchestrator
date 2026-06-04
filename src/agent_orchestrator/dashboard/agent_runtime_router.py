@@ -40,10 +40,7 @@ from agent_orchestrator.core.verifiers import (
     WorkspaceCoherenceVerifier,
 )
 
-from agent_orchestrator.core.cache_context import (
-    reset_cache_context,
-    set_cache_context,
-)
+from agent_orchestrator.core.cache_context import set_cache_context
 
 from .agent_runner import run_agent, run_team
 from .agents_registry import get_agent_registry
