@@ -354,8 +354,8 @@ class TestConstants:
         assert "error" in result
 
     def test_openrouter_model_matches_orchestrator_paid_default(self, scout):
-        """The scout pays for the same Anthropic model the orchestrator
-        treats as the canonical paid default (see AnthropicProvider).
-        Pinning here means any drift away from sonnet-4-6 in either side
+        """The scout pays for the same model the orchestrator's REST agent
+        runner uses as its paid default (see dashboard/evals_routes.py).
+        Pinning here means any drift away from gpt-4o in either side
         becomes a visible diff."""
-        assert scout.OPENROUTER_MODEL == "anthropic/claude-sonnet-4-6"
+        assert scout.OPENROUTER_MODEL == "openai/gpt-4o"

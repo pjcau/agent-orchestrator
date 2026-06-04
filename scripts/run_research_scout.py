@@ -50,15 +50,15 @@ MAX_IMPROVEMENTS = 30  # cap per repo; ranked by value_score desc
 _GH_REPO_RE = re.compile(r"github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/|$)")
 
 # OpenRouter config (used on CI when OPENROUTER_API_KEY is set).
-# We deliberately default to the orchestrator's own paid default model
-# (`claude-sonnet-4-6`, see src/agent_orchestrator/providers/anthropic.py)
-# rather than a free-tier model. The free models repeatedly hit HTTP 429
-# at 02:00 UTC (4 nights in a row in late May 2026) AND returned weaker
+# We deliberately default to the orchestrator's OpenAI provider default
+# (`gpt-4o`, see src/agent_orchestrator/providers/openai.py) rather than
+# a free-tier model. The free models repeatedly hit HTTP 429 at 02:00
+# UTC (4 nights in a row in late May 2026) AND returned weaker
 # improvement proposals — at the volume of one repo per night, the cost
-# delta is small enough (~0.01 USD/run) that the reliability win is worth
-# it. Override via the `SCOUT_MODEL` env var if needed.
+# delta is small enough (~0.01-0.02 USD/run) that the reliability win
+# is worth it. Override via the `SCOUT_MODEL` env var if needed.
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "anthropic/claude-sonnet-4-6"
+OPENROUTER_MODEL = "openai/gpt-4o"
 
 # Our codebase summary — kept short to save tokens
 CODEBASE_SUMMARY = """\
