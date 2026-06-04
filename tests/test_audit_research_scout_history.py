@@ -145,3 +145,30 @@ class TestWriteFindingsMd:
         ]
         md = audit._write_findings_md("https://github.com/a/b", "a/b", items)
         assert "audit" in md.lower() or "backfill" in md.lower()
+
+
+class TestWithinSinceDays:
+    """`--since-days` lets the operator restrict the audit to recent
+    state entries instead of replaying everything inside the 60-day
+    state-cleanup window."""
+
+    def test_none_means_no_filter(self, audit):
+        assert audit._within_since_days("2026-01-01T00:00:00+00:00", None) is True
+
+    def test_within_window(self, audit):
+        from datetime import datetime, timedelta, timezone
+
+        recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        assert audit._within_since_days(recent, 14) is True
+
+    def test_outside_window(self, audit):
+        from datetime import datetime, timedelta, timezone
+
+        old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+        assert audit._within_since_days(old, 14) is False
+
+    def test_malformed_timestamp_included(self, audit):
+        """If we can't parse the timestamp we'd rather include the entry
+        and let the LLM pass deduplicate than silently drop it."""
+        assert audit._within_since_days("not-a-date", 14) is True
+        assert audit._within_since_days("", 14) is True

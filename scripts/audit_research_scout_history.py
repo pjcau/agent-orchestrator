@@ -182,7 +182,32 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Process at most N candidates (debugging).",
     )
+    p.add_argument(
+        "--since-days",
+        type=int,
+        default=None,
+        help="Only audit entries whose `processed_at` is within the last N "
+        "days. Default: no date filter — every audit-candidate in the state "
+        "file gets re-analysed. The state's own cleanup window (60 days) "
+        "is an upper bound regardless.",
+    )
     return p.parse_args(argv)
+
+
+def _within_since_days(processed_at: str, since_days: int | None) -> bool:
+    """True when the entry's processed_at is within the cutoff window
+    (or when there is no window). Bad/missing timestamps fall through as
+    True to err on the side of including a candidate rather than silently
+    dropping it."""
+    if since_days is None:
+        return True
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        dt = datetime.fromisoformat(processed_at.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return True
+    return dt >= datetime.now(timezone.utc) - timedelta(days=since_days)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     candidates = sorted(
         (e.get("processed_at", "")[:10], u)
         for u, e in state["processed"].items()
-        if _is_audit_candidate(e)
+        if _is_audit_candidate(e) and _within_since_days(e.get("processed_at", ""), args.since_days)
     )
     if args.limit:
         candidates = candidates[: args.limit]

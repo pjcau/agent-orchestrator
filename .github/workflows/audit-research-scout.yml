@@ -15,6 +15,10 @@ on:
         description: 'Open a PR only when at least one improvement has value_score >= this'
         required: false
         default: '6'
+      since_days:
+        description: 'Only audit state entries from the last N days (default 14). Empty = no date filter.'
+        required: false
+        default: '14'
       limit:
         description: 'Cap how many candidates to analyse (debug). Empty = all.'
         required: false
@@ -62,12 +66,17 @@ jobs:
         run: |
           set -euo pipefail
           MIN_SCORE="${{ github.event.inputs.min_value_score }}"
+          SINCE_ARG=""
+          if [ -n "${{ github.event.inputs.since_days }}" ]; then
+            SINCE_ARG="--since-days ${{ github.event.inputs.since_days }}"
+          fi
           LIMIT_ARG=""
           if [ -n "${{ github.event.inputs.limit }}" ]; then
             LIMIT_ARG="--limit ${{ github.event.inputs.limit }}"
           fi
           python scripts/audit_research_scout_history.py \
             --min-value-score "${MIN_SCORE:-6}" \
+            ${SINCE_ARG} \
             ${LIMIT_ARG}
 
       - name: Open one PR per findings file
