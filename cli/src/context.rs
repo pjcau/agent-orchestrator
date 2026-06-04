@@ -33,6 +33,10 @@ pub struct ContextConfig {
     /// Maximum number of `@` refs that can be resolved in a single turn.
     /// Hard backstop against pathological inputs.
     pub max_refs: usize,
+    /// Cap on the number of files a single `@dir/**` recursive reference is
+    /// allowed to inline. Independent from `max_refs`: one user-typed token
+    /// counts as one ref but may fan out to up to `max_dir_files` files.
+    pub max_dir_files: usize,
     /// Glob patterns that are always skipped — secrets / heavy build artifacts
     /// / dotfiles. Matched against the *path relative to the CLI's cwd*.
     pub exclude: GlobSet,
@@ -45,6 +49,7 @@ impl Default for ContextConfig {
             max_file_bytes: 8 * 1024,   // 8 KB per file
             max_total_bytes: 50 * 1024, // 50 KB total per turn (~12K tokens)
             max_refs: 16,
+            max_dir_files: 64,
             exclude,
         }
     }
@@ -64,6 +69,9 @@ impl ContextConfig {
         }
         if let Some(n) = ov.max_refs {
             self.max_refs = n;
+        }
+        if let Some(n) = ov.max_dir_files {
+            self.max_dir_files = n;
         }
         if !ov.exclude_extra.is_empty() {
             let mut b = GlobSetBuilder::new();
@@ -140,15 +148,38 @@ pub struct ExpandReport {
 pub struct ResolvedRef {
     pub token: String, // exact text in the input, e.g. "@src/main.rs"
     pub path: PathBuf, // canonical path
-    pub kind: RefKind, // File | Directory
+    pub kind: RefKind, // File | Directory | DirectoryRecursive
     pub bytes: usize,  // bytes inlined (post-truncation)
     pub truncated: bool,
+    /// Populated only when `kind == DirectoryRecursive`. Lets the REPL show
+    /// a concise breakdown ("12 files, 3 excluded, 1 truncated").
+    pub recursive: Option<RecursiveStats>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefKind {
     File,
     Directory,
+    DirectoryRecursive,
+}
+
+/// Outcome counters from a `@dir/**` walk. Used both for the stderr report
+/// and to flag when the walk stopped early (file cap or byte cap hit before
+/// the whole tree was exhausted).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RecursiveStats {
+    pub files_inlined: usize,
+    pub bytes: usize,
+    pub excluded: usize,
+    pub symlinks_skipped: usize,
+    pub read_errors: usize,
+    pub truncated_files: usize,
+    /// True if the walk stopped because `max_dir_files` was reached and the
+    /// tree still had more files to visit.
+    pub stopped_files: bool,
+    /// True if the walk stopped because adding the next file would have
+    /// pushed the total prompt over `max_total_bytes`.
+    pub stopped_bytes: bool,
 }
 
 #[derive(Debug)]
@@ -206,8 +237,16 @@ pub fn expand_refs(
             });
             continue;
         }
-        let want_dir = raw_path.ends_with('/');
-        let path_str = raw_path.trim_end_matches('/');
+        // Recursive syntax: `@src/**` → walk the dir and inline every file
+        // (subject to exclude, max_dir_files, max_total_bytes). The `/**`
+        // marker is stripped before path canonicalization.
+        let (path_str, want_recursive, want_dir) = if let Some(p) = raw_path.strip_suffix("/**") {
+            (p, true, true)
+        } else if let Some(p) = raw_path.strip_suffix('/') {
+            (p, false, true)
+        } else {
+            (raw_path.as_str(), false, false)
+        };
         let resolved = resolve_path(cwd, path_str);
         let Some(canonical) = resolved else {
             report.skipped.push(SkippedRef {
@@ -249,6 +288,42 @@ pub fn expand_refs(
                 });
                 continue;
             }
+            if want_recursive {
+                let budget = cfg.max_total_bytes.saturating_sub(total_bytes);
+                if budget == 0 {
+                    report.skipped.push(SkippedRef {
+                        token: token.clone(),
+                        reason: SkipReason::TotalSizeExceeded,
+                    });
+                    continue;
+                }
+                let (body, stats) = render_dir_recursive(&canonical, cwd, cfg, budget);
+                if body.is_empty() && stats.files_inlined == 0 {
+                    // Nothing to inline (empty dir, or every file was excluded /
+                    // a symlink). Surface this as a no-op skip so the user can
+                    // tell the ref was parsed but produced nothing.
+                    report.skipped.push(SkippedRef {
+                        token: token.clone(),
+                        reason: SkipReason::ReadError(format!(
+                            "recursive walk found no inlinable files ({} excluded, {} symlinks)",
+                            stats.excluded, stats.symlinks_skipped
+                        )),
+                    });
+                    continue;
+                }
+                let bytes = body.len();
+                total_bytes += bytes;
+                appended.push_str(&format_recursive_block(token, &canonical, &body, &stats));
+                report.resolved.push(ResolvedRef {
+                    token: token.clone(),
+                    path: canonical,
+                    kind: RefKind::DirectoryRecursive,
+                    bytes,
+                    truncated: stats.stopped_files || stats.stopped_bytes,
+                    recursive: Some(stats),
+                });
+                continue;
+            }
             let listing = render_dir_listing(&canonical, cfg.max_file_bytes);
             let bytes = listing.len();
             if total_bytes.saturating_add(bytes) > cfg.max_total_bytes {
@@ -271,6 +346,7 @@ pub fn expand_refs(
                 kind: RefKind::Directory,
                 bytes,
                 truncated: false,
+                recursive: None,
             });
         } else if metadata.is_file() {
             let (content, truncated) = read_file_capped(&canonical, cfg.max_file_bytes)?;
@@ -295,6 +371,7 @@ pub fn expand_refs(
                 kind: RefKind::File,
                 bytes,
                 truncated,
+                recursive: None,
             });
         }
     }
@@ -354,10 +431,14 @@ fn is_path_byte(b: u8) -> bool {
     // Windows. On Unix they cause no false positives — `\` never resolves
     // to a real path so the token is silently dropped at expansion time,
     // and `:` in a Unix filename is rare but legal.
+    //
+    // `*` is accepted so `@src/**` parses as one token; only the trailing
+    // `/**` is honoured (recursive walk). Anything else with `*` will fail
+    // to canonicalize and is silently dropped.
     b.is_ascii_alphanumeric()
         || matches!(
             b,
-            b'/' | b'\\' | b':' | b'.' | b'-' | b'_' | b'~' | b'+' | b'@' | b'#'
+            b'/' | b'\\' | b':' | b'.' | b'-' | b'_' | b'~' | b'+' | b'@' | b'#' | b'*'
         )
 }
 
@@ -417,6 +498,7 @@ fn format_block(token: &str, path: &Path, kind: RefKind, body: &str) -> String {
     let label = match kind {
         RefKind::File => "file",
         RefKind::Directory => "dir",
+        RefKind::DirectoryRecursive => "dir (recursive)",
     };
     let mut s = String::new();
     s.push_str(&format!("\n[{token}] {label}: {}\n", path.display()));
@@ -427,6 +509,143 @@ fn format_block(token: &str, path: &Path, kind: RefKind, body: &str) -> String {
     }
     s.push_str("```\n");
     s
+}
+
+/// Outer wrapper around a `@dir/**` walk. The body already contains
+/// per-file labeled code blocks emitted by `render_dir_recursive`; this
+/// function only adds a short header so the LLM can see which user token
+/// the cluster came from, plus a trailing summary line when the walk
+/// stopped early.
+fn format_recursive_block(token: &str, root: &Path, body: &str, stats: &RecursiveStats) -> String {
+    let mut s = String::new();
+    s.push_str(&format!(
+        "\n[{token}] dir (recursive): {} — {} files\n",
+        root.display(),
+        stats.files_inlined
+    ));
+    s.push_str(body);
+    if !body.ends_with('\n') {
+        s.push('\n');
+    }
+    if stats.stopped_files {
+        s.push_str(&format!(
+            "(stopped at max_dir_files; {} files inlined, more present)\n",
+            stats.files_inlined
+        ));
+    }
+    if stats.stopped_bytes {
+        s.push_str("(stopped at max_total_bytes; walk truncated)\n");
+    }
+    s
+}
+
+/// Walk `root` depth-first and inline every file as its own labeled block.
+///
+/// Determinism: each directory's entries are sorted by file name before
+/// descending, so the same tree produces the same bytes — important for
+/// prompt caching (a stable prefix hits the cache).
+///
+/// Safety:
+///   - symlinks are skipped (never followed) to avoid infinite loops and
+///     to prevent `@dir/**` from exfiltrating files outside the dir via a
+///     dangling symlink.
+///   - `cfg.exclude` is checked against the path relative to `cwd` (or the
+///     absolute path as a fallback) — same semantics as the non-recursive
+///     `@dir/` listing.
+///   - the walk stops as soon as `cfg.max_dir_files` or `bytes_budget` is
+///     about to be exceeded; the partial result is returned with the
+///     corresponding `stopped_*` flag set.
+fn render_dir_recursive(
+    root: &Path,
+    cwd: &Path,
+    cfg: &ContextConfig,
+    bytes_budget: usize,
+) -> (String, RecursiveStats) {
+    let mut out = String::new();
+    let mut stats = RecursiveStats::default();
+    walk_dir(root, cwd, cfg, bytes_budget, &mut out, &mut stats);
+    (out, stats)
+}
+
+fn walk_dir(
+    dir: &Path,
+    cwd: &Path,
+    cfg: &ContextConfig,
+    bytes_budget: usize,
+    out: &mut String,
+    stats: &mut RecursiveStats,
+) {
+    if stats.stopped_files || stats.stopped_bytes {
+        return;
+    }
+    let mut entries = match std::fs::read_dir(dir) {
+        Ok(it) => it.flatten().collect::<Vec<_>>(),
+        Err(_) => {
+            stats.read_errors += 1;
+            return;
+        }
+    };
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        if stats.stopped_files || stats.stopped_bytes {
+            return;
+        }
+        let path = entry.path();
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => {
+                stats.read_errors += 1;
+                continue;
+            }
+        };
+        if ft.is_symlink() {
+            stats.symlinks_skipped += 1;
+            continue;
+        }
+        let match_path = path.strip_prefix(cwd).unwrap_or(&path).to_path_buf();
+        if cfg.exclude.is_match(&match_path) {
+            stats.excluded += 1;
+            continue;
+        }
+        if ft.is_dir() {
+            walk_dir(&path, cwd, cfg, bytes_budget, out, stats);
+            continue;
+        }
+        if !ft.is_file() {
+            continue;
+        }
+        if stats.files_inlined >= cfg.max_dir_files {
+            stats.stopped_files = true;
+            return;
+        }
+        let (content, truncated) = match read_file_capped(&path, cfg.max_file_bytes) {
+            Ok(c) => c,
+            Err(_) => {
+                stats.read_errors += 1;
+                continue;
+            }
+        };
+        // Use the path relative to cwd as the label so the LLM sees the
+        // same shape a user would have typed (`@src/main.rs`). Fall back to
+        // the absolute path for files outside cwd.
+        let label_token = format!("@{}", match_path.display());
+        let mut block = format_block(&label_token, &path, RefKind::File, &content);
+        if truncated {
+            block.push_str("(truncated to ");
+            block.push_str(&cfg.max_file_bytes.to_string());
+            block.push_str(" bytes)\n");
+        }
+        if out.len().saturating_add(block.len()) > bytes_budget {
+            stats.stopped_bytes = true;
+            return;
+        }
+        out.push_str(&block);
+        stats.files_inlined += 1;
+        stats.bytes += block.len();
+        if truncated {
+            stats.truncated_files += 1;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -588,5 +807,173 @@ mod tests {
         assert_eq!(out, "ping alice@example.com please");
         assert!(cache.is_empty());
         assert!(rep.resolved.is_empty());
+    }
+
+    // ---- Recursive `@dir/**` expansion -------------------------------------
+
+    #[test]
+    fn recursive_inlines_every_file_in_tree() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "AAA").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub").join("b.txt"), "BBB").unwrap();
+        fs::create_dir(dir.path().join("sub").join("deep")).unwrap();
+        fs::write(dir.path().join("sub").join("deep").join("c.txt"), "CCC").unwrap();
+
+        let target = format!("@{}/**", dir.path().display());
+        let prompt = format!("review {target}");
+        let (_out, cache, rep) = expand_refs(&prompt, dir.path(), &cfg_default()).unwrap();
+
+        assert_eq!(rep.resolved.len(), 1, "exactly one user-typed ref");
+        assert_eq!(rep.resolved[0].kind, RefKind::DirectoryRecursive);
+        let stats = rep.resolved[0].recursive.as_ref().expect("stats present");
+        assert_eq!(stats.files_inlined, 3);
+        // All three file contents must show up. Order is deterministic
+        // (alphabetic within each dir, depth-first), so AAA precedes BBB
+        // precedes CCC.
+        let pa = cache.find("AAA").expect("a.txt content");
+        let pb = cache.find("BBB").expect("b.txt content");
+        let pc = cache.find("CCC").expect("c.txt content");
+        assert!(pa < pb && pb < pc, "depth-first alphabetical order");
+    }
+
+    #[test]
+    fn recursive_respects_exclude_glob() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("keep.txt"), "KEEP").unwrap();
+        fs::create_dir(dir.path().join("nested")).unwrap();
+        // .env inside a subdir must still be excluded by the default deny-list.
+        fs::write(dir.path().join("nested").join(".env"), "SECRET=1").unwrap();
+        fs::write(dir.path().join("nested").join("ok.txt"), "OK").unwrap();
+
+        let target = format!("@{}/**", dir.path().display());
+        let (_out, cache, rep) = expand_refs(&target, dir.path(), &cfg_default()).unwrap();
+
+        assert!(cache.contains("KEEP"));
+        assert!(cache.contains("OK"));
+        assert!(!cache.contains("SECRET=1"), ".env must not leak");
+        let stats = rep.resolved[0].recursive.as_ref().unwrap();
+        assert_eq!(stats.excluded, 1);
+        assert_eq!(stats.files_inlined, 2);
+    }
+
+    #[test]
+    fn recursive_stops_at_max_dir_files() {
+        let dir = tempdir().unwrap();
+        for i in 0..10 {
+            fs::write(dir.path().join(format!("f{i}.txt")), "x").unwrap();
+        }
+        let cfg = ContextConfig {
+            max_dir_files: 3,
+            ..ContextConfig::default()
+        };
+        let target = format!("@{}/**", dir.path().display());
+        let (_out, _cache, rep) = expand_refs(&target, dir.path(), &cfg).unwrap();
+
+        let stats = rep.resolved[0].recursive.as_ref().unwrap();
+        assert_eq!(stats.files_inlined, 3);
+        assert!(stats.stopped_files);
+        assert!(rep.resolved[0].truncated);
+    }
+
+    #[test]
+    fn recursive_stops_at_max_total_bytes() {
+        let dir = tempdir().unwrap();
+        for i in 0..6 {
+            fs::write(dir.path().join(format!("f{i}.txt")), "x".repeat(800)).unwrap();
+        }
+        let cfg = ContextConfig {
+            max_file_bytes: 1000,
+            max_total_bytes: 2000,
+            ..ContextConfig::default()
+        };
+        let target = format!("@{}/**", dir.path().display());
+        let (_out, _cache, rep) = expand_refs(&target, dir.path(), &cfg).unwrap();
+
+        let stats = rep.resolved[0].recursive.as_ref().unwrap();
+        assert!(stats.stopped_bytes, "must stop on byte budget");
+        // Each block is ~800B + framing; we should get at most ~2 before the cap.
+        assert!(stats.files_inlined <= 3);
+    }
+
+    #[test]
+    fn recursive_and_listing_coexist_in_one_prompt() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "AAA").unwrap();
+        let other = dir.path().join("other");
+        fs::create_dir(&other).unwrap();
+        fs::write(other.join("b.txt"), "BBB").unwrap();
+
+        let listing = format!("@{}/", dir.path().display());
+        let recursive = format!("@{}/**", other.display());
+        let prompt = format!("see {listing} and {recursive}");
+        let (_out, cache, rep) = expand_refs(&prompt, dir.path(), &cfg_default()).unwrap();
+
+        assert_eq!(rep.resolved.len(), 2);
+        let kinds: Vec<_> = rep.resolved.iter().map(|r| r.kind).collect();
+        assert!(kinds.contains(&RefKind::Directory));
+        assert!(kinds.contains(&RefKind::DirectoryRecursive));
+        // Listing shows the file name, recursive shows the file content.
+        assert!(cache.contains("a.txt"));
+        assert!(cache.contains("BBB"));
+    }
+
+    #[test]
+    fn recursive_skips_symlink_targets() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("real.txt"), "REAL").unwrap();
+        // Symlink to a file that, if followed, would be inlined twice.
+        // is_symlink on the entry must short-circuit before any read happens.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path().join("real.txt"), dir.path().join("link.txt"))
+                .unwrap();
+        }
+        #[cfg(windows)]
+        {
+            // Windows symlink creation requires admin; skip the link side of
+            // the assertion but still exercise the walker.
+        }
+        let target = format!("@{}/**", dir.path().display());
+        let (_out, _cache, rep) = expand_refs(&target, dir.path(), &cfg_default()).unwrap();
+        let stats = rep.resolved[0].recursive.as_ref().unwrap();
+        assert_eq!(stats.files_inlined, 1, "real file inlined once");
+        #[cfg(unix)]
+        assert_eq!(stats.symlinks_skipped, 1);
+    }
+
+    #[test]
+    fn recursive_empty_dir_reports_skip() {
+        let dir = tempdir().unwrap();
+        let empty = dir.path().join("empty");
+        fs::create_dir(&empty).unwrap();
+        let target = format!("@{}/**", empty.display());
+        let (_out, cache, rep) = expand_refs(&target, dir.path(), &cfg_default()).unwrap();
+        assert!(rep.resolved.is_empty());
+        assert_eq!(rep.skipped.len(), 1);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn recursive_token_parses_with_trailing_star_star() {
+        // Regression: is_path_byte must accept `*` so `@src/**` is one token.
+        let tokens = scan_tokens("review @src/** carefully");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].0, "@src/**");
+        assert_eq!(tokens[0].1, "src/**");
+    }
+
+    #[test]
+    fn recursive_walk_is_deterministic_across_runs() {
+        // The same tree must produce identical bytes — caching depends on it.
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join("z")).unwrap();
+        fs::write(dir.path().join("z").join("c.txt"), "C").unwrap();
+        fs::write(dir.path().join("a.txt"), "A").unwrap();
+        fs::write(dir.path().join("b.txt"), "B").unwrap();
+        let target = format!("@{}/**", dir.path().display());
+        let (_, c1, _) = expand_refs(&target, dir.path(), &cfg_default()).unwrap();
+        let (_, c2, _) = expand_refs(&target, dir.path(), &cfg_default()).unwrap();
+        assert_eq!(c1, c2);
     }
 }

@@ -630,10 +630,11 @@ Single-binary Rust CLI living in [`cli/`](../cli/) that lets a local project tal
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | `login`/`logout`/`whoami`/`config` + server `/api/cli/v1/whoami` + keychain storage | ✅ on `experiment/rust-cli` |
+| 1 | `login`/`logout`/`whoami`/`config` + server `/api/cli/v1/whoami` + keychain storage | ✅ Done (v0.1.0) |
 | 2 | Device-flow OAuth (RFC 8628), `ago run` + SSE streaming, `.ago.yaml` preset | planned |
 | 3 | `jobs`, `logs --follow`, progress UX, shell completions | planned |
 | 4 | cargo-audit/deny in CI, cross-compile (mac/linux/windows), cosign + SBOM, Homebrew tap, GH Release v0.1.0 | planned |
+| 5 | `ago chat` REPL (v0.2.0), `@file`/`@dir/` refs (v0.3.0), `.ago.yaml context:` (v0.3.1), Windows paths (v0.3.2), `cache` subcommand + OpenRouter `cache_control` plumbing (v0.4.0–v0.4.1), recursive `@dir/**` content (v0.4.2) | ✅ Done (v0.4.2) |
 
 ---
 

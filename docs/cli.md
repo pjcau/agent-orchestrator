@@ -139,15 +139,23 @@ what leaves your filesystem.
 > explain @src/main.rs to me
 > compare @./Cargo.toml and @cli/Cargo.toml
 > what files are in @src/        (trailing slash → directory listing)
+> review @src/**                  (trailing /** → recursive contents, v0.4.2+)
 ```
+
+| Syntax | Sends | Use it for |
+|---|---|---|
+| `@path/to/file.rs` | The single file's content (capped to `max_file_bytes`). | "Explain this function." |
+| `@path/to/dir/` | Just the directory listing — names + sizes, no file content. | "What's in this folder?" |
+| `@path/to/dir/**` | The content of **every file** inside, depth-first, exclude-filtered, deterministically ordered. | "Review this whole module." |
 
 Each resolved reference is appended to the prompt as a labeled code block
 the LLM can quote back. Stderr surfaces a one-line report per ref:
 
 ```
-· included @src/main.rs (4321 B)
+· included file @src/main.rs (4321 B)
 · skipped @.env — excluded by safety pattern
-· included @src/ (812 B)
+· included dir @src/ (812 B)
+· included dir/** @src/** (14 files, 38112 B — 2 excluded, 1 file(s) truncated)
 ```
 
 **Defaults (override via `.ago.yaml` `context:` block in v0.3.1):**
@@ -157,7 +165,31 @@ the LLM can quote back. Stderr surfaces a one-line report per ref:
 | max bytes per file | 8 KB | Caps a single file at ~2K tokens |
 | max bytes total per turn | 50 KB | ~12K tokens total |
 | max refs per turn | 16 | Backstop against pathological inputs |
+| max files per `@dir/**` | 64 | One recursive ref can fan out to many files; cap stops the walk early |
 | exclude patterns | `.env*`, `.git/`, `secrets/**`, `*secret*`, `node_modules/**`, `target/**`, `dist/**`, `.venv/**`, `__pycache__/`, `Cargo.lock`, `package-lock.json`, `yarn.lock`, … | Never leak credentials or heavy artifacts |
+
+**Recursive `@dir/**` safety guarantees (v0.4.2+):**
+
+- **Symlinks are never followed** — protects against loops and against a
+  malicious link inside the dir pointing at `~/.ssh/`.
+- **Exclude patterns still apply** — `.env` buried inside a subdirectory is
+  still skipped, the same way `@/.env` would be.
+- **Caps stop the walk early** — when `max_dir_files` or `max_total_bytes`
+  hit, the partial result is sent with a `(stopped at …)` trailer so the
+  LLM knows it did not see the whole tree.
+- **Deterministic order** — entries are sorted by file name within each
+  directory before descent, so the same tree produces the same prefix
+  bytes across turns. That is what lets prompt caching hit on repeated
+  `@src/**` references.
+
+To raise the file cap for a specific project, in `.ago.yaml`:
+
+```yaml
+context:
+  max_dir_files: 128
+  max_total_bytes: 100000   # 100 KB — ~25K tokens
+  max_file_bytes: 16384     # 16 KB per file
+```
 
 Bare mentions like `@alice` or `alice@example.com` are **not** treated as
 references — the CLI requires `/` or `.` in the token AND a real file/dir

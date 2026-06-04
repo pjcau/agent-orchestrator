@@ -610,12 +610,13 @@ The match matrix has only one ⚠️ row left and zero ❌. Realistic next steps
 
 Provider-agnostic, single-binary client that lets a local project talk to a remote orchestrator the same way `gh` talks to GitHub. Lives in [`cli/`](../cli/) at repo root. Full design + security model in [docs/cli.md](cli.md).
 
-| Phase | Scope | Status (2026-05-27) |
+| Phase | Scope | Status (2026-06-04) |
 |---|---|---|
-| 1 — Skeleton + auth | `login` / `logout` / `whoami` / `config`, OS-keychain token storage, rustls-only HTTP, `/api/cli/v1/whoami` server endpoint | **shipped on `experiment/rust-cli`** |
+| 1 — Skeleton + auth | `login` / `logout` / `whoami` / `config`, OS-keychain token storage, rustls-only HTTP, `/api/cli/v1/whoami` server endpoint | ✅ Done (v0.1.0) |
 | 2 — Core execution | Device-flow OAuth (RFC 8628), `ago run "<task>"` with SSE streaming, agent/skill flags, `.ago.yaml` project preset, `--json` output | planned |
 | 3 — Observability & UX | `ago jobs list/get/cancel`, `ago logs --follow`, progress bars, shell completions | planned |
 | 4 — Hardening & release | `cargo audit`/`deny`/`vet` in CI, cross-compile (mac arm/x64, linux x64/arm64 musl, windows), signed releases via `cosign` + SBOM, Homebrew tap, GitHub Release v0.1.0 | planned |
+| 5 — Chat + project context | `ago chat` REPL (v0.2.0), `@file` / `@dir/` references (v0.3.0), `.ago.yaml context:` overrides (v0.3.1), Windows path support (v0.3.2), `cache` subcommand + OpenRouter `cache_control` plumbing for `@file` context (v0.4.0–v0.4.1), recursive `@dir/**` content expansion (v0.4.2) | ✅ Done (v0.4.2) |
 
 ---
 

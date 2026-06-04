@@ -44,6 +44,11 @@ pub struct ContextOverrides {
     pub max_file_bytes: Option<usize>,
     pub max_total_bytes: Option<usize>,
     pub max_refs: Option<usize>,
+    /// Cap on the number of files a single `@dir/**` recursive reference is
+    /// allowed to inline. Independent from `max_refs` (which counts user-typed
+    /// `@<path>` tokens) — one recursive ref can still fan out to N files.
+    /// Built-in default: 64.
+    pub max_dir_files: Option<usize>,
     #[serde(default)]
     pub exclude_extra: Vec<String>,
 }
@@ -112,6 +117,14 @@ impl ProjectPreset {
                 if n == 0 || n > 256 {
                     return Err(AgoError::Config(format!(
                         "{}: context.max_refs must be in 1..=256, got {n}",
+                        path.display()
+                    )));
+                }
+            }
+            if let Some(n) = ctx.max_dir_files {
+                if n == 0 || n > 2048 {
+                    return Err(AgoError::Config(format!(
+                        "{}: context.max_dir_files must be in 1..=2048, got {n}",
                         path.display()
                     )));
                 }

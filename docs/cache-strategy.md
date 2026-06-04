@@ -443,3 +443,51 @@ Environment variables override:
 | Whitelist cacheable skills, not blacklist | Safer: new skills default to uncached until explicitly opted in |
 | Module-level cache instances | Shared across all graph executions within the process |
 | Skip cache on `temperature > 0` | Non-deterministic outputs shouldn't be cached |
+
+---
+
+## Prompt Caching via the CLI (`ago`, v0.4.x)
+
+The `ago` CLI ships `@file` / `@dir/` / `@dir/**` context expansion (see
+[docs/cli.md § @file and @dir references](cli.md#file-and-dir-references-v03))
+and routes the expanded payload as a separate `cache_context` body field —
+not concatenated into the user prompt. The server then injects it as the
+cacheable prefix of the system message via OpenRouter's `cache_control:
+ephemeral` marker.
+
+### How `@dir/**` interacts with caching (v0.4.2+)
+
+A recursive expansion is treated as **one contiguous cacheable prefix**,
+the same way a single `@file.rs` is. Three properties make this work
+across turns:
+
+1. **Deterministic ordering** — `render_dir_recursive` sorts entries by
+   file name within each directory before depth-first descent. Identical
+   input tree → identical bytes → cache hit on subsequent turns.
+2. **Bounded fan-out** — `context.max_dir_files` (default 64) caps how
+   many files a single `@dir/**` may inline, so the prefix stays small
+   enough to be worth caching.
+3. **Single body field** — even when the walk produces N files, they are
+   concatenated into one `cache_context` string and marked with one
+   `cache_control` block. The marker is per-content-block, not per file.
+
+### Cost model
+
+Without caching, a 14-file `@src/**` expansion on
+`tencent/hy3-preview` ($0.066/M input) at ~38 KB ≈ ~9.5K tokens
+≈ **$0.00063 / turn** of input cost. Across 10 turns of conversation
+referencing the same context: **$0.0063**. With OpenRouter prompt
+caching enabled (Anthropic-routed models: 90% off cached input after
+the first turn): ~$0.0007 across the 10 turns — roughly **9× cheaper**.
+
+For providers without `cache_control` support, the marker is silently
+ignored — no behavior regression, just no discount.
+
+### When the recursive walk stops early
+
+`stopped_files` or `stopped_bytes` on `RecursiveStats` means the cache
+key changes from turn to turn if files are added under the cap (the
+prefix grows), but stays stable once the cap is hit (the prefix is
+fixed at the cap). Operationally: an early-stopping walk is still
+cache-friendly — the trailing `(stopped at max_dir_files; …)` marker is
+part of the deterministic prefix.

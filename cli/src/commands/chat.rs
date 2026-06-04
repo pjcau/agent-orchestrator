@@ -529,12 +529,38 @@ fn print_expand_report(report: &ExpandReport) {
         let kind = match r.kind {
             crate::context::RefKind::File => "file",
             crate::context::RefKind::Directory => "dir",
+            crate::context::RefKind::DirectoryRecursive => "dir/**",
         };
         let trunc = if r.truncated { " [truncated]" } else { "" };
-        eprintln!(
-            "\x1b[2m· included {kind} {} ({} B{trunc})\x1b[0m",
-            r.token, r.bytes
-        );
+        if let Some(stats) = r.recursive.as_ref() {
+            let mut extras = Vec::new();
+            if stats.excluded > 0 {
+                extras.push(format!("{} excluded", stats.excluded));
+            }
+            if stats.truncated_files > 0 {
+                extras.push(format!("{} file(s) truncated", stats.truncated_files));
+            }
+            if stats.stopped_files {
+                extras.push("hit max_dir_files".into());
+            }
+            if stats.stopped_bytes {
+                extras.push("hit max_total_bytes".into());
+            }
+            let extras_s = if extras.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", extras.join(", "))
+            };
+            eprintln!(
+                "\x1b[2m· included {kind} {} ({} files, {} B{trunc}{extras_s})\x1b[0m",
+                r.token, stats.files_inlined, r.bytes
+            );
+        } else {
+            eprintln!(
+                "\x1b[2m· included {kind} {} ({} B{trunc})\x1b[0m",
+                r.token, r.bytes
+            );
+        }
     }
     for s in &report.skipped {
         let reason = match &s.reason {
