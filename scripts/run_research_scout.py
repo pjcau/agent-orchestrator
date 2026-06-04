@@ -176,12 +176,25 @@ def _call_openrouter(prompt: str) -> dict:
     """Call OpenRouter API. Used on CI when OPENROUTER_API_KEY is set."""
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     model = os.environ.get("SCOUT_MODEL", OPENROUTER_MODEL)
+    # Two coupled settings that matter for reasoning models like
+    # tencent/hy3-preview:
+    #   - `reasoning.effort = "low"` caps the model's hidden chain-of-thought.
+    #     Without this, Tencent burnt 7781/8000 completion tokens on
+    #     reasoning and truncated the JSON answer mid-array (finish_reason:
+    #     "length", empty/partial content). With "low", the same prompt
+    #     finishes cleanly at ~681 reasoning tokens + a full answer.
+    #   - 8000 max_tokens leaves comfortable headroom for the JSON-array
+    #     answer up to MAX_IMPROVEMENTS=30 items even after the (now
+    #     capped) reasoning trace.
+    # For non-reasoning models (gpt-4o, Qwen, etc.) the `reasoning` field
+    # is silently ignored by OpenRouter, so it's safe to always include.
     payload = json.dumps(
         {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 2000,
+            "max_tokens": 8000,
             "temperature": 0.3,
+            "reasoning": {"effort": "low"},
         }
     ).encode()
 
@@ -191,17 +204,37 @@ def _call_openrouter(prompt: str) -> dict:
         "HTTP-Referer": "https://github.com/pjcau/agent-orchestrator",
     }
 
+    # 240 s, not 90 s. Reasoning models (tencent/hy3-preview) sometimes
+    # take 90-100 s end-to-end on a 10k-char prompt; the previous 90 s
+    # cap was clipping responses on the wire and surfacing as silent
+    # "empty response" or URLError. Honest cap matters more than fast
+    # fail since the scout runs once a day.
     req = Request(OPENROUTER_API_URL, data=payload, headers=headers, method="POST")
     try:
-        with urlopen(req, timeout=90) as resp:
+        with urlopen(req, timeout=240) as resp:
             data = json.loads(resp.read().decode())
     except URLError as exc:
         return {"error": f"OpenRouter API error: {exc}"}
+    except TimeoutError as exc:  # socket.timeout / urllib variant
+        return {"error": f"OpenRouter API timeout: {exc}"}
 
     choice = data.get("choices", [{}])[0]
     content = choice.get("message", {}).get("content", "")
     if not content:
-        return {"error": "OpenRouter returned empty response"}
+        # Reasoning models sometimes return content="" when they spent
+        # the whole token budget on hidden reasoning. Surface the
+        # finish_reason + usage so the operator knows what to do next
+        # (lower reasoning.effort, raise max_tokens, switch model).
+        finish = choice.get("finish_reason", "?")
+        usage = data.get("usage", {})
+        det = usage.get("completion_tokens_details", {})
+        return {
+            "error": (
+                f"OpenRouter returned empty content (finish_reason={finish}, "
+                f"reasoning_tokens={det.get('reasoning_tokens', '?')}, "
+                f"completion_tokens={usage.get('completion_tokens', '?')})"
+            )
+        }
     return {"content": content}
 
 

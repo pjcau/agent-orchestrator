@@ -91,6 +91,32 @@ def test_default_model_resolves_on_openrouter(scout):
     not _has_openrouter_key(),
     reason="Requires OPENROUTER_API_KEY env var. Source .env.local before running.",
 )
+def test_request_payload_caps_reasoning_for_thinking_models(scout):
+    """tencent/hy3-preview is a reasoning model: without `reasoning.effort
+    = "low"` it spends 95%+ of `max_tokens` on hidden reasoning and
+    returns empty/truncated content. We assert the live response comes
+    back with `finish_reason=stop` AND non-trivial content from a small
+    structured prompt — a smoke test for the reasoning cap and the
+    240 s socket timeout."""
+    prompt = (
+        "Return a JSON array with a single element: "
+        '{"name": "ok", "value": 1}. No prose, no fences.'
+    )
+    resp = scout._call_openrouter(prompt)
+    assert "error" not in resp, (
+        f"Reasoning cap regression — request returned error: {resp.get('error')!r}. "
+        "Check that `reasoning: {'effort': 'low'}` is still on the payload."
+    )
+    # Must contain at least the JSON tokens; not asserting exact shape,
+    # the parser unit tests cover that.
+    assert "[" in resp["content"] and "]" in resp["content"]
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
+    not _has_openrouter_key(),
+    reason="Requires OPENROUTER_API_KEY env var. Source .env.local before running.",
+)
 def test_default_model_produces_valid_json_array(scout):
     """End-to-end shape check: ask the live model for the same JSON-array
     contract the real scout prompt uses, then push the response through
