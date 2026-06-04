@@ -353,9 +353,9 @@ class TestConstants:
         result = scout._fetch_url("https://example.com/not-github")
         assert "error" in result
 
-    def test_openrouter_model_matches_orchestrator_paid_default(self, scout):
-        """The scout pays for the same model the orchestrator's REST agent
-        runner uses as its paid default (see dashboard/evals_routes.py).
-        Pinning here means any drift away from gpt-4o in either side
-        becomes a visible diff."""
-        assert scout.OPENROUTER_MODEL == "openai/gpt-4o"
+    def test_openrouter_model_matches_chat_default(self, scout):
+        """The scout uses the same model the dashboard ChatInput
+        auto-selects for multi-agent team runs (see
+        `PREFERRED_CLOUD_MODEL` in ChatInput.tsx). Pinning here means
+        any drift in either surface becomes a visible diff."""
+        assert scout.OPENROUTER_MODEL == "tencent/hy3-preview"

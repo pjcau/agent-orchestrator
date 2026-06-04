@@ -50,15 +50,15 @@ MAX_IMPROVEMENTS = 30  # cap per repo; ranked by value_score desc
 _GH_REPO_RE = re.compile(r"github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/|$)")
 
 # OpenRouter config (used on CI when OPENROUTER_API_KEY is set).
-# We deliberately default to the orchestrator's OpenAI provider default
-# (`gpt-4o`, see src/agent_orchestrator/providers/openai.py) rather than
-# a free-tier model. The free models repeatedly hit HTTP 429 at 02:00
-# UTC (4 nights in a row in late May 2026) AND returned weaker
-# improvement proposals — at the volume of one repo per night, the cost
-# delta is small enough (~0.01-0.02 USD/run) that the reliability win
-# is worth it. Override via the `SCOUT_MODEL` env var if needed.
+# Pinned to the same model the dashboard ChatInput auto-selects for
+# multi-agent team runs (`PREFERRED_CLOUD_MODEL` in
+# frontend/src/components/chat/ChatInput.tsx). Keeping the scout on the
+# same model the rest of the system runs on means analysis quality
+# tracks what users actually experience day-to-day, and any drift in
+# `tencent/hy3-preview` quality shows up in both surfaces at once.
+# Override via the `SCOUT_MODEL` env var.
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "openai/gpt-4o"
+OPENROUTER_MODEL = "tencent/hy3-preview"
 
 # Our codebase summary — kept short to save tokens
 CODEBASE_SUMMARY = """\

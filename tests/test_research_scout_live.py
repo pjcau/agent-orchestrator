@@ -65,10 +65,10 @@ def test_default_model_resolves_on_openrouter(scout):
     """The model in `OPENROUTER_MODEL` must be a valid OpenRouter id and
     must return a non-empty completion. If this fails we know the nightly
     scout is broken BEFORE the cron does."""
-    assert scout.OPENROUTER_MODEL == "openai/gpt-4o", (
-        "Default scout model drifted away from the orchestrator's paid "
-        "agent default (see dashboard/evals_routes.py:start_run). Update "
-        "this test along with OPENROUTER_MODEL if intentional."
+    assert scout.OPENROUTER_MODEL == "tencent/hy3-preview", (
+        "Default scout model drifted away from the chat UI default "
+        "(see PREFERRED_CLOUD_MODEL in ChatInput.tsx). Update this test "
+        "along with OPENROUTER_MODEL if intentional."
     )
 
     # Minimal prompt — we only care that the round-trip works and returns
