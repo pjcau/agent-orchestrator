@@ -63,9 +63,7 @@ def test_cascading_ecosystem_is_grouped(updates: list[dict], ecosystem: str) -> 
 def test_prefixes_match_auto_merge_filter(updates: list[dict]) -> None:
     for entry in updates:
         prefix = entry.get("commit-message", {}).get("prefix")
-        assert prefix is not None, (
-            f"{entry['package-ecosystem']} must set commit-message.prefix"
-        )
+        assert prefix is not None, f"{entry['package-ecosystem']} must set commit-message.prefix"
         eco = entry["package-ecosystem"]
         if eco in CASCADING_ECOSYSTEMS:
             assert prefix.startswith(AUTO_MERGE_PREFIXES), (
