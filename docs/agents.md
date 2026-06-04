@@ -190,7 +190,7 @@ The `research-scout` analyzes **GitHub starred repos** (one per run) via LLM and
 
 - **Source**: GitHub starred repos (fetched via `scripts/fetch_github_stars.py`)
 - **Lookback**: 30 days (stars older than 30 days are ignored)
-- **LLM backend**: `claude` CLI locally, OpenRouter (`qwen/qwen3.5-flash-02-23`) on CI
+- **LLM backend**: `claude` CLI locally, OpenRouter (`anthropic/claude-sonnet-4-6` — same paid default as the orchestrator's Anthropic provider) on CI. The free Qwen model was dropped after 4 consecutive nights of HTTP 429 in late May 2026; per-run cost on Sonnet is ~$0.01, worth the reliability. Override via the `SCOUT_MODEL` env var.
 - **Analysis**: LLM compares repo's patterns against our codebase, proposes up to **30** improvements with code, each scored on `impact` / `effort` / `risk` and a composite `value_score` (0–10). Parser sorts by `value_score` desc and caps at `MAX_IMPROVEMENTS` (30), so the highest-value items always surface first. See `scripts/run_research_scout.py::_parse_improvements`.
 - **Reprocessing existing PRs**: `python scripts/run_research_scout.py --url <github-repo-url>` re-runs the analysis for a specific repo (bypasses bookmarks). Add `--skip-state` to leave the state file untouched (useful for regenerating findings for an open research-scout PR)
 - **State tracking**: `.claude/research-scout-state.json`. Each processed URL records `outcome` (`fetch-error` / `low-relevance` / `llm-error` / `no-improvements` / `improvements-found`) and a short `reason`, so any operator can answer "why didn't this turn into a PR?" without reading workflow logs. Legacy entries without `outcome` are classified at render time by parsing the `summary` prefix.

@@ -353,5 +353,9 @@ class TestConstants:
         result = scout._fetch_url("https://example.com/not-github")
         assert "error" in result
 
-    def test_openrouter_model(self, scout):
-        assert "qwen" in scout.OPENROUTER_MODEL
+    def test_openrouter_model_matches_orchestrator_paid_default(self, scout):
+        """The scout pays for the same Anthropic model the orchestrator
+        treats as the canonical paid default (see AnthropicProvider).
+        Pinning here means any drift away from sonnet-4-6 in either side
+        becomes a visible diff."""
+        assert scout.OPENROUTER_MODEL == "anthropic/claude-sonnet-4-6"

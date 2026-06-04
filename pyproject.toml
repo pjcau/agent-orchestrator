@@ -58,6 +58,9 @@ packages = ["src/agent_orchestrator"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "live: hits a real external service (LLM, GitHub API, etc.). Skipped by default; opt-in via `pytest -m live` plus the relevant env vars.",
+]
 
 [tool.ruff]
 line-length = 100
