@@ -262,7 +262,9 @@ A PR is auto-merged (squash, branch deleted) only when **all** of these hold:
   (`SUCCESS` / `NEUTRAL` / `SKIPPED`). Any `FAILURE` or still-`PENDING` check
   disqualifies it.
 - `mergeable == MERGEABLE` and `mergeStateStatus == CLEAN` (no conflicts,
-  no unmet branch-protection rules).
+  no unmet branch-protection rules). GitHub computes this state lazily, so a
+  freshly rebased PR first reports `UNKNOWN`; the job re-polls the PR a few
+  times before deciding, instead of skipping it outright.
 
 If a Dependabot PR is conflicting, the job posts `@dependabot rebase` instead of
 merging, so the branch is clean for the next weekly run. The `dry_run` input

@@ -62,6 +62,19 @@ jobs:
               echo "⏭️  #$n skip (draft) — $title"; continue
             fi
 
+            # GitHub computes `mergeable` lazily — a freshly pushed/rebased PR
+            # reports UNKNOWN until a background job settles. Re-poll the single
+            # PR a few times so we don't skip a perfectly mergeable branch just
+            # because its state hadn't been computed yet.
+            tries=0
+            while { [ "$mergeable" = "UNKNOWN" ] || [ "$state" = "UNKNOWN" ]; } && [ "$tries" -lt 5 ]; do
+              sleep 4
+              fresh=$(gh pr view "$n" --json mergeable,mergeStateStatus)
+              mergeable=$(echo "$fresh" | jq -r '.mergeable')
+              state=$(echo "$fresh"     | jq -r '.mergeStateStatus')
+              tries=$((tries + 1))
+            done
+
             # Any failing / pending / missing check disqualifies the PR.
             bad=$(echo "$pr" | jq '[.statusCheckRollup[]?
               | (.conclusion // .state // "PENDING")

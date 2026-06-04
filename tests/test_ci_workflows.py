@@ -228,6 +228,17 @@ class TestAutoMergeMaintenanceWorkflow:
         run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
         assert "--squash" in run, "Maintenance bumps should land as single squash commits"
 
+    def test_repolls_unknown_mergeable_state(self, wf: dict) -> None:
+        """Regression guard: a freshly rebased PR reports mergeable=UNKNOWN.
+
+        GitHub computes the mergeable state lazily, so a PR queried right after
+        a push/rebase comes back UNKNOWN and would be skipped forever if we did
+        not re-poll. The job must retry the single PR before giving up.
+        """
+        run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
+        assert "UNKNOWN" in run, "Must explicitly handle the UNKNOWN mergeable state"
+        assert "gh pr view" in run, "Must re-fetch the PR to resolve a stale UNKNOWN state"
+
 
 class TestEC2RestartWorkflow:
     """`.github/workflows/ec2-restart.yml` — emergency instance restart."""
