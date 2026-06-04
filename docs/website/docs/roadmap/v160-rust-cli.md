@@ -32,6 +32,7 @@ Full design + security model: [docs/cli.md](https://github.com/pjcau/agent-orche
 | 3 | Observability & UX: `ago jobs list/get/cancel`, `ago logs --follow`, indicatif progress bars, shell completions | planned | — |
 | 4 | Hardening & release: `cargo audit`/`deny`/`vet` in CI, cross-compile matrix, signed releases via `cosign` + SBOM, Homebrew tap, GitHub Release **v0.1.0** | planned | — |
 | 5 | Interactive chat + project context: `ago chat` REPL (v0.2.0), `@file` / `@dir/` references with safe defaults (v0.3.0), `.ago.yaml context:` overrides (v0.3.1), Windows path support (v0.3.2), `cache` subcommand + OpenRouter `cache_control` plumbing for `@file` context (v0.4.0–v0.4.1), recursive `@dir/**` content expansion (v0.4.2) | ✅ Done (v0.4.2) | `cli/src/commands/chat.rs`, `cli/src/context.rs`, `cli/src/project.rs`, `src/agent_orchestrator/core/cache_context.py`, `src/agent_orchestrator/providers/openrouter.py` |
+| 6 | UX polish: `--resume` for `chat`/`run` (per-server `conversation_id` persisted in `state.toml`), `AGO.md` project instructions auto-load (client-side, prepended to `cache_context` so the OpenRouter cache covers it), code-fence colouring in assistant output (`│`-bar + `┌─/└─` headers + lang tag), top-level `--no-color` flag honouring `NO_COLOR` env (v0.5.0) | ✅ Done (v0.5.0) | `cli/src/state.rs`, `cli/src/instructions.rs`, `cli/src/render.rs`, `cli/src/commands/chat.rs`, `cli/src/commands/run.rs` |
 
 ## Security model (Phase 1)
 

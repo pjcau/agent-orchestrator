@@ -348,25 +348,80 @@ to `${XDG_DATA_HOME:-~/.local/share}/io.agent-orchestrator.ago/chat-history`
 so arrow-up works across sessions. The `AGO_INSECURE=1` dev escape hatch
 behaves the same as for `ago run`.
 
-## v0.3 backlog (deferred from v0.2)
+## `AGO.md` — project instructions auto-load (v0.5.0+)
+
+Drop an `AGO.md` (or `.ago.md` fallback) at the root of any project and
+the CLI will pick it up walking up from `cwd` — the same algorithm used
+for `.ago.yaml`. The file is loaded once at startup and prepended to the
+`cache_context` body field on every `ago chat` / `ago run` turn. Because
+the OpenRouter `cache_control: ephemeral` marker covers the whole prefix,
+re-using the same `AGO.md` across many turns costs ~10% of input tokens
+after the first request on Anthropic-routed models.
+
+Use it for the kind of context Claude users keep in `CLAUDE.md`:
+
+```markdown
+# Project: payment-gateway
+
+## Style
+- Errors are typed (no `panic!` in core/).
+- Tests live next to the code (`mod tests` blocks).
+
+## Always
+- Run `cargo fmt` after generating Rust.
+- Don't suggest adding new dependencies without flagging them.
+```
+
+The file is capped at `context.max_file_bytes` (default 8 KB). When the
+cap kicks in the CLI prints a hint suggesting you raise
+`context.max_file_bytes` in `.ago.yaml`.
+
+## `--resume` (v0.5.0+)
+
+`ago chat --resume` and `ago run --resume "follow-up question"` reuse
+the **most recent `conversation_id`** seen on the active server, so the
+server's ConversationManager restores prior turns. The id is stored
+per-server in `~/.config/ago/state.toml` (mode 0600) — a `https://prod`
+session and a `http://localhost:5005` session never collide. First-time
+`--resume` with no stored conversation just starts fresh (warns on stderr).
+
+## Code-fence colouring (v0.5.0+)
+
+Assistant output is post-processed to add a vertical bar (`│`) prefix
+and a dim-cyan colour to lines inside triple-backtick fences. The
+opening fence is rendered as `┌─ <lang>` with the language tag, the
+closing fence as `└─`. Pure prose is untouched.
+
+Auto-disabled when:
+- stdout is not a TTY (piped to a file, `wc`, etc.),
+- `NO_COLOR=1` is set ([no-color.org](https://no-color.org)),
+- `--no-color` is passed on the CLI.
+
+Real per-token syntax highlighting (Rust keywords, Python strings, …)
+is a v0.5.x follow-up via `syntect` — the surrounding fence machinery
+is engine-agnostic so adding it later is a single-function change.
+
+## v0.3+ backlog (deferred / shipped)
 
 Captured here so contributors know what's planned but explicitly out of
 scope right now:
 
-| Feature | Why deferred |
+| Feature | Status |
 |---|---|
-| `@file` references in chat prompts | Needs a client-side prompt rewriter + safe size cap. ~80 LoC. |
-| `AGO.md` project instructions auto-loaded | Mirrors Claude's `CLAUDE.md`; needs to be injected as a system message — server-side change. |
-| `--resume` to continue last conversation | Persist `last_conversation_id` in `~/.config/ago/state.toml`. Small. |
-| `ago logs <id> --follow` | Server SSE endpoint filtered by `job_id`. |
-| Per-token revocation denylist | Server change; today rotate `JWT_SECRET_KEY` to invalidate. |
-| Code-fence syntax highlighting in REPL | Pure UX polish via `bat` / `syntect`. |
-| Image/file paste attach | Multipart upload + server endpoint to receive blobs. |
-| Tool approval prompts (`accept-edits` mode) | Server needs a pause-and-await-approval mid-run; currently runs straight through. |
-| Conversation branch / compact / export | Server change; new endpoints. |
-| MCP / hook configuration via CLI | Already lives in the dashboard; CLI surface would duplicate. |
-| Homebrew tap | Distribution polish. |
-| cosign signing on release artifacts | Provenance polish. |
+| `@file` references in chat prompts | ✅ Done (v0.3.0) |
+| `AGO.md` project instructions auto-loaded | ✅ Done (v0.5.0, client-side via `cache_context`) |
+| `--resume` to continue last conversation | ✅ Done (v0.5.0) |
+| Code-fence colouring in REPL | ✅ Done (v0.5.0); per-token syntect highlighting deferred |
+| `ago logs <id> --follow` | Deferred to v0.6.0 — needs server change so CLI runs register in `run_manager` |
+| Per-token revocation denylist | Server change; today rotate `JWT_SECRET_KEY` to invalidate |
+| Image/file paste attach | Deferred to v0.6.0 — needs multipart upload + storage endpoint |
+| Tool approval prompts (`accept-edits` mode) | Deferred to v0.6.0 — needs server pause-and-await-approval |
+| Conversation branch / compact / export | Deferred to v0.6.0 — needs persistence endpoints |
+| MCP / hook configuration via CLI | Out of scope — already lives in the dashboard |
+| Sync-back agent files → CLI cwd | Deferred to v0.5.x — server already exposes `/api/jobs/{id}/files`; CLI needs to consume it post-run |
+| `--local` fallback (subprocess `client.py`) | Deferred to v0.5.x |
+| Auto-update channel | Deferred to v0.5.x — check GitHub Releases API + `ago self update` |
+| Homebrew tap | Not planned — install via `cargo install --path cli` or download the GitHub Release artifact |
 
 ## Limits acknowledged in current revision
 
@@ -374,8 +429,11 @@ scope right now:
   denylist yet).
 - `ago chat` keeps conversation context server-side but files written
   by agent tools land in the session dir on the server, not the CLI's
-  cwd. Read them via `ago jobs show <session_id>` for now.
-- `ago logs <id> --follow` not implemented (see v0.3 backlog).
-- No `--local` fallback (subprocess Python `client.py`) yet.
+  cwd. Read them via `ago jobs show <session_id>` for now. Sync-back to
+  cwd is on the v0.5.x roadmap.
+- `ago logs <id> --follow` not implemented — `/api/cli/v1/run` uses an
+  isolated EventBus not registered in the server's `run_manager`.
+  Deferred to v0.6.0 with a server change.
+- No `--local` fallback (subprocess Python `client.py`) yet — v0.5.x.
 - No update channel; rely on `cargo install --force` / re-download
-  from the GitHub Release.
+  from the GitHub Release. Auto-update lands in v0.5.x.

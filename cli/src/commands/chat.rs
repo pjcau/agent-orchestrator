@@ -27,7 +27,26 @@ const HISTORY_FILENAME: &str = "chat-history";
 pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
     let mut settings = ChatSettings::resolve(rt, &args)?;
     let client = rt.api_client()?;
-    let mut conversation_id = uuid::Uuid::new_v4().to_string();
+    let server_url = rt.server_url()?.to_string();
+    // --resume: pick up the most recent conversation_id we saw on this
+    // exact server URL. If nothing is stored yet we silently fall through
+    // to a fresh UUID so first-time `--resume` is not an error.
+    let mut conversation_id = if args.resume {
+        match rt.state.last_conversation_for(&server_url) {
+            Some(id) => {
+                eprintln!("\x1b[2m· resuming conversation {id}\x1b[0m");
+                id.to_string()
+            }
+            None => {
+                eprintln!(
+                    "\x1b[33m· --resume: no prior conversation for {server_url}, starting fresh\x1b[0m"
+                );
+                uuid::Uuid::new_v4().to_string()
+            }
+        }
+    } else {
+        uuid::Uuid::new_v4().to_string()
+    };
     let mut turn_count: u64 = 0;
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
@@ -81,7 +100,7 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         // ---- @file / @dir expansion (client-side, before sending) ----
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let ctx_cfg = ContextConfig::from_runtime(rt);
-        let (user_prompt, cache_context, report) = match expand_refs(trimmed, &cwd, &ctx_cfg) {
+        let (user_prompt, refs_cache, report) = match expand_refs(trimmed, &cwd, &ctx_cfg) {
             Ok(triple) => triple,
             Err(e) => {
                 eprintln!("\x1b[31merror:\x1b[0m @ref expansion failed: {e}");
@@ -91,6 +110,12 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         if !report.resolved.is_empty() || !report.skipped.is_empty() {
             print_expand_report(&report);
         }
+        // Merge AGO.md (slow-changing project instructions, if any) with
+        // the per-turn @ref content. AGO.md goes first so the byte prefix
+        // stays stable across turns — the OpenRouter prompt cache only
+        // discounts a *common* prefix.
+        let cache_context =
+            crate::instructions::Instructions::merge_with_refs(rt.instructions.as_ref(), &refs_cache);
         // Only send cache_context to the server when caching is enabled.
         // Otherwise concat into the prompt as v0.3.x did — server has no
         // way to discount the tokens but everything still works.
@@ -111,6 +136,7 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
             &final_prompt,
             server_cache.as_deref(),
             args.no_progress,
+            rt.no_color,
         )
         .await
         {
@@ -119,6 +145,16 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
                 total_input_tokens += stats.input_tokens;
                 total_output_tokens += stats.output_tokens;
                 total_cost_usd += stats.cost_usd;
+                // Persist the conversation id so the next `--resume` picks
+                // it up. Best-effort: a state.toml write failure (e.g. RO
+                // home directory in CI) must not kill the REPL.
+                if let Err(e) = crate::state::persist_conversation(
+                    &rt.state_path,
+                    &server_url,
+                    &conversation_id,
+                ) {
+                    tracing::debug!("state.toml save failed: {e}");
+                }
             }
             Err(AgoError::AuthRejected) => {
                 eprintln!(
@@ -373,6 +409,7 @@ async fn send_turn(
     task: &str,
     cache_context: Option<&str>,
     no_progress: bool,
+    no_color: bool,
 ) -> Result<TurnStats> {
     match settings.mode {
         ChatMode::Agent => {
@@ -383,6 +420,7 @@ async fn send_turn(
                 task,
                 cache_context,
                 no_progress,
+                no_color,
             )
             .await
         }
@@ -394,6 +432,7 @@ async fn send_turn(
                 task,
                 cache_context,
                 no_progress,
+                no_color,
             )
             .await
         }
@@ -407,6 +446,7 @@ async fn send_turn_prompt(
     prompt: &str,
     cache_context: Option<&str>,
     no_progress: bool,
+    no_color: bool,
 ) -> Result<TurnStats> {
     let show_progress = !no_progress && std::io::stderr().is_terminal();
     let spinner = show_progress.then(|| {
@@ -430,7 +470,7 @@ async fn send_turn_prompt(
     }
     let resp = resp?;
     if let Some(output) = resp.output() {
-        println!("{output}");
+        println!("{}", crate::render::highlight(output, no_color));
     }
     if let Some(err) = resp.error() {
         eprintln!("error: {err}");
@@ -463,6 +503,7 @@ async fn send_turn_agent(
     task: &str,
     cache_context: Option<&str>,
     no_progress: bool,
+    no_color: bool,
 ) -> Result<TurnStats> {
     let req = AgentRunRequest {
         agent: &settings.agent,
@@ -498,7 +539,7 @@ async fn send_turn_agent(
     let resp = AgentRunResponse { raw: payload };
 
     if let Some(output) = resp.output() {
-        println!("{output}");
+        println!("{}", crate::render::highlight(output, no_color));
     }
     if let Some(err) = resp.error() {
         eprintln!("error: {err}");
@@ -612,6 +653,14 @@ fn print_banner(rt: &Runtime, s: &ChatSettings, conv: &str) -> Result<()> {
         "mode: {} · agent: {} · model: {} · provider: {} · max_steps: {}",
         s.mode, s.agent, s.model, s.provider, s.max_steps
     );
+    if let Some(doc) = rt.instructions.as_ref() {
+        println!(
+            "instructions: {} ({} B{})",
+            doc.path.display(),
+            doc.content.len(),
+            if doc.truncated { ", truncated" } else { "" }
+        );
+    }
     println!("conversation: {} · type :help for slash commands", conv);
     println!();
     Ok(())

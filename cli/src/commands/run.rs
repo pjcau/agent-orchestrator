@@ -13,8 +13,22 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     // Expand @file / @dir references client-side. Local files are read on the
     // CLI's machine and inlined into the prompt before crossing the wire.
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let (task_only, cache_context, report) =
+    let (task_only, refs_cache, report) =
         expand_refs(&raw_task, &cwd, &ContextConfig::from_runtime(rt))?;
+    // Prepend AGO.md (if any) so the cacheable prefix has the stable
+    // project instructions first and the per-turn @ref content second —
+    // best layout for prompt-cache hits.
+    let cache_context = crate::instructions::Instructions::merge_with_refs(
+        rt.instructions.as_ref(),
+        &refs_cache,
+    );
+    if let Some(doc) = rt.instructions.as_ref() {
+        eprintln!(
+            "\x1b[2m· loaded AGO.md ({} B{})\x1b[0m",
+            doc.content.len(),
+            if doc.truncated { " [truncated]" } else { "" }
+        );
+    }
     // When caching is opted out, fold the expansion back into the prompt so
     // the server still sees the @-ref content (just without the discount).
     let (task, cache_payload) = if rt.config.cache_is_enabled() && !cache_context.is_empty() {
@@ -75,21 +89,58 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     };
 
     let client = rt.api_client()?;
+    let server_url = rt.server_url()?.to_string();
+    // --resume: send the most recent conversation_id we saw on this server.
+    // If none stored yet we silently fall through so first-time --resume is
+    // not an error.
+    let resume_id = if args.resume {
+        match rt.state.last_conversation_for(&server_url) {
+            Some(id) => {
+                eprintln!("\x1b[2m· resuming conversation {id}\x1b[0m");
+                Some(id.to_string())
+            }
+            None => {
+                eprintln!(
+                    "\x1b[33m· --resume: no prior conversation for {server_url}, starting fresh\x1b[0m"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
     let req = AgentRunRequest {
         agent: &agent_string,
         task: &task,
         model: &model_string,
         provider: &provider_string,
         max_steps,
-        conversation_id: None,
+        conversation_id: resume_id.as_deref(),
         cache_context: cache_payload.as_deref(),
     };
 
-    if args.stream {
-        run_streaming(&client, &req, args.json).await
+    let outcome = if args.stream {
+        run_streaming(&client, &req, args.json, rt.no_color).await
     } else {
-        run_blocking(&client, &req, args.json).await
+        run_blocking(&client, &req, args.json, rt.no_color).await
+    };
+
+    // Persist whatever conversation_id we actually used so the next
+    // --resume picks it up. Today the server reuses the id we send
+    // (or mints one on its own when None) — we only know our own id
+    // when --resume actively sent one, so we only update state in that
+    // case. Storing the server-side new id is a v0.5.x follow-up that
+    // needs the run/run_blocking helpers to return the resolved id.
+    if outcome.is_ok() {
+        if let Some(id) = resume_id.as_deref() {
+            if let Err(e) =
+                crate::state::persist_conversation(&rt.state_path, &server_url, id)
+            {
+                tracing::debug!("state.toml save failed: {e}");
+            }
+        }
     }
+    outcome
 }
 
 fn default_provider() -> String {
@@ -104,6 +155,7 @@ async fn run_blocking(
     client: &crate::client::ApiClient,
     req: &AgentRunRequest<'_>,
     json: bool,
+    no_color: bool,
 ) -> Result<()> {
     let resp = client.agent_run(req).await?;
     if json {
@@ -111,7 +163,7 @@ async fn run_blocking(
         serde_json::to_writer(&stdout, &resp.raw).map_err(|e| AgoError::Other(e.to_string()))?;
         println!();
     } else {
-        render_human(&resp);
+        render_human(&resp, no_color);
     }
     if matches!(resp.success(), Some(false)) {
         return Err(AgoError::Other(
@@ -127,6 +179,7 @@ async fn run_streaming(
     client: &crate::client::ApiClient,
     req: &AgentRunRequest<'_>,
     json: bool,
+    no_color: bool,
 ) -> Result<()> {
     let mut stream = client.agent_run_stream(req).await?;
     let mut final_payload: Option<serde_json::Value> = None;
@@ -165,7 +218,7 @@ async fn run_streaming(
     let resp = AgentRunResponse { raw: payload };
 
     if !json {
-        render_human(&resp);
+        render_human(&resp, no_color);
     }
     if matches!(resp.success(), Some(false)) {
         return Err(AgoError::Other(
@@ -224,9 +277,9 @@ fn resolve_task(arg: Option<&str>) -> Result<String> {
     Ok(trimmed)
 }
 
-fn render_human(resp: &AgentRunResponse) {
+fn render_human(resp: &AgentRunResponse, no_color: bool) {
     if let Some(output) = resp.output() {
-        println!("{output}");
+        println!("{}", crate::render::highlight(output, no_color));
     }
     if let Some(err) = resp.error() {
         eprintln!("error: {err}");
@@ -309,6 +362,7 @@ mod tests {
                 max_steps: 7,
                 json: false,
                 stream: false,
+                resume: false,
             },
         )
         .await
@@ -339,6 +393,7 @@ mod tests {
                 max_steps: 10,
                 json: false,
                 stream: false,
+                resume: false,
             },
         )
         .await
@@ -359,6 +414,7 @@ mod tests {
                 max_steps: 10,
                 json: false,
                 stream: false,
+                resume: false,
             },
         )
         .await
@@ -388,6 +444,7 @@ mod tests {
                 max_steps: 10,
                 json: false,
                 stream: false,
+                resume: false,
             },
         )
         .await
@@ -433,6 +490,7 @@ mod tests {
                 max_steps: 10,
                 json: false,
                 stream: true,
+                resume: false,
             },
         )
         .await
@@ -464,6 +522,7 @@ mod tests {
                 max_steps: 10,
                 json: false,
                 stream: true,
+                resume: false,
             },
         )
         .await
@@ -512,6 +571,7 @@ mod tests {
                 max_steps: 10,             // clap default — treated as sentinel
                 json: false,
                 stream: false,
+                resume: false,
             },
         )
         .await
@@ -556,6 +616,7 @@ mod tests {
                 max_steps: 10,
                 json: false,
                 stream: false,
+                resume: false,
             },
         )
         .await
@@ -581,6 +642,7 @@ mod tests {
                 max_steps: 10,
                 json: false,
                 stream: false,
+                resume: false,
             },
         )
         .await

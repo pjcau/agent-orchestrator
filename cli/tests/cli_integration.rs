@@ -507,3 +507,116 @@ async fn whoami_rejects_bad_token() {
         .failure()
         .stderr(contains("authentication rejected"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_resume_forwards_stored_conversation_id() {
+    // Seed state.toml with a known conversation_id for the mock server,
+    // then run `ago run --resume` and assert the request body carries it.
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "conversation_id": "saved-conv-xyz"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "RESUMED"
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    // state.toml lives next to config.toml in the same dir.
+    let state_path = dir.path().join("state.toml");
+    std::fs::write(
+        &state_path,
+        format!(
+            "[last_conversation]\n\"{}\" = \"saved-conv-xyz\"\n",
+            mock.uri()
+        ),
+    )
+    .unwrap();
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "m",
+            "--provider",
+            "anthropic",
+            "--resume",
+            "follow up",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("RESUMED"))
+        .stderr(contains("resuming conversation saved-conv-xyz"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_resume_falls_through_when_state_empty() {
+    let mock = MockServer::start().await;
+    // Match any request (no body_partial_json on conversation_id) since
+    // --resume with no stored state must NOT send a conversation_id.
+    Mock::given(method("POST"))
+        .and(path("/api/agent/run"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "output": "FIRST_RUN"
+        })))
+        .mount(&mock)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            mock.uri().as_str(),
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "k")
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--agent",
+            "backend",
+            "--model",
+            "m",
+            "--provider",
+            "anthropic",
+            "--resume",
+            "first time",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("FIRST_RUN"))
+        .stderr(contains("no prior conversation"));
+}

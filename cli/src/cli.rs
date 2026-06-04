@@ -20,6 +20,12 @@ pub struct Cli {
     #[arg(short = 'v', long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
 
+    /// Disable ANSI colour and code-fence formatting on stdout.
+    /// `NO_COLOR=1` and a non-TTY stdout already disable colour
+    /// automatically — this flag forces it off even on a TTY.
+    #[arg(long, global = true)]
+    pub no_color: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -154,6 +160,12 @@ pub struct ChatArgs {
     /// Disable the indicatif spinner (useful when output is piped).
     #[arg(long)]
     pub no_progress: bool,
+
+    /// Continue the most recent conversation on the active server
+    /// (looked up from `~/.config/ago/state.toml`). Without this flag
+    /// every `ago chat` invocation starts a fresh `conversation_id`.
+    #[arg(long)]
+    pub resume: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -261,4 +273,10 @@ pub struct RunArgs {
     /// blocking `/api/agent/run` endpoint and waits for the final JSON.
     #[arg(long)]
     pub stream: bool,
+
+    /// Continue the most recent conversation on the active server
+    /// (looked up from `~/.config/ago/state.toml`). Lets a one-shot
+    /// `ago run "follow up on the last result"` see prior turns.
+    #[arg(long)]
+    pub resume: bool,
 }

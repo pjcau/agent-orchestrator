@@ -617,6 +617,7 @@ Provider-agnostic, single-binary client that lets a local project talk to a remo
 | 3 — Observability & UX | `ago jobs list/get/cancel`, `ago logs --follow`, progress bars, shell completions | planned |
 | 4 — Hardening & release | `cargo audit`/`deny`/`vet` in CI, cross-compile (mac arm/x64, linux x64/arm64 musl, windows), signed releases via `cosign` + SBOM, Homebrew tap, GitHub Release v0.1.0 | planned |
 | 5 — Chat + project context | `ago chat` REPL (v0.2.0), `@file` / `@dir/` references (v0.3.0), `.ago.yaml context:` overrides (v0.3.1), Windows path support (v0.3.2), `cache` subcommand + OpenRouter `cache_control` plumbing for `@file` context (v0.4.0–v0.4.1), recursive `@dir/**` content expansion (v0.4.2) | ✅ Done (v0.4.2) |
+| 6 — UX polish | `--resume` (per-server `conversation_id` persisted in `state.toml`), `AGO.md` project instructions auto-load (client-side, prepended to `cache_context` so the OpenRouter cache covers it), code-fence colouring in assistant output, top-level `--no-color` flag (v0.5.0) | ✅ Done (v0.5.0) |
 
 ---
 
