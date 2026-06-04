@@ -33,6 +33,10 @@ def scout():
 
 
 class TestParseImprovements:
+    """`_parse_improvements` returns a `(items, reason)` tuple so callers
+    can record *why* the list is the size it is. Each case below checks both
+    halves of the tuple — the reason is what shows up in the state file."""
+
     def test_valid_json_array(self, scout):
         llm_output = json.dumps(
             [
@@ -46,11 +50,12 @@ class TestParseImprovements:
                 }
             ]
         )
-        result = scout._parse_improvements(llm_output)
-        assert len(result) == 1
-        assert result[0]["component"] == "router"
-        assert result[0]["title"] == "Adaptive routing"
-        assert result[0]["file"] == "src/agent_orchestrator/core/router.py"
+        items, reason = scout._parse_improvements(llm_output)
+        assert len(items) == 1
+        assert items[0]["component"] == "router"
+        assert items[0]["title"] == "Adaptive routing"
+        assert items[0]["file"] == "src/agent_orchestrator/core/router.py"
+        assert "1 actionable" in reason
 
     def test_markdown_fenced_json(self, scout):
         llm_output = (
@@ -60,25 +65,34 @@ class TestParseImprovements:
             '"code": "", "benefit": "Better output"}]\n'
             "```"
         )
-        result = scout._parse_improvements(llm_output)
-        assert len(result) == 1
-        assert result[0]["component"] == "agent"
+        items, _ = scout._parse_improvements(llm_output)
+        assert len(items) == 1
+        assert items[0]["component"] == "agent"
 
-    def test_empty_array(self, scout):
-        result = scout._parse_improvements("[]")
-        assert result == []
+    def test_empty_array_explains_why(self, scout):
+        items, reason = scout._parse_improvements("[]")
+        assert items == []
+        assert "empty array" in reason.lower()
 
-    def test_invalid_json(self, scout):
-        result = scout._parse_improvements("not json at all")
-        assert result == []
+    def test_invalid_json_explains_why(self, scout):
+        items, reason = scout._parse_improvements("not json at all")
+        assert items == []
+        assert "no json array" in reason.lower() or "prose" in reason.lower()
 
-    def test_missing_required_fields_skipped(self, scout):
+    def test_empty_response_explains_why(self, scout):
+        items, reason = scout._parse_improvements("")
+        assert items == []
+        assert "empty" in reason.lower()
+
+    def test_missing_required_fields_explained(self, scout):
+        # JSON parses but every item lacks title/description -> all dropped.
         llm_output = json.dumps([{"component": "router"}])
-        result = scout._parse_improvements(llm_output)
-        assert result == []
+        items, reason = scout._parse_improvements(llm_output)
+        assert items == []
+        assert "title" in reason.lower() and "description" in reason.lower()
 
     def test_max_30_improvements(self, scout):
-        items = [
+        items_in = [
             {
                 "component": f"comp{i}",
                 "title": f"Title {i}",
@@ -90,36 +104,21 @@ class TestParseImprovements:
             }
             for i in range(50)
         ]
-        result = scout._parse_improvements(json.dumps(items))
-        assert len(result) == scout.MAX_IMPROVEMENTS == 30
+        items, _ = scout._parse_improvements(json.dumps(items_in))
+        assert len(items) == scout.MAX_IMPROVEMENTS == 30
 
     def test_ranks_by_value_score_desc(self, scout):
-        items = [
-            {
-                "component": "a",
-                "title": "Low value",
-                "description": "desc",
-                "value_score": 2,
-            },
-            {
-                "component": "b",
-                "title": "High value",
-                "description": "desc",
-                "value_score": 9,
-            },
-            {
-                "component": "c",
-                "title": "Mid value",
-                "description": "desc",
-                "value_score": 5,
-            },
+        items_in = [
+            {"component": "a", "title": "Low value", "description": "desc", "value_score": 2},
+            {"component": "b", "title": "High value", "description": "desc", "value_score": 9},
+            {"component": "c", "title": "Mid value", "description": "desc", "value_score": 5},
         ]
-        result = scout._parse_improvements(json.dumps(items))
-        assert [imp["title"] for imp in result] == ["High value", "Mid value", "Low value"]
+        items, _ = scout._parse_improvements(json.dumps(items_in))
+        assert [imp["title"] for imp in items] == ["High value", "Mid value", "Low value"]
 
     def test_missing_value_score_derived_from_components(self, scout):
         # impact 9, effort 2, risk 1 -> derived value_score ≈ 9 - 0.6 - 0.5 = 7.9
-        items = [
+        items_in = [
             {
                 "component": "a",
                 "title": "Only impact fields",
@@ -129,12 +128,48 @@ class TestParseImprovements:
                 "risk": 1,
             },
         ]
-        result = scout._parse_improvements(json.dumps(items))
-        assert len(result) == 1
-        assert 7.5 < result[0]["value_score"] < 8.5
+        items, _ = scout._parse_improvements(json.dumps(items_in))
+        assert len(items) == 1
+        assert 7.5 < items[0]["value_score"] < 8.5
+
+
+class TestIsTransientLLMError:
+    """HTTP 429 / 5xx / network failures must be retryable (URL not marked
+    processed), or the nightly scout drops the repo from the queue forever."""
+
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "OpenRouter API error: HTTP Error 429: Too Many Requests",
+            "HTTP Error 502: Bad Gateway",
+            "HTTP Error 503: Service Unavailable",
+            "Connection reset by peer",
+            "Read timed out",
+        ],
+    )
+    def test_recognises_transient(self, scout, msg):
+        assert scout._is_transient_llm_error(msg) is True
+
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "HTTP Error 400: Bad Request",
+            "HTTP Error 401: Unauthorized",
+            "Prompt too long for context window",
+            "",
+        ],
+    )
+    def test_rejects_persistent(self, scout, msg):
+        assert scout._is_transient_llm_error(msg) is False
+
+
+class TestParseImprovementsAdditional:
+    """Edge cases for `_parse_improvements` value-score handling and
+    surrounding-text tolerance. Kept separate from the main class so the
+    transient-error class above stays focused on its own concern."""
 
     def test_non_numeric_score_falls_back_to_default(self, scout):
-        items = [
+        items_in = [
             {
                 "component": "a",
                 "title": "Bad score",
@@ -142,18 +177,18 @@ class TestParseImprovements:
                 "value_score": "not a number",
             },
         ]
-        result = scout._parse_improvements(json.dumps(items))
-        assert len(result) == 1
+        items, _ = scout._parse_improvements(json.dumps(items_in))
+        assert len(items) == 1
         # Default value for malformed score is the mid-range default (5.0)
-        assert result[0]["value_score"] == 5.0
+        assert items[0]["value_score"] == 5.0
 
     def test_score_clamped_to_0_10_range(self, scout):
-        items = [
+        items_in = [
             {"component": "a", "title": "Over", "description": "d", "value_score": 999},
             {"component": "b", "title": "Under", "description": "d", "value_score": -5},
         ]
-        result = scout._parse_improvements(json.dumps(items))
-        scores = {imp["title"]: imp["value_score"] for imp in result}
+        items, _ = scout._parse_improvements(json.dumps(items_in))
+        scores = {imp["title"]: imp["value_score"] for imp in items}
         assert scores["Over"] == 10.0
         assert scores["Under"] == 0.0
 
@@ -165,9 +200,9 @@ class TestParseImprovements:
             '"code": "", "benefit": "More tools"}]\n'
             "Hope this helps!"
         )
-        result = scout._parse_improvements(llm_output)
-        assert len(result) == 1
-        assert result[0]["component"] == "skill"
+        items, _ = scout._parse_improvements(llm_output)
+        assert len(items) == 1
+        assert items[0]["component"] == "skill"
 
 
 class TestWriteFindings:

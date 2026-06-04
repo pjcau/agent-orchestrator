@@ -81,6 +81,16 @@ jobs:
             echo "No usage data available." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Outcomes report (last 14 days)
+        if: always()
+        run: |
+          # Renders why each of the last 14 nightly runs did or didn't
+          # produce a PR. Lives in the workflow step summary so the
+          # operator can spot patterns (e.g. "4 days in a row of 429")
+          # without having to read every state-update commit.
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          python scripts/explain_research_scout_history.py --days 14 >> "$GITHUB_STEP_SUMMARY" || true
+
       - name: Create PR with improvements
         if: steps.scout.outputs.has_findings == 'true'
         env:

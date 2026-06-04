@@ -27,6 +27,11 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from agent_orchestrator.core.bookmark_tracker import (
+    OUTCOME_FETCH_ERROR,
+    OUTCOME_IMPROVEMENTS_FOUND,
+    OUTCOME_LLM_ERROR,
+    OUTCOME_LOW_RELEVANCE,
+    OUTCOME_NO_IMPROVEMENTS,
     cleanup_old_entries,
     filter_unprocessed,
     load_bookmarks,
@@ -202,12 +207,46 @@ def _call_llm(prompt: str) -> dict:
     return _call_claude(prompt)
 
 
-def _parse_improvements(llm_output: str) -> list[dict]:
+def _is_transient_llm_error(err: str) -> bool:
+    """Heuristic — true when the LLM call should be retried tomorrow.
+
+    HTTP 429 (rate limit / quota exhausted), 5xx server errors and raw
+    network failures are transient: leave the URL unprocessed so the
+    nightly cron picks it up again. Genuine "the LLM doesn't accept this
+    input" errors (4xx other than 429) are NOT transient — those would
+    loop forever.
+    """
+    err_low = err.lower()
+    transient_markers = (
+        "429",
+        "too many requests",
+        " 500",
+        " 502",
+        " 503",
+        " 504",
+        "timeout",
+        "timed out",
+        "connection reset",
+        "connection refused",
+        "temporarily unavailable",
+    )
+    return any(m in err_low for m in transient_markers)
+
+
+def _parse_improvements(llm_output: str) -> tuple[list[dict], str]:
     """Parse structured improvements from LLM output.
+
+    Returns a tuple `(items, parse_reason)`. `parse_reason` explains *why*
+    the list is the size it is — used to populate the `reason` field of
+    the state entry so an empty list is never just "no improvements" with
+    no further hint to the operator.
 
     Expected format: JSON array with objects containing:
       - component, title, description, file, code, benefit
     """
+    if not llm_output or not llm_output.strip():
+        return [], "LLM returned empty response"
+
     # Strip markdown fences
     cleaned = re.sub(r"```(?:json)?\s*", "", llm_output).strip().rstrip("`")
 
@@ -215,15 +254,18 @@ def _parse_improvements(llm_output: str) -> list[dict]:
     start = cleaned.find("[")
     end = cleaned.rfind("]")
     if start == -1 or end == -1 or end <= start:
-        return []
+        return [], "LLM response contained no JSON array (prose only)"
 
     try:
         data = json.loads(cleaned[start : end + 1])
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        return [], f"LLM response JSON is malformed: {exc.msg}"
 
     if not isinstance(data, list):
-        return []
+        return [], "LLM response parsed but is not a JSON array"
+
+    if not data:
+        return [], "LLM returned an empty array — nothing actionable for our codebase"
 
     def _clamp(raw, default: float = 5.0, lo: float = 0.0, hi: float = 10.0) -> float:
         try:
@@ -265,7 +307,13 @@ def _parse_improvements(llm_output: str) -> list[dict]:
 
     # Rank by value_score desc, then cap at MAX_IMPROVEMENTS
     improvements.sort(key=lambda imp: imp["value_score"], reverse=True)
-    return improvements[:MAX_IMPROVEMENTS]
+    capped = improvements[:MAX_IMPROVEMENTS]
+    if not capped:
+        return [], (
+            "LLM returned items but none had both title and description "
+            "(parser dropped them as malformed)"
+        )
+    return capped, f"{len(capped)} actionable improvement(s) extracted"
 
 
 def _write_findings(repo_title: str, repo_url: str, improvements: list[dict]) -> None:
@@ -423,7 +471,12 @@ def main(argv: list[str] | None = None):
     content = _fetch_url(url)
     if "error" in content:
         print(f"  Failed to fetch: {content['error']}")
-        _record(url, summary=f"fetch-error: {content['error']}")
+        _record(
+            url,
+            summary=f"fetch-error: {content['error']}",
+            outcome=OUTCOME_FETCH_ERROR,
+            reason=str(content["error"]),
+        )
         FINDINGS_FILE.unlink(missing_ok=True)
         return
 
@@ -449,7 +502,15 @@ def main(argv: list[str] | None = None):
     keyword_hits = sum(1 for kw in relevance_keywords if kw in text_lower)
     if keyword_hits < 2:
         print(f"  Low relevance ({keyword_hits} keyword hits). Skipping.")
-        _record(url, summary=f"low-relevance: {title}")
+        _record(
+            url,
+            summary=f"low-relevance: {title}",
+            outcome=OUTCOME_LOW_RELEVANCE,
+            reason=(
+                f"only {keyword_hits} of {len(relevance_keywords)} relevance "
+                f"keywords matched in {len(text)} chars of README"
+            ),
+        )
         FINDINGS_FILE.unlink(missing_ok=True)
         return
 
@@ -493,8 +554,22 @@ value_score. If nothing is worth applying, return an empty array: []
 
     llm_result = _call_llm(prompt)
     if "error" in llm_result:
-        print(f"  LLM error: {llm_result['error']}")
-        _record(url, summary=f"llm-error: {llm_result['error']}")
+        err = str(llm_result["error"])
+        print(f"  LLM error: {err}")
+        # Transient errors (HTTP 429, 5xx, network) should NOT mark the URL
+        # as processed — otherwise a quota burp or a flaky OpenRouter night
+        # silently drops that repo from the analysis queue forever. We
+        # save state without the entry so tomorrow's run retries.
+        if _is_transient_llm_error(err):
+            print(f"  Transient error — leaving '{url}' unprocessed for retry.")
+            save_state(STATE_FILE, state)
+        else:
+            _record(
+                url,
+                summary=f"llm-error: {err}",
+                outcome=OUTCOME_LLM_ERROR,
+                reason=err,
+            )
         FINDINGS_FILE.unlink(missing_ok=True)
         return
 
@@ -502,8 +577,8 @@ value_score. If nothing is worth applying, return an empty array: []
     print(f"  Claude response: {len(llm_content)} chars")
 
     # Step 4: Parse improvements
-    improvements = _parse_improvements(llm_content)
-    print(f"  Parsed {len(improvements)} improvement(s)")
+    improvements, parse_reason = _parse_improvements(llm_content)
+    print(f"  Parsed {len(improvements)} improvement(s) — {parse_reason}")
 
     for imp in improvements:
         print(f"    - [{imp['component']}] {imp['title']}")
@@ -519,6 +594,8 @@ value_score. If nothing is worth applying, return an empty array: []
             url,
             summary=title,
             improvements=[imp["title"] for imp in improvements],
+            outcome=OUTCOME_IMPROVEMENTS_FOUND,
+            reason=parse_reason,
         )
 
         # Create PR locally; on CI the workflow step handles this.
@@ -531,9 +608,15 @@ value_score. If nothing is worth applying, return an empty array: []
             else:
                 print("PR creation failed — findings saved locally.")
     else:
-        print("  No actionable improvements found.")
+        print(f"  No actionable improvements found ({parse_reason}).")
         FINDINGS_FILE.unlink(missing_ok=True)
-        _record(url, summary=title, improvements=[])
+        _record(
+            url,
+            summary=title,
+            improvements=[],
+            outcome=OUTCOME_NO_IMPROVEMENTS,
+            reason=parse_reason,
+        )
 
     # Cleanup old entries
     if not args.skip_state:

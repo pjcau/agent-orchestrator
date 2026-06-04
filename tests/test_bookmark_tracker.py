@@ -4,7 +4,15 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from agent_orchestrator.core.bookmark_tracker import (
+    OUTCOME_FETCH_ERROR,
+    OUTCOME_IMPROVEMENTS_FOUND,
+    OUTCOME_LLM_ERROR,
+    OUTCOME_LOW_RELEVANCE,
+    OUTCOME_NO_IMPROVEMENTS,
+    classify_legacy_outcome,
     cleanup_old_entries,
     filter_unprocessed,
     load_bookmarks,
@@ -131,6 +139,66 @@ class TestMarkProcessed:
         state = {"processed": {}}
         mark_processed(state, "https://example-gamma.test")
         assert state["processed"]["https://example-gamma.test"]["improvements"] == []
+
+    def test_stores_outcome_when_provided(self):
+        state = {"processed": {}}
+        mark_processed(
+            state,
+            "https://example-d.test",
+            outcome=OUTCOME_LLM_ERROR,
+            reason="HTTP 429",
+        )
+        entry = state["processed"]["https://example-d.test"]
+        assert entry["outcome"] == OUTCOME_LLM_ERROR
+        assert entry["reason"] == "HTTP 429"
+
+    def test_omits_outcome_key_when_none(self):
+        """Backwards compat: legacy callers without outcome must not see the key."""
+        state = {"processed": {}}
+        mark_processed(state, "https://example-e.test")
+        assert "outcome" not in state["processed"]["https://example-e.test"]
+        assert "reason" not in state["processed"]["https://example-e.test"]
+
+    def test_rejects_unknown_outcome(self):
+        state = {"processed": {}}
+        with pytest.raises(ValueError, match="Invalid outcome"):
+            mark_processed(state, "https://x.test", outcome="bogus")
+
+    def test_truncates_long_reason_to_280_chars(self):
+        state = {"processed": {}}
+        long_reason = "x" * 1000
+        mark_processed(
+            state,
+            "https://x.test",
+            outcome=OUTCOME_LLM_ERROR,
+            reason=long_reason,
+        )
+        assert len(state["processed"]["https://x.test"]["reason"]) == 280
+
+
+class TestClassifyLegacyOutcome:
+    """Legacy state entries (no `outcome` field) must still be classifiable."""
+
+    def test_fetch_error_prefix(self):
+        assert classify_legacy_outcome("fetch-error: 404 Not Found", []) == OUTCOME_FETCH_ERROR
+
+    def test_low_relevance_prefix(self):
+        assert classify_legacy_outcome("low-relevance: foo/bar", []) == OUTCOME_LOW_RELEVANCE
+
+    def test_llm_error_prefix(self):
+        assert (
+            classify_legacy_outcome("llm-error: OpenRouter API error: HTTP Error 429", [])
+            == OUTCOME_LLM_ERROR
+        )
+
+    def test_improvements_found_when_list_non_empty(self):
+        assert classify_legacy_outcome("foo/bar", ["imp 1", "imp 2"]) == OUTCOME_IMPROVEMENTS_FOUND
+
+    def test_no_improvements_when_list_empty_and_no_prefix(self):
+        assert classify_legacy_outcome("foo/bar", []) == OUTCOME_NO_IMPROVEMENTS
+
+    def test_handles_missing_or_none_inputs(self):
+        assert classify_legacy_outcome("", None) == OUTCOME_NO_IMPROVEMENTS
 
 
 class TestCleanupOldEntries:

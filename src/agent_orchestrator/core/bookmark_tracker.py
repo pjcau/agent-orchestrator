@@ -90,20 +90,82 @@ def filter_unprocessed(
     return result
 
 
+# Outcome categories used by the research scout pipeline. They are kept
+# stable strings so dashboards, retro-scripts and historical state can
+# rely on them without an enum sync. Legacy entries written before the
+# `outcome` field existed are classified by parsing the `summary` prefix
+# (see `classify_legacy_outcome`).
+OUTCOME_FETCH_ERROR = "fetch-error"
+OUTCOME_LOW_RELEVANCE = "low-relevance"
+OUTCOME_LLM_ERROR = "llm-error"
+OUTCOME_NO_IMPROVEMENTS = "no-improvements"
+OUTCOME_IMPROVEMENTS_FOUND = "improvements-found"
+
+VALID_OUTCOMES = frozenset(
+    {
+        OUTCOME_FETCH_ERROR,
+        OUTCOME_LOW_RELEVANCE,
+        OUTCOME_LLM_ERROR,
+        OUTCOME_NO_IMPROVEMENTS,
+        OUTCOME_IMPROVEMENTS_FOUND,
+    }
+)
+
+
 def mark_processed(
     state: dict,
     url: str,
     summary: str = "",
     improvements: list[str] | None = None,
+    outcome: str | None = None,
+    reason: str = "",
 ) -> None:
-    """Mark a URL as processed in the state."""
+    """Mark a URL as processed in the state.
+
+    `outcome` is one of the OUTCOME_* constants. When present, future
+    reporting can group entries without re-parsing the summary string.
+    `reason` is a short human-readable explanation (max 280 chars,
+    truncated) — the answer to "why didn't this turn into a PR?".
+
+    Both fields are optional for backwards compatibility with state files
+    written by older versions of this tracker.
+    """
     if "processed" not in state:
         state["processed"] = {}
-    state["processed"][url] = {
+    entry: dict = {
         "processed_at": datetime.now(timezone.utc).isoformat(),
         "summary": summary,
         "improvements": improvements or [],
     }
+    if outcome is not None:
+        if outcome not in VALID_OUTCOMES:
+            raise ValueError(f"Invalid outcome '{outcome}'. Use one of {sorted(VALID_OUTCOMES)}.")
+        entry["outcome"] = outcome
+    if reason:
+        # Cap at 280 chars so the state file doesn't bloat on long LLM
+        # error responses (full traces still land in workflow logs).
+        entry["reason"] = reason[:280]
+    state["processed"][url] = entry
+
+
+def classify_legacy_outcome(summary: str, improvements: list[str] | None) -> str:
+    """Infer the outcome of a legacy state entry from its summary prefix.
+
+    The original tracker only stored a free-form `summary` and an
+    `improvements` list. Three of the five outcomes have a known prefix
+    in `summary` (`fetch-error:`, `low-relevance:`, `llm-error:`); the
+    remaining two are disambiguated by whether `improvements` is empty.
+    """
+    s = (summary or "").lower()
+    if s.startswith("fetch-error"):
+        return OUTCOME_FETCH_ERROR
+    if s.startswith("low-relevance"):
+        return OUTCOME_LOW_RELEVANCE
+    if s.startswith("llm-error"):
+        return OUTCOME_LLM_ERROR
+    if improvements:
+        return OUTCOME_IMPROVEMENTS_FOUND
+    return OUTCOME_NO_IMPROVEMENTS
 
 
 def cleanup_old_entries(state: dict, max_age_days: int = 30) -> int:

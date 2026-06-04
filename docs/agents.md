@@ -193,10 +193,14 @@ The `research-scout` analyzes **GitHub starred repos** (one per run) via LLM and
 - **LLM backend**: `claude` CLI locally, OpenRouter (`qwen/qwen3.5-flash-02-23`) on CI
 - **Analysis**: LLM compares repo's patterns against our codebase, proposes up to **30** improvements with code, each scored on `impact` / `effort` / `risk` and a composite `value_score` (0–10). Parser sorts by `value_score` desc and caps at `MAX_IMPROVEMENTS` (30), so the highest-value items always surface first. See `scripts/run_research_scout.py::_parse_improvements`.
 - **Reprocessing existing PRs**: `python scripts/run_research_scout.py --url <github-repo-url>` re-runs the analysis for a specific repo (bypasses bookmarks). Add `--skip-state` to leave the state file untouched (useful for regenerating findings for an open research-scout PR)
-- **State tracking**: `.claude/research-scout-state.json` (tracks processed URLs)
+- **State tracking**: `.claude/research-scout-state.json`. Each processed URL records `outcome` (`fetch-error` / `low-relevance` / `llm-error` / `no-improvements` / `improvements-found`) and a short `reason`, so any operator can answer "why didn't this turn into a PR?" without reading workflow logs. Legacy entries without `outcome` are classified at render time by parsing the `summary` prefix.
+- **Transient errors are retried**: an HTTP 429 / 5xx / network failure from the LLM does NOT mark the URL as processed — the nightly cron picks it up again the next day. This avoids silently dropping repos when OpenRouter has a bad night.
 - **Findings file**: `.claude/research-scout-findings.md` (ephemeral, gitignored — used only as PR body, never committed)
 - **GitHub Actions**: `.github/workflows/nightly-research.yml` (runs at 02:00 UTC), `.github/workflows/alert-analysis.yml` (automated root-cause analysis on alert issues)
-- **Scripts**: `scripts/fetch_github_stars.py`, `scripts/run_research_scout.py`
+- **Scripts**:
+  - `scripts/fetch_github_stars.py` — populates `.claude/bookmarks.json`
+  - `scripts/run_research_scout.py` — analyzes one repo, updates state, optionally opens a PR
+  - `scripts/explain_research_scout_history.py` — prints a markdown report of recent outcomes (used in the workflow step summary; also runnable locally: `python scripts/explain_research_scout_history.py --days 14`)
 - **PR creation**: Handled by the CI workflow (`nightly-research.yml`). When findings exist, the workflow creates a branch `research-scout/YYYY-MM-DD-HHMM`, commits state files, pushes, and opens a PR with findings as body. State is always pushed to main.
 
 GitHub vars/secrets needed: `GITHUB_USERNAME` (repo variable), `OPENROUTER_API_KEY` (secret, for LLM analysis), `GITHUB_TOKEN` (auto-provided).
