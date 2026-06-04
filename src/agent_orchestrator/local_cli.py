@@ -170,9 +170,7 @@ def main() -> int:
     try:
         req = json.loads(raw)
     except json.JSONDecodeError as exc:
-        json.dump(
-            {"success": False, "error": f"invalid JSON on stdin: {exc}"}, sys.stdout
-        )
+        json.dump({"success": False, "error": f"invalid JSON on stdin: {exc}"}, sys.stdout)
         return 0
     try:
         out = asyncio.run(_run(req))

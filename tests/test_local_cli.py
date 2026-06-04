@@ -35,11 +35,12 @@ async def test_run_returns_completed_envelope():
     async def fake_run_agent(self, **kwargs):  # noqa: ARG001 — interface match
         return fake_result
 
-    with patch(
-        "agent_orchestrator.client.OrchestratorClient.run_agent",
-        new=fake_run_agent,
-    ), patch.object(
-        local_cli, "_build_provider", lambda key, model: _StubProvider()
+    with (
+        patch(
+            "agent_orchestrator.client.OrchestratorClient.run_agent",
+            new=fake_run_agent,
+        ),
+        patch.object(local_cli, "_build_provider", lambda key, model: _StubProvider()),
     ):
         out = await local_cli._run(
             {
@@ -71,11 +72,12 @@ async def test_run_failed_status_maps_to_error():
     async def fake_run_agent(self, **kwargs):  # noqa: ARG001
         return fake_result
 
-    with patch(
-        "agent_orchestrator.client.OrchestratorClient.run_agent",
-        new=fake_run_agent,
-    ), patch.object(
-        local_cli, "_build_provider", lambda key, model: _StubProvider()
+    with (
+        patch(
+            "agent_orchestrator.client.OrchestratorClient.run_agent",
+            new=fake_run_agent,
+        ),
+        patch.object(local_cli, "_build_provider", lambda key, model: _StubProvider()),
     ):
         out = await local_cli._run(
             {
@@ -134,9 +136,7 @@ def test_main_invalid_json_returns_error_envelope(monkeypatch, capsys):
 
 
 def test_main_unknown_provider_surfaces_as_json(monkeypatch, capsys):
-    body = json.dumps(
-        {"agent": "a", "task": "x", "model": "m", "provider": "bogus"}
-    )
+    body = json.dumps({"agent": "a", "task": "x", "model": "m", "provider": "bogus"})
     monkeypatch.setattr("sys.stdin", io.StringIO(body))
     rc = local_cli.main()
     captured = capsys.readouterr().out
