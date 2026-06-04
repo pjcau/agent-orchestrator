@@ -1,6 +1,6 @@
 [package]
 name = "ago"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2021"
 description = "Agent Orchestrator CLI — talk to a remote orchestrator from your local project."
 license = "MIT"
@@ -24,7 +24,7 @@ thiserror = "1"
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "stream", "http2"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "signal", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

@@ -88,6 +88,33 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
         args.max_steps
     };
 
+    // --local: skip the remote server entirely and shell out to the
+    // embedded Python harness via the local_cli entrypoint. Mutually
+    // exclusive with --stream / --resume because the subprocess has no
+    // SSE channel and no shared conversation state.
+    if args.local {
+        if args.resume {
+            eprintln!(
+                "\x1b[33m· --resume has no effect in --local mode (no conversation persistence yet)\x1b[0m"
+            );
+        }
+        if args.stream {
+            eprintln!(
+                "\x1b[33m· --stream has no effect in --local mode (one-shot blocking only)\x1b[0m"
+            );
+        }
+        return run_local(
+            &agent_string,
+            &task,
+            &model_string,
+            &provider_string,
+            max_steps,
+            args.json,
+            rt.no_color,
+        )
+        .await;
+    }
+
     let client = rt.api_client()?;
     let server_url = rt.server_url()?.to_string();
     // --resume: send the most recent conversation_id we saw on this server.
@@ -277,6 +304,93 @@ fn resolve_task(arg: Option<&str>) -> Result<String> {
     Ok(trimmed)
 }
 
+/// Run the agent locally via `python3 -m agent_orchestrator.local_cli`.
+///
+/// We avoid pyo3 / heavy embedding — a one-shot subprocess that talks
+/// JSON over stdin/stdout is enough for "I don't have a server, run it
+/// here." Streaming and conversation persistence are deliberately not
+/// supported in this mode (the v0.6.0 design effort decides whether
+/// they're worth a length-prefixed JSON-RPC framing).
+async fn run_local(
+    agent: &str,
+    task: &str,
+    model: &str,
+    provider: &str,
+    max_steps: u32,
+    json_out: bool,
+    no_color: bool,
+) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::process::Command;
+
+    let python = pick_python();
+    let req = serde_json::json!({
+        "agent": agent,
+        "task": task,
+        "model": model,
+        "provider": provider,
+        "max_steps": max_steps,
+    });
+    let req_bytes = serde_json::to_vec(&req).map_err(|e| AgoError::Other(e.to_string()))?;
+
+    eprintln!("\x1b[2m· spawning {python} -m agent_orchestrator.local_cli\x1b[0m");
+    let mut child = Command::new(&python)
+        .args(["-m", "agent_orchestrator.local_cli"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .map_err(|e| {
+            AgoError::Other(format!(
+                "could not spawn {python}: {e}. Install with `pip install agent-orchestrator`."
+            ))
+        })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(&req_bytes).await.map_err(AgoError::from)?;
+        stdin.shutdown().await.map_err(AgoError::from)?;
+    }
+
+    let output = child.wait_with_output().await.map_err(AgoError::from)?;
+    if !output.status.success() {
+        return Err(AgoError::Other(format!(
+            "local subprocess exited with status {}",
+            output.status
+        )));
+    }
+    // local_cli always writes a single JSON object even on failure, so
+    // the parse step never fails on well-formed Python errors.
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|e| {
+        AgoError::Other(format!(
+            "could not parse local_cli output: {e} — raw: {}",
+            String::from_utf8_lossy(&output.stdout)
+        ))
+    })?;
+    if json_out {
+        println!("{parsed}");
+        return Ok(());
+    }
+    let resp = AgentRunResponse {
+        raw: parsed.clone(),
+    };
+    render_human(&resp, no_color);
+    if matches!(resp.success(), Some(false)) {
+        return Err(AgoError::Other(
+            resp.error()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "local agent run failed".into()),
+        ));
+    }
+    Ok(())
+}
+
+/// Pick the python interpreter to spawn. Honours `AGO_PYTHON` so a user
+/// with a non-default virtualenv (poetry, conda, …) does not have to
+/// activate it just for `ago run --local`. Falls back to `python3`.
+fn pick_python() -> String {
+    std::env::var("AGO_PYTHON").unwrap_or_else(|_| "python3".to_string())
+}
+
 fn render_human(resp: &AgentRunResponse, no_color: bool) {
     if let Some(output) = resp.output() {
         println!("{}", crate::render::highlight(output, no_color));
@@ -363,6 +477,7 @@ mod tests {
                 json: false,
                 stream: false,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -394,6 +509,7 @@ mod tests {
                 json: false,
                 stream: false,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -415,6 +531,7 @@ mod tests {
                 json: false,
                 stream: false,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -445,6 +562,7 @@ mod tests {
                 json: false,
                 stream: false,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -491,6 +609,7 @@ mod tests {
                 json: false,
                 stream: true,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -523,6 +642,7 @@ mod tests {
                 json: false,
                 stream: true,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -572,6 +692,7 @@ mod tests {
                 json: false,
                 stream: false,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -617,6 +738,7 @@ mod tests {
                 json: false,
                 stream: false,
                 resume: false,
+                local: false,
             },
         )
         .await
@@ -643,6 +765,7 @@ mod tests {
                 json: false,
                 stream: false,
                 resume: false,
+                local: false,
             },
         )
         .await

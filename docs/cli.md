@@ -384,6 +384,42 @@ to `${XDG_DATA_HOME:-~/.local/share}/io.agent-orchestrator.ago/chat-history`
 so arrow-up works across sessions. The `AGO_INSECURE=1` dev escape hatch
 behaves the same as for `ago run`.
 
+## `ago run --local` — embedded Python harness (v0.5.3+)
+
+When no remote orchestrator is reachable (laptop without Docker, CI
+sandbox, etc.), `ago run --local "<task>"` spawns
+`python3 -m agent_orchestrator.local_cli` as a one-shot subprocess and
+runs the agent against the embedded Python harness — no HTTP, no
+authentication, no server uptime concerns.
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+ago run --local --agent backend --model claude-sonnet-4-6 --provider anthropic \
+  "explain the function in @src/main.rs"
+```
+
+**Requirements:**
+
+- `python3` must be on `PATH` (override with `AGO_PYTHON=/path/to/python`,
+  e.g. when running inside a poetry / conda env).
+- `agent_orchestrator` must be importable in that interpreter
+  (`pip install agent-orchestrator`).
+- The provider's credentials come from the same env vars the dashboard
+  uses (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
+  `GEMINI_API_KEY`, or `OLLAMA_HOST` for the local provider).
+
+**Limitations:**
+
+- `--stream` is ignored (one-shot blocking only — the subprocess writes
+  a single JSON object on stdout when done).
+- `--resume` is ignored (no shared conversation state across runs;
+  v0.6.0 may add a JSON-RPC framing on stdout).
+- `ago chat --local` is not implemented in v0.5.3 (would require the
+  streaming framing).
+- Token usage reports the harness's combined `total_tokens` field with
+  zero split between input/output; Provider-level usage splits are a
+  v0.5.x follow-up.
+
 ## `ago jobs download` (v0.5.2+)
 
 Pull a completed session's artifacts (files written by agent tools) to a
@@ -501,7 +537,7 @@ scope right now:
 | Conversation branch / compact / export | Deferred to v0.6.0 — needs persistence endpoints |
 | MCP / hook configuration via CLI | Out of scope — already lives in the dashboard |
 | Sync-back agent files → CLI cwd | ✅ Done (v0.5.2) for dashboard-launched sessions via `ago jobs download` — `ago run` runs still pending v0.6.0 server change |
-| `--local` fallback (subprocess `client.py`) | Deferred to v0.5.3 |
+| `--local` fallback (subprocess Python harness) | ✅ Done (v0.5.3) for `ago run` — `ago chat --local` requires streaming framing, deferred to v0.6.0 |
 | Auto-update channel | ✅ Done (v0.5.2) via `ago self check` / `ago self update` |
 | Homebrew tap | Not planned — install via `cargo install --path cli` or download the GitHub Release artifact |
 
@@ -517,4 +553,6 @@ scope right now:
 - `ago logs <id> --follow` not implemented — `/api/cli/v1/run` uses an
   isolated EventBus not registered in the server's `run_manager`.
   Deferred to v0.6.0 with a server change.
-- No `--local` fallback (subprocess Python `client.py`) yet — v0.5.3.
+- `ago run --local` is one-shot only; `ago chat --local` is not
+  supported yet (would need a length-prefixed JSON-RPC framing for
+  multi-turn). Deferred to v0.6.0.

@@ -572,6 +572,106 @@ async fn run_resume_forwards_stored_conversation_id() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn run_local_invokes_python_subprocess() {
+    // Use a Python one-liner as the "interpreter" via AGO_PYTHON, so the
+    // test does not depend on the real agent_orchestrator package being
+    // installed. The stub reads stdin (which the Rust CLI fills with the
+    // JSON request) and emits a canned success payload.
+    let py = match std::env::var("PYTHON3").ok().or_else(|| {
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            Some("python3".into())
+        } else {
+            None
+        }
+    }) {
+        Some(p) => p,
+        None => {
+            eprintln!("skipping run_local_invokes_python_subprocess: no python3 on PATH");
+            return;
+        }
+    };
+
+    // Build a tiny Python wrapper file that ignores its
+    // `-m agent_orchestrator.local_cli` args, reads JSON on stdin, and
+    // writes a fixed JSON success payload. We install both the .py and a
+    // shim shell script (because AGO_PYTHON is invoked with `-m ...`
+    // args; the shim discards them and just runs the script).
+    let dir = tempdir().unwrap();
+    let stub_py = dir.path().join("ago-stub.py");
+    std::fs::write(
+        &stub_py,
+        "import sys,json\n\
+         _ = sys.stdin.read()\n\
+         sys.stdout.write(json.dumps({\n\
+            \"success\": True,\n\
+            \"output\": \"FROM_LOCAL_STUB\",\n\
+            \"elapsed_s\": 0.1,\n\
+            \"total_input_tokens\": 1,\n\
+            \"total_output_tokens\": 2,\n\
+            \"total_cost_usd\": 0.0,\n\
+         }))\n",
+    )
+    .unwrap();
+    let stub_path = dir.path().join("ago-python-stub.sh");
+    let body = format!(
+        "#!/bin/sh\n# Drop the `-m agent_orchestrator.local_cli` flags the CLI passes.\nexec {py} {}\n",
+        stub_py.display()
+    );
+    std::fs::write(&stub_path, body).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perm = std::fs::metadata(&stub_path).unwrap().permissions();
+        perm.set_mode(0o755);
+        std::fs::set_permissions(&stub_path, perm).unwrap();
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows can't chmod and shell scripts won't run as-is; the
+        // python entry path is exercised on Unix CI and locally.
+        eprintln!("skipping run_local on non-unix");
+        return;
+    }
+
+    let cfg = dir.path().join("config.toml");
+    ago()
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "config",
+            "set",
+            "server",
+            "https://orch.example.com",
+        ])
+        .assert()
+        .success();
+
+    ago()
+        .env("AGO_TOKEN", "dummy")
+        .env("AGO_PYTHON", &stub_path)
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "run",
+            "--local",
+            "--agent",
+            "backend",
+            "--model",
+            "m",
+            "--provider",
+            "anthropic",
+            "do thing",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("FROM_LOCAL_STUB"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn jobs_download_extracts_zip_to_dir() {
     use std::io::Write;
     // Build a small ZIP in memory the way the server would produce it.

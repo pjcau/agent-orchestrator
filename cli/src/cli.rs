@@ -328,4 +328,12 @@ pub struct RunArgs {
     /// `ago run "follow up on the last result"` see prior turns.
     #[arg(long)]
     pub resume: bool,
+
+    /// Run the agent locally via the embedded Python harness instead of
+    /// hitting a remote orchestrator. Requires `agent_orchestrator` to be
+    /// importable in `python3` (e.g. `pip install agent-orchestrator`).
+    /// Skips authentication, conversation_id, SSE streaming, and
+    /// `--resume` — local mode is one-shot blocking.
+    #[arg(long)]
+    pub local: bool,
 }
