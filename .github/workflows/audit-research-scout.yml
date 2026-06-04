@@ -1,0 +1,176 @@
+name: Research Scout Audit (one-shot backfill)
+
+# Manually-triggered audit that replays the research-scout LLM analysis
+# on every past state entry that produced `no-improvements` or
+# `llm-error`. For each repo where the new model surfaces at least one
+# improvement above `min_value_score`, opens an individual PR.
+#
+# This is a backfill tool — not a recurring workflow. State is NOT
+# modified, so the nightly cron's queue stays untouched.
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_value_score:
+        description: 'Open a PR only when at least one improvement has value_score >= this'
+        required: false
+        default: '6'
+      limit:
+        description: 'Cap how many candidates to analyse (debug). Empty = all.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Don't allow two audit runs in parallel — they'd race on branch names
+# and double-open PRs.
+concurrency:
+  group: audit-research-scout
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        # Same deps the nightly research workflow needs — the audit script
+        # imports the scout module directly.
+        run: |
+          pip install -e .
+          pip install aiohttp
+
+      - name: Run audit
+        id: audit
+        env:
+          # Tells the scout module to use OpenRouter (not the missing
+          # claude CLI on the runner).
+          CI: "1"
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          MIN_SCORE="${{ github.event.inputs.min_value_score }}"
+          LIMIT_ARG=""
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            LIMIT_ARG="--limit ${{ github.event.inputs.limit }}"
+          fi
+          python scripts/audit_research_scout_history.py \
+            --min-value-score "${MIN_SCORE:-6}" \
+            ${LIMIT_ARG}
+
+      - name: Open one PR per findings file
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -d .claude/audit-findings ]; then
+            echo "No findings directory — nothing to open." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          shopt -s nullglob
+          FINDINGS_FILES=(.claude/audit-findings/*.md)
+          if [ "${#FINDINGS_FILES[@]}" -eq 0 ]; then
+            echo "Audit produced no findings files — no PRs opened." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Stable PR-label name (created idempotently).
+          gh label create "research-scout-audit" \
+            --description "One-shot audit of past no-improvements scout runs (2026-06)" \
+            --color "5319E7" 2>/dev/null || true
+
+          git config user.name "research-scout[bot]"
+          git config user.email "research-scout[bot]@users.noreply.github.com"
+
+          AUDIT_DATE=$(date +%Y-%m-%d)
+          OPENED=0
+          SKIPPED_EXISTING=0
+
+          for f in "${FINDINGS_FILES[@]}"; do
+            slug=$(basename "$f" .md)               # e.g. owner__repo
+            branch="research-scout/audit-${AUDIT_DATE}-${slug}"
+            title="research-scout audit: improvements from ${slug//__//}"
+
+            # Skip if a PR for this branch is already open or merged
+            # — re-running the workflow shouldn't duplicate PRs.
+            if gh pr list --head "$branch" --state all --json number --jq '.[0].number' \
+                 | grep -q '[0-9]'; then
+              echo "Skip (PR already exists): $branch"
+              SKIPPED_EXISTING=$((SKIPPED_EXISTING + 1))
+              continue
+            fi
+
+            # Fresh branch from current main.
+            git checkout main
+            git checkout -b "$branch"
+            # We don't commit the .md (the body IS the .md); add a marker
+            # commit so the branch isn't empty against main.
+            mkdir -p .claude/audit-findings
+            git add ".claude/audit-findings/_summary.json" 2>/dev/null || true
+            git diff --cached --quiet && {
+              # No summary diff (first audit) — make an empty marker commit.
+              git commit --allow-empty -m "research-scout: audit findings for ${slug//__//}"
+            } || git commit -m "research-scout: audit findings for ${slug//__//}"
+            git push -u origin "$branch"
+
+            gh pr create \
+              --title "$title" \
+              --body-file "$f" \
+              --label "research-scout-audit" \
+              --label "research-scout" \
+              --base main \
+              --head "$branch"
+
+            OPENED=$((OPENED + 1))
+            git checkout main
+          done
+
+          {
+            echo "## Research Scout Audit"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---:|"
+            echo "| Findings files | ${#FINDINGS_FILES[@]} |"
+            echo "| PRs opened | $OPENED |"
+            echo "| PRs skipped (already open/merged) | $SKIPPED_EXISTING |"
+            echo ""
+            if [ -f .claude/audit-findings/_summary.json ]; then
+              echo "### Per-repo summary"
+              echo ""
+              python -c "
+          import json
+          s = json.load(open('.claude/audit-findings/_summary.json'))
+          print('| Repo | Items | Top score | PR |')
+          print('|---|---:|---:|---|')
+          for r in s['results']:
+              repo = r['url'].split('github.com/',1)[-1]
+              top = r.get('top_value_score', '-')
+              pr = '✓' if r.get('findings_file') else r.get('skipped_pr', '-')
+              print(f\"| {repo} | {r['items']} | {top} | {pr} |\")
+          "
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload audit summary as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scout-audit-summary
+          path: |
+            .claude/audit-findings/_summary.json
+            .claude/audit-findings/*.md
+          if-no-files-found: ignore
+          retention-days: 14
