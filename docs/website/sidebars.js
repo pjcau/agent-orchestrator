@@ -15,6 +15,7 @@ const sidebars = {
         'architecture/graph-engine',
         'architecture/cooperation',
         'architecture/components',
+        'architecture/responsive-layout',
       ],
     },
     {
