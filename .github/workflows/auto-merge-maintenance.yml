@@ -49,8 +49,6 @@ jobs:
             n=$(echo "$pr"      | jq -r '.number')
             title=$(echo "$pr"  | jq -r '.title')
             draft=$(echo "$pr"  | jq -r '.isDraft')
-            mergeable=$(echo "$pr"   | jq -r '.mergeable')
-            state=$(echo "$pr"  | jq -r '.mergeStateStatus')
             author=$(echo "$pr" | jq -r '.author.login')
 
             # Eligibility: maintenance title prefix only.
@@ -62,17 +60,22 @@ jobs:
               echo "⏭️  #$n skip (draft) — $title"; continue
             fi
 
-            # GitHub computes `mergeable` lazily — a freshly pushed/rebased PR
-            # reports UNKNOWN until a background job settles. Re-poll the single
-            # PR a few times so we don't skip a perfectly mergeable branch just
-            # because its state hadn't been computed yet.
-            tries=0
-            while { [ "$mergeable" = "UNKNOWN" ] || [ "$state" = "UNKNOWN" ]; } && [ "$tries" -lt 5 ]; do
-              sleep 4
+            # Re-fetch the mergeable state fresh, right before deciding. The
+            # `gh pr list` snapshot goes stale the moment we merge a sibling PR:
+            # several deps PRs edit the same pyproject.toml region, so merging
+            # one flips the others to CONFLICTING. GitHub also computes
+            # `mergeable` lazily (UNKNOWN right after a push/rebase/merge), so
+            # poll the single PR until it settles instead of acting on a stale
+            # value. Without this, a now-conflicting PR is attempted with a
+            # stale CLEAN state and the merge errors out instead of rebasing.
+            mergeable=UNKNOWN; state=UNKNOWN; tries=0
+            while :; do
               fresh=$(gh pr view "$n" --json mergeable,mergeStateStatus)
               mergeable=$(echo "$fresh" | jq -r '.mergeable')
               state=$(echo "$fresh"     | jq -r '.mergeStateStatus')
-              tries=$((tries + 1))
+              { [ "$mergeable" != "UNKNOWN" ] && [ "$state" != "UNKNOWN" ]; } && break
+              [ "$tries" -ge 5 ] && break
+              sleep 4; tries=$((tries + 1))
             done
 
             # Any failing / pending / missing check disqualifies the PR.
@@ -115,6 +118,11 @@ jobs:
 
             if gh pr merge "$n" --squash --delete-branch >/dev/null 2>&1; then
               echo "✅ #$n merged — $title"
+            elif echo "$author" | grep -qi dependabot; then
+              # A late conflict (the base moved under us mid-run) — nudge a
+              # rebase so the next run finds it clean rather than re-failing.
+              gh pr comment "$n" --body "@dependabot rebase" >/dev/null 2>&1 || true
+              echo "🔄 #$n merge failed, rebase requested — $title"
             else
               echo "❌ #$n merge failed — $title"
             fi

@@ -266,8 +266,11 @@ A PR is auto-merged (squash, branch deleted) only when **all** of these hold:
   freshly rebased PR first reports `UNKNOWN`; the job re-polls the PR a few
   times before deciding, instead of skipping it outright.
 
-If a Dependabot PR is conflicting, the job posts `@dependabot rebase` instead of
-merging, so the branch is clean for the next weekly run. The `dry_run` input
+The mergeable state is re-fetched **fresh right before each merge** rather than
+trusted from the initial listing: merging one deps PR flips its same-manifest
+siblings to conflicting, so a stale snapshot would attempt a doomed merge. If a
+Dependabot PR is conflicting (or a merge fails on a late conflict), the job
+posts `@dependabot rebase` instead, so the branch is clean for the next run. The `dry_run` input
 lists what *would* happen without merging anything. A `concurrency` group
 serializes runs so two invocations never race on the same PRs.
 

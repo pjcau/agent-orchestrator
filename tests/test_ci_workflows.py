@@ -239,6 +239,27 @@ class TestAutoMergeMaintenanceWorkflow:
         assert "UNKNOWN" in run, "Must explicitly handle the UNKNOWN mergeable state"
         assert "gh pr view" in run, "Must re-fetch the PR to resolve a stale UNKNOWN state"
 
+    def test_refetches_state_before_each_merge(self, wf: dict) -> None:
+        """Regression guard: the list snapshot goes stale as siblings merge.
+
+        Several deps PRs edit the same pyproject.toml region, so merging one
+        flips the others to CONFLICTING. The decision must read each PR's
+        current state (not the initial `gh pr list` snapshot), otherwise a
+        now-conflicting PR is attempted with a stale CLEAN state and errors out.
+        """
+        run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
+        # mergeable/state must NOT be read from the snapshot ($pr) — only the
+        # live `gh pr view` fetch should populate them.
+        assert "echo \"$pr\"   | jq -r '.mergeable'" not in run
+        assert "echo \"$pr\"  | jq -r '.mergeStateStatus'" not in run
+
+    def test_requests_rebase_on_late_merge_failure(self, wf: dict) -> None:
+        """A conflict that appears mid-run must trigger a rebase, not a dead error."""
+        run = wf["jobs"]["auto-merge"]["steps"][0]["run"]
+        assert "merge failed, rebase requested" in run, (
+            "A failed merge on a Dependabot PR must request a rebase for the next run"
+        )
+
 
 class TestEC2RestartWorkflow:
     """`.github/workflows/ec2-restart.yml` — emergency instance restart."""
