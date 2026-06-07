@@ -26,5 +26,6 @@
 
 pub mod allowlist;
 pub mod protocol;
+pub mod runner;
 pub mod sandbox;
 pub mod signing;
