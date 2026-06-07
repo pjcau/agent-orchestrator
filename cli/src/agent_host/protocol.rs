@@ -40,6 +40,7 @@ pub const KIND_CANCEL: &str = "cancel";
 pub const KIND_ASSISTANT_TEXT: &str = "assistant_text";
 pub const KIND_TURN_END: &str = "turn_end";
 pub const KIND_ERROR: &str = "error";
+pub const KIND_STEP: &str = "step";
 
 /// Fail-loud error from [`parse_frame`].
 ///
@@ -82,6 +83,7 @@ pub enum Frame {
     AssistantText(AssistantText),
     TurnEnd(TurnEnd),
     Error(ErrorFrame),
+    Step(Step),
 }
 
 impl Frame {
@@ -104,6 +106,7 @@ impl Frame {
             }
             Frame::TurnEnd(f) => serde_json::to_value(f).expect("TurnEnd serializes"),
             Frame::Error(f) => serde_json::to_value(f).expect("Error serializes"),
+            Frame::Step(f) => serde_json::to_value(f).expect("Step serializes"),
         }
     }
 
@@ -133,6 +136,7 @@ pub fn parse_frame(v: &Value) -> Result<Frame, FrameError> {
         }
         Some(KIND_TURN_END) => Ok(Frame::TurnEnd(serde_json::from_value(v.clone())?)),
         Some(KIND_ERROR) => Ok(Frame::Error(serde_json::from_value(v.clone())?)),
+        Some(KIND_STEP) => Ok(Frame::Step(serde_json::from_value(v.clone())?)),
         other => Err(FrameError::UnknownKind(other.map(str::to_string))),
     }
 }
@@ -323,6 +327,28 @@ pub struct TurnEnd {
     pub step_count: u64,
 }
 
+/// Server → client. Progress indicator inside a turn — see
+/// `agent_orchestrator.agent_host.protocol.Step` for the contract.
+/// Multi-agent runs emit one frame per orchestrator step so the user
+/// sees `[3/15] backend: writing api/main.py` instead of dead air.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Step {
+    #[serde(default = "default_kind_step")]
+    pub kind: String,
+    #[serde(default = "new_frame_id")]
+    pub frame_id: String,
+    #[serde(default = "default_ts")]
+    pub timestamp: f64,
+    #[serde(default)]
+    pub index: u64,
+    #[serde(default)]
+    pub total: u64,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub agent: String,
+}
+
 /// The wire kind is `error` but Rust reserves `Error` so we suffix.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ErrorFrame {
@@ -353,6 +379,7 @@ fn default_kind_cancel() -> String { KIND_CANCEL.to_string() }
 fn default_kind_assistant_text() -> String { KIND_ASSISTANT_TEXT.to_string() }
 fn default_kind_turn_end() -> String { KIND_TURN_END.to_string() }
 fn default_kind_error() -> String { KIND_ERROR.to_string() }
+fn default_kind_step() -> String { KIND_STEP.to_string() }
 
 fn default_version() -> u32 { PROTOCOL_VERSION }
 fn default_status_ok() -> String { "ok".to_string() }

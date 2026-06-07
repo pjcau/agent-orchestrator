@@ -126,7 +126,7 @@ async def _main(args: argparse.Namespace) -> int:
         )
 
         from .client import ToolProgress
-        from .protocol import AssistantText, Error as ErrorFrame, TurnEnd
+        from .protocol import AssistantText, Error as ErrorFrame, Step, TurnEnd
 
         # ANSI sequences kept simple so non-TTY consumers (CI, |less) still
         # render readable lines after stripping. Override with NO_COLOR=1.
@@ -147,6 +147,16 @@ async def _main(args: argparse.Namespace) -> int:
             tail = f" {DIM}— {ev.error}{RESET}" if ev.error else ""
             return f"{DIM}  {RED}✗{RESET}{DIM} {ev.name} in {ev.elapsed_ms}ms{RESET}{tail}\n"
 
+        def render_step(s: "Step") -> str:
+            if s.total:
+                tag = f"[{s.index}/{s.total}]"
+            elif s.index:
+                tag = f"[{s.index}]"
+            else:
+                tag = "[-]"
+            agent = f" {s.agent}:" if s.agent else ""
+            return f"{DIM}  {tag}{agent} {s.label}{RESET}\n"
+
         async def reader():
             async for event in client.events():
                 if isinstance(event, AssistantText):
@@ -159,6 +169,9 @@ async def _main(args: argparse.Namespace) -> int:
                     # Progress goes to stderr so a piped stdout (>file.md)
                     # stays clean.
                     sys.stderr.write(render_progress(event))
+                    sys.stderr.flush()
+                elif isinstance(event, Step):
+                    sys.stderr.write(render_step(event))
                     sys.stderr.flush()
                 elif isinstance(event, ErrorFrame):
                     sys.stderr.write(

@@ -46,6 +46,7 @@ from .protocol import (
     Error,
     Hello,
     Prompt,
+    Step,
     ToolCall,
     ToolChunk,
     ToolResult,
@@ -463,7 +464,7 @@ class ToolProgress:
     error: str = ""
 
 
-ServerEvent = AssistantText | TurnEnd | Error | ToolProgress
+ServerEvent = AssistantText | TurnEnd | Error | ToolProgress | Step
 """Frames + synthetic progress events the client emits up to the embedder."""
 
 
@@ -615,7 +616,7 @@ class AgentHostClient:
                             frame.reason,
                         )
                         ev.set()
-                elif isinstance(frame, AssistantText | TurnEnd | Error):
+                elif isinstance(frame, AssistantText | TurnEnd | Error | Step):
                     await self._events.put(frame)
                     if isinstance(frame, Error):
                         return

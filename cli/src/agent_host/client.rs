@@ -38,7 +38,7 @@ use tokio_tungstenite::tungstenite::http::Request;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 
 use super::protocol::{
-    parse_frame_str, AssistantText, Cancel, ErrorFrame, Frame, Hello, Prompt,
+    parse_frame_str, AssistantText, Cancel, ErrorFrame, Frame, Hello, Prompt, Step,
     ToolCall, ToolChunk, ToolResult, TurnEnd, PROTOCOL_VERSION,
 };
 use super::runner::{
@@ -426,6 +426,9 @@ async fn receive_loop(
                     notify.notify_one();
                 }
             }
+            Frame::Step(s) => {
+                print_step(&theme, &s);
+            }
             _ => {}
         }
     }
@@ -623,6 +626,33 @@ impl AnsiTheme {
             }
         }
     }
+}
+
+fn print_step(theme: &AnsiTheme, step: &Step) {
+    // Format examples:
+    //   "  [3/15] backend: writing api/main.py"
+    //   "  [2] team-lead: planning"        (total unknown)
+    //   "  [-] team-lead: thinking"        (no index either — rare)
+    let progress = if step.total > 0 {
+        format!("[{}/{}]", step.index, step.total)
+    } else if step.index > 0 {
+        format!("[{}]", step.index)
+    } else {
+        "[-]".to_string()
+    };
+    let agent = if step.agent.is_empty() {
+        String::new()
+    } else {
+        format!(" {}:", step.agent)
+    };
+    eprintln!(
+        "{dim}  {progress}{agent} {label}{reset}",
+        dim = theme.dim,
+        reset = theme.reset,
+        progress = progress,
+        agent = agent,
+        label = step.label,
+    );
 }
 
 fn print_progress_called(theme: &AnsiTheme, frame: &ToolCall) {

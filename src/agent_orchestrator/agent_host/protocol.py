@@ -47,6 +47,7 @@ KIND_CANCEL = "cancel"
 KIND_ASSISTANT_TEXT = "assistant_text"
 KIND_TURN_END = "turn_end"
 KIND_ERROR = "error"
+KIND_STEP = "step"
 
 ALL_KINDS: tuple[str, ...] = (
     KIND_HELLO,
@@ -59,6 +60,7 @@ ALL_KINDS: tuple[str, ...] = (
     KIND_ASSISTANT_TEXT,
     KIND_TURN_END,
     KIND_ERROR,
+    KIND_STEP,
 )
 
 
@@ -286,6 +288,31 @@ class Error(Frame):
     message: str = ""
 
 
+@dataclass(frozen=True)
+class Step(Frame):
+    """Server → client. Progress indicator inside a single turn.
+
+    Multi-agent runs (team-lead delegating to backend / frontend / etc.)
+    can take 30+ seconds of silent LLM time before any AssistantText
+    appears. Emitting one Step frame per orchestrator step turns the
+    wait into actionable feedback (`[2/15] backend: writing main.py`).
+
+    ``index`` and ``total`` are 1-based when known; ``total = 0`` means
+    open-ended (max_steps reached lazily). ``label`` is a short human
+    label rendered as a dim status line by the client — keep it under
+    ~80 chars. ``agent`` is the sub-agent name when team-lead has
+    delegated, empty string when the top-level agent is doing the work
+    itself.
+    """
+
+    kind: ClassVar[str] = KIND_STEP
+
+    index: int = 0
+    total: int = 0
+    label: str = ""
+    agent: str = ""
+
+
 _KIND_MAP: dict[str, type[Frame]] = {
     KIND_HELLO: Hello,
     KIND_ACK: Ack,
@@ -297,6 +324,7 @@ _KIND_MAP: dict[str, type[Frame]] = {
     KIND_ASSISTANT_TEXT: AssistantText,
     KIND_TURN_END: TurnEnd,
     KIND_ERROR: Error,
+    KIND_STEP: Step,
 }
 
 
