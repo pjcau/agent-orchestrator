@@ -49,9 +49,7 @@ logger = logging.getLogger(__name__)
 # We do not forbid them — sometimes the user really wants to allow
 # ``bash`` — but we expose them via :func:`is_high_risk` so a CLI front-
 # end can mark the confirmation prompt with an extra warning.
-_HIGH_RISK_BINARIES = frozenset(
-    {"sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "ash"}
-)
+_HIGH_RISK_BINARIES = frozenset({"sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "ash"})
 
 
 class ShellAllowlistError(ValueError):
@@ -90,9 +88,7 @@ def _basename_or_raise(argv: Sequence[str]) -> str:
     if not bin0:
         raise ShellAllowlistError("argv[0] must not be empty")
     if "/" in bin0 or "\\" in bin0:
-        raise ShellAllowlistError(
-            f"argv[0] must be a bare binary name, not a path: {bin0!r}"
-        )
+        raise ShellAllowlistError(f"argv[0] must be a bare binary name, not a path: {bin0!r}")
     return bin0
 
 
@@ -128,9 +124,7 @@ class ShellAllowlist:
     def _save(self) -> None:
         assert self._allowed is not None  # noqa: S101
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(
-            {"allowed": sorted(self._allowed)}, indent=2, sort_keys=True
-        )
+        payload = json.dumps({"allowed": sorted(self._allowed)}, indent=2, sort_keys=True)
         # Atomic write: temp file in the same dir, then rename.
         with tempfile.NamedTemporaryFile(
             "w",

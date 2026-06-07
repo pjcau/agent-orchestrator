@@ -60,9 +60,7 @@ def enforce_workspace(
     if not workspace.is_absolute():
         workspace = workspace.resolve()
     if not workspace.exists():
-        raise PathOutsideWorkspaceError(
-            f"workspace does not exist: {workspace}"
-        )
+        raise PathOutsideWorkspaceError(f"workspace does not exist: {workspace}")
 
     raw_path = Path(raw)
     candidate = (workspace / raw_path) if not raw_path.is_absolute() else raw_path
@@ -76,9 +74,7 @@ def enforce_workspace(
             if cur == workspace or cur == cur.parent:
                 break
             if cur.is_symlink():
-                raise PathOutsideWorkspaceError(
-                    f"symlink on path is not allowed: {raw}"
-                )
+                raise PathOutsideWorkspaceError(f"symlink on path is not allowed: {raw}")
             cur = cur.parent
 
     resolved = candidate.resolve()
@@ -86,7 +82,5 @@ def enforce_workspace(
     try:
         resolved.relative_to(workspace_resolved)
     except ValueError as e:
-        raise PathOutsideWorkspaceError(
-            f"path escapes workspace: {raw}"
-        ) from e
+        raise PathOutsideWorkspaceError(f"path escapes workspace: {raw}") from e
     return resolved

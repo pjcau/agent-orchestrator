@@ -92,9 +92,7 @@ class TestHandshake:
             tool_manifest=["file_read", "file_write"],
         )
         await ws.incoming.put(hello.to_dict())
-        result, run_id = await perform_handshake(
-            ws, run_id_factory=lambda: "run-123"
-        )
+        result, run_id = await perform_handshake(ws, run_id_factory=lambda: "run-123")
         assert run_id == "run-123"
         assert result.tool_manifest == ["file_read", "file_write"]
         ack_raw = ws.sent[0]
@@ -182,9 +180,7 @@ class TestRegistry:
         registry = PendingToolCallsRegistry(ttl_seconds=0.05)
         ws = FakeWS()
         with pytest.raises(asyncio.TimeoutError):
-            await registry.issue(
-                ws=ws, run_id="run-1", name="file_read", args={"path": "x"}
-            )
+            await registry.issue(ws=ws, run_id="run-1", name="file_read", args={"path": "x"})
         # Slot freed even after timeout.
         assert registry.in_flight == 0
 
@@ -209,9 +205,7 @@ class TestRegistry:
 
         client_task = asyncio.create_task(fake_client_evil())
         with pytest.raises(asyncio.TimeoutError):
-            await registry.issue(
-                ws=ws, run_id="run-1", name="file_write", args={}
-            )
+            await registry.issue(ws=ws, run_id="run-1", name="file_write", args={})
         await client_task
 
     @pytest.mark.asyncio
@@ -252,9 +246,7 @@ class TestRegistry:
 
         client_task = asyncio.create_task(fake_client_wrong_nonce())
         with pytest.raises(asyncio.TimeoutError):
-            await registry.issue(
-                ws=ws, run_id="run-1", name="shell_exec", args={}
-            )
+            await registry.issue(ws=ws, run_id="run-1", name="shell_exec", args={})
         await client_task
 
 
@@ -365,9 +357,7 @@ class TestRemoteSkillAdapter:
         registry = PendingToolCallsRegistry()
         ws = FakeWS()
         hello = Hello(tool_manifest=["file_read", "file_write", "shell_exec"])
-        skills = build_remote_registry(
-            hello=hello, registry=registry, ws=ws, run_id="r-1"
-        )
+        skills = build_remote_registry(hello=hello, registry=registry, ws=ws, run_id="r-1")
         for name in hello.tool_manifest:
             sk = skills.get(name)
             assert isinstance(sk, RemoteSkillAdapter)
@@ -426,10 +416,7 @@ class TestServeAgentHost:
         reason = await serve_agent_host(ws)
         assert reason == "protocol_error:version_unsupported"
         # Error frame emitted before close.
-        assert any(
-            f["kind"] == "error" and f["code"] == "version_unsupported"
-            for f in ws.sent
-        )
+        assert any(f["kind"] == "error" and f["code"] == "version_unsupported" for f in ws.sent)
         assert ws.closed_code == 1008
 
     @pytest.mark.asyncio

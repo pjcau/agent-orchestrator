@@ -45,9 +45,7 @@ class SigningKeyMissingError(RuntimeError):
 def _secret_bytes() -> bytes:
     key = os.environ.get("JWT_SECRET_KEY", "")
     if not key:
-        raise SigningKeyMissingError(
-            "JWT_SECRET_KEY is required for agent-host signing"
-        )
+        raise SigningKeyMissingError("JWT_SECRET_KEY is required for agent-host signing")
     return key.encode("utf-8")
 
 

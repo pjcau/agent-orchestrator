@@ -206,9 +206,7 @@ def signing_key(monkeypatch):
 
 class TestSigning:
     def test_round_trip(self, signing_key):
-        sig = compute_signature(
-            run_id="r1", tool_call_id="t1", nonce="n1", name="file_write"
-        )
+        sig = compute_signature(run_id="r1", tool_call_id="t1", nonce="n1", name="file_write")
         assert verify_signature(
             run_id="r1",
             tool_call_id="t1",
@@ -232,9 +230,7 @@ class TestSigning:
         Security guarantee: an attacker who captures a (signature, nonce)
         pair cannot reuse it for a different tool_call, run, or tool name.
         """
-        sig = compute_signature(
-            run_id="r1", tool_call_id="t1", nonce="n1", name="file_write"
-        )
+        sig = compute_signature(run_id="r1", tool_call_id="t1", nonce="n1", name="file_write")
         kwargs = {
             "run_id": "r1",
             "tool_call_id": "t1",
@@ -246,9 +242,7 @@ class TestSigning:
         assert not verify_signature(**kwargs)
 
     def test_empty_signature_rejected(self, signing_key):
-        assert not verify_signature(
-            run_id="r", tool_call_id="t", nonce="n", name="x", signature=""
-        )
+        assert not verify_signature(run_id="r", tool_call_id="t", nonce="n", name="x", signature="")
 
     def test_wrong_secret_rejected(self, signing_key, monkeypatch):
         """A signature minted under key A must not verify under key B.
@@ -257,9 +251,7 @@ class TestSigning:
         every outstanding tool_call signature (same property as session
         cookies in ``dashboard.auth``).
         """
-        sig = compute_signature(
-            run_id="r", tool_call_id="t", nonce="n", name="x"
-        )
+        sig = compute_signature(run_id="r", tool_call_id="t", nonce="n", name="x")
         monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
         assert not verify_signature(
             run_id="r", tool_call_id="t", nonce="n", name="x", signature=sig
@@ -296,9 +288,7 @@ class TestSigning:
         assert all(set(n) <= set("0123456789abcdef") for n in seen)
 
     def test_signature_is_hex_64(self, signing_key):
-        sig = compute_signature(
-            run_id="r", tool_call_id="t", nonce="n", name="x"
-        )
+        sig = compute_signature(run_id="r", tool_call_id="t", nonce="n", name="x")
         # sha256 hex = 64 chars
         assert len(sig) == 64
         assert set(sig) <= set("0123456789abcdef")

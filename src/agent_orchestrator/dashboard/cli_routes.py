@@ -558,9 +558,7 @@ async def agent_host_endpoint(ws: WebSocket) -> None:
         await ws.close(code=1008, reason="Authentication required")
         return
     await ws.accept()
-    metrics = bind_agent_host_metrics(
-        getattr(ws.app.state, "metrics_registry", None)
-    )
+    metrics = bind_agent_host_metrics(getattr(ws.app.state, "metrics_registry", None))
     try:
         reason = await serve_agent_host(ws, metrics=metrics)
         logger.info(
@@ -574,4 +572,3 @@ async def agent_host_endpoint(ws: WebSocket) -> None:
             await ws.close(code=1011, reason="internal_error")
         except Exception:  # noqa: BLE001
             pass
-

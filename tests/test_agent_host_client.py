@@ -305,9 +305,7 @@ class TestAgentHostClient:
     async def test_handshake_server_error(self, tmp_path: Path, signing_key):
         ws = FakeWS()
         client = AgentHostClient(ws, LocalToolRunner(workspace=tmp_path))
-        await ws.incoming.put(
-            Error(code="version_unsupported", message="need v2").to_dict()
-        )
+        await ws.incoming.put(Error(code="version_unsupported", message="need v2").to_dict())
         with pytest.raises(RuntimeError, match="version_unsupported"):
             await client.handshake()
 
@@ -321,9 +319,7 @@ class TestAgentHostClient:
         await client.handshake()
 
         nonce = new_nonce()
-        sig = compute_signature(
-            run_id="r-1", tool_call_id="tc-1", nonce=nonce, name="file_write"
-        )
+        sig = compute_signature(run_id="r-1", tool_call_id="tc-1", nonce=nonce, name="file_write")
         await ws.incoming.put(
             ToolCall(
                 tool_call_id="tc-1",
@@ -352,9 +348,7 @@ class TestAgentHostClient:
         await client.close()
 
     @pytest.mark.asyncio
-    async def test_tool_call_bad_signature_rejected(
-        self, tmp_path: Path, signing_key
-    ):
+    async def test_tool_call_bad_signature_rejected(self, tmp_path: Path, signing_key):
         ws = FakeWS()
         runner = LocalToolRunner(workspace=tmp_path)
         client = AgentHostClient(ws, runner)

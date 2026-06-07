@@ -418,9 +418,7 @@ class AgentHostClient:
         await self._ws.send_json(Prompt(text=text).to_dict())
 
     async def send_cancel(self, tool_call_id: str, reason: str = "user_ctrl_c") -> None:
-        await self._ws.send_json(
-            Cancel(tool_call_id=tool_call_id, reason=reason).to_dict()
-        )
+        await self._ws.send_json(Cancel(tool_call_id=tool_call_id, reason=reason).to_dict())
 
     async def events(self) -> AsyncIterator[ServerEvent]:
         """Async iterator of server-side events the embedder should react to.
@@ -486,9 +484,7 @@ class AgentHostClient:
                     if isinstance(frame, Error):
                         return
                 else:
-                    logger.debug(
-                        "agent-host client: ignoring frame kind=%s", frame.kind
-                    )
+                    logger.debug("agent-host client: ignoring frame kind=%s", frame.kind)
         except asyncio.CancelledError:
             return
         except Exception as exc:  # noqa: BLE001
@@ -579,9 +575,7 @@ class AgentHostClient:
         name: str,
         result: SkillResult,
     ) -> None:
-        sig = compute_signature(
-            run_id=run_id, tool_call_id=tool_call_id, nonce=nonce, name=name
-        )
+        sig = compute_signature(run_id=run_id, tool_call_id=tool_call_id, nonce=nonce, name=name)
         frame = ToolResult(
             tool_call_id=tool_call_id,
             status="ok" if result.success else "error",

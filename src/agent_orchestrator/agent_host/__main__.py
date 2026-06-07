@@ -48,9 +48,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--agent", default="")
     p.add_argument("--model", default="")
     p.add_argument("--provider", default="")
-    p.add_argument(
-        "--log-level", default="WARNING", help="DEBUG|INFO|WARNING|ERROR"
-    )
+    p.add_argument("--log-level", default="WARNING", help="DEBUG|INFO|WARNING|ERROR")
     return p.parse_args(argv)
 
 
@@ -88,9 +86,10 @@ async def _main(args: argparse.Namespace) -> int:
         sys.stderr.write(f"workspace not a directory: {workspace}\n")
         return 2
 
-    ws_url = args.server.rstrip("/").replace(
-        "https://", "wss://"
-    ).replace("http://", "ws://") + "/api/cli/v1/agent-host"
+    ws_url = (
+        args.server.rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
+        + "/api/cli/v1/agent-host"
+    )
 
     headers = [("X-API-Key", args.token)] if args.token else []
     try:
@@ -104,20 +103,23 @@ async def _main(args: argparse.Namespace) -> int:
     import json as _json
 
     class _Adapter:
-        def __init__(self, inner): self.inner = inner
-        async def send_json(self, data): await self.inner.send(_json.dumps(data))
+        def __init__(self, inner):
+            self.inner = inner
+
+        async def send_json(self, data):
+            await self.inner.send(_json.dumps(data))
+
         async def receive_json(self):
             raw = await self.inner.recv()
             return _json.loads(raw)
+
         async def close(self, code=1000, reason=""):
             await self.inner.close(code=code, reason=reason)
 
     runner = LocalToolRunner(workspace=workspace, confirm_shell=_confirm_shell)
     client = AgentHostClient(_Adapter(ws), runner)
     try:
-        info = await client.handshake(
-            agent=args.agent, model=args.model, provider=args.provider
-        )
+        info = await client.handshake(agent=args.agent, model=args.model, provider=args.provider)
         sys.stderr.write(
             f"[agent-host] connected run_id={info.run_id} "
             f"agent={info.agent or '-'} model={info.model or '-'}\n"
@@ -126,6 +128,7 @@ async def _main(args: argparse.Namespace) -> int:
         async def reader():
             async for event in client.events():
                 from .protocol import AssistantText, TurnEnd, Error as ErrorFrame
+
                 if isinstance(event, AssistantText):
                     sys.stdout.write(event.chunk)
                     sys.stdout.flush()

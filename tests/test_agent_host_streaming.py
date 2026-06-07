@@ -151,9 +151,7 @@ class TestRegistryChunks:
 
         client = asyncio.create_task(fake_client_out_of_order())
         with pytest.raises(asyncio.TimeoutError):
-            await registry.issue(
-                ws=ws, run_id="r-1", name="shell_exec", args={}
-            )
+            await registry.issue(ws=ws, run_id="r-1", name="shell_exec", args={})
         await client
 
     @pytest.mark.asyncio
@@ -198,9 +196,7 @@ class TestRegistryChunks:
 
         client = asyncio.create_task(fake_client_too_large())
         with pytest.raises(asyncio.TimeoutError):
-            await registry.issue(
-                ws=ws, run_id="r-1", name="shell_exec", args={}
-            )
+            await registry.issue(ws=ws, run_id="r-1", name="shell_exec", args={})
         await client
 
     @pytest.mark.asyncio
@@ -225,9 +221,7 @@ class TestRegistryChunks:
 
         client = asyncio.create_task(fake_client_bad_sig())
         with pytest.raises(asyncio.TimeoutError):
-            await registry.issue(
-                ws=ws, run_id="r-1", name="shell_exec", args={}
-            )
+            await registry.issue(ws=ws, run_id="r-1", name="shell_exec", args={})
         await client
 
     @pytest.mark.asyncio
@@ -239,15 +233,11 @@ class TestRegistryChunks:
             # Wait for the call to be sent.
             await asyncio.sleep(0.01)
             call = parse_frame(ws.sent[-1])
-            await registry.emit_cancel(
-                ws=ws, tool_call_id=call.tool_call_id, reason="user_ctrl_c"
-            )
+            await registry.emit_cancel(ws=ws, tool_call_id=call.tool_call_id, reason="user_ctrl_c")
 
         task = asyncio.create_task(driver())
         with pytest.raises(asyncio.TimeoutError):
-            await registry.issue(
-                ws=ws, run_id="r-1", name="shell_exec", args={}
-            )
+            await registry.issue(ws=ws, run_id="r-1", name="shell_exec", args={})
         await task
         cancel_frame = next(f for f in ws.sent if f["kind"] == "cancel")
         assert cancel_frame["reason"] == "user_ctrl_c"
@@ -315,9 +305,7 @@ class TestClientStreaming:
         await client.handshake()
 
         nonce = new_nonce()
-        sig = compute_signature(
-            run_id="r-1", tool_call_id="tc-1", nonce=nonce, name="shell_exec"
-        )
+        sig = compute_signature(run_id="r-1", tool_call_id="tc-1", nonce=nonce, name="shell_exec")
         # Pick a command that produces non-trivial output deterministically.
         await ws.incoming.put(
             ToolCall(
@@ -361,9 +349,7 @@ class TestClientStreaming:
         await client.handshake()
 
         nonce = new_nonce()
-        sig = compute_signature(
-            run_id="r-1", tool_call_id="tc-1", nonce=nonce, name="shell_exec"
-        )
+        sig = compute_signature(run_id="r-1", tool_call_id="tc-1", nonce=nonce, name="shell_exec")
         await ws.incoming.put(
             ToolCall(
                 tool_call_id="tc-1",
@@ -376,9 +362,7 @@ class TestClientStreaming:
         # Wait briefly for the cancel event to register on the client side,
         # then send CANCEL.
         await asyncio.sleep(0.1)
-        await ws.incoming.put(
-            Cancel(tool_call_id="tc-1", reason="user_ctrl_c").to_dict()
-        )
+        await ws.incoming.put(Cancel(tool_call_id="tc-1", reason="user_ctrl_c").to_dict())
         for _ in range(300):
             await asyncio.sleep(0.01)
             if any(f.get("kind") == "tool_result" for f in ws.sent):

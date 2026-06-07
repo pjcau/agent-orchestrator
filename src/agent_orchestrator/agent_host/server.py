@@ -251,9 +251,7 @@ class PendingToolCallsRegistry:
         """
         if tool_call_id not in self._futures:
             return
-        await ws.send_json(
-            Cancel(tool_call_id=tool_call_id, reason=reason).to_dict()
-        )
+        await ws.send_json(Cancel(tool_call_id=tool_call_id, reason=reason).to_dict())
 
     def resolve(
         self,
