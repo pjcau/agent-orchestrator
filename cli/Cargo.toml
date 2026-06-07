@@ -56,6 +56,14 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # declare it explicitly so the GzDecoder import in self_cmd.rs is a
 # load-bearing dep rather than an implementation detail of zip.
 flate2 = "1"
+# Native agent-host channel — no more spawning python -m agent_orchestrator.agent_host.
+# The CLI itself opens the WebSocket, signs/verifies frames, sandboxes file ops,
+# and executes shell_exec.  See cli/src/agent_host/.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
 
 [dev-dependencies]
 wiremock = "0.6"
