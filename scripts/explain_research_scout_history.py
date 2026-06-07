@@ -99,8 +99,9 @@ def _classify(entry: dict) -> str:
 
 def _format_repo(url: str) -> str:
     """`https://github.com/foo/bar` → `foo/bar` for table compactness."""
-    if "github.com/" in url:
-        return url.split("github.com/", 1)[1].rstrip("/")
+    if url.startswith("https://github.com/") or url.startswith("http://github.com/"):
+        _, _, rest = url.partition("github.com/")
+        return rest.rstrip("/")
     return url
 
 

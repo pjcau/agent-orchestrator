@@ -1,0 +1,16 @@
+diff --git a/scripts/explain_research_scout_history.py b/scripts/explain_research_scout_history.py
+index 5c38508..49a2243 100644
+--- a/scripts/explain_research_scout_history.py
++++ b/scripts/explain_research_scout_history.py
+@@ -99,8 +99,9 @@ def _classify(entry: dict) -> str:
+ 
+ def _format_repo(url: str) -> str:
+     """`https://github.com/foo/bar` → `foo/bar` for table compactness."""
+-    if "github.com/" in url:
+-        return url.split("github.com/", 1)[1].rstrip("/")
++    if url.startswith("https://github.com/") or url.startswith("http://github.com/"):
++        _, _, rest = url.partition("github.com/")
++        return rest.rstrip("/")
+     return url
+ 
+ 
