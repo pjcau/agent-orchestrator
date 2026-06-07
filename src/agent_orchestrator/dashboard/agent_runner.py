@@ -388,12 +388,18 @@ async def _instrumented_execute(
                 },
             )
 
-        # Emit step event
+        # Emit step event. ``message`` gives the agent-host Step frame a
+        # non-empty label so the CLI shows "[1] team-lead: thinking"
+        # instead of a bare "[1] team-lead:".
         await event_bus.emit(
             Event(
                 event_type=EventType.AGENT_STEP,
                 agent_name=config.name,
-                data={"step": steps + 1, "model": provider.model_id},
+                data={
+                    "step": steps + 1,
+                    "model": provider.model_id,
+                    "message": "thinking" if steps == 0 else "working",
+                },
             )
         )
 

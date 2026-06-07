@@ -334,6 +334,10 @@ pub struct TurnEnd {
     pub output_tokens: u64,
     #[serde(default)]
     pub cost_usd: f64,
+    /// Short human-readable reason when `status != "ok"` (e.g.
+    /// "Max steps (10) reached"). Empty on success. Additive field.
+    #[serde(default)]
+    pub error: String,
 }
 
 /// Server → client. Progress indicator inside a turn — see
@@ -611,8 +615,31 @@ mod tests {
             input_tokens: 1234,
             output_tokens: 567,
             cost_usd: 0.0123,
+            error: String::new(),
         });
         assert_eq!(round_trip(f.clone()), f);
+    }
+
+    #[test]
+    fn turn_end_carries_error_reason() {
+        let f = Frame::TurnEnd(TurnEnd {
+            kind: KIND_TURN_END.into(),
+            frame_id: "f".into(),
+            timestamp: 0.0,
+            status: "error".into(),
+            step_count: 1,
+            input_tokens: 510,
+            output_tokens: 456,
+            cost_usd: 0.0002,
+            error: "Max steps (10) reached".into(),
+        });
+        let parsed = round_trip(f.clone());
+        if let Frame::TurnEnd(t) = parsed {
+            assert_eq!(t.error, "Max steps (10) reached");
+            assert_eq!(t.status, "error");
+        } else {
+            panic!("kind drift");
+        }
     }
 
     #[test]

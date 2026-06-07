@@ -43,6 +43,7 @@ use super::protocol::{
 };
 use super::runner::{CancelSignal, ChunkEmitter, LocalToolRunner, ShellConfirmer, ToolOutcome};
 use super::signing::{compute_signature, decode_hex_key};
+use tracing::debug;
 
 /// What the client learned during HELLO/ACK.
 #[derive(Debug, Clone)]
@@ -265,6 +266,7 @@ pub async fn run_repl(
                     timestamp: 0.0,
                     text,
                 });
+                debug_frame("send", &frame);
                 let mut sink_lock = sink.lock().await;
                 if let Err(e) = sink_lock.send(Message::Text(frame.to_json())).await {
                     eprintln!("[agent-host] ws send failed: {e}");
@@ -377,6 +379,7 @@ async fn receive_loop(
             }
             None => continue,
         };
+        debug_frame("recv", &frame);
         match frame {
             Frame::AssistantText(t) => {
                 print!("{}", t.chunk);
@@ -541,6 +544,7 @@ async fn send_tool_result(
         nonce: nonce.into(),
         signature,
     });
+    debug_frame("send", &frame);
     let mut snk = sink.lock().await;
     if let Err(e) = snk.send(Message::Text(frame.to_json())).await {
         eprintln!("[agent-host] failed to send tool_result: {e}");
@@ -623,6 +627,42 @@ impl AnsiTheme {
                 reset: "\x1b[0m",
             }
         }
+    }
+}
+
+/// One-line debug trace of a frame in either direction. Visible with
+/// `ago -vv chat --client-tools` or `AGO_LOG=debug`. Lets the user share
+/// exactly what crossed the wire (token fields, error reasons, timing)
+/// when something looks stuck.
+fn debug_frame(dir: &str, f: &Frame) {
+    match f {
+        Frame::Hello(h) => debug!("{dir} hello version={} agent={}", h.version, h.agent),
+        Frame::Ack(a) => debug!("{dir} ack run_id={} model={}", a.run_id, a.model),
+        Frame::Prompt(p) => debug!("{dir} prompt {}B", p.text.len()),
+        Frame::ToolCall(tc) => debug!("{dir} tool_call id={} name={}", tc.tool_call_id, tc.name),
+        Frame::ToolResult(tr) => {
+            debug!(
+                "{dir} tool_result id={} status={}",
+                tr.tool_call_id, tr.status
+            )
+        }
+        Frame::ToolChunk(c) => {
+            debug!(
+                "{dir} tool_chunk id={} seq={} eof={}",
+                c.tool_call_id, c.seq, c.eof
+            )
+        }
+        Frame::Cancel(c) => debug!("{dir} cancel id={} reason={}", c.tool_call_id, c.reason),
+        Frame::AssistantText(a) => debug!("{dir} assistant_text {}B", a.chunk.len()),
+        Frame::Step(s) => debug!(
+            "{dir} step idx={} total={} agent={:?} label={:?} in={} out={} cost={}",
+            s.index, s.total, s.agent, s.label, s.input_tokens, s.output_tokens, s.cost_usd
+        ),
+        Frame::TurnEnd(t) => debug!(
+            "{dir} turn_end status={:?} steps={} in={} out={} cost={} error={:?}",
+            t.status, t.step_count, t.input_tokens, t.output_tokens, t.cost_usd, t.error
+        ),
+        Frame::Error(e) => debug!("{dir} error code={} message={}", e.code, e.message),
     }
 }
 
@@ -750,12 +790,25 @@ fn print_turn_end(theme: &AnsiTheme, turn: &TurnEnd) {
     if turn.cost_usd > 0.0 {
         bits.push(format!("${:.4}", turn.cost_usd));
     }
+    // Surface the failure reason so the user is not left with a bare
+    // "✗ turn error".
+    let reason = if turn.status != "ok" && !turn.error.is_empty() {
+        format!(
+            " {dim}— {err}{reset}",
+            dim = theme.dim,
+            err = turn.error,
+            reset = theme.reset
+        )
+    } else {
+        String::new()
+    };
     eprintln!(
-        "  {mark} {dim}{body}{reset}",
+        "  {mark} {dim}{body}{reset}{reason}",
         mark = mark,
         dim = theme.dim,
         reset = theme.reset,
         body = bits.join(" · "),
+        reason = reason,
     );
 }
 

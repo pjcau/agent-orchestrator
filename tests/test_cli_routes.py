@@ -267,3 +267,57 @@ def test_run_invalid_provider_returns_400(monkeypatch):
     # returns a sanitized error and logs the traceback server-side.
     assert "nope" not in resp.text
     assert "provider error" in resp.text
+
+
+# ===== agent-host prompt handler: turn error surfacing =====
+
+
+def test_agent_host_turn_end_surfaces_error_reason(monkeypatch):
+    """A failed turn must report *why* in the TurnEnd.error field.
+
+    Regression guard: the handler used to send a bare TurnEnd(status=
+    "error") with no reason, leaving the CLI showing "✗ turn error" with
+    no explanation.
+    """
+    import asyncio
+
+    import agent_orchestrator.dashboard.cli_routes as cr
+
+    async def _fake_run_agent(*args, **kwargs):
+        return {
+            "success": False,
+            "status": "stalled",
+            "output": "",
+            "steps_taken": 1,
+            "input_tokens": 510,
+            "output_tokens": 456,
+            "total_cost_usd": 0.0002,
+            "error": "Max steps (10) reached",
+        }
+
+    monkeypatch.setattr(cr, "run_agent", _fake_run_agent)
+    monkeypatch.setattr(cr, "_make_provider", lambda **kw: object())
+
+    sent: list[dict] = []
+
+    class _FakeWS:
+        def __init__(self):
+            self.app = type("A", (), {"state": type("S", (), {})()})()
+
+        async def send_json(self, data):
+            sent.append(data)
+
+    handler = cr._make_agent_host_prompt_handler(_FakeWS())
+
+    class _Hello:
+        agent = "backend"
+        model = "m"
+        provider = "openrouter"
+
+    asyncio.run(handler("do it", object(), "run-1", _Hello()))
+
+    turn_end = next(f for f in sent if f.get("kind") == "turn_end")
+    assert turn_end["status"] == "error"
+    assert turn_end["error"] == "Max steps (10) reached"
+    assert turn_end["input_tokens"] == 510
+    assert turn_end["output_tokens"] == 456

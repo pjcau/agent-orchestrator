@@ -133,6 +133,18 @@ class TestFrameRoundTrip:
             )
         )
 
+    def test_turn_end_with_error_reason(self):
+        self._round_trip(
+            TurnEnd(
+                status="error",
+                step_count=1,
+                input_tokens=510,
+                output_tokens=456,
+                cost_usd=0.0002,
+                error="Max steps (10) reached",
+            )
+        )
+
     def test_step(self):
         self._round_trip(Step(index=2, total=15, label="writing main.py", agent="backend"))
 

@@ -269,6 +269,11 @@ class TurnEnd(Frame):
     accumulated USD cost). They let the client render a final usage
     summary; additive fields, so a v1 client that ignores them keeps
     working.
+
+    ``error`` is a short human-readable reason set when ``status`` is not
+    ``ok`` (e.g. ``Max steps (10) reached``, ``Timeout after 60s``). It
+    surfaces *why* a turn failed so the user is not left staring at a bare
+    ``✗ turn error`` with no explanation. Empty on success.
     """
 
     kind: ClassVar[str] = KIND_TURN_END
@@ -278,6 +283,7 @@ class TurnEnd(Frame):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    error: str = ""
 
 
 @dataclass(frozen=True)

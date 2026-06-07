@@ -206,6 +206,33 @@ Resource bounds the server enforces:
 | `peer closed connection` / `Broken pipe` while answering `allow … [y/N]` | You took longer than the tool TTL to confirm; the server timed out the call and the WS dropped | Fixed: the default TTL is now 5 min. Confirm promptly, or raise `AGENT_HOST_TOOL_TTL_SECONDS` on the dashboard |
 | `tool_timeout` | The local tool exceeded the TTL (default 5 min) | Split into smaller calls, or raise `AGENT_HOST_TOOL_TTL_SECONDS` |
 | Subprocess hangs on Ctrl-C | First Ctrl-C is the REPL's empty-line; second exits | press it twice |
+| `✗ turn error` with a reason | The turn failed server-side; the reason is now shown after the `—` (e.g. `Max steps (10) reached`) | Act on the reason; rerun, raise `--max-steps`, or simplify the task |
+| Turn looks stuck / agent seems frozen | A long LLM step with no output, or a swallowed error | Run with debug frames (below) and share the output |
+
+### Debug mode (frame-level trace)
+
+When something looks stuck or the meter/summary is missing, run with
+debug logging to see every frame crossing the wire — kinds, token
+fields, error reasons, and ordering:
+
+```bash
+ago -vv chat --client-tools          # -v info, -vv debug, -vvv trace
+# or, equivalently, via env:
+AGO_LOG=debug ago chat --client-tools
+```
+
+You'll get lines like:
+
+```
+DEBUG ago::agent_host::client: send prompt 42B
+DEBUG ago::agent_host::client: recv step idx=1 total=0 agent="team-lead" label="thinking" in=0 out=0 cost=0
+DEBUG ago::agent_host::client: send tool_result id=tc-1 status=ok
+DEBUG ago::agent_host::client: recv turn_end status="error" steps=1 in=510 out=456 cost=0.0002 error="Max steps (10) reached"
+```
+
+Logs go to **stderr**, so they don't pollute a piped stdout. Paste this
+trace when reporting a problem — it shows exactly what the server sent
+and when.
 
 Per-feature deep dives:
 
