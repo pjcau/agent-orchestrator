@@ -425,6 +425,23 @@
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/dashboard/cli_routes.py"
           ]
+        },
+        {
+          "name": "Agent Host",
+          "files": [
+            "agent_host/__init__.py",
+            "agent_host/protocol.py",
+            "agent_host/signing.py"
+          ],
+          "cx": 780,
+          "cy": 580,
+          "size": 24,
+          "description": "Client-side tool delegation \u2014 frames (HELLO/ACK/TOOL_CALL/TOOL_RESULT/...) and HMAC signing so the agent loop on `agents-orchestrator.com` can drive `file_*` and `shell_exec` in the user's local cwd via the `ago` CLI.",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/__init__.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/protocol.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/signing.py"
+          ]
         }
       ]
     },
@@ -676,6 +693,6 @@
   ],
   "stats": {
     "total_clusters": 6,
-    "total_items": 41
+    "total_items": 42
   }
 }

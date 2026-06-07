@@ -297,6 +297,38 @@ page instead of dropping them on the chat home. Only local paths starting
 with a single `/` are accepted — `//evil.com/…` and absolute URLs are
 rejected to prevent open-redirect through a forged cookie.
 
+## Agent Host — client-side tool delegation (in progress)
+
+The agent-host channel inverts the default execution model: when the user
+passes `--client-tools` (or sets `client_tools: true` in `.ago.yaml`), the
+agent loop on the remote dashboard delegates every tool call (`file_*`,
+`shell_exec`, …) back to the CLI. The CLI runs the tool in the local `cwd`,
+returns the result over a WebSocket, and the agent step continues. This
+gives `ago chat` feature parity with `ago run --local` for the user's
+filesystem and shell while keeping multi-turn conversation state on the
+server.
+
+The wire format lives in `src/agent_orchestrator/agent_host/` and is built
+out across five commits on `feat/agent-host-protocol`:
+
+1. **Protocol + signing** — Pydantic-style frames (`Hello`, `Ack`, `ToolCall`,
+   `ToolResult`, `ToolChunk`, `Cancel`, `AssistantText`, `TurnEnd`, `Error`)
+   and HMAC-SHA-256 over `(run_id, tool_call_id, nonce, name)` keyed by the
+   existing `JWT_SECRET_KEY`. **No I/O at this layer** — schemas only.
+2. **Server WS endpoint** — `/api/cli/v1/agent-host`, `RemoteSkillAdapter`
+   wrapping the existing `Skill` ABC, `pending_tool_calls` registry with
+   60 s TTL.
+3. **Python CLI client** — spawned as a subprocess by the Rust binary on
+   `--client-tools`; reuses the existing `skills/` package (no duplication),
+   enforces a `cwd`-anchored path sandbox and a shell allowlist persisted
+   to `~/.cache/ago/shell-allow.json`.
+4. **Streaming + cancellation** — `ToolChunk` for `shell_exec` stdout/stderr
+   and large `file_read`; cancellation propagates `SIGTERM` to the local
+   process tree.
+5. **Telemetry + docs** — `agent_host_tool_call_latency_seconds` histogram,
+   `agent_host_active_streams` gauge, `agent_host_disconnect_total` counter
+   (PII-free labels), full operator guide in `docs/agent-host.md`.
+
 ### Token model
 
 Approving binds the resulting **JWT** (signed with `JWT_SECRET_KEY`) to the

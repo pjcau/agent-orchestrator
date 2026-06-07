@@ -205,6 +205,12 @@ clusters:
         cy: 540
         size: 26
         description: /api/cli/v1/* endpoints consumed by the `ago` Rust CLI (see docs/cli.md).
+      - name: Agent Host
+        files: [agent_host/__init__.py, agent_host/protocol.py, agent_host/signing.py]
+        cx: 780
+        cy: 580
+        size: 24
+        description: Client-side tool delegation — frames (HELLO/ACK/TOOL_CALL/TOOL_RESULT/...) and HMAC signing so the agent loop on `agents-orchestrator.com` can drive `file_*` and `shell_exec` in the user's local cwd via the `ago` CLI.
 
   - id: observability
     label: Observability
