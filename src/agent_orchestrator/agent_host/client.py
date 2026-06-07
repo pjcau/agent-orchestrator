@@ -68,6 +68,23 @@ def _suppress():
     return contextlib.suppress(Exception, asyncio.CancelledError)
 
 
+def _first_present(args: dict, keys: tuple[str, ...]):
+    """Return the first value in ``args`` whose key matches ``keys``.
+
+    Defensive against LLM hallucinations where the model emits a
+    parameter name that's *almost* right (``path`` instead of
+    ``file_path``). The canonical schemas in ``server._DEFAULT_TOOL_SCHEMAS``
+    aim the model at the right key; this helper keeps a bad call from
+    failing with a KeyError when the model ignores the schema.
+    Returns ``None`` if no key matches and the value is not the empty
+    string (so ``content=""`` is preserved as legitimate).
+    """
+    for k in keys:
+        if k in args:
+            return args[k]
+    return None
+
+
 def _summarise_args(args: dict, *, max_len: int = 80) -> str:
     """One-line preview of ``args`` for progress feedback.
 
@@ -234,12 +251,38 @@ class LocalToolRunner:
         # Enforce the strict sandbox before delegating to the skill (which
         # applies the permissive ``_confine``). Strict-first ensures we
         # *reject* escapes rather than silently remapping them.
-        enforce_workspace(self._workspace, args.get("file_path", ""))
-        return await self._file_read.execute(args)
+        # Accept aliases so an LLM that ignored the canonical schema
+        # still works (`path` / `filepath` instead of `file_path`).
+        path = _first_present(args, ("file_path", "path", "filepath"))
+        if not path:
+            return SkillResult(
+                success=False,
+                output=None,
+                error="missing_file_path",
+                metadata={"tool": "file_read", "got_keys": list(args.keys())},
+            )
+        enforce_workspace(self._workspace, path)
+        return await self._file_read.execute({"file_path": path})
 
     async def _do_file_write(self, args: dict[str, Any]) -> SkillResult:
-        enforce_workspace(self._workspace, args.get("file_path", ""))
-        return await self._file_write.execute(args)
+        path = _first_present(args, ("file_path", "path", "filepath"))
+        content = _first_present(args, ("content", "text", "body", "data"))
+        if not path:
+            return SkillResult(
+                success=False,
+                output=None,
+                error="missing_file_path",
+                metadata={"tool": "file_write", "got_keys": list(args.keys())},
+            )
+        if content is None:
+            return SkillResult(
+                success=False,
+                output=None,
+                error="missing_content",
+                metadata={"tool": "file_write", "got_keys": list(args.keys())},
+            )
+        enforce_workspace(self._workspace, path)
+        return await self._file_write.execute({"file_path": path, "content": str(content)})
 
     async def _do_shell_exec(
         self,
@@ -248,7 +291,8 @@ class LocalToolRunner:
         emit_chunk: Callable[[str], Awaitable[None]] | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> SkillResult:
-        argv = args.get("argv") or []
+        # Accept aliases: an LLM might emit `command`/`cmd`/`args`.
+        argv = _first_present(args, ("argv", "command", "cmd", "args")) or []
         if isinstance(argv, str):
             return SkillResult(
                 success=False,

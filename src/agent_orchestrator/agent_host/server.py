@@ -410,6 +410,79 @@ import :mod:`dashboard.agent_runner` so the import boundary holds.
 _GENERIC_TOOL_PARAMS: dict[str, Any] = {"type": "object", "additionalProperties": True}
 
 
+#: Canonical JSON Schemas for the project's standard client-side tools.
+#: Without these the LLM sees only ``additionalProperties: true`` and
+#: hallucinates parameter names (``path`` instead of ``file_path``,
+#: ``cmd`` instead of ``argv``, …) — a tool call that then fails on
+#: the client with ``KeyError``. Mirroring the schemas published by
+#: :mod:`agent_orchestrator.skills.filesystem` and :mod:`...skills.shell`
+#: keeps the agent's tool list identical regardless of where the tool
+#: actually runs.
+_DEFAULT_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "file_read": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": (
+                    "Path to the file to read, relative to the workspace root. "
+                    "Absolute paths outside the workspace are refused with "
+                    "path_outside_workspace."
+                ),
+            },
+        },
+        "required": ["file_path"],
+    },
+    "file_write": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to write (relative to the workspace). Parents auto-created.",
+            },
+            "content": {
+                "type": "string",
+                "description": "Text content to write. Overwrites if the file already exists.",
+            },
+        },
+        "required": ["file_path", "content"],
+    },
+    "shell_exec": {
+        "type": "object",
+        "properties": {
+            "argv": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    'Command + arguments as a list (e.g. ["pytest", "-q"]). '
+                    "String form is rejected (shell=True would be unsafe). The "
+                    "binary at argv[0] must be allow-listed in "
+                    "~/.cache/ago/shell-allow.json."
+                ),
+            },
+        },
+        "required": ["argv"],
+    },
+    "file_list": {
+        "type": "object",
+        "properties": {
+            "directory": {
+                "type": "string",
+                "description": "Directory path relative to the workspace (default: workspace root).",
+            },
+        },
+    },
+}
+
+
+_DEFAULT_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "file_read": "Read the contents of a file inside the agent-host workspace.",
+    "file_write": "Write content to a file inside the agent-host workspace (parents auto-created).",
+    "shell_exec": "Execute a command (argv list) inside the agent-host workspace.",
+    "file_list": "List entries in a workspace-relative directory.",
+}
+
+
 def build_remote_registry(
     *,
     hello: Hello,
@@ -436,10 +509,24 @@ def build_remote_registry(
     parameter_schemas = parameter_schemas or {}
     descriptions = descriptions or {}
     for name in hello.tool_manifest:
+        # Resolution order: explicit override > project canonical schema
+        # for the standard tools > permissive generic. Same order for
+        # descriptions. This stops the LLM from inventing parameter
+        # names (which used to crash the client with a KeyError) by
+        # always handing it a precise JSON Schema for the well-known
+        # tool catalogue.
+        params = (
+            parameter_schemas.get(name) or _DEFAULT_TOOL_SCHEMAS.get(name) or _GENERIC_TOOL_PARAMS
+        )
+        desc = (
+            descriptions.get(name)
+            or _DEFAULT_TOOL_DESCRIPTIONS.get(name)
+            or f"client-side {name} delegated via agent-host"
+        )
         adapter = RemoteSkillAdapter(
             name=name,
-            description=descriptions.get(name, f"client-side {name} delegated via agent-host"),
-            parameters=parameter_schemas.get(name, _GENERIC_TOOL_PARAMS),
+            description=desc,
+            parameters=params,
             registry=registry,
             ws=ws,
             run_id=run_id,
