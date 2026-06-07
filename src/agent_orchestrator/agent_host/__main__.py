@@ -27,7 +27,17 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from pathlib import Path
+
+
+def _fmt_tokens(n: int) -> str:
+    """Compact token count: 950, 12.3k, 1.2M."""
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        return f"{n / 1000:.1f}k"
+    return f"{n / 1_000_000:.1f}M"
 
 logger = logging.getLogger("agent_host.cli")
 
@@ -147,6 +157,36 @@ async def _main(args: argparse.Namespace) -> int:
             tail = f" {DIM}— {ev.error}{RESET}" if ev.error else ""
             return f"{DIM}  {RED}✗{RESET}{DIM} {ev.name} in {ev.elapsed_ms}ms{RESET}{tail}\n"
 
+        # Live token-meter state, reset at the start of every turn so
+        # tok/s reflects the current turn rather than the whole session.
+        meter = {"turn_start": 0.0, "last_t": 0.0, "last_out": 0}
+
+        def _reset_meter() -> None:
+            now = time.monotonic()
+            meter["turn_start"] = now
+            meter["last_t"] = now
+            meter["last_out"] = 0
+
+        def render_meter(inp: int, out: int, cost: float) -> str:
+            """`↑12.3k ↓4.5k · $0.0123 · 78 tok/s` — upstream/downstream."""
+            now = time.monotonic()
+            dt = now - meter["last_t"]
+            d_out = out - meter["last_out"]
+            # Instantaneous tok/s between frames; fall back to the turn
+            # average on the first frame so the field is never blank.
+            if dt > 0.05 and d_out >= 0:
+                tok_s = d_out / dt
+            else:
+                elapsed = now - meter["turn_start"]
+                tok_s = out / elapsed if elapsed > 0 else 0.0
+            meter["last_t"] = now
+            meter["last_out"] = out
+            parts = [f"↑{_fmt_tokens(inp)} ↓{_fmt_tokens(out)}"]
+            if cost > 0:
+                parts.append(f"${cost:.4f}")
+            parts.append(f"{tok_s:.0f} tok/s")
+            return " · ".join(parts)
+
         def render_step(s: "Step") -> str:
             if s.total:
                 tag = f"[{s.index}/{s.total}]"
@@ -155,7 +195,22 @@ async def _main(args: argparse.Namespace) -> int:
             else:
                 tag = "[-]"
             agent = f" {s.agent}:" if s.agent else ""
-            return f"{DIM}  {tag}{agent} {s.label}{RESET}\n"
+            line = f"{DIM}  {tag}{agent} {s.label}{RESET}"
+            if s.input_tokens or s.output_tokens:
+                m = render_meter(s.input_tokens, s.output_tokens, s.cost_usd)
+                line += f"  {DIM}{m}{RESET}"
+            return line + "\n"
+
+        def render_turn_end(t: "TurnEnd") -> str:
+            mark = GREEN + "✓" + RESET if t.status == "ok" else RED + "✗" + RESET
+            bits = [f"{mark} {DIM}turn {t.status}"]
+            if t.step_count:
+                bits.append(f"{t.step_count} steps")
+            if t.input_tokens or t.output_tokens:
+                bits.append(f"↑{_fmt_tokens(t.input_tokens)} ↓{_fmt_tokens(t.output_tokens)}")
+            if t.cost_usd > 0:
+                bits.append(f"${t.cost_usd:.4f}")
+            return "  " + " · ".join(bits) + RESET + "\n"
 
         async def reader():
             async for event in client.events():
@@ -165,6 +220,10 @@ async def _main(args: argparse.Namespace) -> int:
                 elif isinstance(event, TurnEnd):
                     sys.stdout.write("\n")
                     sys.stdout.flush()
+                    # Final usage summary on stderr keeps piped stdout clean.
+                    sys.stderr.write(render_turn_end(event))
+                    sys.stderr.flush()
+                    _reset_meter()
                 elif isinstance(event, ToolProgress):
                     # Progress goes to stderr so a piped stdout (>file.md)
                     # stays clean.
@@ -192,6 +251,7 @@ async def _main(args: argparse.Namespace) -> int:
                     return
                 await client.send_prompt(text)
 
+        _reset_meter()
         await asyncio.gather(reader(), writer())
     finally:
         await client.close()

@@ -493,14 +493,14 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
             if not run_task.done():
                 run_task.cancel()
             return
-        except Exception as exc:  # noqa: BLE001 — surface as terminal SSE event
+        except Exception:  # noqa: BLE001 — surface as terminal SSE event
             logger.exception("CLI run failed (run_id=%s)", run_id)
             yield _sse(
                 "complete",
                 {
                     "run_id": run_id,
                     "success": False,
-                    "error": str(exc),
+                    "error": "internal error",
                 },
             )
             return
@@ -609,6 +609,11 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
         bus = EventBus()
         sub = bus.subscribe()
 
+        # Cumulative usage for THIS turn, refreshed from TOKEN_UPDATE
+        # events so every Step frame can carry a live token meter
+        # (upstream prompt / downstream completion / USD cost).
+        usage = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+
         async def forward_steps() -> None:
             step_index = 0
             while True:
@@ -616,7 +621,13 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                     event = await sub.get()
                 except asyncio.CancelledError:
                     return
-                if event.event_type == EventType.AGENT_STEP:
+                if event.event_type == EventType.TOKEN_UPDATE:
+                    # Latest cumulative totals — stamped onto the next Step.
+                    if isinstance(event.data, dict):
+                        usage["input_tokens"] = int(event.data.get("input_tokens", 0))
+                        usage["output_tokens"] = int(event.data.get("output_tokens", 0))
+                        usage["cost_usd"] = float(event.data.get("agent_cost_usd", 0.0))
+                elif event.event_type == EventType.AGENT_STEP:
                     step_index += 1
                     label = ""
                     if isinstance(event.data, dict):
@@ -635,6 +646,9 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                                 total=0,  # max_steps available on caller side; left 0 for "unknown"
                                 agent=event.agent_name or "",
                                 label=label[:200],
+                                input_tokens=usage["input_tokens"],
+                                output_tokens=usage["output_tokens"],
+                                cost_usd=usage["cost_usd"],
                             ).to_dict()
                         )
                     except Exception as exc:  # noqa: BLE001
@@ -659,8 +673,15 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
             output = str(result.get("output", "")) if isinstance(result, dict) else str(result)
             if output:
                 await ws.send_json(AssistantText(chunk=output).to_dict())
+            result_dict = result if isinstance(result, dict) else {}
             await ws.send_json(
-                TurnEnd(status="ok" if result.get("success") is not False else "error").to_dict()
+                TurnEnd(
+                    status="ok" if result_dict.get("success") is not False else "error",
+                    step_count=int(result_dict.get("steps_taken", 0)),
+                    input_tokens=int(result_dict.get("input_tokens", 0)),
+                    output_tokens=int(result_dict.get("output_tokens", 0)),
+                    cost_usd=float(result_dict.get("total_cost_usd", 0.0)),
+                ).to_dict()
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("agent-host: turn failed: %s", exc)

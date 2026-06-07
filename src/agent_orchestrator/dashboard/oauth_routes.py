@@ -198,8 +198,22 @@ def _safe_return_to(request: Request) -> str:
 
     Only local paths (single leading `/`, not `//` which is protocol-relative)
     are accepted, preventing open-redirect through a forged cookie value.
+    The cookie is user-controllable; CodeQL `py/url-redirection` flags any
+    redirect built from external input. We close that by parsing the value
+    with :func:`urllib.parse.urlparse` and refusing anything that carries
+    a scheme or netloc — only a pure path survives.
     """
+    from urllib.parse import urlparse
+
     raw = request.cookies.get("auth_return_to", "")
+    if not raw:
+        return "/"
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return "/"
+    if parsed.scheme or parsed.netloc:
+        return "/"
     if raw.startswith("/") and not raw.startswith("//"):
         return raw
     return "/"
