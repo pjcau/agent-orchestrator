@@ -176,18 +176,20 @@ jobs:
           cargo fmt --check --all
           echo "Rust sweep done."
 
-      # --- Pattern: pip-audit new CVE → append to ignore list ---------------
+      # --- Pattern: pip-audit new CVE → open issue (cannot modify yml) ------
+      #
+      # We deliberately do NOT auto-edit `.github/workflows/security-scan.yml`
+      # here: the default `GITHUB_TOKEN` is forbidden by GitHub from
+      # writing to `.github/workflows/*` for safety. So we collect the new
+      # advisory IDs and open a tracked issue; a human applies the ignore
+      # in a normal PR. Keeps the human-in-the-loop for security calls.
 
-      - name: pip-audit ignore-list grooming
+      - name: pip-audit new advisories → issue
         if: hashFiles('.github/workflows/security-scan.yml') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Find the *latest* Security Scan failure and pull out any
-          # PYSEC-/CVE- IDs that pip-audit reported. Append the ones not
-          # already in the workflow's --ignore-vuln list. The advisory
-          # entries are kept alphabetically sorted to keep diffs small.
           fail=$(gh run list --workflow="Security Scan" --status failure --limit 1 \
             --json databaseId -q '.[0].databaseId' || true)
           if [ -z "$fail" ]; then
@@ -202,35 +204,28 @@ jobs:
             exit 0
           fi
           file=.github/workflows/security-scan.yml
+          new=()
           for id in "${ids[@]}"; do
-            if grep -q -- "--ignore-vuln $id" "$file"; then
-              continue
+            if ! grep -q -- "--ignore-vuln $id" "$file"; then
+              new+=("$id")
             fi
-            echo "Appending $id to --ignore-vuln list"
-            # Insert before the last existing `--ignore-vuln` line so the
-            # backslash continuation stays correct.
-            python3 - "$file" "$id" <<'PY'
-          import sys, re, pathlib
-          path, ident = sys.argv[1], sys.argv[2]
-          text = pathlib.Path(path).read_text()
-          marker = "--ignore-vuln "
-          # Find last occurrence and inject a new line right after it.
-          lines = text.splitlines(keepends=True)
-          last = max(i for i, ln in enumerate(lines) if marker in ln)
-          # Match indentation + trailing `\` continuation.
-          m = re.match(r'(\s+)--ignore-vuln (\S+)(\s*\\?\s*)$', lines[last].rstrip("\n"))
-          if not m:
-              raise SystemExit("could not parse the last ignore-vuln line")
-          indent, _existing, suffix = m.group(1), m.group(2), m.group(3)
-          new = f"{indent}--ignore-vuln {ident} \\\n"
-          # Ensure the previous last line ends with a backslash continuation.
-          if not lines[last].rstrip().endswith("\\"):
-              lines[last] = lines[last].rstrip() + " \\\n"
-          lines.insert(last + 1, new)
-          pathlib.Path(path).write_text("".join(lines))
-          PY
           done
-          echo "pip-audit sweep done."
+          if [ ${#new[@]} -eq 0 ]; then
+            echo "All advisory IDs already in the ignore list."
+            exit 0
+          fi
+          title="auto-heal: pip-audit reports ${#new[@]} unhandled advisory(s)"
+          body="$(printf '%s\n\n%s\n\n%s\n' \
+            'pip-audit failed and Security Scan reported the following advisory IDs that are NOT in the ignore list yet:' \
+            "$(printf -- '- %s\n' "${new[@]}")" \
+            "Apply the same `--ignore-vuln <ID>` pattern as in [.github/workflows/security-scan.yml](../blob/main/.github/workflows/security-scan.yml). Open a normal PR (the auto-heal bot cannot edit workflow YAML — GitHub blocks workflow writes for the default token).")"
+          # Don't open a duplicate issue if one already exists for the day.
+          existing=$(gh issue list --state open --label auto-heal --search "$title" --json number -q '.[0].number' || true)
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body "$body" || true
+          else
+            gh issue create --title "$title" --body "$body" --label "auto-heal,security" || true
+          fi
 
       # --- Commit, push, open PR --------------------------------------------
 
