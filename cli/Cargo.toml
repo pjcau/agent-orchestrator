@@ -1,10 +1,10 @@
 [package]
 name = "ago"
-version = "0.5.5"
+version = "0.5.6"
 edition = "2021"
 description = "Agent Orchestrator CLI — talk to a remote orchestrator from your local project."
 license = "MIT"
-repository = "https://github.com/jonnycau/agent-orchestrator"
+repository = "https://github.com/pjcau/agent-orchestrator"
 rust-version = "1.75"
 readme = "README.md"
 keywords = ["cli", "ai", "agents", "orchestrator", "llm"]

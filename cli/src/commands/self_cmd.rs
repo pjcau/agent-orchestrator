@@ -1,6 +1,6 @@
 //! `ago self check` and `ago self update`.
 //!
-//! Reads the GitHub Releases API for `jonnycau/agent-orchestrator`, filters
+//! Reads the GitHub Releases API for `pjcau/agent-orchestrator`, filters
 //! tags shaped like `ago-vX.Y.Z` (the CLI namespace, distinct from the
 //! orchestrator's own `vX.Y.Z` tags), and either reports the comparison
 //! (`check`) or downloads the matching archive for the current target
@@ -18,7 +18,7 @@ use crate::cli::{SelfAction, SelfArgs};
 use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
 
-const RELEASE_OWNER: &str = "jonnycau";
+const RELEASE_OWNER: &str = "pjcau";
 const RELEASE_REPO: &str = "agent-orchestrator";
 const TAG_PREFIX: &str = "ago-v";
 
@@ -173,7 +173,7 @@ async fn update(force: bool) -> Result<()> {
     let target = current_target().ok_or_else(|| {
         AgoError::Other(
             "self update: this binary was built for a target not in the release matrix — \
-             install manually from https://github.com/jonnycau/agent-orchestrator/releases"
+             install manually from https://github.com/pjcau/agent-orchestrator/releases"
                 .into(),
         )
     })?;
