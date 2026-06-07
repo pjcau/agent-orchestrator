@@ -92,13 +92,16 @@ class TestHandshake:
             tool_manifest=["file_read", "file_write"],
         )
         await ws.incoming.put(hello.to_dict())
-        result, run_id = await perform_handshake(ws, run_id_factory=lambda: "run-123")
+        result, run_id, session_key = await perform_handshake(ws, run_id_factory=lambda: "run-123")
         assert run_id == "run-123"
         assert result.tool_manifest == ["file_read", "file_write"]
+        # Session key is opaque bytes; ack carries the hex form.
+        assert isinstance(session_key, bytes) and len(session_key) == 32
         ack_raw = ws.sent[0]
         assert ack_raw["kind"] == "ack"
         assert ack_raw["run_id"] == "run-123"
         assert ack_raw["capabilities"] == ["file_read", "file_write"]
+        assert ack_raw["signing_key"] == session_key.hex()
 
     @pytest.mark.asyncio
     async def test_version_mismatch(self, signing_key):

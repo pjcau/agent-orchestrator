@@ -141,6 +141,13 @@ class Ack(Frame):
     frame. ``capabilities`` lets the server advertise what it understands of
     the client's manifest (so the client can disable a tool path if the
     server says "I can't see this tool in any agent on this server").
+
+    ``signing_key`` is the per-session HMAC secret as a hex string
+    (32 bytes = 64 hex chars), minted by the server on accept. Both
+    peers use it for ``tool_call`` / ``tool_result`` / ``tool_chunk``
+    HMAC sign+verify. The dashboard's stable ``JWT_SECRET_KEY`` is
+    *never* shipped to the client — see ``agent_host.signing`` for the
+    threat model.
     """
 
     kind: ClassVar[str] = KIND_ACK
@@ -150,6 +157,7 @@ class Ack(Frame):
     model: str = ""
     provider: str = ""
     capabilities: list[str] = field(default_factory=list)
+    signing_key: str = ""
 
 
 @dataclass(frozen=True)

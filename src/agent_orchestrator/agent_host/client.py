@@ -323,13 +323,19 @@ class LocalToolRunner:
 
 @dataclass
 class SessionInfo:
-    """What the client learned during HELLO/ACK."""
+    """What the client learned during HELLO/ACK.
+
+    ``signing_key`` is the raw bytes the server minted for this session
+    (decoded from the hex string the ACK ships). Kept in-memory only;
+    never persisted to disk.
+    """
 
     run_id: str
     agent: str = ""
     model: str = ""
     provider: str = ""
     capabilities: tuple[str, ...] = ()
+    signing_key: bytes = b""
 
 
 ServerEvent = AssistantText | TurnEnd | Error
@@ -404,12 +410,17 @@ class AgentHostClient:
             raise RuntimeError(f"server rejected HELLO: {frame.code} — {frame.message}")
         if not isinstance(frame, Ack):
             raise RuntimeError(f"server returned unexpected kind on handshake: {frame.kind}")
+        try:
+            session_key = bytes.fromhex(frame.signing_key) if frame.signing_key else b""
+        except ValueError as exc:
+            raise RuntimeError(f"server returned non-hex signing_key in ACK: {exc}") from exc
         self._session = SessionInfo(
             run_id=frame.run_id,
             agent=frame.agent,
             model=frame.model,
             provider=frame.provider,
             capabilities=tuple(frame.capabilities),
+            signing_key=session_key,
         )
         self._receive_task = asyncio.create_task(self._receive_loop())
         return self._session
@@ -491,12 +502,14 @@ class AgentHostClient:
             logger.warning("agent-host client: receive loop exited: %s", exc)
 
     async def _handle_tool_call(self, run_id: str, frame: ToolCall) -> None:
+        session_key = self.session.signing_key or None
         if not verify_signature(
             run_id=run_id,
             tool_call_id=frame.tool_call_id,
             nonce=frame.nonce,
             name=frame.name,
             signature=frame.signature,
+            key=session_key,
         ):
             logger.warning(
                 "agent-host client: tool_call signature invalid id=%s",
@@ -535,6 +548,7 @@ class AgentHostClient:
                     tool_call_id=frame.tool_call_id,
                     nonce=frame.nonce,
                     name=frame.name,
+                    key=session_key,
                 )
                 tc = ToolChunk(
                     tool_call_id=frame.tool_call_id,
@@ -575,7 +589,13 @@ class AgentHostClient:
         name: str,
         result: SkillResult,
     ) -> None:
-        sig = compute_signature(run_id=run_id, tool_call_id=tool_call_id, nonce=nonce, name=name)
+        sig = compute_signature(
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            nonce=nonce,
+            name=name,
+            key=(self.session.signing_key or None),
+        )
         frame = ToolResult(
             tool_call_id=tool_call_id,
             status="ok" if result.success else "error",

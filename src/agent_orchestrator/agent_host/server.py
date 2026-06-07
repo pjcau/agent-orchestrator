@@ -42,7 +42,7 @@ from .protocol import (
     UnknownFrameError,
     parse_frame,
 )
-from .signing import compute_signature, new_nonce, verify_signature
+from .signing import compute_signature, new_nonce, new_session_key, verify_signature
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,12 @@ class PendingToolCallsRegistry:
     #: client cannot exhaust server memory by opening many streams.
     MAX_CONCURRENT_STREAMS: int = 4
 
-    def __init__(self, *, ttl_seconds: float = DEFAULT_TOOL_TTL_SECONDS) -> None:
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = DEFAULT_TOOL_TTL_SECONDS,
+        signing_key: bytes | None = None,
+    ) -> None:
         self._futures: dict[str, asyncio.Future[ToolResult]] = {}
         self._nonces: dict[str, str] = {}
         self._names: dict[str, str] = {}
@@ -117,6 +122,10 @@ class PendingToolCallsRegistry:
         self._chunk_bytes: dict[str, int] = {}
         self._streaming_ids: set[str] = set()
         self._ttl = ttl_seconds
+        # When ``signing_key`` is None we fall back to JWT_SECRET_KEY,
+        # which is the right behaviour for unit tests that don't set up
+        # a handshake. Production always supplies an explicit key.
+        self._signing_key = signing_key
 
     def _new_id(self) -> str:
         # 16 hex chars is enough collision-resistance for a per-connection
@@ -152,7 +161,11 @@ class PendingToolCallsRegistry:
         tool_call_id = self._new_id()
         nonce = new_nonce()
         signature = compute_signature(
-            run_id=run_id, tool_call_id=tool_call_id, nonce=nonce, name=name
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            nonce=nonce,
+            name=name,
+            key=self._signing_key,
         )
         frame = ToolCall(
             tool_call_id=tool_call_id,
@@ -214,6 +227,7 @@ class PendingToolCallsRegistry:
             nonce=nonce_expected,
             name=name,
             signature=chunk.signature,
+            key=self._signing_key,
         ):
             return "signature_invalid"
 
@@ -283,6 +297,7 @@ class PendingToolCallsRegistry:
             nonce=nonce_expected,
             name=name,
             signature=result.signature,
+            key=self._signing_key,
         ):
             return "signature_invalid"
         if not future.done():
@@ -437,8 +452,15 @@ async def perform_handshake(
     ws: WebSocketLike,
     *,
     run_id_factory: Callable[[], str] = lambda: secrets.token_hex(8),
-) -> tuple[Hello, str]:
-    """Read HELLO, validate version, send ACK. Return ``(hello, run_id)``.
+    session_key_factory: Callable[[], bytes] = new_session_key,
+) -> tuple[Hello, str, bytes]:
+    """Read HELLO, validate version, send ACK. Return ``(hello, run_id, key)``.
+
+    Mints a fresh 32-byte session signing key, ships it inside the ACK
+    frame (hex-encoded) so the client can verify subsequent ``tool_call``
+    frames and sign its own ``tool_result`` / ``tool_chunk`` replies, and
+    returns the raw bytes so the caller can hand them to
+    :class:`PendingToolCallsRegistry`.
 
     Raises :class:`AgentHostError` on protocol violation; the caller emits
     an :class:`agent_host.Error` frame and closes the WS.
@@ -471,15 +493,17 @@ async def perform_handshake(
         )
 
     run_id = run_id_factory()
+    session_key = session_key_factory()
     ack = Ack(
         run_id=run_id,
         agent=frame.agent,
         model=frame.model,
         provider=frame.provider,
         capabilities=list(frame.tool_manifest),
+        signing_key=session_key.hex(),
     )
     await ws.send_json(ack.to_dict())
-    return frame, run_id
+    return frame, run_id, session_key
 
 
 async def drive_session(
@@ -580,15 +604,20 @@ async def serve_agent_host(
     (``None`` if telemetry is disabled in this deployment). Emitted from
     here so every reason path is accounted for.
     """
-    registry = registry or PendingToolCallsRegistry()
+    # Defer registry creation until after the handshake so we can hand it
+    # the per-session signing key minted in `perform_handshake`. Callers
+    # supplying their own registry (mostly tests) bypass that path.
     try:
-        hello, run_id = await perform_handshake(ws, run_id_factory=run_id_factory)
+        hello, run_id, session_key = await perform_handshake(ws, run_id_factory=run_id_factory)
     except AgentHostError as exc:
         await _emit_error(ws, code=exc.code, message=exc.message)
         await ws.close(code=1008, reason=exc.code)
         reason = f"protocol_error:{exc.code}"
         _bump_disconnect(metrics, reason)
         return reason
+
+    if registry is None:
+        registry = PendingToolCallsRegistry(signing_key=session_key)
 
     reason = await drive_session(
         ws,
