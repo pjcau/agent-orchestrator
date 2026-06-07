@@ -26,6 +26,7 @@ HMAC verify-on-receive / sign-on-send).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import subprocess
@@ -46,6 +47,7 @@ from .protocol import (
     Hello,
     Prompt,
     ToolCall,
+    ToolChunk,
     ToolResult,
     TurnEnd,
     UnknownFrameError,
@@ -57,8 +59,18 @@ from .signing import compute_signature, verify_signature
 logger = logging.getLogger(__name__)
 
 
+def _suppress():
+    """Context manager that swallows asyncio.CancelledError + generic exc.
+
+    Used in finally-blocks during cancel/timeout reaping where we want to
+    keep going regardless of why a sub-task ended.
+    """
+    return contextlib.suppress(Exception, asyncio.CancelledError)
+
+
 SHELL_DEFAULT_TIMEOUT = 60.0
-SHELL_OUTPUT_CAP = 1_000_000  # 1 MB cap; streaming larger output is commit #4
+SHELL_OUTPUT_CAP = 10 * 1024 * 1024  # 10 MB hard cap aligned with server registry
+SHELL_CHUNK_BYTES = 4096  # streamed when an emitter is provided
 
 
 class _WebSocketLike(Protocol):
@@ -107,14 +119,32 @@ class LocalToolRunner:
         self._confirm = confirm_shell
         self._shell_timeout = shell_timeout
 
-    async def run(self, name: str, args: dict[str, Any]) -> SkillResult:
+    async def run(
+        self,
+        name: str,
+        args: dict[str, Any],
+        *,
+        emit_chunk: Callable[[str], Awaitable[None]] | None = None,
+        cancel_event: asyncio.Event | None = None,
+    ) -> SkillResult:
+        """Execute one tool.
+
+        ``emit_chunk`` and ``cancel_event`` are optional. When the caller
+        provides them, ``shell_exec`` streams stdout incrementally and
+        respects the cancel event by SIGKILLing the subprocess. Other
+        tools currently ignore the streaming hooks (their outputs fit in
+        a single response); they still honour ``cancel_event`` for
+        symmetry.
+        """
         try:
             if name == "file_read":
                 return await self._do_file_read(args)
             if name == "file_write":
                 return await self._do_file_write(args)
             if name == "shell_exec":
-                return await self._do_shell_exec(args)
+                return await self._do_shell_exec(
+                    args, emit_chunk=emit_chunk, cancel_event=cancel_event
+                )
             return SkillResult(
                 success=False,
                 output=None,
@@ -149,7 +179,13 @@ class LocalToolRunner:
         enforce_workspace(self._workspace, args.get("file_path", ""))
         return await self._file_write.execute(args)
 
-    async def _do_shell_exec(self, args: dict[str, Any]) -> SkillResult:
+    async def _do_shell_exec(
+        self,
+        args: dict[str, Any],
+        *,
+        emit_chunk: Callable[[str], Awaitable[None]] | None = None,
+        cancel_event: asyncio.Event | None = None,
+    ) -> SkillResult:
         argv = args.get("argv") or []
         if isinstance(argv, str):
             return SkillResult(
@@ -194,21 +230,84 @@ class LocalToolRunner:
             stderr=subprocess.PIPE,
             env={**os.environ, "AGENT_HOST": "1"},
         )
+
+        # Two code paths share the per-call timeout + cancel handling:
+        #   buffered: legacy (no emit_chunk), returns aggregated output
+        #   streaming: emit_chunk is awaited per 4 KB chunk
+        async def _drain(stream, sink: bytearray, *, label: str) -> None:
+            total = 0
+            while True:
+                buf = await stream.read(SHELL_CHUNK_BYTES)
+                if not buf:
+                    return
+                total += len(buf)
+                if total > SHELL_OUTPUT_CAP:
+                    # Cap reached — stop reading so we don't blow up memory.
+                    # The subprocess may still be writing; we'll kill below.
+                    return
+                sink.extend(buf)
+                if emit_chunk is not None:
+                    await emit_chunk(buf.decode("utf-8", errors="replace"))
+
+        out_buf = bytearray()
+        err_buf = bytearray()
+
+        async def _drain_streams() -> None:
+            await asyncio.gather(
+                _drain(proc.stdout, out_buf, label="stdout"),
+                _drain(proc.stderr, err_buf, label="stderr"),
+            )
+
+        async def _watch_cancel() -> None:
+            if cancel_event is None:
+                # Never resolves; gather() finishes on the others.
+                await asyncio.Event().wait()
+            else:
+                await cancel_event.wait()
+
+        drain_task = asyncio.create_task(_drain_streams())
+        cancel_task = asyncio.create_task(_watch_cancel())
+        wait_task = asyncio.create_task(proc.wait())
+
         try:
-            out, err = await asyncio.wait_for(
-                proc.communicate(), timeout=self._shell_timeout
+            done, _ = await asyncio.wait(
+                {drain_task, cancel_task, wait_task},
+                timeout=self._shell_timeout,
+                return_when=asyncio.FIRST_COMPLETED,
             )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            return SkillResult(
-                success=False,
-                output=None,
-                error="shell_timeout",
-                metadata={"argv0": argv[0], "timeout_s": self._shell_timeout},
-            )
-        stdout = out.decode("utf-8", errors="replace")[:SHELL_OUTPUT_CAP]
-        stderr = err.decode("utf-8", errors="replace")[:SHELL_OUTPUT_CAP]
+            cancelled_via_event = cancel_task in done and not cancel_task.cancelled()
+            timed_out = not done
+            if cancelled_via_event or timed_out:
+                proc.kill()
+                # Reap the dead process and drain anything queued.
+                with _suppress():
+                    await asyncio.wait_for(proc.wait(), timeout=2.0)
+                with _suppress():
+                    await asyncio.wait_for(drain_task, timeout=2.0)
+                error = "shell_cancelled" if cancelled_via_event else "shell_timeout"
+                return SkillResult(
+                    success=False,
+                    output={
+                        "stdout": out_buf.decode("utf-8", errors="replace"),
+                        "stderr": err_buf.decode("utf-8", errors="replace"),
+                        "returncode": -1,
+                    },
+                    error=error,
+                    metadata={"argv0": argv[0]},
+                )
+            # Either drain or wait completed first; finish both so we have
+            # the final returncode and the complete buffers before reporting.
+            await drain_task
+            await wait_task
+        finally:
+            for t in (cancel_task,):
+                if not t.done():
+                    t.cancel()
+                    with _suppress():
+                        await t
+
+        stdout = out_buf.decode("utf-8", errors="replace")
+        stderr = err_buf.decode("utf-8", errors="replace")
         return SkillResult(
             success=proc.returncode == 0,
             output={"stdout": stdout, "stderr": stderr, "returncode": proc.returncode},
@@ -255,14 +354,23 @@ class AgentHostClient:
         runner: LocalToolRunner,
         *,
         on_tool_call: Callable[[ToolCall, SkillResult], Awaitable[None]] | None = None,
+        stream_shell: bool = True,
     ) -> None:
         self._ws = ws
         self._runner = runner
         self._on_tool_call = on_tool_call
+        self._stream_shell = stream_shell
         self._session: SessionInfo | None = None
         self._events: asyncio.Queue[ServerEvent] = asyncio.Queue()
         self._receive_task: asyncio.Task | None = None
         self._closed = False
+        # Cancel events keyed by tool_call_id — set when the server sends
+        # a CANCEL frame for an in-flight call. The runner inspects it
+        # mid-call and short-circuits with a `shell_cancelled` result.
+        self._cancel_events: dict[str, asyncio.Event] = {}
+        # Tool-call dispatch tasks kept alive so the receive loop can read
+        # the next frame while the previous tool is still running.
+        self._tool_tasks: set[asyncio.Task] = set()
 
     @property
     def session(self) -> SessionInfo:
@@ -332,6 +440,13 @@ class AgentHostClient:
         self._closed = True
         if self._receive_task and not self._receive_task.done():
             self._receive_task.cancel()
+        # Wait briefly for in-flight tool tasks so kills propagate before
+        # the event loop tears down — keeps the resource warning clean.
+        for task in list(self._tool_tasks):
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(Exception, asyncio.CancelledError):
+                    await task
         try:
             await self._ws.close(code=1000, reason="client_done")
         except Exception:  # noqa: BLE001
@@ -350,7 +465,22 @@ class AgentHostClient:
                     continue
 
                 if isinstance(frame, ToolCall):
-                    await self._handle_tool_call(run_id, frame)
+                    # Dispatch in a background task so the receive loop keeps
+                    # reading subsequent frames (especially the matching CANCEL).
+                    # Without this, a long-running shell pins the loop and
+                    # cancellation never lands.
+                    task = asyncio.create_task(self._handle_tool_call(run_id, frame))
+                    self._tool_tasks.add(task)
+                    task.add_done_callback(self._tool_tasks.discard)
+                elif isinstance(frame, Cancel):
+                    ev = self._cancel_events.get(frame.tool_call_id)
+                    if ev and not ev.is_set():
+                        logger.info(
+                            "agent-host client: server cancel id=%s reason=%s",
+                            frame.tool_call_id,
+                            frame.reason,
+                        )
+                        ev.set()
                 elif isinstance(frame, AssistantText | TurnEnd | Error):
                     await self._events.put(frame)
                     if isinstance(frame, Error):
@@ -388,7 +518,48 @@ class AgentHostClient:
                 ),
             )
             return
-        local = await self._runner.run(frame.name, frame.args)
+
+        # Register a cancel event so a server-side CANCEL during the call
+        # short-circuits the runner.
+        cancel_event = asyncio.Event()
+        self._cancel_events[frame.tool_call_id] = cancel_event
+
+        # Streaming emitter — only enabled for shell_exec by default. We
+        # send a `seq`-monotonic ToolChunk per 4 KB and let the server
+        # accumulate.
+        emit_chunk = None
+        if self._stream_shell and frame.name == "shell_exec":
+            seq_counter = [0]
+
+            async def emit_chunk(chunk: str) -> None:  # noqa: E306
+                seq = seq_counter[0]
+                seq_counter[0] += 1
+                tc_sig = compute_signature(
+                    run_id=run_id,
+                    tool_call_id=frame.tool_call_id,
+                    nonce=frame.nonce,
+                    name=frame.name,
+                )
+                tc = ToolChunk(
+                    tool_call_id=frame.tool_call_id,
+                    seq=seq,
+                    chunk=chunk,
+                    eof=False,
+                    nonce=frame.nonce,
+                    signature=tc_sig,
+                )
+                await self._ws.send_json(tc.to_dict())
+
+        try:
+            local = await self._runner.run(
+                frame.name,
+                frame.args,
+                emit_chunk=emit_chunk,
+                cancel_event=cancel_event,
+            )
+        finally:
+            self._cancel_events.pop(frame.tool_call_id, None)
+
         if self._on_tool_call:
             await self._on_tool_call(frame, local)
         await self._send_tool_result(

@@ -99,10 +99,23 @@ class PendingToolCallsRegistry:
     result Future.
     """
 
+    #: Hard upper bound on accumulated streamed bytes per tool_call. Beyond
+    #: this the server drops further chunks and force-fails the call.
+    #: 10 MB matches the per-call ceiling documented in the threat model.
+    MAX_STREAM_BYTES: int = 10 * 1024 * 1024
+
+    #: Maximum number of concurrent streaming tool_calls *per run*. A noisy
+    #: client cannot exhaust server memory by opening many streams.
+    MAX_CONCURRENT_STREAMS: int = 4
+
     def __init__(self, *, ttl_seconds: float = DEFAULT_TOOL_TTL_SECONDS) -> None:
         self._futures: dict[str, asyncio.Future[ToolResult]] = {}
         self._nonces: dict[str, str] = {}
         self._names: dict[str, str] = {}
+        self._chunks: dict[str, list[str]] = {}
+        self._chunk_seq: dict[str, int] = {}
+        self._chunk_bytes: dict[str, int] = {}
+        self._streaming_ids: set[str] = set()
         self._ttl = ttl_seconds
 
     def _new_id(self) -> str:
@@ -113,6 +126,14 @@ class PendingToolCallsRegistry:
     @property
     def in_flight(self) -> int:
         return len(self._futures)
+
+    def accumulated_chunks(self, tool_call_id: str) -> list[str]:
+        """Streamed chunks for ``tool_call_id`` in arrival order.
+
+        Read by tests and (commit #5) by the metrics emitter to record
+        how much streaming a tool actually did.
+        """
+        return list(self._chunks.get(tool_call_id, []))
 
     async def issue(
         self,
@@ -155,6 +176,84 @@ class PendingToolCallsRegistry:
             self._futures.pop(tool_call_id, None)
             self._nonces.pop(tool_call_id, None)
             self._names.pop(tool_call_id, None)
+            self._chunks.pop(tool_call_id, None)
+            self._chunk_seq.pop(tool_call_id, None)
+            self._chunk_bytes.pop(tool_call_id, None)
+            self._streaming_ids.discard(tool_call_id)
+
+    def accept_chunk(
+        self,
+        *,
+        run_id: str,
+        chunk: ToolChunk,
+    ) -> str | None:
+        """Verify and accumulate one streamed ``tool_chunk`` frame.
+
+        Returns ``None`` on success, an :class:`agent_host.Error.code`
+        otherwise. Guarantees:
+
+        * The id must be in-flight (``unknown_tool_call_id`` if not).
+        * Signature + nonce verified using the original call's binding
+          (same triple as :meth:`resolve`).
+        * Strict monotonic ``seq`` — out-of-order chunks are dropped
+          (``chunk_out_of_order``) so a buggy or malicious client
+          cannot corrupt the buffer with replays.
+        * Per-call ``MAX_STREAM_BYTES`` and per-run
+          ``MAX_CONCURRENT_STREAMS`` caps (``chunk_too_large`` /
+          ``too_many_streams``) — DoS protection.
+        """
+        nonce_expected = self._nonces.get(chunk.tool_call_id)
+        name = self._names.get(chunk.tool_call_id, "")
+        if nonce_expected is None:
+            return "unknown_tool_call_id"
+        if chunk.nonce != nonce_expected:
+            return "nonce_mismatch"
+        if not verify_signature(
+            run_id=run_id,
+            tool_call_id=chunk.tool_call_id,
+            nonce=nonce_expected,
+            name=name,
+            signature=chunk.signature,
+        ):
+            return "signature_invalid"
+
+        if chunk.tool_call_id not in self._streaming_ids:
+            if len(self._streaming_ids) >= self.MAX_CONCURRENT_STREAMS:
+                return "too_many_streams"
+            self._streaming_ids.add(chunk.tool_call_id)
+
+        expected_seq = self._chunk_seq.get(chunk.tool_call_id, 0)
+        if chunk.seq != expected_seq:
+            return "chunk_out_of_order"
+        self._chunk_seq[chunk.tool_call_id] = expected_seq + 1
+
+        total = self._chunk_bytes.get(chunk.tool_call_id, 0) + len(chunk.chunk)
+        if total > self.MAX_STREAM_BYTES:
+            return "chunk_too_large"
+        self._chunk_bytes[chunk.tool_call_id] = total
+        self._chunks.setdefault(chunk.tool_call_id, []).append(chunk.chunk)
+        return None
+
+    async def emit_cancel(
+        self,
+        *,
+        ws: WebSocketLike,
+        tool_call_id: str,
+        reason: str = "server_cancel",
+    ) -> None:
+        """Send a CANCEL frame for an in-flight tool_call.
+
+        The client is expected to stop work on the call and reply with a
+        :class:`agent_host.ToolResult` carrying ``status="error"``,
+        ``error_code="cancelled"``. The registry slot is reclaimed by
+        the existing ``finally:`` in :meth:`issue` once the result lands
+        or the TTL expires.
+        """
+        if tool_call_id not in self._futures:
+            return
+        await ws.send_json(
+            Cancel(tool_call_id=tool_call_id, reason=reason).to_dict()
+        )
 
     def resolve(
         self,
@@ -375,15 +474,14 @@ async def drive_session(
                 # on a forged result would let an attacker DoS a real
                 # session by injecting one bogus frame.
         elif isinstance(frame, ToolChunk):
-            # Chunked streaming lands in commit #4. For now we accept the
-            # frame shape but no-op so a forward-compat client doesn't
-            # see the connection drop just because it tried to stream.
-            logger.debug(
-                "agent-host: tool_chunk seq=%s id=%s eof=%s (no-op until commit #4)",
-                frame.seq,
-                frame.tool_call_id,
-                frame.eof,
-            )
+            err = registry.accept_chunk(run_id=run_id, chunk=frame)
+            if err:
+                logger.warning(
+                    "agent-host: dropped tool_chunk id=%s seq=%s reason=%s",
+                    frame.tool_call_id,
+                    frame.seq,
+                    err,
+                )
         elif isinstance(frame, Prompt):
             if on_prompt is None:
                 continue
