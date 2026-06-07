@@ -208,6 +208,7 @@ Resource bounds the server enforces:
 | Subprocess hangs on Ctrl-C | First Ctrl-C is the REPL's empty-line; second exits | press it twice |
 | `✗ turn error` with a reason | The turn failed server-side; the reason is now shown after the `—` (e.g. `Max steps (10) reached`) | Act on the reason; rerun, raise `--max-steps`, or simplify the task |
 | Turn looks stuck / agent seems frozen | A long LLM step with no output, or a swallowed error | Run with debug frames (below) and share the output |
+| Stuck right after `allow … [y/N]` (your `y` shows as a new prompt) | Fixed in ago ≥ 0.5.9 — the REPL reader and the confirmation prompt used to race for stdin, so `y` was sent as a chat message and the confirmation hung | `ago self update` to 0.5.9+ |
 
 ### Debug mode (frame-level trace)
 

@@ -290,6 +290,53 @@ enum ReplInput {
     Quit,
 }
 
+/// Coordinates the single stdin reader with interactive `[y/N]`
+/// confirmations.
+///
+/// There is exactly one stdin per process, so two readers competing for
+/// it is a bug: previously the REPL reader and the shell confirmer both
+/// called `read_line`, so the user's `y` answering `allow git? [y/N]`
+/// was stolen by the REPL and sent as a new chat prompt — the
+/// confirmation then hung forever and the tool call timed out (the
+/// session looked "stuck"). The router makes the REPL reader the sole
+/// owner: when a confirmation is armed, the next line is delivered to
+/// the confirmer instead of being treated as a prompt. A process global
+/// is appropriate here because stdin itself is a process global.
+#[derive(Clone, Default)]
+struct StdinRouter {
+    pending: Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<String>>>>,
+}
+
+impl StdinRouter {
+    /// Arm routing and return a receiver for the next stdin line.
+    /// Called by a confirmer right after it prints its `[y/N]` prompt.
+    fn await_line(&self) -> std::sync::mpsc::Receiver<String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        *self.pending.lock().expect("stdin router poisoned") = Some(tx);
+        rx
+    }
+
+    /// If a confirmation is armed, hand it this line and report it
+    /// consumed (`true`); otherwise the caller treats the line as a
+    /// normal prompt (`false`). Called by the stdin reader per line.
+    fn try_deliver(&self, line: &str) -> bool {
+        let mut guard = self.pending.lock().expect("stdin router poisoned");
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(line.to_string());
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Process-global stdin router shared by the REPL reader and the
+/// [`StdinShellConfirmer`].
+fn stdin_router() -> &'static StdinRouter {
+    static ROUTER: std::sync::OnceLock<StdinRouter> = std::sync::OnceLock::new();
+    ROUTER.get_or_init(StdinRouter::default)
+}
+
 fn spawn_stdin_reader(tx: mpsc::UnboundedSender<ReplInput>) {
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
@@ -305,6 +352,12 @@ fn spawn_stdin_reader(tx: mpsc::UnboundedSender<ReplInput>) {
                 }
                 Ok(_) => {
                     let trimmed = line.trim_end_matches('\n').to_string();
+                    // A pending confirmation claims this line first — the
+                    // user's y/N must answer the prompt, not become a new
+                    // chat message.
+                    if stdin_router().try_deliver(&trimmed) {
+                        continue;
+                    }
                     match trimmed.as_str() {
                         ":quit" | ":q" | "exit" | "quit" => {
                             let _ = tx.send(ReplInput::Quit);
@@ -958,9 +1011,10 @@ fn human_bytes(n: usize) -> String {
 // Stdin shell confirmer — the default UX
 // ---------------------------------------------------------------------------
 
-/// Blocks stderr with an interactive `[y/N]` prompt. Matches the Python
-/// `_confirm_shell` behaviour: single-user REPL, single-threaded, fine
-/// to block.
+/// Interactive `[y/N]` confirmation on stderr. The answer is read
+/// through the shared [`StdinRouter`], NOT by calling `read_line`
+/// directly — otherwise it would race the REPL's own stdin reader and
+/// the user's `y` could be consumed as a chat prompt (see `StdinRouter`).
 pub struct StdinShellConfirmer;
 
 impl ShellConfirmer for StdinShellConfirmer {
@@ -975,23 +1029,19 @@ impl ShellConfirmer for StdinShellConfirmer {
             } else {
                 ""
             };
-            tokio::task::spawn_blocking({
-                let binary = binary.to_string();
-                let high_risk_label = high_risk_label.to_string();
-                move || {
-                    eprint!(
-                        "\n[agent-host] allow `{binary}` for this session?{high_risk_label} [y/N] "
-                    );
-                    let _ = std::io::stderr().flush();
-                    let mut buf = String::new();
-                    if std::io::stdin().read_line(&mut buf).is_err() {
-                        return false;
-                    }
-                    matches!(buf.trim().to_ascii_lowercase().as_str(), "y" | "yes")
-                }
-            })
-            .await
-            .unwrap_or(false)
+            eprint!("\n[agent-host] allow `{binary}` for this session?{high_risk_label} [y/N] ");
+            let _ = std::io::stderr().flush();
+            // Arm the router, then wait (off the async executor) for the
+            // single stdin reader to hand us the user's line.
+            let rx = stdin_router().await_line();
+            let answer = tokio::task::spawn_blocking(move || rx.recv().ok())
+                .await
+                .ok()
+                .flatten();
+            match answer {
+                Some(line) => matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"),
+                None => false,
+            }
         })
     }
 }
@@ -1050,6 +1100,19 @@ mod tests {
         let s = summarise_args(&m);
         assert!(s.contains("file_path=note.md"));
         assert!(s.contains("content=<2048B>"));
+    }
+
+    #[test]
+    fn stdin_router_routes_only_when_armed() {
+        let r = StdinRouter::default();
+        // Not armed → the reader keeps the line (treats it as a prompt).
+        assert!(!r.try_deliver("hello"));
+        // Armed → the next line is delivered to the confirmer waiter.
+        let rx = r.await_line();
+        assert!(r.try_deliver("y"));
+        assert_eq!(rx.recv().unwrap(), "y");
+        // Single-shot: after one delivery it disarms automatically.
+        assert!(!r.try_deliver("again"));
     }
 
     #[test]

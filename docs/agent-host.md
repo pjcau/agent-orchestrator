@@ -181,11 +181,14 @@ and `TestToolTTLConfig` in
 > **Native client.** The Rust `ago` binary lives in [`cli/`](../cli).
 > It renders the token meter from the new `STEP`/`TURN_END` fields
 > ([`cli/src/agent_host/client.rs`](../cli/src/agent_host/client.rs)
-> `print_step` / `print_turn_end` / `Meter`) and already runs the
-> interactive shell confirmation on a blocking thread
-> (`StdinShellConfirmer` → `tokio::task::spawn_blocking`), so answering
-> `[y/N]` never stalls the WS read loop. The server TTL fix above is the
-> belt-and-braces guard that prevents the timeout regardless of client.
+> `print_step` / `print_turn_end` / `Meter`). The interactive shell
+> confirmation reads the answer through a single shared stdin owner
+> (`StdinRouter`): the REPL reader and the `[y/N]` prompt used to race
+> for stdin, so the user's `y` was sometimes consumed as a chat prompt
+> and the confirmation hung until the tool TTL expired (the session
+> looked "stuck"). Routing the line to the confirmer when one is armed
+> fixes that. The server TTL fix above is the belt-and-braces guard that
+> prevents the timeout regardless of client.
 
 ### Debugging a stuck session
 
