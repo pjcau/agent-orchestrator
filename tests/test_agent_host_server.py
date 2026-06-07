@@ -359,6 +359,43 @@ class TestRemoteSkillAdapter:
         assert result.success is False
         assert result.error == "not_found"
 
+    def test_build_remote_registry_one_adapter_per_tool(self):
+        from agent_orchestrator.agent_host import build_remote_registry
+
+        registry = PendingToolCallsRegistry()
+        ws = FakeWS()
+        hello = Hello(tool_manifest=["file_read", "file_write", "shell_exec"])
+        skills = build_remote_registry(
+            hello=hello, registry=registry, ws=ws, run_id="r-1"
+        )
+        for name in hello.tool_manifest:
+            sk = skills.get(name)
+            assert isinstance(sk, RemoteSkillAdapter)
+            assert sk.parameters["type"] == "object"
+
+    def test_build_remote_registry_uses_supplied_schemas(self):
+        from agent_orchestrator.agent_host import build_remote_registry
+
+        registry = PendingToolCallsRegistry()
+        ws = FakeWS()
+        hello = Hello(tool_manifest=["file_write"])
+        custom_schema = {
+            "type": "object",
+            "required": ["path", "content"],
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+        }
+        skills = build_remote_registry(
+            hello=hello,
+            registry=registry,
+            ws=ws,
+            run_id="r-1",
+            parameter_schemas={"file_write": custom_schema},
+            descriptions={"file_write": "write a file in the user workspace"},
+        )
+        sk = skills.get("file_write")
+        assert sk.parameters == custom_schema
+        assert sk.description == "write a file in the user workspace"
+
     def test_adapter_exposes_skill_metadata(self):
         # No signing key needed for property access.
         adapter = RemoteSkillAdapter(

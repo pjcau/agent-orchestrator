@@ -25,6 +25,24 @@ const HISTORY_DIRNAME: &str = "ago";
 const HISTORY_FILENAME: &str = "chat-history";
 
 pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
+    if args.client_tools {
+        // Agent-host mode: the Python subprocess owns the WebSocket and
+        // the REPL. We skip the rustyline UI and inherit stdio so the
+        // user keeps talking to a single foreground process. Mode/agent/
+        // model/provider resolution still happens client-side first so
+        // the subprocess sees consistent defaults (.ago.yaml chain).
+        let settings = ChatSettings::resolve(rt, &args)?;
+        let server_url = rt.server_url()?.to_string();
+        // Reuse the same auth path as `api_client()` so we fail with the
+        // identical `NotAuthenticated` error rather than silently sending
+        // a blank token.
+        let _ = rt.api_client()?;
+        let token = rt
+            .storage
+            .load(&server_url)?
+            .ok_or(AgoError::NotAuthenticated)?;
+        return spawn_agent_host(&server_url, &token, &settings).await;
+    }
     let mut settings = ChatSettings::resolve(rt, &args)?;
     let client = rt.api_client()?;
     let server_url = rt.server_url()?.to_string();
@@ -683,6 +701,71 @@ fn ensure_history_path() -> Option<std::path::PathBuf> {
         return None;
     }
     Some(dir.join(HISTORY_FILENAME))
+}
+
+// ---------------------------------------------------------------------------
+// Agent-host subprocess dispatch (see docs/agent-host.md).
+// ---------------------------------------------------------------------------
+
+/// Spawn `python -m agent_orchestrator.agent_host` with the resolved
+/// settings, inherit stdio, and wait for it to finish. The Python
+/// subprocess owns the WebSocket, the local tool execution, and the
+/// REPL — this Rust function is just a thin launcher.
+///
+/// Why not embed the WS client in Rust? See `docs/agent-host.md`
+/// "Roll-back plan": the skill/sandbox/allowlist logic lives in
+/// `src/agent_orchestrator/skills/` and `src/agent_orchestrator/agent_host/`
+/// in Python; re-implementing it in Rust would duplicate the trust
+/// boundary code. The subprocess approach keeps a single source of truth
+/// — same pattern `ago run --local` already uses.
+async fn spawn_agent_host(
+    server_url: &str,
+    token: &str,
+    settings: &ChatSettings,
+) -> Result<()> {
+    use tokio::process::Command;
+    let python = pick_python_for_agent_host();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    eprintln!("\x1b[2m· spawning {python} -m agent_orchestrator.agent_host (client-tools)\x1b[0m");
+    let status = Command::new(&python)
+        .args([
+            "-m",
+            "agent_orchestrator.agent_host",
+            "--server",
+            server_url,
+            "--cwd",
+            cwd.to_string_lossy().as_ref(),
+            "--agent",
+            &settings.agent,
+            "--model",
+            &settings.model,
+            "--provider",
+            &settings.provider,
+        ])
+        // Token via env so it never appears in `ps`/`/proc/<pid>/cmdline`.
+        .env("AGO_API_KEY", token)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .await
+        .map_err(|e| {
+            AgoError::Other(format!(
+                "could not spawn {python}: {e}. Install with `pip install agent-orchestrator`."
+            ))
+        })?;
+
+    if !status.success() {
+        return Err(AgoError::Other(format!(
+            "agent-host subprocess exited with status {status}"
+        )));
+    }
+    Ok(())
+}
+
+fn pick_python_for_agent_host() -> String {
+    std::env::var("AGO_PYTHON").unwrap_or_else(|_| "python3".to_string())
 }
 
 #[cfg(test)]

@@ -113,6 +113,29 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
         .await;
     }
 
+    // --client-tools: agent loop stays on the server; tool execution is
+    // delegated back to this cwd via the agent-host channel. Mutually
+    // exclusive with --local (enforced by clap).
+    if args.client_tools {
+        // Reuse api_client() so authentication errors look identical to
+        // the regular path.
+        let _ = rt.api_client()?;
+        let server_url = rt.server_url()?.to_string();
+        let token = rt
+            .storage
+            .load(&server_url)?
+            .ok_or(AgoError::NotAuthenticated)?;
+        return run_agent_host(
+            &server_url,
+            &token,
+            &agent_string,
+            &task,
+            &model_string,
+            &provider_string,
+        )
+        .await;
+    }
+
     let client = rt.api_client()?;
     let server_url = rt.server_url()?.to_string();
     // --resume: send the most recent conversation_id we saw on this server.
@@ -385,6 +408,72 @@ async fn run_local(
 /// activate it just for `ago run --local`. Falls back to `python3`.
 fn pick_python() -> String {
     std::env::var("AGO_PYTHON").unwrap_or_else(|_| "python3".to_string())
+}
+
+/// Spawn the agent-host subprocess for `ago run --client-tools`.
+///
+/// The agent loop on the dashboard still drives the conversation; only
+/// the tool calls (file_*, shell_exec) execute in the local cwd via the
+/// WebSocket-bridged client. The task is fed as a single PROMPT frame
+/// when the subprocess opens its session — for a multi-turn run use
+/// `ago chat --client-tools` instead.
+///
+/// Token via env so it never appears in `ps`/`/proc/<pid>/cmdline`.
+async fn run_agent_host(
+    server_url: &str,
+    token: &str,
+    agent: &str,
+    task: &str,
+    model: &str,
+    provider: &str,
+) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::process::Command;
+    let python = pick_python();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    eprintln!("\x1b[2m· spawning {python} -m agent_orchestrator.agent_host (client-tools)\x1b[0m");
+    let mut child = Command::new(&python)
+        .args([
+            "-m",
+            "agent_orchestrator.agent_host",
+            "--server",
+            server_url,
+            "--cwd",
+            cwd.to_string_lossy().as_ref(),
+            "--agent",
+            agent,
+            "--model",
+            model,
+            "--provider",
+            provider,
+        ])
+        .env("AGO_API_KEY", token)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .map_err(|e| {
+            AgoError::Other(format!(
+                "could not spawn {python}: {e}. Install with `pip install agent-orchestrator`."
+            ))
+        })?;
+
+    // Feed the one-shot task on stdin, then close. The subprocess will
+    // emit the assistant reply to stdout (inherited) and exit on EOF.
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(task.as_bytes()).await.map_err(AgoError::from)?;
+        stdin.write_all(b"\n").await.map_err(AgoError::from)?;
+        stdin.shutdown().await.map_err(AgoError::from)?;
+    }
+
+    let status = child.wait().await.map_err(AgoError::from)?;
+    if !status.success() {
+        return Err(AgoError::Other(format!(
+            "agent-host subprocess exited with status {status}"
+        )));
+    }
+    Ok(())
 }
 
 fn render_human(resp: &AgentRunResponse, no_color: bool) {

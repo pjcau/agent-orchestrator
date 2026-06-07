@@ -215,6 +215,19 @@ pub struct ChatArgs {
     /// every `ago chat` invocation starts a fresh `conversation_id`.
     #[arg(long)]
     pub resume: bool,
+
+    /// Delegate every tool call (file_read, file_write, shell_exec) to
+    /// the local machine via the agent-host channel, instead of running
+    /// them inside the server container. Spawns
+    /// `python -m agent_orchestrator.agent_host` and inherits stdio so
+    /// the REPL is hosted by that subprocess (requires
+    /// `pip install agent-orchestrator`). See docs/agent-host.md.
+    ///
+    /// When set, `--mode prompt` is ignored: agent-host always runs
+    /// through the agent loop because the whole point of the flag is to
+    /// host the tool execution locally.
+    #[arg(long)]
+    pub client_tools: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -336,4 +349,11 @@ pub struct RunArgs {
     /// `--resume` — local mode is one-shot blocking.
     #[arg(long)]
     pub local: bool,
+
+    /// Keep the agent loop on the remote server but delegate every tool
+    /// call (file_read, file_write, shell_exec) back to the local cwd
+    /// via the agent-host channel. Mutually exclusive with `--local`.
+    /// See docs/agent-host.md.
+    #[arg(long, conflicts_with = "local")]
+    pub client_tools: bool,
 }

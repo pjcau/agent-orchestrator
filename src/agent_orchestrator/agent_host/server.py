@@ -28,7 +28,7 @@ import logging
 import secrets
 from typing import Any, Awaitable, Callable, Protocol
 
-from ..core.skill import Skill, SkillResult
+from ..core.skill import Skill, SkillRegistry, SkillResult
 from .protocol import (
     PROTOCOL_VERSION,
     Ack,
@@ -381,6 +381,51 @@ class RemoteSkillAdapter(Skill):
 
 
 PromptHandler = Callable[[str, list[RemoteSkillAdapter], str], Awaitable[None]]
+
+
+#: Minimal stand-in schema for tools whose real signature isn't known
+#: at handshake time. Each agent's prompt-time tool list will be enriched
+#: by the orchestrator's registry; the dispatcher only needs *some* JSON
+#: Schema to satisfy the agent loop's tool-listing step.
+_GENERIC_TOOL_PARAMS: dict[str, Any] = {"type": "object", "additionalProperties": True}
+
+
+def build_remote_registry(
+    *,
+    hello: Hello,
+    registry: PendingToolCallsRegistry,
+    ws: WebSocketLike,
+    run_id: str,
+    parameter_schemas: dict[str, dict[str, Any]] | None = None,
+    descriptions: dict[str, str] | None = None,
+) -> SkillRegistry:
+    """Construct a :class:`SkillRegistry` of :class:`RemoteSkillAdapter`s.
+
+    One adapter per tool name in ``hello.tool_manifest``; every adapter
+    shares the same pending-calls registry + WS + run_id. Callers can
+    supply ``parameter_schemas`` / ``descriptions`` keyed by tool name to
+    enrich the registry with project-specific tool metadata (typically
+    looked up from the dashboard's existing skill registry).
+
+    Returned registry is ready to be passed to
+    ``agent_runner.run_agent(skill_registry_override=...)`` once that
+    parameter lands (next commit). Keeping this helper here means the
+    server-side WS endpoint never re-implements the adapter-loop logic.
+    """
+    skills = SkillRegistry()
+    parameter_schemas = parameter_schemas or {}
+    descriptions = descriptions or {}
+    for name in hello.tool_manifest:
+        adapter = RemoteSkillAdapter(
+            name=name,
+            description=descriptions.get(name, f"client-side {name} delegated via agent-host"),
+            parameters=parameter_schemas.get(name, _GENERIC_TOOL_PARAMS),
+            registry=registry,
+            ws=ws,
+            run_id=run_id,
+        )
+        skills.register(adapter)
+    return skills
 
 
 async def perform_handshake(
