@@ -178,11 +178,14 @@ WARNING). See `_tool_ttl_from_env` in
 and `TestToolTTLConfig` in
 [`tests/test_agent_host_server.py`](../tests/test_agent_host_server.py).
 
-> **Native client note.** The Rust `ago` binary should also avoid
-> blocking the WS read loop while it waits on stdin for a confirmation,
-> and may render the new `STEP`/`TURN_END` token fields. Those are
-> client-side changes that live in the `ago` repo; the server fix above
-> already prevents the timeout regardless of client.
+> **Native client.** The Rust `ago` binary lives in [`cli/`](../cli).
+> It renders the token meter from the new `STEP`/`TURN_END` fields
+> ([`cli/src/agent_host/client.rs`](../cli/src/agent_host/client.rs)
+> `print_step` / `print_turn_end` / `Meter`) and already runs the
+> interactive shell confirmation on a blocking thread
+> (`StdinShellConfirmer` → `tokio::task::spawn_blocking`), so answering
+> `[y/N]` never stalls the WS read loop. The server TTL fix above is the
+> belt-and-braces guard that prevents the timeout regardless of client.
 
 ### Debugging a stuck session
 

@@ -38,7 +38,8 @@ use tokio_tungstenite::tungstenite::http::Request;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 
 use super::protocol::{
-    parse_frame_str, Frame, Hello, Prompt, Step, ToolCall, ToolChunk, ToolResult, PROTOCOL_VERSION,
+    parse_frame_str, Frame, Hello, Prompt, Step, ToolCall, ToolChunk, ToolResult, TurnEnd,
+    PROTOCOL_VERSION,
 };
 use super::runner::{CancelSignal, ChunkEmitter, LocalToolRunner, ShellConfirmer, ToolOutcome};
 use super::signing::{compute_signature, decode_hex_key};
@@ -336,6 +337,9 @@ async fn receive_loop(
     cancels: Arc<Mutex<HashMap<String, CancelSignal>>>,
 ) {
     let theme = AnsiTheme::detect();
+    // Live token-meter state, reset per turn so tok/s reflects the
+    // current turn rather than the whole session.
+    let mut meter = Meter::new();
     loop {
         let frame_res = {
             let mut s = stream.lock().await;
@@ -378,8 +382,12 @@ async fn receive_loop(
                 print!("{}", t.chunk);
                 let _ = std::io::stdout().flush();
             }
-            Frame::TurnEnd(_) => {
+            Frame::TurnEnd(t) => {
+                // End the assistant text on stdout, then a usage summary
+                // on stderr so a piped stdout stays clean.
                 println!();
+                print_turn_end(&theme, &t);
+                meter.reset();
             }
             Frame::Error(e) => {
                 eprintln!(
@@ -410,7 +418,7 @@ async fn receive_loop(
                 }
             }
             Frame::Step(s) => {
-                print_step(&theme, &s);
+                print_step(&theme, &s, &mut meter);
             }
             _ => {}
         }
@@ -618,10 +626,69 @@ impl AnsiTheme {
     }
 }
 
-fn print_step(theme: &AnsiTheme, step: &Step) {
+/// Live token-meter state for the current turn. `tok/s` is the
+/// downstream (output) rate between consecutive Step frames, falling
+/// back to the turn average on the first frame so the field is never
+/// blank.
+struct Meter {
+    turn_start: Instant,
+    last_t: Instant,
+    last_out: u64,
+}
+
+impl Meter {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            turn_start: now,
+            last_t: now,
+            last_out: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        let now = Instant::now();
+        self.turn_start = now;
+        self.last_t = now;
+        self.last_out = 0;
+    }
+
+    /// Record the latest cumulative output-token count and return the
+    /// instantaneous tok/s since the previous sample.
+    fn tok_per_s(&mut self, output_tokens: u64) -> f64 {
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_t).as_secs_f64();
+        let rate = if dt > 0.05 && output_tokens >= self.last_out {
+            (output_tokens - self.last_out) as f64 / dt
+        } else {
+            let elapsed = now.duration_since(self.turn_start).as_secs_f64();
+            if elapsed > 0.0 {
+                output_tokens as f64 / elapsed
+            } else {
+                0.0
+            }
+        };
+        self.last_t = now;
+        self.last_out = output_tokens;
+        rate
+    }
+}
+
+/// Compact token count: `950`, `12.3k`, `1.5M`.
+fn fmt_tokens(n: u64) -> String {
+    if n < 1000 {
+        n.to_string()
+    } else if n < 1_000_000 {
+        format!("{:.1}k", n as f64 / 1000.0)
+    } else {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    }
+}
+
+fn print_step(theme: &AnsiTheme, step: &Step, meter: &mut Meter) {
     // Format examples:
-    //   "  [3/15] backend: writing api/main.py"
-    //   "  [2] team-lead: planning"        (total unknown)
+    //   "  [3/15] backend: writing api/main.py   ↑12.3k ↓4.5k · $0.0123 · 78 tok/s"
+    //   "  [2] team-lead: planning"        (total unknown, no usage yet)
     //   "  [-] team-lead: thinking"        (no index either — rare)
     let progress = if step.total > 0 {
         format!("[{}/{}]", step.index, step.total)
@@ -635,13 +702,60 @@ fn print_step(theme: &AnsiTheme, step: &Step) {
     } else {
         format!(" {}:", step.agent)
     };
+    let meter_str = if step.input_tokens > 0 || step.output_tokens > 0 {
+        let tok_s = meter.tok_per_s(step.output_tokens);
+        let cost = if step.cost_usd > 0.0 {
+            format!(" · ${:.4}", step.cost_usd)
+        } else {
+            String::new()
+        };
+        format!(
+            "  ↑{up} ↓{down}{cost} · {tps:.0} tok/s",
+            up = fmt_tokens(step.input_tokens),
+            down = fmt_tokens(step.output_tokens),
+            cost = cost,
+            tps = tok_s,
+        )
+    } else {
+        String::new()
+    };
     eprintln!(
-        "{dim}  {progress}{agent} {label}{reset}",
+        "{dim}  {progress}{agent} {label}{meter}{reset}",
         dim = theme.dim,
         reset = theme.reset,
         progress = progress,
         agent = agent,
         label = step.label,
+        meter = meter_str,
+    );
+}
+
+fn print_turn_end(theme: &AnsiTheme, turn: &TurnEnd) {
+    let mark = if turn.status == "ok" {
+        format!("{}✓{}", theme.green, theme.reset)
+    } else {
+        format!("{}✗{}", theme.red, theme.reset)
+    };
+    let mut bits = vec![format!("turn {}", turn.status)];
+    if turn.step_count > 0 {
+        bits.push(format!("{} steps", turn.step_count));
+    }
+    if turn.input_tokens > 0 || turn.output_tokens > 0 {
+        bits.push(format!(
+            "↑{} ↓{}",
+            fmt_tokens(turn.input_tokens),
+            fmt_tokens(turn.output_tokens)
+        ));
+    }
+    if turn.cost_usd > 0.0 {
+        bits.push(format!("${:.4}", turn.cost_usd));
+    }
+    eprintln!(
+        "  {mark} {dim}{body}{reset}",
+        mark = mark,
+        dim = theme.dim,
+        reset = theme.reset,
+        body = bits.join(" · "),
     );
 }
 
@@ -883,6 +997,27 @@ mod tests {
         let s = summarise_args(&m);
         assert!(s.contains("file_path=note.md"));
         assert!(s.contains("content=<2048B>"));
+    }
+
+    #[test]
+    fn fmt_tokens_compacts() {
+        assert_eq!(fmt_tokens(0), "0");
+        assert_eq!(fmt_tokens(950), "950");
+        assert_eq!(fmt_tokens(12_345), "12.3k");
+        assert_eq!(fmt_tokens(1_500_000), "1.5M");
+    }
+
+    #[test]
+    fn meter_tok_per_s_is_non_negative_and_resets() {
+        let mut m = Meter::new();
+        // First sample falls back to the turn average — never negative.
+        let r1 = m.tok_per_s(100);
+        assert!(r1 >= 0.0);
+        // A non-increasing count must not produce a negative rate.
+        let r2 = m.tok_per_s(100);
+        assert!(r2 >= 0.0);
+        m.reset();
+        assert_eq!(m.last_out, 0);
     }
 
     #[test]
