@@ -116,9 +116,7 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
     // --client-tools: agent loop stays on the server; tool execution is
     // delegated back to this cwd via the agent-host channel. Mutually
     // exclusive with --local (enforced by clap).
-    if args.client_tools {
-        // Reuse api_client() so authentication errors look identical to
-        // the regular path.
+    if args.client_tools || args.client_tools_py {
         let _ = rt.api_client()?;
         let server_url = rt.server_url()?.to_string();
         let token_secret = rt
@@ -127,7 +125,18 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
             .ok_or(AgoError::NotAuthenticated)?;
         use secrecy::ExposeSecret;
         let token = token_secret.expose_secret();
-        return run_agent_host(
+        if args.client_tools_py {
+            return run_agent_host(
+                &server_url,
+                token,
+                &agent_string,
+                &task,
+                &model_string,
+                &provider_string,
+            )
+            .await;
+        }
+        return run_agent_host_native(
             &server_url,
             token,
             &agent_string,
@@ -503,6 +512,89 @@ fn render_human(resp: &AgentRunResponse, no_color: bool) {
     }
 }
 
+/// Native agent-host one-shot — opens the WS, sends one Prompt, prints
+/// the assistant reply, and exits when the server emits TurnEnd. No
+/// Python subprocess.
+async fn run_agent_host_native(
+    server_url: &str,
+    token: &str,
+    agent: &str,
+    task: &str,
+    model: &str,
+    provider: &str,
+) -> Result<()> {
+    use crate::agent_host::client::{connect, ClientConfig};
+    use crate::agent_host::protocol::{Frame, Prompt as PromptFrame, KIND_PROMPT};
+
+    eprintln!(
+        "\x1b[2m· agent-host (native) one-shot to {server_url}\x1b[0m"
+    );
+    let mut ws = connect(server_url, token).await.map_err(|e| {
+        AgoError::Other(format!("agent-host connect failed: {e:#}"))
+    })?;
+    let cwd = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cfg = ClientConfig {
+        agent: agent.to_string(),
+        model: model.to_string(),
+        provider: provider.to_string(),
+        stream_shell: true,
+    };
+    let session = ws
+        .handshake(&cwd, &cfg)
+        .await
+        .map_err(|e| AgoError::Other(format!("agent-host handshake failed: {e:#}")))?;
+    eprintln!(
+        "\x1b[2m· connected run_id={} agent={}\x1b[0m",
+        session.run_id,
+        if session.agent.is_empty() {
+            "-"
+        } else {
+            &session.agent
+        }
+    );
+    // One-shot: send the task as a Prompt, then read until TurnEnd / Error.
+    ws.send_frame(&Frame::Prompt(PromptFrame {
+        kind: KIND_PROMPT.into(),
+        frame_id: uuid::Uuid::new_v4().simple().to_string(),
+        timestamp: 0.0,
+        text: task.to_string(),
+    }))
+    .await
+    .map_err(|e| AgoError::Other(format!("agent-host prompt send failed: {e:#}")))?;
+    loop {
+        let frame = ws
+            .receive_frame()
+            .await
+            .map_err(|e| AgoError::Other(format!("agent-host receive failed: {e:#}")))?;
+        match frame {
+            Frame::AssistantText(t) => {
+                print!("{}", t.chunk);
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+            }
+            Frame::TurnEnd(_) => {
+                println!();
+                break;
+            }
+            Frame::Error(e) => {
+                return Err(AgoError::Other(format!(
+                    "server error: {} — {}",
+                    e.code, e.message
+                )));
+            }
+            // ToolCall/Cancel are not handled in one-shot mode — the
+            // server's tool delegation only fires inside the REPL run
+            // loop (the runner needs the per-call cancel registry).
+            // Wire them up in a future commit if `ago run
+            // --client-tools` becomes a real workflow.
+            _ => {}
+        }
+    }
+    let _ = ws.close().await;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -569,6 +661,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -602,6 +695,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -625,6 +719,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -657,6 +752,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -705,6 +801,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -739,6 +836,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -790,6 +888,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -837,6 +936,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await
@@ -865,6 +965,7 @@ mod tests {
                 resume: false,
                 local: false,
                 client_tools: false,
+                client_tools_py: false,
             },
         )
         .await

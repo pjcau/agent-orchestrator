@@ -589,14 +589,57 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
     :class:`SkillRegistry` as the override. The agent reply is streamed
     back as ``AssistantText`` followed by ``TurnEnd``.
 
+    Per-turn EventBus subscription bridges `AGENT_STEP` events into
+    typed ``Step`` frames on the WS so users see `[3/15] backend: …`
+    progress lines during long team-lead runs.
+
     Errors during the agent run land as an ``Error`` frame on the WS so
     the client can surface them — the WS stays alive for the next turn.
     """
     import os
 
-    from agent_orchestrator.agent_host.protocol import AssistantText, Error, TurnEnd
+    from agent_orchestrator.agent_host.protocol import AssistantText, Error, Step, TurnEnd
+
+    from .events import EventBus, EventType
 
     async def _handler(text: str, skills, run_id: str, hello) -> None:
+        # Per-turn bus so events from THIS turn cannot leak into the
+        # next one. EventBus.get() would return the singleton.
+        bus = EventBus()
+        sub = bus.subscribe()
+
+        async def forward_steps() -> None:
+            step_index = 0
+            while True:
+                try:
+                    event = await sub.get()
+                except asyncio.CancelledError:
+                    return
+                if event.event_type == EventType.AGENT_STEP:
+                    step_index += 1
+                    label = ""
+                    if isinstance(event.data, dict):
+                        # `run_agent` step events carry a free-form data
+                        # dict — pick a useful summary if available.
+                        label = str(
+                            event.data.get("action")
+                            or event.data.get("tool")
+                            or event.data.get("message")
+                            or ""
+                        )
+                    try:
+                        await ws.send_json(
+                            Step(
+                                index=step_index,
+                                total=0,  # max_steps available on caller side; left 0 for "unknown"
+                                agent=event.agent_name or "",
+                                label=label[:200],
+                            ).to_dict()
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("agent-host: step forward failed: %s", exc)
+
+        forwarder = asyncio.create_task(forward_steps())
         try:
             provider = _make_provider(
                 model=hello.model or "deepseek/deepseek-v4-flash",
@@ -609,6 +652,7 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                 task_description=text,
                 provider=provider,
                 max_steps=10,
+                event_bus=bus,
                 skill_registry_override=skills,
             )
             output = str(result.get("output", "")) if isinstance(result, dict) else str(result)
@@ -620,5 +664,8 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
         except Exception as exc:  # noqa: BLE001
             logger.exception("agent-host: turn failed: %s", exc)
             await ws.send_json(Error(code="turn_failed", message=str(exc)[:200]).to_dict())
+        finally:
+            forwarder.cancel()
+            bus.unsubscribe(sub)
 
     return _handler

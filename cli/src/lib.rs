@@ -2,6 +2,7 @@
 //!
 //! Public entry point used by `main.rs` and integration tests.
 
+pub mod agent_host;
 pub mod auth;
 pub mod cli;
 pub mod client;
