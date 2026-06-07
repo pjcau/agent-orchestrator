@@ -40,6 +40,31 @@ cd rust && maturin develop --release && cd ..
 docker compose up dashboard -d    # http://localhost:5005
 ```
 
+### Drive the orchestrator against your local project
+
+The `ago` CLI keeps the multi-agent loop on a hosted dashboard
+(`agents-orchestrator.com` or your own) while delegating every
+`file_read` / `file_write` / `shell_exec` back to your `cwd` — the
+team-lead routes the work, `team-lead`/`backend`/`frontend`/`ai-engineer`/…
+all run server-side, the resulting files land in your repo.
+
+```bash
+# Install the prebuilt binary
+AGO_VERSION=ago-v0.5.4 ~/installAgo.sh --version
+ln -sf ~/.cache/ago/ago-v0.5.4/ago ~/.local/bin/ago
+
+# Login once (browser device flow, no API key to copy)
+ago login --device --server https://agents-orchestrator.com
+
+# Multi-turn chat with local file delegation
+cd ~/projects/my-app
+ago chat --client-tools
+```
+
+End-to-end guide (install, `.ago.yaml`, daily usage, security defaults,
+troubleshooting): [docs/managing-local-projects.md](docs/managing-local-projects.md).
+Architecture + threat model: [docs/agent-host.md](docs/agent-host.md).
+
 ## Core Concepts
 
 | Concept | Description | Docs |
@@ -78,6 +103,8 @@ Parallel execution, conditional routing, human-in-the-loop, checkpointing, sub-g
 
 | | |
 |---|---|
+| [Local projects via `ago chat --client-tools`](docs/managing-local-projects.md) | End-to-end recipe: install, login, `.ago.yaml`, daily use, security |
+| [Agent Host protocol](docs/agent-host.md) | Wire protocol, threat model, operator runbook |
 | [Architecture](https://pjcau.github.io/agent-orchestrator/docs/architecture/overview) | Core design, abstractions, components |
 | [Responsive layout](https://pjcau.github.io/agent-orchestrator/docs/architecture/responsive-layout) | Desktop + tablet + mobile (incl. iPhone notch), breakpoints, lint, cross-viewport E2E |
 | [Roadmap](https://pjcau.github.io/agent-orchestrator/docs/roadmap/overview) | Phases 0-3, version milestones |

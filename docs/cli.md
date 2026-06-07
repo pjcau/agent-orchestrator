@@ -297,25 +297,106 @@ page instead of dropping them on the chat home. Only local paths starting
 with a single `/` are accepted — `//evil.com/…` and absolute URLs are
 rejected to prevent open-redirect through a forged cookie.
 
-## Agent Host — client-side tool delegation
+## Agent Host — client-side tool delegation (`--client-tools`)
 
-`ago chat --client-tools` inverts the default execution model: the agent
-loop on the remote dashboard delegates every tool call (`file_*`,
-`shell_exec`) back to the CLI, which runs the tool in the local `cwd`
-and returns the result over a WebSocket. `ago chat` keeps multi-turn
-conversation state on the server while gaining feature parity with
-`ago run --local` for filesystem and shell.
+`ago chat --client-tools` and `ago run --client-tools` keep the agent
+loop on the remote dashboard but delegate every tool call (`file_read`,
+`file_write`, `shell_exec`, …) back to the CLI. Tools run in your
+`cwd`, files land in your repo, and shell commands execute as your
+user — while team-lead, the routing, the conversation memory, the
+guardrails, and the budget guards all stay on the server.
 
-Wire protocol, security model (signed `tool_call_id`/`nonce` HMAC,
-strict path sandbox, shell allowlist, streaming + cancellation,
-PII-free metrics), and the full threat-mitigation matrix live in
-[**docs/agent-host.md**](agent-host.md). Reference code is under
-[`src/agent_orchestrator/agent_host/`](../src/agent_orchestrator/agent_host/).
+End-to-end recipe (install → login → daily use → troubleshooting) lives
+in [**managing-local-projects.md**](managing-local-projects.md). The
+protocol catalogue, security threat-matrix, and operator runbook live
+in [**agent-host.md**](agent-host.md). The blurb below is the
+CLI-flavoured TL;DR.
 
-Rust CLI integration: the binary launches
-``python -m agent_orchestrator.agent_host --server <url> --token <jwt>
---cwd .`` as a subprocess. The Python package is imported as-is — the
-sandbox, allowlist, and skill execution logic live in a single source.
+### When to use it
+
+| Goal | Flag |
+|---|---|
+| Multi-turn chat against a hosted dashboard, files in your repo | `ago chat --client-tools` |
+| One-shot scriptable task on the server, files in your repo | `ago run --client-tools "…"` |
+| Offline / no server, but local files | `ago run --local "…"` (no `--client-tools`) |
+| LLM chat without tools | `ago chat --mode prompt` |
+| Server-side workspace OK | plain `ago chat` |
+
+`--client-tools` is **mutually exclusive with `--local`** (enforced by
+clap). `--mode prompt` is ignored when `--client-tools` is set — the
+agent loop is the whole point.
+
+### Minimal `.ago.yaml`
+
+```yaml
+server:   https://agents-orchestrator.com
+agent:    team-lead              # multi-agent coordinator
+provider: openrouter
+model:    tencent/hy3-preview
+max_steps: 15
+```
+
+Allowed keys: `server`, `agent`, `model`, `provider`, `max_steps`,
+`context`.
+
+### How the launch works under the hood
+
+The Rust binary handles arg parsing, auth, and the `.ago.yaml` chain;
+when `--client-tools` is set it spawns a single Python subprocess:
+
+```text
+python -m agent_orchestrator.agent_host \
+    --server   <server>          \
+    --cwd      <pwd>             \
+    --agent    <name>            \
+    --model    <id>              \
+    --provider <type>            \
+    # token via env AGO_API_KEY (never argv)
+```
+
+The subprocess opens the WebSocket at
+`/api/cli/v1/agent-host`, sends a HELLO with the local tool manifest,
+runs the REPL (or one-shot prompt), and executes incoming `TOOL_CALL`
+frames against the local `cwd` using the same `agent_orchestrator.skills`
+package shipped with the library — **zero duplication of the
+file-write / shell-exec logic between Rust and Python**.
+
+### Security defaults (enforced client-side)
+
+- **Path sandbox.** `file_*` calls resolve under `cwd`; `..`,
+  absolute paths outside, and symlink-out-of-workspace are rejected
+  with `path_outside_workspace`. Strict by default; opt-in to
+  symlink follow.
+- **Shell allowlist.** `shell_exec` rejects string `argv` (only lists
+  accepted) and prompts on first use of a new binary; decisions cached
+  in `${XDG_CACHE_HOME:-~/.cache}/ago/shell-allow.json`. General-
+  purpose shells (`bash`, `sh`, `zsh`, `dash`) flagged high-risk.
+- **HMAC.** Every `tool_call` / `tool_result` / `tool_chunk` is signed
+  with the dashboard's `JWT_SECRET_KEY` over
+  `(run_id, tool_call_id, nonce, name)`. Tampered, replayed, or
+  out-of-order frames are dropped silently server-side.
+
+### Resource bounds (enforced server-side)
+
+| Limit | Default | Where |
+|---|---|---|
+| Tool call TTL | 60 s | `PendingToolCallsRegistry` |
+| Output per call | 10 MB | registry chunk cap |
+| Concurrent streams per run | 4 | registry stream gate |
+| Streaming chunk size | 4 KB | CLI runner |
+
+### Troubleshooting (quick reference)
+
+| Symptom | Fix |
+|---|---|
+| `error: not authenticated` | `ago login --device --server …` |
+| `agent-host requires the websockets package` | `pip install agent-orchestrator` or set `AGO_PYTHON` |
+| `path_outside_workspace` | Run `ago` from a higher directory or move the file in-tree |
+| `shell_denied` (non-interactive) | Run interactively to confirm, or edit `~/.cache/ago/shell-allow.json` |
+| `tool_timeout` | Split into smaller calls; raise registry TTL on the dashboard |
+| `signature_invalid` spike server-side | `JWT_SECRET_KEY` rotated; re-login |
+
+Reference code: [`src/agent_orchestrator/agent_host/`](../src/agent_orchestrator/agent_host/).
 
 ### Token model
 

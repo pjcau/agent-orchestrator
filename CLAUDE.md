@@ -154,6 +154,8 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 - **30 agents by category, cross-dependencies, skills map, research scout workflow** → [docs/agents.md](docs/agents.md)
 - **Dashboard UI: routing, conversation persistence, MCP server/client, SSE streaming, async team run, session explorer, memory, metrics, modular architecture** → [docs/dashboard.md](docs/dashboard.md)
 - **Agent ↔ Agent cooperation protocol: typed messages, state machine, error semantics** → [docs/cooperation-protocol.md](docs/cooperation-protocol.md)
+- **Driving the hosted orchestrator against a local repo (`ago chat --client-tools`) — install, login, .ago.yaml, daily workflow, security defaults, troubleshooting** → [docs/managing-local-projects.md](docs/managing-local-projects.md)
+- **Agent Host (client-side tool delegation): WebSocket protocol catalogue, lifecycle, threat-and-mitigation matrix, telemetry, operator runbook, rollback plan** → [docs/agent-host.md](docs/agent-host.md)
 
 ### Build, Deploy, Operate
 - **Production deployment (EC2, SSL, Nginx), CI/CD pipeline, OrbStack runtime, secrets, troubleshooting** → [docs/deployment.md](docs/deployment.md)

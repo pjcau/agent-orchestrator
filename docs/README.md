@@ -42,6 +42,8 @@ python scripts/generate_feature_map.py        # writes static/feature-map.json
 | [agents.md](agents.md) | 30 agents organised by category, cross-dependencies, skills map, research scout workflow |
 | [dashboard.md](dashboard.md) | Dashboard UI: multi-category routing, conversation persistence, MCP server/client, SSE streaming, async team run, session explorer, memory, metrics, modular architecture |
 | [cli.md](cli.md) | `ago` Rust CLI client — single-binary, talks to a remote orchestrator over `/api/cli/v1/*`. OS-keychain token storage, rustls-only HTTP. |
+| [managing-local-projects.md](managing-local-projects.md) | **End-to-end guide for `ago chat --client-tools`**: install, login, `.ago.yaml`, daily workflow, security defaults, troubleshooting. Recommended entry point for driving the hosted orchestrator against your local repo. |
+| [agent-host.md](agent-host.md) | Agent-host channel — wire protocol catalogue, lifecycle of one chat turn, threat-and-mitigation matrix, telemetry, operator runbook, rollback plan. |
 
 ## Security, Observability, Operations
 
