@@ -44,6 +44,21 @@ from .graphs import _make_provider
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_log(value: str) -> str:
+    """Strip CR/LF/TAB from values before they reach the logger.
+
+    Mirrors ``dashboard.agent_runtime_router._safe_log`` and the
+    project-wide ``_sanitize_log`` helper; duplicated here (rather than
+    imported) to avoid an import cycle between cli_routes and the
+    sibling router that already owns the canonical implementation.
+    Used to neutralise ``py/log-injection`` CodeQL findings: every
+    user-controllable string that lands in a ``logger.*(...)`` call
+    must be wrapped.
+    """
+    return str(value).replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
 cli_router = APIRouter(prefix="/api/cli/v1", tags=["cli"])
 
 
@@ -405,7 +420,11 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
     try:
         provider = _make_provider(model, provider_type, ollama, openrouter_key)
     except Exception:
-        logger.exception("provider construction failed for %s/%s", model, provider_type)
+        logger.exception(
+            "provider construction failed for %s/%s",
+            _safe_log(model),
+            _safe_log(provider_type),
+        )
         return JSONResponse(
             content={"success": False, "error": "provider error"},
             status_code=400,
@@ -677,13 +696,18 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
             if output:
                 await ws.send_json(AssistantText(chunk=output).to_dict())
             result_dict = result if isinstance(result, dict) else {}
+            turn_ok = result_dict.get("success") is not False
             await ws.send_json(
                 TurnEnd(
-                    status="ok" if result_dict.get("success") is not False else "error",
+                    status="ok" if turn_ok else "error",
                     step_count=int(result_dict.get("steps_taken", 0)),
                     input_tokens=int(result_dict.get("input_tokens", 0)),
                     output_tokens=int(result_dict.get("output_tokens", 0)),
                     cost_usd=float(result_dict.get("total_cost_usd", 0.0)),
+                    # Surface *why* the turn failed (e.g. "Max steps reached",
+                    # "Timeout after 60s") so the client shows a reason, not a
+                    # bare "✗ turn error".
+                    error="" if turn_ok else str(result_dict.get("error") or "")[:300],
                 ).to_dict()
             )
         except Exception as exc:  # noqa: BLE001

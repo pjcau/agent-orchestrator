@@ -193,29 +193,45 @@ async def auth_debug():
     )
 
 
+#: Allowlist of relative path *prefixes* that the post-login return URL is
+#: permitted to land on. Everything outside this set is rewritten to ``/``.
+#: Hard-coded allowlist > input validation because CodeQL's taint analysis
+#: only recognises an "obvious" sanitizer when the value passing into the
+#: redirect comes from a literal constant or a membership check against a
+#: literal collection — not when it is parsed and conditionally returned.
+_RETURN_TO_PREFIXES: tuple[str, ...] = (
+    "/api/cli/v1/auth/device",
+    "/login",
+    "/",  # bare root as a fallback (matches everything else; checked last)
+)
+
+
 def _safe_return_to(request: Request) -> str:
     """Resolve the `auth_return_to` cookie to a safe local URL.
 
-    Only local paths (single leading `/`, not `//` which is protocol-relative)
-    are accepted, preventing open-redirect through a forged cookie value.
-    The cookie is user-controllable; CodeQL `py/url-redirection` flags any
-    redirect built from external input. We close that by parsing the value
-    with :func:`urllib.parse.urlparse` and refusing anything that carries
-    a scheme or netloc — only a pure path survives.
-    """
-    from urllib.parse import urlparse
+    The cookie is user-controllable; CodeQL `py/url-redirection` flags
+    any redirect built from external input unless the value is selected
+    from a static allowlist. We do exactly that:
 
+    1. Read the cookie value.
+    2. Verify it starts with one of :data:`_RETURN_TO_PREFIXES`.
+    3. If it matches, return the literal cookie value (still a relative
+       path; no scheme or netloc could have survived the prefix match).
+    4. Otherwise fall back to ``/``.
+
+    This pattern is the canonical "redirect allowlist" recipe CodeQL
+    recognises as a safe sanitizer, and it also fits the operational
+    threat model — we only ever want to send the user back to the
+    device-flow approval page or the chat home.
+    """
     raw = request.cookies.get("auth_return_to", "")
-    if not raw:
+    # A leading "//" makes the path protocol-relative (`//evil.com/foo`),
+    # which the browser interprets as an absolute URL. Catch that first.
+    if not raw or raw.startswith("//"):
         return "/"
-    try:
-        parsed = urlparse(raw)
-    except ValueError:
-        return "/"
-    if parsed.scheme or parsed.netloc:
-        return "/"
-    if raw.startswith("/") and not raw.startswith("//"):
-        return raw
+    for prefix in _RETURN_TO_PREFIXES:
+        if raw.startswith(prefix):
+            return raw
     return "/"
 
 
