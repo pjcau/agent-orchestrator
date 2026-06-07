@@ -2,9 +2,25 @@
 """Generate a minimal patch for one code-scanning issue using an LLM.
 
 Invoked by `.github/workflows/codeql-autofix.yml`. Reads the issue
-metadata, pulls the file context around the alert, asks an OpenRouter
-model for a tiny patch, applies it on the working tree, and lets the
-calling workflow create the branch + draft PR.
+metadata, pulls the FULL file content, asks an OpenRouter model for a
+tiny edit expressed as one or more SEARCH/REPLACE blocks, applies them
+to the working tree via exact string replacement, and lets the calling
+workflow create the branch + draft PR.
+
+Why SEARCH/REPLACE blocks (Aider-style) and not unified diffs?
+Unified diffs depend on exact line numbers and exact context-line
+whitespace. LLMs drift on both — even a single trailing-whitespace
+difference makes `git apply` reject the patch. SEARCH/REPLACE blocks
+are validated by *finding the search text verbatim* in the file and
+replacing it in place: zero drift, zero hunk-header confusion. Same
+technique used by aider, Cline, and Claude Code.
+
+Block format:
+    <<<<<<< SEARCH
+    exact contiguous text from the file
+    =======
+    replacement text
+    >>>>>>> REPLACE
 
 Inputs (via argv):
     --issue NUMBER   the GitHub issue number to address
@@ -15,17 +31,17 @@ Reads:
     GH_TOKEN            for `gh` API calls
 
 Writes:
-    a `Fixes-#<N>.patch` file at repo root containing the diff actually
-    applied. The workflow includes it as a PR attachment for traceability.
+    a `Fixes-#<N>.patch` file at repo root containing the resulting
+    `git diff` of all applied changes. The workflow attaches it to the
+    PR for audit.
 
 Safety constraints:
-* The model is instructed to emit a unified diff that touches at most
-  *one file* and at most *20 lines*. Bigger diffs are dropped with a
-  loud comment on the issue rather than committed.
-* The patch is applied with `git apply --check` first; failures land
-  as a comment on the issue, not an empty PR.
-* No tests are run here (CI on the PR catches regressions); the goal
-  is to produce a reviewable suggestion, not a green build.
+* Each SEARCH block must appear EXACTLY ONCE in the file (otherwise we
+  cannot prove which occurrence the model meant).
+* All blocks together must touch at most ONE file and produce at most
+  80 changed lines. Bigger suggestions get a comment on the issue and
+  are dropped — manual review territory.
+* No tests are run here; CI on the PR is the ground truth.
 """
 
 from __future__ import annotations
@@ -45,9 +61,10 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 MODEL = "deepseek/deepseek-v4-flash"
-CONTEXT_LINES = 25  # lines around the flagged line we feed the LLM
-MAX_DIFF_LINES = 80  # safety cap before we refuse to apply the patch
+CONTEXT_LINES = 25  # lines around the flagged line we feed the LLM (display)
+MAX_DIFF_LINES = 80  # safety cap on the resulting `git diff`
 TIMEOUT_S = 60
+MAX_FILE_BYTES = 80_000  # truncate huge files before sending to the LLM
 
 
 # ---------------------------------------------------------------------------
@@ -144,30 +161,66 @@ def read_context(file_path: Path, line: int, span: int) -> tuple[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def build_prompt(rule: str, file: str, line: int, snippet: str, issue_body: str) -> str:
+def build_prompt(
+    rule: str,
+    file: str,
+    line: int,
+    snippet: str,
+    file_full: str,
+    issue_body: str,
+) -> str:
     return textwrap.dedent(f"""\
         You are a senior security engineer fixing a CodeQL alert in a Python
-        codebase. Produce a MINIMAL fix as a unified diff. Do not introduce
-        unrelated changes. Constraints:
+        codebase. Produce a MINIMAL fix expressed as one or more
+        SEARCH/REPLACE blocks.
 
-        * The diff MUST touch only the file shown.
-        * The diff MUST be applicable with `git apply` from the repository
-          root (use `a/<path>` and `b/<path>` headers).
+        ## Output format (STRICT)
+
+        Each block looks exactly like this, with the exact markers and
+        no surrounding text:
+
+        <<<<<<< SEARCH
+        <exact contiguous text from the file>
+        =======
+        <replacement text>
+        >>>>>>> REPLACE
+
+        Rules for the blocks:
+        * SEARCH content must appear LITERALLY in the file (matching
+          indentation, whitespace, comments) — no paraphrasing.
+        * Each SEARCH must be unique within the file (pick enough
+          surrounding context lines to be unambiguous, but no more).
+        * REPLACE must keep the same indentation level as SEARCH.
+        * You may emit multiple blocks if needed, but all of them MUST
+          edit the SAME file ({file}).
         * Keep behaviour intact; only close the security weakness.
-        * If you cannot fix it with confidence, reply exactly with the
-          literal text: NOFIX
-        * Output ONLY the diff (no prose, no fences, no explanation).
+        * Total changed lines across all blocks: ≤ 30 (we cap at 80).
 
-        # Alert
+        If you cannot fix it with confidence, reply with the single
+        literal token: NOFIX
+
+        Output ONLY the blocks (or `NOFIX`). No prose, no fences, no
+        commentary.
+
+        ## Alert
+
         Rule: {rule}
         Location: {file}:{line}
 
         ## Issue body
+
         {issue_body.strip() or '(empty)'}
 
-        ## Source context
+        ## Source context (line-numbered, `>>>` marks the alerted line)
+
         ```
         {snippet}
+        ```
+
+        ## Full file content (for unambiguous SEARCH matching)
+
+        ```
+        {file_full}
         ```
         """)
 
@@ -213,42 +266,76 @@ def call_openrouter(prompt: str) -> str:
 
 FENCE_RE = re.compile(r"^```\w*\s*$", re.MULTILINE)
 
-
-def strip_fences(diff: str) -> str:
-    """Remove any markdown code fences the model added despite instructions."""
-    cleaned = FENCE_RE.sub("", diff)
-    return cleaned.strip() + "\n"
-
-
-def too_big(diff: str) -> bool:
-    return len(diff.splitlines()) > MAX_DIFF_LINES
-
-
-def touches_only(diff: str, file: str) -> bool:
-    """Reject diffs that touch any path other than the alerted file."""
-    files = set()
-    for ln in diff.splitlines():
-        if ln.startswith(("--- a/", "+++ b/")):
-            path = ln.split("/", 1)[1] if "/" in ln else ""
-            if path and path != "/dev/null":
-                files.add(path)
-    return files == {file} if files else False
+# Greedy across the SEARCH-marker so we tolerate the model emitting
+# accidental blank lines inside a block.
+BLOCK_RE = re.compile(
+    r"<<<<<<<\s*SEARCH\s*\n"
+    r"(?P<search>.*?)"
+    r"\n=======\s*\n"
+    r"(?P<replace>.*?)"
+    r"\n>>>>>>>\s*REPLACE\s*$",
+    re.MULTILINE | re.DOTALL,
+)
 
 
-def apply_patch(diff: str) -> bool:
-    """Run `git apply --check` then `git apply`."""
-    patch_path = Path("/tmp/codeql-autofix.patch")
-    patch_path.write_text(diff)
-    check = subprocess.run(
-        ["git", "apply", "--check", str(patch_path)],
-        capture_output=True,
-        text=True,
-    )
-    if check.returncode != 0:
-        print("git apply --check failed:", check.stderr, file=sys.stderr)
-        return False
-    subprocess.run(["git", "apply", str(patch_path)], check=True)
-    return True
+def strip_fences(text: str) -> str:
+    """Remove markdown code fences the model added despite instructions."""
+    return FENCE_RE.sub("", text).strip() + "\n"
+
+
+def parse_blocks(raw: str) -> list[tuple[str, str]]:
+    """Return a list of (search, replace) pairs from the LLM output."""
+    return [(m["search"], m["replace"]) for m in BLOCK_RE.finditer(raw)]
+
+
+class BlockApplyError(Exception):
+    """Raised by :func:`apply_blocks` when a block cannot be applied."""
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
+def apply_blocks(file_path: Path, blocks: list[tuple[str, str]]) -> int:
+    """Apply each SEARCH/REPLACE block to ``file_path``. Returns lines changed.
+
+    Each block is applied in sequence on the *current* (possibly
+    already-modified) file content, mirroring how aider and Claude Code
+    handle multi-block edits. Failures raise :class:`BlockApplyError`
+    with a stable code we map to an issue comment.
+    """
+    if not blocks:
+        raise BlockApplyError("no_blocks", "no SEARCH/REPLACE blocks parsed from LLM output")
+    text = file_path.read_text()
+    original = text
+    for idx, (search, replace) in enumerate(blocks, start=1):
+        occurrences = text.count(search)
+        if occurrences == 0:
+            raise BlockApplyError(
+                "search_not_found",
+                f"block #{idx} SEARCH text not found verbatim in {file_path}",
+            )
+        if occurrences > 1:
+            raise BlockApplyError(
+                "search_ambiguous",
+                f"block #{idx} SEARCH text appears {occurrences} times "
+                f"in {file_path} — refuse to guess which to replace",
+            )
+        text = text.replace(search, replace, 1)
+    file_path.write_text(text)
+
+    # Estimate "lines changed" as the symmetric diff length so the
+    # MAX_DIFF_LINES cap is honoured. Cheap and conservative.
+    changed = len(set(original.splitlines()) ^ set(text.splitlines()))
+    return changed
+
+
+def git_diff() -> str:
+    """Return the current `git diff` of unstaged changes."""
+    return subprocess.run(
+        ["git", "diff"], check=True, capture_output=True, text=True
+    ).stdout
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +361,19 @@ def main() -> int:
         return 2
 
     snippet, _start = read_context(src, line, CONTEXT_LINES)
-    prompt = build_prompt(rule, file, line, snippet, issue.get("body") or "")
+    full = src.read_text()
+    if len(full) > MAX_FILE_BYTES:
+        # Truncate around the alerted line so the SEARCH text still has
+        # enough surrounding context to be unique.
+        lines = full.splitlines()
+        keep = MAX_FILE_BYTES // 80  # ~rough line cap
+        lo = max(0, line - keep // 2)
+        hi = min(len(lines), line + keep // 2)
+        full = "\n".join(lines[lo:hi])
+
+    prompt = build_prompt(rule, file, line, snippet, full, issue.get("body") or "")
     try:
-        raw_diff = call_openrouter(prompt)
+        raw = call_openrouter(prompt)
     except Exception as exc:
         comment_on_issue(
             args.repo,
@@ -285,7 +382,7 @@ def main() -> int:
         )
         return 3
 
-    if raw_diff.strip().upper() == "NOFIX":
+    if raw.strip().upper() == "NOFIX":
         comment_on_issue(
             args.repo,
             args.issue,
@@ -294,37 +391,46 @@ def main() -> int:
         )
         return 4
 
-    diff = strip_fences(raw_diff)
-    if too_big(diff):
+    cleaned = strip_fences(raw)
+    blocks = parse_blocks(cleaned)
+    if not blocks:
         comment_on_issue(
             args.repo,
             args.issue,
-            f"codeql-autofix: suggested diff exceeded "
-            f"the {MAX_DIFF_LINES}-line cap. Not applied; please craft a manual fix.",
+            "codeql-autofix: LLM output did not contain a valid "
+            "SEARCH/REPLACE block. Will retry on the next sweep.\n\n"
+            f"<details><summary>raw output</summary>\n\n```\n{cleaned[:1500]}\n```\n</details>",
         )
         return 5
 
-    if not touches_only(diff, file):
+    try:
+        changed = apply_blocks(src, blocks)
+    except BlockApplyError as e:
         comment_on_issue(
             args.repo,
             args.issue,
-            "codeql-autofix: suggested diff touched files other than the alerted "
-            f"path `{file}`. Skipping to keep the autofix scope narrow.",
+            f"codeql-autofix: could not apply LLM blocks (`{e.code}`): {e.detail}. "
+            "Will retry on the next sweep with fresh context.",
         )
         return 6
 
-    if not apply_patch(diff):
+    if changed > MAX_DIFF_LINES:
+        # Revert and bail.
+        subprocess.run(["git", "checkout", "--", str(src)], check=True)
         comment_on_issue(
             args.repo,
             args.issue,
-            "codeql-autofix: `git apply --check` rejected the LLM diff "
-            "(probably a context drift). Will retry on the next sweep.",
+            f"codeql-autofix: suggested edit changed {changed} lines (cap {MAX_DIFF_LINES}). "
+            "Reverted; manual review recommended.",
         )
         return 7
 
-    # Save the applied diff so the workflow can attach it to the PR.
+    diff = git_diff()
     Path(f"Fixes-#{args.issue}.patch").write_text(diff)
-    print(f"OK: applied {len(diff.splitlines())} line diff for issue #{args.issue}")
+    print(
+        f"OK: applied {len(blocks)} block(s), ~{changed} lines changed "
+        f"for issue #{args.issue}"
+    )
     return 0
 
 
