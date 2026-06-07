@@ -651,15 +651,43 @@ async def drive_session(
     the handler is a single call away.
     """
     skills = build_remote_registry(hello=hello, registry=registry, ws=ws, run_id=run_id)
+
+    # Turns run as concurrent tasks, NOT inline. Awaiting ``on_prompt``
+    # here would deadlock: a turn that delegates a tool blocks on a
+    # ``ToolResult`` future that only THIS receive loop can resolve, so
+    # blocking the loop inside the turn means the result never arrives and
+    # the tool call hangs until its TTL expires. Spawning keeps the loop
+    # free to receive ``ToolResult`` / ``ToolChunk`` frames mid-turn.
+    turn_tasks: set[asyncio.Task] = set()
+
+    def _spawn_turn(text: str) -> None:
+        task = asyncio.create_task(on_prompt(text, skills, run_id, hello))
+        turn_tasks.add(task)
+
+        def _on_done(t: asyncio.Task) -> None:
+            turn_tasks.discard(t)
+            if not t.cancelled():
+                exc = t.exception()
+                if exc is not None:
+                    logger.error("agent-host: turn task crashed: %s", exc, exc_info=exc)
+
+        task.add_done_callback(_on_done)
+
+    def _cleanup() -> None:
+        for t in list(turn_tasks):
+            t.cancel()
+
     while True:
         try:
             raw = await ws.receive_json()
         except (asyncio.CancelledError, RuntimeError):  # noqa: PERF203
+            _cleanup()
             return "closed_by_peer"
         try:
             frame = parse_frame(raw)
         except UnknownFrameError:
             await _emit_error(ws, code="malformed_frame", message="unknown frame kind")
+            _cleanup()
             return "protocol_error:malformed_frame"
 
         if isinstance(frame, ToolResult):
@@ -685,7 +713,9 @@ async def drive_session(
         elif isinstance(frame, Prompt):
             if on_prompt is None:
                 continue
-            await on_prompt(frame.text, skills, run_id, hello)
+            # Spawn — do NOT await — so the loop keeps resolving the tool
+            # results this turn's tool calls block on (see above).
+            _spawn_turn(frame.text)
         elif isinstance(frame, Cancel):
             logger.info(
                 "agent-host: cancel id=%s reason=%s (cancellation lands in commit #4)",

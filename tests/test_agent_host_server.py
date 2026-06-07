@@ -467,6 +467,7 @@ class TestDriveSessionPrompt:
             provider="openrouter",
         )
         captured: dict = {}
+        done = asyncio.Event()
 
         async def on_prompt(text, skills, run_id, hello_in):
             captured["text"] = text
@@ -476,10 +477,18 @@ class TestDriveSessionPrompt:
             )
             captured["run_id"] = run_id
             captured["hello_agent"] = hello_in.agent
+            done.set()
 
         await ws.incoming.put(Prompt(text="hello world").to_dict())
-        # Terminate the loop deterministically.
-        await ws.incoming.put({"kind": "totally-unknown"})
+
+        # Turns now run as concurrent tasks, so feed the terminating frame
+        # only after the turn has actually run — otherwise the loop could
+        # exit and cancel the task before it executes.
+        async def terminate():
+            await done.wait()
+            await ws.incoming.put({"kind": "totally-unknown"})
+
+        term_task = asyncio.create_task(terminate())
         await drive_session(
             ws,
             hello=hello,
@@ -487,11 +496,77 @@ class TestDriveSessionPrompt:
             registry=registry,
             on_prompt=on_prompt,
         )
+        await term_task
         assert captured["text"] == "hello world"
         assert captured["skills_type"] is SkillRegistry
         assert captured["skill_names"] == ["file_read", "file_write"]
         assert captured["run_id"] == "r-1"
         assert captured["hello_agent"] == "backend"
+
+    @pytest.mark.asyncio
+    async def test_turn_does_not_deadlock_tool_result(self, signing_key):
+        """A tool-delegating turn must not block the receive loop.
+
+        Regression: drive_session used to ``await on_prompt(...)`` inline,
+        so the agent's tool call blocked on a ToolResult future that only
+        the (now blocked) loop could resolve — every tool call hung until
+        its TTL (~5 min) and the turn timed out. Spawning the turn keeps
+        the loop free to receive and resolve the result, so the round-trip
+        completes promptly.
+        """
+        from agent_orchestrator.agent_host import drive_session
+
+        registry = PendingToolCallsRegistry(ttl_seconds=2.0)
+        ws = FakeWS()
+        hello = Hello(tool_manifest=["file_read"], agent="backend")
+        turn_ok = asyncio.Event()
+
+        async def on_prompt(text, skills, run_id, hello_in):
+            # Delegate a tool mid-turn — blocks until the loop resolves it.
+            result = await registry.issue(
+                ws=ws, run_id=run_id, name="file_read", args={"path": "x"}
+            )
+            if result.status == "ok":
+                turn_ok.set()
+
+        async def responder():
+            # Wait for the turn task to emit its tool_call, then sign and
+            # enqueue the matching result the way a real client would.
+            call = None
+            for _ in range(300):
+                raw = next((f for f in ws.sent if f.get("kind") == "tool_call"), None)
+                if raw is not None:
+                    call = parse_frame(raw)
+                    break
+                await asyncio.sleep(0.01)
+            assert isinstance(call, ToolCall), "turn never emitted a tool_call (deadlock)"
+            sig = compute_signature(
+                run_id="r-1",
+                tool_call_id=call.tool_call_id,
+                nonce=call.nonce,
+                name=call.name,
+            )
+            await ws.incoming.put(
+                ToolResult(
+                    tool_call_id=call.tool_call_id,
+                    status="ok",
+                    output={"ok": True},
+                    nonce=call.nonce,
+                    signature=sig,
+                ).to_dict()
+            )
+            await turn_ok.wait()
+            await ws.incoming.put({"kind": "totally-unknown"})  # terminate loop
+
+        await ws.incoming.put(Prompt(text="do it").to_dict())
+        responder_task = asyncio.create_task(responder())
+        reason = await asyncio.wait_for(
+            drive_session(ws, hello=hello, run_id="r-1", registry=registry, on_prompt=on_prompt),
+            timeout=3.0,
+        )
+        await responder_task
+        assert turn_ok.is_set()
+        assert reason == "protocol_error:malformed_frame"
 
 
 # ---------------------------------------------------------------------------
