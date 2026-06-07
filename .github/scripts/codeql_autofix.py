@@ -256,7 +256,16 @@ def call_openrouter(prompt: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
         payload = json.loads(resp.read())
-    return payload["choices"][0]["message"]["content"].strip()
+    # OpenRouter occasionally returns `content: null` (provider quirk or
+    # safety filter). Treat that as NOFIX rather than blowing up with
+    # `NoneType has no attribute 'strip'`.
+    try:
+        content = payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        return "NOFIX"
+    if not content:
+        return "NOFIX"
+    return content.strip()
 
 
 # ---------------------------------------------------------------------------
