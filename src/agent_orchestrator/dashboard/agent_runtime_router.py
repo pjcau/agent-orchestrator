@@ -551,7 +551,7 @@ async def agent_run(body: dict, request: Request):
         # Client aborted the HTTP POST → _watch_disconnect cancelled run_task.
         # Return a cancellation marker so the frontend's catch block can
         # distinguish this from a genuine error and avoid the noisy bubble.
-        logger.info("Agent run cancelled by client disconnect (agent=%s)", agent_name)
+        logger.info("Agent run cancelled by client disconnect (agent=%s)", _safe_log(agent_name))
         return JSONResponse(
             content={
                 "success": False,
