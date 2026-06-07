@@ -321,9 +321,25 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         logger.warning("Auth denied: %s %s from %s", request.method, request.url.path, client_ip)
 
-        # If OAuth is configured, redirect browser to login page
+        # If OAuth is configured, redirect browser to login page.
+        # Preserve the original URL in a short-lived cookie so the OAuth
+        # callbacks can return the user there after sign-in instead of dropping
+        # them on the home page. The CLI device-flow approval URL is the
+        # motivating case: landing on `/` (chat) after login broke the pairing.
         if self._oauth_configured and "text/html" in request.headers.get("accept", ""):
-            return RedirectResponse("/login")
+            response = RedirectResponse("/login")
+            return_to = request.url.path
+            if request.url.query:
+                return_to = f"{return_to}?{request.url.query}"
+            response.set_cookie(
+                "auth_return_to",
+                return_to,
+                httponly=True,
+                secure=True,
+                samesite="lax",
+                max_age=600,
+            )
+            return response
 
         return JSONResponse({"error": "Authentication required"}, status_code=401)
 

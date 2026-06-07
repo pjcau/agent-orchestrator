@@ -193,6 +193,18 @@ async def auth_debug():
     )
 
 
+def _safe_return_to(request: Request) -> str:
+    """Resolve the `auth_return_to` cookie to a safe local URL.
+
+    Only local paths (single leading `/`, not `//` which is protocol-relative)
+    are accepted, preventing open-redirect through a forged cookie value.
+    """
+    raw = request.cookies.get("auth_return_to", "")
+    if raw.startswith("/") and not raw.startswith("//"):
+        return raw
+    return "/"
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page():
     """Render login page with OAuth provider buttons."""
@@ -246,10 +258,11 @@ async def callback_github(request: Request):
                 "role": user["role"],
             }
         )
-        response = RedirectResponse("/", status_code=302)
+        response = RedirectResponse(_safe_return_to(request), status_code=302)
         response.set_cookie(
             "auth_session", jwt_token, httponly=True, secure=True, samesite="lax", max_age=14400
         )
+        response.delete_cookie("auth_return_to")
         logger.info("AUTH login success: %s (role=%s)", github_login, user["role"])
         return response
     except Exception as exc:
@@ -315,7 +328,7 @@ async def callback_google(request: Request):
                 "role": user["role"],
             }
         )
-        response = RedirectResponse("/", status_code=302)
+        response = RedirectResponse(_safe_return_to(request), status_code=302)
         response.set_cookie(
             "auth_session",
             jwt_token,
@@ -324,6 +337,7 @@ async def callback_google(request: Request):
             samesite="lax",
             max_age=14400,
         )
+        response.delete_cookie("auth_return_to")
         logger.info("AUTH login success (google) role=%s", user["role"])
         return response
     except Exception as exc:

@@ -288,6 +288,15 @@ How the four endpoints split:
 | `GET /api/cli/v1/auth/device?user_code=…` | JWT session required | Browser — render approval page |
 | `POST /api/cli/v1/auth/device/approve` | JWT session required | Browser — submit approval |
 
+**Return-to plumbing.** When a logged-out user opens the approval URL, the
+auth middleware redirects to `/login` and stores the original path in a
+short-lived (10-minute, `HttpOnly`, `Secure`, `SameSite=lax`) cookie
+`auth_return_to`. After OAuth sign-in the GitHub / Google callbacks consume
+that cookie (`_safe_return_to()`) and redirect the user back to the device
+page instead of dropping them on the chat home. Only local paths starting
+with a single `/` are accepted — `//evil.com/…` and absolute URLs are
+rejected to prevent open-redirect through a forged cookie.
+
 ### Token model
 
 Approving binds the resulting **JWT** (signed with `JWT_SECRET_KEY`) to the

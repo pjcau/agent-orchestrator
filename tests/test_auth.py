@@ -308,6 +308,82 @@ class TestAPIKeyMiddleware:
         middleware = APIKeyMiddleware(app, api_keys=None)
         assert middleware.api_keys == set()
 
+    def test_browser_redirect_preserves_return_to(self, monkeypatch):
+        """Unauthenticated HTML request → /login + auth_return_to cookie set to original URL.
+
+        Regression test: before this, the CLI device-flow page redirected to
+        /login and OAuth callbacks dropped the user on / (chat) instead of
+        back on the device approval page, breaking the pairing.
+        """
+        monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
+        monkeypatch.setenv("OAUTH_CLIENT_ID", "test-id")
+
+        from starlette.testclient import TestClient
+        from starlette.applications import Starlette
+        from starlette.responses import JSONResponse as StarletteJSONResponse
+        from starlette.routing import Route
+
+        async def endpoint(request):  # pragma: no cover - never reached
+            return StarletteJSONResponse({"ok": True})
+
+        starlette_app = Starlette(
+            routes=[Route("/api/cli/v1/auth/device", endpoint, methods=["GET"])]
+        )
+        starlette_app.add_middleware(APIKeyMiddleware, api_keys=None)
+
+        client = TestClient(starlette_app)
+        resp = client.get(
+            "/api/cli/v1/auth/device?user_code=ABCD-1234",
+            headers={"Accept": "text/html"},
+            follow_redirects=False,
+        )
+        assert resp.status_code in (302, 307)
+        assert resp.headers["location"] == "/login"
+        assert "auth_return_to" in resp.cookies
+        # Cookie values with reserved chars (`/`, `?`) are RFC 6265 quoted —
+        # strip the surrounding DQUOTEs before comparing.
+        cookie_value = resp.cookies["auth_return_to"].strip('"')
+        assert cookie_value == "/api/cli/v1/auth/device?user_code=ABCD-1234"
+
+
+class TestSafeReturnTo:
+    """Open-redirect protection for the post-login return URL."""
+
+    def _make_request(self, cookie_value: str):
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [(b"cookie", f"auth_return_to={cookie_value}".encode())],
+        }
+        return Request(scope)
+
+    def test_local_path_accepted(self):
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = self._make_request("/api/cli/v1/auth/device?user_code=X")
+        assert _safe_return_to(req) == "/api/cli/v1/auth/device?user_code=X"
+
+    def test_protocol_relative_rejected(self):
+        """`//evil.com/x` is a protocol-relative URL — must be rejected."""
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = self._make_request("//evil.com/x")
+        assert _safe_return_to(req) == "/"
+
+    def test_absolute_url_rejected(self):
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = self._make_request("https://evil.com/")
+        assert _safe_return_to(req) == "/"
+
+    def test_missing_cookie_defaults_to_home(self):
+        from starlette.requests import Request
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = Request({"type": "http", "headers": []})
+        assert _safe_return_to(req) == "/"
+
 
 # ---------------------------------------------------------------------------
 # WebSocket auth helper tests
