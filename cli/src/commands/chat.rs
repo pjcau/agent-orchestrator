@@ -25,28 +25,27 @@ const HISTORY_DIRNAME: &str = "ago";
 const HISTORY_FILENAME: &str = "chat-history";
 
 pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
-    if args.client_tools {
-        // Agent-host mode: the Python subprocess owns the WebSocket and
-        // the REPL. We skip the rustyline UI and inherit stdio so the
-        // user keeps talking to a single foreground process. Mode/agent/
-        // model/provider resolution still happens client-side first so
-        // the subprocess sees consistent defaults (.ago.yaml chain).
+    if args.client_tools || args.client_tools_py {
+        // Agent-host mode. Same auth gate as the regular REST path so
+        // failure messages match.
         let settings = ChatSettings::resolve(rt, &args)?;
         let server_url = rt.server_url()?.to_string();
-        // Reuse the same auth path as `api_client()` so we fail with the
-        // identical `NotAuthenticated` error rather than silently sending
-        // a blank token.
         let _ = rt.api_client()?;
         let token_secret = rt
             .storage
             .load(&server_url)?
             .ok_or(AgoError::NotAuthenticated)?;
-        // Briefly expose the secret as &str to hand it to the env var of
-        // the spawned subprocess. The token never crosses the argv
-        // boundary so it stays out of `ps` / `/proc/<pid>/cmdline`.
         use secrecy::ExposeSecret;
         let token = token_secret.expose_secret();
-        return spawn_agent_host(&server_url, token, &settings).await;
+
+        if args.client_tools_py {
+            // Transitional fallback — spawn `python -m
+            // agent_orchestrator.agent_host`. Documented as hidden
+            // because users should default to the native client.
+            return spawn_agent_host(&server_url, token, &settings).await;
+        }
+        // Native Rust client — no Python dependency.
+        return run_native_agent_host(&server_url, token, &settings).await;
     }
     let mut settings = ChatSettings::resolve(rt, &args)?;
     let client = rt.api_client()?;
@@ -767,6 +766,59 @@ async fn spawn_agent_host(server_url: &str, token: &str, settings: &ChatSettings
 
 fn pick_python_for_agent_host() -> String {
     std::env::var("AGO_PYTHON").unwrap_or_else(|_| "python3".to_string())
+}
+
+/// Native agent-host client — no Python subprocess.
+///
+/// Opens the WebSocket from inside the Rust binary, runs the handshake,
+/// then transfers control to the REPL loop in
+/// [`crate::agent_host::client::run_repl`]. Everything that used to
+/// happen inside `python -m agent_orchestrator.agent_host` now lives
+/// in `cli/src/agent_host/`.
+async fn run_native_agent_host(
+    server_url: &str,
+    token: &str,
+    settings: &ChatSettings,
+) -> Result<()> {
+    use crate::agent_host::client::{
+        connect, run_repl, ClientConfig, StdinShellConfirmer,
+    };
+    eprintln!(
+        "\x1b[2m· agent-host (native) connecting to {server_url}\x1b[0m"
+    );
+    let mut ws = connect(server_url, token).await.map_err(|e| {
+        AgoError::Other(format!("agent-host connect failed: {e:#}"))
+    })?;
+    let cwd = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cfg = ClientConfig {
+        agent: settings.agent.clone(),
+        model: settings.model.clone(),
+        provider: settings.provider.clone(),
+        stream_shell: true,
+    };
+    let session = ws
+        .handshake(&cwd, &cfg)
+        .await
+        .map_err(|e| AgoError::Other(format!("agent-host handshake failed: {e:#}")))?;
+    eprintln!(
+        "\x1b[2m· connected run_id={} agent={} model={}\x1b[0m",
+        session.run_id,
+        if session.agent.is_empty() {
+            "-"
+        } else {
+            &session.agent
+        },
+        if session.model.is_empty() {
+            "-"
+        } else {
+            &session.model
+        }
+    );
+    run_repl(ws, session, cwd, Some(Box::new(StdinShellConfirmer)))
+        .await
+        .map_err(|e| AgoError::Other(format!("agent-host repl error: {e:#}")))?;
+    Ok(())
 }
 
 #[cfg(test)]

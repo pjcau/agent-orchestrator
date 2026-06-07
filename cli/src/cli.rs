@@ -218,16 +218,22 @@ pub struct ChatArgs {
 
     /// Delegate every tool call (file_read, file_write, shell_exec) to
     /// the local machine via the agent-host channel, instead of running
-    /// them inside the server container. Spawns
-    /// `python -m agent_orchestrator.agent_host` and inherits stdio so
-    /// the REPL is hosted by that subprocess (requires
-    /// `pip install agent-orchestrator`). See docs/agent-host.md.
+    /// them inside the server container. The CLI itself opens the
+    /// WebSocket, signs frames, sandboxes file ops, and runs subprocesses
+    /// — no Python install required. See docs/agent-host.md.
     ///
     /// When set, `--mode prompt` is ignored: agent-host always runs
     /// through the agent loop because the whole point of the flag is to
     /// host the tool execution locally.
     #[arg(long)]
     pub client_tools: bool,
+
+    /// Force the legacy Python subprocess client
+    /// (`python -m agent_orchestrator.agent_host`).  Exists as a
+    /// transitional fallback for the few weeks after the native client
+    /// ships; will be removed in v0.7.  Implies `--client-tools`.
+    #[arg(long, hide = true)]
+    pub client_tools_py: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -356,4 +362,8 @@ pub struct RunArgs {
     /// See docs/agent-host.md.
     #[arg(long, conflicts_with = "local")]
     pub client_tools: bool,
+
+    /// Legacy Python subprocess fallback for `--client-tools`. See chat.
+    #[arg(long, hide = true, conflicts_with = "local")]
+    pub client_tools_py: bool,
 }
