@@ -45,6 +45,8 @@ from .protocol import (
     KIND_TOOL_RESULT,
     KIND_TURN_END,
 )
+from .client import AgentHostClient, LocalToolRunner, ServerEvent, SessionInfo
+from .path_sandbox import PathOutsideWorkspaceError, enforce_workspace
 from .server import (
     AgentHostError,
     DEFAULT_TOOL_TTL_SECONDS,
@@ -57,6 +59,7 @@ from .server import (
     perform_handshake,
     serve_agent_host,
 )
+from .shell_allowlist import ConfirmCallback, ShellAllowlist, ShellAllowlistError, is_high_risk
 from .signing import (
     SigningKeyMissingError,
     compute_signature,
@@ -76,6 +79,16 @@ __all__ = [
     "drive_session",
     "perform_handshake",
     "serve_agent_host",
+    "AgentHostClient",
+    "LocalToolRunner",
+    "ServerEvent",
+    "SessionInfo",
+    "PathOutsideWorkspaceError",
+    "enforce_workspace",
+    "ShellAllowlist",
+    "ShellAllowlistError",
+    "ConfirmCallback",
+    "is_high_risk",
     "Frame",
     "Hello",
     "Ack",
