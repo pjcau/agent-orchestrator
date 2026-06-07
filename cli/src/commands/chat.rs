@@ -37,7 +37,10 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         // identical `NotAuthenticated` error rather than silently sending
         // a blank token.
         let _ = rt.api_client()?;
-        let token_secret = rt.storage.load(&server_url)?.ok_or(AgoError::NotAuthenticated)?;
+        let token_secret = rt
+            .storage
+            .load(&server_url)?
+            .ok_or(AgoError::NotAuthenticated)?;
         // Briefly expose the secret as &str to hand it to the env var of
         // the spawned subprocess. The token never crosses the argv
         // boundary so it stays out of `ps` / `/proc/<pid>/cmdline`.
@@ -720,11 +723,7 @@ fn ensure_history_path() -> Option<std::path::PathBuf> {
 /// in Python; re-implementing it in Rust would duplicate the trust
 /// boundary code. The subprocess approach keeps a single source of truth
 /// — same pattern `ago run --local` already uses.
-async fn spawn_agent_host(
-    server_url: &str,
-    token: &str,
-    settings: &ChatSettings,
-) -> Result<()> {
+async fn spawn_agent_host(server_url: &str, token: &str, settings: &ChatSettings) -> Result<()> {
     use tokio::process::Command;
     let python = pick_python_for_agent_host();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));

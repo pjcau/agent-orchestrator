@@ -121,7 +121,10 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
         // the regular path.
         let _ = rt.api_client()?;
         let server_url = rt.server_url()?.to_string();
-        let token_secret = rt.storage.load(&server_url)?.ok_or(AgoError::NotAuthenticated)?;
+        let token_secret = rt
+            .storage
+            .load(&server_url)?
+            .ok_or(AgoError::NotAuthenticated)?;
         use secrecy::ExposeSecret;
         let token = token_secret.expose_secret();
         return run_agent_host(
@@ -461,7 +464,10 @@ async fn run_agent_host(
     // Feed the one-shot task on stdin, then close. The subprocess will
     // emit the assistant reply to stdout (inherited) and exit on EOF.
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(task.as_bytes()).await.map_err(AgoError::from)?;
+        stdin
+            .write_all(task.as_bytes())
+            .await
+            .map_err(AgoError::from)?;
         stdin.write_all(b"\n").await.map_err(AgoError::from)?;
         stdin.shutdown().await.map_err(AgoError::from)?;
     }
@@ -562,6 +568,7 @@ mod tests {
                 stream: false,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -594,6 +601,7 @@ mod tests {
                 stream: false,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -616,6 +624,7 @@ mod tests {
                 stream: false,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -647,6 +656,7 @@ mod tests {
                 stream: false,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -694,6 +704,7 @@ mod tests {
                 stream: true,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -727,6 +738,7 @@ mod tests {
                 stream: true,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -777,6 +789,7 @@ mod tests {
                 stream: false,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -823,6 +836,7 @@ mod tests {
                 stream: false,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
@@ -850,6 +864,7 @@ mod tests {
                 stream: false,
                 resume: false,
                 local: false,
+                client_tools: false,
             },
         )
         .await
