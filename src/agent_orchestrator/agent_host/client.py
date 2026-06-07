@@ -68,6 +68,68 @@ def _suppress():
     return contextlib.suppress(Exception, asyncio.CancelledError)
 
 
+def _summarise_args(args: dict, *, max_len: int = 80) -> str:
+    """One-line preview of ``args`` for progress feedback.
+
+    Concrete examples:
+      ``{"file_path": "readme.md"}`` → ``file_path=readme.md``
+      ``{"argv": ["pytest", "-q"]}`` → ``argv=[pytest, -q]``
+      ``{"content": "<3 KB>"}`` is hidden — file_write content is not
+      useful in a progress line and can be huge.
+    """
+    parts: list[str] = []
+    for k, v in args.items():
+        if k == "content" and isinstance(v, str):
+            parts.append(f"content=<{len(v)}B>")
+        elif isinstance(v, list):
+            preview = ", ".join(str(x) for x in v[:3])
+            if len(v) > 3:
+                preview += ", …"
+            parts.append(f"{k}=[{preview}]")
+        else:
+            sval = str(v)
+            if len(sval) > 40:
+                sval = sval[:37] + "…"
+            parts.append(f"{k}={sval}")
+    text = ", ".join(parts)
+    if len(text) > max_len:
+        text = text[: max_len - 1] + "…"
+    return text
+
+
+def _summarise_output(output) -> str:
+    """One-line preview of tool result output for the post-call event.
+
+    Shell output (``{"stdout": …, "returncode": int}``) collapses to
+    ``rc=0, 1.2KB stdout``. File-write strings collapse to length.
+    Everything else falls through to its ``str()`` truncated at 60 chars.
+    """
+    if output is None:
+        return ""
+    if isinstance(output, dict) and "returncode" in output:
+        rc = output.get("returncode")
+        stdout = output.get("stdout") or ""
+        stderr = output.get("stderr") or ""
+        bits = [f"rc={rc}"]
+        if stdout:
+            bits.append(f"{_human_bytes(len(stdout))} stdout")
+        if stderr:
+            bits.append(f"{_human_bytes(len(stderr))} stderr")
+        return ", ".join(bits)
+    if isinstance(output, str):
+        return f"{_human_bytes(len(output))}"
+    s = str(output)
+    return s[:57] + "…" if len(s) > 60 else s
+
+
+def _human_bytes(n: int) -> str:
+    if n < 1024:
+        return f"{n}B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f}KB"
+    return f"{n / (1024 * 1024):.1f}MB"
+
+
 SHELL_DEFAULT_TIMEOUT = 60.0
 SHELL_OUTPUT_CAP = 10 * 1024 * 1024  # 10 MB hard cap aligned with server registry
 SHELL_CHUNK_BYTES = 4096  # streamed when an emitter is provided
@@ -338,8 +400,27 @@ class SessionInfo:
     signing_key: bytes = b""
 
 
-ServerEvent = AssistantText | TurnEnd | Error
-"""Frames the client emits up to the embedder for display / control."""
+@dataclass(frozen=True)
+class ToolProgress:
+    """Synthetic event the client emits around every local tool call.
+
+    Not a wire frame — produced inside :meth:`AgentHostClient._handle_tool_call`
+    so embedders (the REPL in ``__main__``, a future TUI, etc.) can show
+    "the agent is now calling X, here's the result" without having to
+    poll. Two events fire per call: ``status="called"`` before the local
+    runner starts, ``status="ok"`` or ``status="error"`` after it returns.
+    """
+
+    name: str
+    args_summary: str
+    status: str  # "called" | "ok" | "error"
+    elapsed_ms: int = 0
+    output_summary: str = ""
+    error: str = ""
+
+
+ServerEvent = AssistantText | TurnEnd | Error | ToolProgress
+"""Frames + synthetic progress events the client emits up to the embedder."""
 
 
 class AgentHostClient:
@@ -560,6 +641,18 @@ class AgentHostClient:
                 )
                 await self._ws.send_json(tc.to_dict())
 
+        # Announce that the tool is about to run. Embedders (REPL, TUI)
+        # listen on the events queue and surface this as
+        # "↳ file_write(path=…)" so the user sees progress instead of a
+        # silent hang while the local process executes.
+        args_summary = _summarise_args(frame.args)
+        await self._events.put(
+            ToolProgress(name=frame.name, args_summary=args_summary, status="called")
+        )
+
+        import time as _time
+
+        started = _time.monotonic()
         try:
             local = await self._runner.run(
                 frame.name,
@@ -569,6 +662,18 @@ class AgentHostClient:
             )
         finally:
             self._cancel_events.pop(frame.tool_call_id, None)
+
+        elapsed_ms = int((_time.monotonic() - started) * 1000)
+        await self._events.put(
+            ToolProgress(
+                name=frame.name,
+                args_summary=args_summary,
+                status="ok" if local.success else "error",
+                elapsed_ms=elapsed_ms,
+                output_summary=_summarise_output(local.output),
+                error=local.error or "",
+            )
+        )
 
         if self._on_tool_call:
             await self._on_tool_call(frame, local)

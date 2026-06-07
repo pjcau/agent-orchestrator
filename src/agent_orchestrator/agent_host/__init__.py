@@ -45,7 +45,13 @@ from .protocol import (
     KIND_TOOL_RESULT,
     KIND_TURN_END,
 )
-from .client import AgentHostClient, LocalToolRunner, ServerEvent, SessionInfo
+from .client import (
+    AgentHostClient,
+    LocalToolRunner,
+    ServerEvent,
+    SessionInfo,
+    ToolProgress,
+)
 from .path_sandbox import PathOutsideWorkspaceError, enforce_workspace
 from .server import (
     AgentHostError,
@@ -82,6 +88,7 @@ __all__ = [
     "serve_agent_host",
     "build_remote_registry",
     "AgentHostClient",
+    "ToolProgress",
     "LocalToolRunner",
     "ServerEvent",
     "SessionInfo",

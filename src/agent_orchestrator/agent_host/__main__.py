@@ -125,18 +125,45 @@ async def _main(args: argparse.Namespace) -> int:
             f"agent={info.agent or '-'} model={info.model or '-'}\n"
         )
 
+        from .client import ToolProgress
+        from .protocol import AssistantText, Error as ErrorFrame, TurnEnd
+
+        # ANSI sequences kept simple so non-TTY consumers (CI, |less) still
+        # render readable lines after stripping. Override with NO_COLOR=1.
+        use_color = sys.stderr.isatty() and not os.environ.get("NO_COLOR")
+        DIM = "\x1b[2m" if use_color else ""
+        GREEN = "\x1b[32m" if use_color else ""
+        RED = "\x1b[31m" if use_color else ""
+        BOLD = "\x1b[1m" if use_color else ""
+        RESET = "\x1b[0m" if use_color else ""
+
+        def render_progress(ev: "ToolProgress") -> str:
+            if ev.status == "called":
+                return f"{DIM}  ↳ {BOLD}{ev.name}{RESET}{DIM}({ev.args_summary}){RESET}\n"
+            if ev.status == "ok":
+                tail = f" {DIM}— {ev.output_summary}{RESET}" if ev.output_summary else ""
+                return f"{DIM}  {GREEN}✓{RESET}{DIM} {ev.name} in {ev.elapsed_ms}ms{RESET}{tail}\n"
+            # error
+            tail = f" {DIM}— {ev.error}{RESET}" if ev.error else ""
+            return f"{DIM}  {RED}✗{RESET}{DIM} {ev.name} in {ev.elapsed_ms}ms{RESET}{tail}\n"
+
         async def reader():
             async for event in client.events():
-                from .protocol import AssistantText, TurnEnd, Error as ErrorFrame
-
                 if isinstance(event, AssistantText):
                     sys.stdout.write(event.chunk)
                     sys.stdout.flush()
                 elif isinstance(event, TurnEnd):
                     sys.stdout.write("\n")
                     sys.stdout.flush()
+                elif isinstance(event, ToolProgress):
+                    # Progress goes to stderr so a piped stdout (>file.md)
+                    # stays clean.
+                    sys.stderr.write(render_progress(event))
+                    sys.stderr.flush()
                 elif isinstance(event, ErrorFrame):
-                    sys.stderr.write(f"\n[agent-host] server error: {event.code} {event.message}\n")
+                    sys.stderr.write(
+                        f"\n{RED}[agent-host] server error: {event.code} {event.message}{RESET}\n"
+                    )
                     return
 
         async def writer():

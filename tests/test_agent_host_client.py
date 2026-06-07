@@ -377,3 +377,50 @@ class TestAgentHostClient:
         # And critically: the file was NOT written.
         assert not (tmp_path / "evil.md").exists()
         await client.close()
+
+    @pytest.mark.asyncio
+    async def test_tool_progress_events(self, tmp_path: Path, signing_key):
+        """Each tool_call fires two ToolProgress events: called + ok/error.
+
+        Regression guard for the REPL feedback feature — without these
+        events the user only sees the assistant reply, with no signal
+        that a local file_write actually happened.
+        """
+        from agent_orchestrator.agent_host import ToolProgress
+
+        ws = FakeWS()
+        runner = LocalToolRunner(workspace=tmp_path)
+        client = AgentHostClient(ws, runner)
+        await ws.incoming.put(Ack(run_id="r-1").to_dict())
+        await client.handshake()
+
+        nonce = new_nonce()
+        sig = compute_signature(run_id="r-1", tool_call_id="tc-9", nonce=nonce, name="file_write")
+        await ws.incoming.put(
+            ToolCall(
+                tool_call_id="tc-9",
+                name="file_write",
+                args={"file_path": "p.md", "content": "x" * 32},
+                nonce=nonce,
+                signature=sig,
+            ).to_dict()
+        )
+
+        progress: list = []
+
+        async def collector():
+            async for ev in client.events():
+                if isinstance(ev, ToolProgress):
+                    progress.append(ev)
+                    if len(progress) >= 2:
+                        return
+
+        await asyncio.wait_for(collector(), timeout=2.0)
+        assert len(progress) == 2
+        assert progress[0].name == "file_write"
+        assert progress[0].status == "called"
+        assert "file_path=p.md" in progress[0].args_summary
+        assert "content=<32B>" in progress[0].args_summary
+        assert progress[1].status == "ok"
+        assert progress[1].elapsed_ms >= 0
+        await client.close()
