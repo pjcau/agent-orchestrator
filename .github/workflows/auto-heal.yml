@@ -18,7 +18,8 @@
 # - `cargo fmt --check` drift    → `cargo fmt`             (Rust)
 # - `cargo clippy` lint drift    → `cargo clippy --fix`    (Rust, safe)
 # - `Cargo.lock` out of sync     → `cargo update -p ago`   (Rust)
-# - pip-audit new CVE            → append to `--ignore-vuln` list
+# - pip-audit new CVE            → open tracking issue
+# - CodeQL open code-scanning    → open tracking issue per (rule, file, line)
 # - EC2 disk full (Deploy fail)  → trigger `ec2-disk-cleanup` workflow
 #
 # Patterns NOT covered (deliberately — too risky for unattended fix):
@@ -175,6 +176,68 @@ jobs:
           cargo update -p ago || true
           cargo fmt --check --all
           echo "Rust sweep done."
+
+      # --- Pattern: code-scanning alerts (CodeQL) → tracking issues --------
+      #
+      # GitHub's code scanning surfaces CodeQL findings (and any other
+      # SARIF uploader's) under /security/code-scanning. Auto-fixing the
+      # underlying code is too risky — these are real security
+      # weaknesses where context matters. Instead the auto-heal opens
+      # one tracking issue per (rule_id, file, line) so they are visible
+      # in the normal Issues feed; deduplication keeps repeat runs idempotent.
+
+      - name: Sweep open code-scanning alerts → tracking issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          alerts=$(gh api -X GET \
+            repos/${{ github.repository }}/code-scanning/alerts \
+            -F state=open --paginate 2>/dev/null || echo '[]')
+          count=$(echo "$alerts" | jq 'length')
+          echo "Open code-scanning alerts: $count"
+          if [ "$count" = "0" ]; then
+            exit 0
+          fi
+          # Build a flat list of dicts for the issue creation loop.
+          echo "$alerts" | jq -c '.[] | {
+            number, html_url,
+            severity: (.rule.severity // "warning"),
+            sec_sev:  (.rule.security_severity_level // "n/a"),
+            rule_id:  (.rule.id // .rule.name // "unknown"),
+            description: (.rule.description // ""),
+            file:     (.most_recent_instance.location.path // ""),
+            line:     (.most_recent_instance.location.start_line // 0)
+          }' > /tmp/alerts.jsonl
+          while read -r a; do
+            rule=$(echo "$a" | jq -r '.rule_id')
+            file=$(echo "$a" | jq -r '.file')
+            line=$(echo "$a" | jq -r '.line')
+            sev=$(echo "$a"  | jq -r '.severity')
+            sec=$(echo "$a"  | jq -r '.sec_sev')
+            url=$(echo "$a"  | jq -r '.html_url')
+            desc=$(echo "$a" | jq -r '.description')
+            title="code-scanning: ${rule} in ${file}:${line}"
+            # Dedup by exact title — repeat runs update body instead of
+            # creating duplicate issues.
+            existing=$(gh issue list --state open --label code-scanning \
+              --search "$title in:title" --json number -q '.[0].number' || true)
+            body=$(printf '%s\n\n- **Rule:** \`%s\`\n- **Severity:** %s / %s\n- **Location:** [%s:%s](%s)\n\n%s\n\n_Tracked by [auto-heal](.github/workflows/auto-heal.yml). Close manually once fixed; CodeQL closes the upstream alert automatically when the next scan sees the issue resolved._\n' \
+              "Open code-scanning alert auto-tracked from /security/code-scanning." \
+              "$rule" "$sev" "$sec" "$file" "$line" "$url" "$desc")
+            if [ -n "$existing" ]; then
+              gh issue edit "$existing" --body "$body" || true
+              echo "  updated #$existing — $title"
+            else
+              gh issue create \
+                --title "$title" \
+                --body "$body" \
+                --label "auto-heal,code-scanning,${sec}" 2>/dev/null \
+                || gh issue create --title "$title" --body "$body" --label "auto-heal,code-scanning" \
+                || true
+              echo "  opened — $title"
+            fi
+          done < /tmp/alerts.jsonl
 
       # --- Pattern: pip-audit new CVE → open issue (cannot modify yml) ------
       #
