@@ -64,6 +64,8 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
+# Atomic write of the shell allowlist JSON — same crate already in dev-deps for tests.
+tempfile = "3"
 
 [dev-dependencies]
 wiremock = "0.6"

@@ -24,5 +24,7 @@
 //! agent_host/` in Python — the two clients can connect to the same
 //! `/api/cli/v1/agent-host` endpoint and behave identically.
 
+pub mod allowlist;
 pub mod protocol;
+pub mod sandbox;
 pub mod signing;
