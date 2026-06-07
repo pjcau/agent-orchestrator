@@ -1,0 +1,17 @@
+diff --git a/src/agent_orchestrator/dashboard/cli_routes.py b/src/agent_orchestrator/dashboard/cli_routes.py
+index eeed523..f4510ed 100644
+--- a/src/agent_orchestrator/dashboard/cli_routes.py
++++ b/src/agent_orchestrator/dashboard/cli_routes.py
+@@ -401,9 +401,10 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
+     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+     try:
+         provider = _make_provider(model, provider_type, ollama, openrouter_key)
+-    except Exception as exc:  # noqa: BLE001 — surface provider-construction errors to caller
++    except Exception as exc:
++        logger.exception("provider construction failed for %s/%s", model, provider_type)
+         return JSONResponse(
+-            content={"success": False, "error": f"provider error: {exc}"},
++            content={"success": False, "error": "provider error"},
+             status_code=400,
+         )
+ 
