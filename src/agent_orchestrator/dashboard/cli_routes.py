@@ -20,14 +20,16 @@ import os
 import uuid
 from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from agent_orchestrator.agent_host import serve_agent_host
+from agent_orchestrator.agent_host.telemetry import bind as bind_agent_host_metrics
 from agent_orchestrator.core.cache_context import set_cache_context
 
 from .agent_runner import run_agent
 from .agents_registry import get_agent_registry
-from .auth import create_cli_token
+from .auth import check_ws_auth, create_cli_token
 from .cli_device_flow import (
     STATUS_APPROVED,
     STATUS_DENIED,
@@ -529,3 +531,47 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
             "Connection": "keep-alive",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Agent-host — client-side tool delegation (see agent_host/ package).
+# ---------------------------------------------------------------------------
+
+
+@cli_router.websocket("/agent-host")
+async def agent_host_endpoint(ws: WebSocket) -> None:
+    """WebSocket entry point for ``ago chat --client-tools``.
+
+    Authentication is checked **before** ``ws.accept()`` exactly as in
+    ``/ws/stream`` — never accept an anonymous WebSocket and only then
+    discover it's not authorized, that would leak the existence of the
+    endpoint and give an attacker a free retry budget.
+
+    All protocol logic lives in :mod:`agent_orchestrator.agent_host.server`;
+    this stub only owns the FastAPI surface and the auth gate. Keeping the
+    route file thin matches the rest of the dashboard layout and keeps the
+    import boundary clean (``agent_host`` has zero dashboard imports).
+    """
+    ws_api_keys: set = getattr(ws.app.state, "ws_api_keys", set())
+    user = check_ws_auth(ws, ws_api_keys)
+    if not user:
+        await ws.close(code=1008, reason="Authentication required")
+        return
+    await ws.accept()
+    metrics = bind_agent_host_metrics(
+        getattr(ws.app.state, "metrics_registry", None)
+    )
+    try:
+        reason = await serve_agent_host(ws, metrics=metrics)
+        logger.info(
+            "agent-host: session ended reason=%s identity=%s",
+            reason,
+            user.get("name") or user.get("github_login") or "api-key",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("agent-host: unhandled error: %s", exc)
+        try:
+            await ws.close(code=1011, reason="internal_error")
+        except Exception:  # noqa: BLE001
+            pass
+

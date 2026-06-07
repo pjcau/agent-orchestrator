@@ -297,6 +297,26 @@ page instead of dropping them on the chat home. Only local paths starting
 with a single `/` are accepted — `//evil.com/…` and absolute URLs are
 rejected to prevent open-redirect through a forged cookie.
 
+## Agent Host — client-side tool delegation
+
+`ago chat --client-tools` inverts the default execution model: the agent
+loop on the remote dashboard delegates every tool call (`file_*`,
+`shell_exec`) back to the CLI, which runs the tool in the local `cwd`
+and returns the result over a WebSocket. `ago chat` keeps multi-turn
+conversation state on the server while gaining feature parity with
+`ago run --local` for filesystem and shell.
+
+Wire protocol, security model (signed `tool_call_id`/`nonce` HMAC,
+strict path sandbox, shell allowlist, streaming + cancellation,
+PII-free metrics), and the full threat-mitigation matrix live in
+[**docs/agent-host.md**](agent-host.md). Reference code is under
+[`src/agent_orchestrator/agent_host/`](../src/agent_orchestrator/agent_host/).
+
+Rust CLI integration: the binary launches
+``python -m agent_orchestrator.agent_host --server <url> --token <jwt>
+--cwd .`` as a subprocess. The Python package is imported as-is — the
+sandbox, allowlist, and skill execution logic live in a single source.
+
 ### Token model
 
 Approving binds the resulting **JWT** (signed with `JWT_SECRET_KEY`) to the

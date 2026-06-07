@@ -425,6 +425,35 @@
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/dashboard/cli_routes.py"
           ]
+        },
+        {
+          "name": "Agent Host",
+          "files": [
+            "agent_host/__init__.py",
+            "agent_host/__main__.py",
+            "agent_host/protocol.py",
+            "agent_host/signing.py",
+            "agent_host/server.py",
+            "agent_host/client.py",
+            "agent_host/path_sandbox.py",
+            "agent_host/shell_allowlist.py",
+            "agent_host/telemetry.py"
+          ],
+          "cx": 780,
+          "cy": 580,
+          "size": 32,
+          "description": "Client-side tool delegation \u2014 single WS at /api/cli/v1/agent-host where the agent loop on agents-orchestrator.com proxies file_*/shell_exec to the user's local cwd via the `ago` CLI (subprocess). Includes strict path sandbox, shell allowlist, streaming TOOL_CHUNK with backpressure, server-driven cancellation, and PII-free Prometheus metrics. Full docs in docs/agent-host.md.",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/__init__.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/__main__.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/protocol.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/signing.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/server.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/client.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/path_sandbox.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/shell_allowlist.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/agent_host/telemetry.py"
+          ]
         }
       ]
     },
@@ -676,6 +705,6 @@
   ],
   "stats": {
     "total_clusters": 6,
-    "total_items": 41
+    "total_items": 42
   }
 }

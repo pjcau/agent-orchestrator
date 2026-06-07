@@ -205,6 +205,21 @@ clusters:
         cy: 540
         size: 26
         description: /api/cli/v1/* endpoints consumed by the `ago` Rust CLI (see docs/cli.md).
+      - name: Agent Host
+        files:
+          - agent_host/__init__.py
+          - agent_host/__main__.py
+          - agent_host/protocol.py
+          - agent_host/signing.py
+          - agent_host/server.py
+          - agent_host/client.py
+          - agent_host/path_sandbox.py
+          - agent_host/shell_allowlist.py
+          - agent_host/telemetry.py
+        cx: 780
+        cy: 580
+        size: 32
+        description: Client-side tool delegation — single WS at /api/cli/v1/agent-host where the agent loop on agents-orchestrator.com proxies file_*/shell_exec to the user's local cwd via the `ago` CLI (subprocess). Includes strict path sandbox, shell allowlist, streaming TOOL_CHUNK with backpressure, server-driven cancellation, and PII-free Prometheus metrics. Full docs in docs/agent-host.md.
 
   - id: observability
     label: Observability
