@@ -25,6 +25,7 @@
 //! `/api/cli/v1/agent-host` endpoint and behave identically.
 
 pub mod allowlist;
+pub mod client;
 pub mod protocol;
 pub mod runner;
 pub mod sandbox;
