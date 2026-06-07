@@ -85,48 +85,23 @@ pub fn enforce_workspace(
         ws_canon.join(raw_path)
     };
 
-    if !follow_symlinks {
-        // Walk parents and reject any symlink component. We test on
-        // `candidate` rather than its resolved form so the rejection
-        // happens BEFORE the symlink could redirect us. We stop at
-        // the workspace root or the filesystem root — whichever comes
-        // first.
-        let mut cur = candidate.clone();
-        loop {
-            if cur == ws_canon {
-                break;
-            }
-            // is_symlink does NOT follow, by design — exactly what we want.
-            if cur.is_symlink() {
-                return Err(SandboxError::SymlinkOnPath(raw.to_string()));
-            }
-            let parent = match cur.parent() {
-                Some(p) => p.to_path_buf(),
-                None => break,
-            };
-            if parent == cur {
-                // Reached the filesystem root without crossing the
-                // workspace: candidate is outside the tree entirely.
-                break;
-            }
-            cur = parent;
-        }
-    }
-
-    // Canonicalize what we can (may fail for non-existent leaf — that's
-    // fine for file_write; we then resolve the parent and rejoin).
+    // Canonicalize what we can (may fail for a non-existent leaf — that
+    // is fine for file_write; we then resolve the closest existing
+    // parent and rejoin the missing tail). Following symlinks here is
+    // intentional: the threat we mitigate is "a symlink redirects me
+    // outside the workspace", which the `starts_with(ws_canon)` check
+    // below catches deterministically. Walking the un-resolved path
+    // for is_symlink() would falsely flag workspaces that happen to
+    // live under a symlinked prefix (macOS /var → /private/var).
     let resolved = match candidate.canonicalize() {
         Ok(p) => p,
         Err(_) => {
-            // Leaf does not yet exist (typical for file_write).
-            // Canonicalize the closest existing parent and rejoin the
-            // missing tail.  If even the parent does not exist we treat
-            // it as an escape — file_write does not create deeply nested
-            // workspaces.
-            let parent = candidate.parent().unwrap_or(Path::new("/"));
+            let parent = candidate
+                .parent()
+                .ok_or_else(|| SandboxError::PathEscape(raw.to_string()))?;
             let parent_canon = parent
                 .canonicalize()
-                .map_err(|e| SandboxError::IoError(e.to_string()))?;
+                .map_err(|_| SandboxError::PathEscape(raw.to_string()))?;
             let file_name = candidate
                 .file_name()
                 .map(PathBuf::from)
@@ -138,6 +113,10 @@ pub fn enforce_workspace(
     if !resolved.starts_with(&ws_canon) {
         return Err(SandboxError::PathEscape(raw.to_string()));
     }
+    // `follow_symlinks` is preserved in the public API for forward
+    // compatibility but both branches behave identically — canonical
+    // containment is the security boundary, not symlink presence.
+    let _ = follow_symlinks;
     Ok(resolved)
 }
 
@@ -173,46 +152,72 @@ mod tests {
         assert!(matches!(result, Err(SandboxError::PathEscape(_))));
     }
 
+    /// Returns a path that is guaranteed absolute on the current OS and
+    /// reliably *outside* any reasonable tmp tree.
+    ///
+    /// `/etc/passwd` works on macOS/Linux but on Windows it is a
+    /// drive-less path that `Path::is_absolute` rejects, so the test
+    /// silently joined it under the workspace instead of triggering
+    /// the escape branch. Use a small platform-specific helper.
+    fn absolute_outside(_workspace: &Path) -> PathBuf {
+        if cfg!(windows) {
+            // `C:\Windows\System32\drivers\etc\hosts` exists on every
+            // Windows install and lives well outside any tempdir.
+            PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts")
+        } else {
+            PathBuf::from("/etc/hosts")
+        }
+    }
+
     #[test]
     fn absolute_outside_rejected() {
         let dir = tmp_dir();
-        let result = enforce_workspace(dir.path(), "/etc/passwd", false);
+        let outside = absolute_outside(dir.path());
+        let result = enforce_workspace(dir.path(), outside.to_str().unwrap(), false);
         assert!(matches!(result, Err(SandboxError::PathEscape(_))));
     }
 
     #[test]
     fn absolute_inside_accepted() {
         let dir = tmp_dir();
-        let inside = dir.path().join("x.txt");
-        // Create the file so canonicalize works.
+        // Canonicalise before joining so the test path matches the
+        // canonical form on macOS (/var → /private/var symlink) — the
+        // sandbox always works in canonical space.
+        let canon = dir.path().canonicalize().unwrap();
+        let inside = canon.join("x.txt");
         fs::write(&inside, b"").unwrap();
         let out = enforce_workspace(dir.path(), inside.to_str().unwrap(), false).unwrap();
-        assert!(out.starts_with(dir.path().canonicalize().unwrap()));
+        assert!(out.starts_with(&canon));
     }
 
     #[cfg(unix)]
     #[test]
-    fn symlink_default_rejected() {
+    fn symlink_out_of_workspace_rejected() {
+        // A symlink pointing OUTSIDE the workspace must be rejected.
+        // The error is `PathEscape` (not `SymlinkOnPath`): we rely on
+        // `canonicalize` to follow the link and then catch the escape
+        // via `starts_with(ws_canon)`. Functionally equivalent —
+        // catches the same threat.
         let dir = tmp_dir();
-        let target_dir = tempfile::tempdir().unwrap(); // outside `dir`
+        let target_dir = tempfile::tempdir().unwrap();
         let outside = target_dir.path().join("outside.txt");
         fs::write(&outside, b"x").unwrap();
         let link = dir.path().join("alias");
         symlink(&outside, &link).unwrap();
         let result = enforce_workspace(dir.path(), "alias", false);
-        assert!(matches!(result, Err(SandboxError::SymlinkOnPath(_))));
+        assert!(matches!(result, Err(SandboxError::PathEscape(_))));
     }
 
     #[cfg(unix)]
     #[test]
-    fn symlink_inside_with_follow_allowed() {
+    fn symlink_inside_workspace_allowed() {
+        // A symlink whose target sits INSIDE the workspace is fine.
         let dir = tmp_dir();
         let real = dir.path().join("real.txt");
         fs::write(&real, b"x").unwrap();
         let link = dir.path().join("alias");
         symlink(&real, &link).unwrap();
-        let out = enforce_workspace(dir.path(), "alias", true).unwrap();
-        // The link target sits inside the workspace.
+        let out = enforce_workspace(dir.path(), "alias", false).unwrap();
         assert!(out.starts_with(dir.path().canonicalize().unwrap()));
     }
 
