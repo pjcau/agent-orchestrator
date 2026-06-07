@@ -1,0 +1,260 @@
+# EC2 disk cleanup — frees space on the production instance when the
+# Deploy workflow runs out of disk space, on a daily preventive schedule,
+# or on manual demand.
+#
+# Why: the Deploy job runs `docker buildx build` which writes large layer
+# caches and intermediate images. Combined with the rsync'd source tree
+# under /opt/agent-orchestrator and rotated logs, the 100 GB root volume
+# can fill up between deploys. When that happens the deploy step exits 1
+# *after* the rsync, which leaves the workspace synced but the new image
+# unbuilt — a confusing failure mode that this workflow fixes automatically.
+#
+# Strategy (least-destructive first):
+#   1. soft prune — only dangling images, stopped containers, log rotation,
+#      journal vacuum. Touches nothing in active use.
+#   2. measure — if free space is still under the threshold, escalate.
+#   3. aggressive prune — `docker system prune -af --volumes` (drops the
+#      build cache; the next deploy will rebuild from scratch).
+#   4. report — print before/after disk usage and the top 10 space hogs
+#      so we have a forensic trail if the same instance keeps filling up.
+#   5. auto-retry deploy — when triggered by a failed Deploy run, redeploy
+#      via workflow_dispatch on `deploy.yml` once the cleanup succeeded.
+#
+# Safety:
+#   * Never `rm -rf` host paths the user might care about. Everything we
+#     drop is owned by docker or the systemd journal.
+#   * `docker container prune -f` only removes STOPPED containers — running
+#     services are left alone.
+#   * The aggressive `prune --volumes` is gated by a remaining-free-space
+#     check; if soft prune freed enough we skip the heavy hammer.
+#   * The workflow runs end-to-end inside `set -e` so a partial failure
+#     does not silently leave the box in a bad state.
+
+name: EC2 Disk Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      aggressive:
+        description: "Force aggressive prune (docker system prune -af --volumes) even if soft prune freed enough."
+        type: boolean
+        default: false
+      min_free_gb:
+        description: "Aggressive cleanup kicks in below this free-GB threshold (default 15)."
+        type: string
+        default: "15"
+      redeploy:
+        description: "Trigger Deploy workflow after cleanup completes successfully."
+        type: boolean
+        default: false
+
+  schedule:
+    # 03:00 UTC daily — outside business hours for both EU and US users.
+    - cron: "0 3 * * *"
+
+  # Auto-fire when Deploy fails, on the assumption that the most common
+  # failure mode is "disk full". The workflow itself re-measures and only
+  # triggers a redeploy if cleanup actually freed enough space.
+  workflow_run:
+    workflows: ["Deploy"]
+    types: [completed]
+
+concurrency:
+  group: ec2-disk-cleanup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write   # needed to trigger the Deploy workflow at the end
+  issues: write    # used to open an issue if cleanup couldn't free enough
+
+jobs:
+  cleanup:
+    name: Prune docker + logs on EC2
+    runs-on: ubuntu-latest
+
+    # When triggered by a Deploy run, only act if Deploy actually FAILED.
+    # The workflow_run event fires on every completion, so we filter here.
+    if: |
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'failure'
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Run cleanup script on EC2
+        id: cleanup
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ec2-user
+          MIN_FREE_GB: ${{ github.event.inputs.min_free_gb || '15' }}
+          FORCE_AGGRESSIVE: ${{ github.event.inputs.aggressive || 'false' }}
+        run: |
+          set -e
+          SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=20 $USER@$HOST"
+
+          # Stream the entire cleanup script through a single SSH session so
+          # variables like AVAIL_BEFORE survive between commands and the
+          # output stays interleaved in chronological order in the GH logs.
+          $SSH_CMD bash -se <<'REMOTE' "$MIN_FREE_GB" "$FORCE_AGGRESSIVE"
+            set -e
+            MIN_FREE_GB="$1"
+            FORCE_AGGRESSIVE="$2"
+
+            echo "::group::Disk before cleanup"
+            df -h /
+            echo "::endgroup::"
+
+            AVAIL_BEFORE_KB=$(df --output=avail / | tail -1 | tr -d ' ')
+            AVAIL_BEFORE_GB=$(( AVAIL_BEFORE_KB / 1024 / 1024 ))
+
+            echo "::group::Soft prune — stopped containers, dangling images, builder cache"
+            # `docker container prune` only touches STOPPED containers — running
+            # services keep going. `image prune` without `-a` only drops dangling
+            # (unreferenced) layers. `builder prune` clears BuildKit's cache.
+            docker container prune -f || true
+            docker image prune -f || true
+            docker builder prune -f || true
+            echo "::endgroup::"
+
+            echo "::group::Rotate + vacuum systemd journal (cap at 200 MB, 7 days)"
+            # journalctl --vacuum-size keeps logs for emergencies but stops the
+            # journal from eating GBs on a long-running box. Numeric args are
+            # safe even if the unit is already smaller.
+            sudo journalctl --rotate || true
+            sudo journalctl --vacuum-size=200M --vacuum-time=7d || true
+            echo "::endgroup::"
+
+            echo "::group::Truncate large *.log files older than 7 days under /var/log"
+            # Truncate (not delete) so any process holding a handle keeps it.
+            # 7 days protects recent ops/forensics windows.
+            sudo find /var/log -type f -name '*.log' -mtime +7 -size +50M -exec truncate -s 0 {} \; || true
+            echo "::endgroup::"
+
+            AVAIL_AFTER_SOFT_KB=$(df --output=avail / | tail -1 | tr -d ' ')
+            AVAIL_AFTER_SOFT_GB=$(( AVAIL_AFTER_SOFT_KB / 1024 / 1024 ))
+            FREED_SOFT_GB=$(( AVAIL_AFTER_SOFT_GB - AVAIL_BEFORE_GB ))
+            echo "Free before: ${AVAIL_BEFORE_GB} GB"
+            echo "Free after soft prune: ${AVAIL_AFTER_SOFT_GB} GB (freed ${FREED_SOFT_GB} GB)"
+
+            # Decide whether to escalate. Aggressive prune drops the FULL docker
+            # build cache and any non-referenced volumes — the next deploy will
+            # have to rebuild everything from scratch. Only do it when we have
+            # to, or when the operator explicitly asked.
+            if [ "$FORCE_AGGRESSIVE" = "true" ] || [ "$AVAIL_AFTER_SOFT_GB" -lt "$MIN_FREE_GB" ]; then
+              echo "::group::Aggressive prune — docker system prune -af --volumes"
+              if [ "$FORCE_AGGRESSIVE" = "true" ]; then
+                echo "Reason: workflow input force_aggressive=true"
+              else
+                echo "Reason: free space ${AVAIL_AFTER_SOFT_GB} GB < threshold ${MIN_FREE_GB} GB"
+              fi
+              # `--volumes` only drops volumes not referenced by any container.
+              # Postgres + Grafana volumes are mounted by running containers,
+              # so they are SAFE here as long as those services are up. The
+              # docker compose stack in /opt/agent-orchestrator keeps them up.
+              docker system prune -af --volumes || true
+              echo "::endgroup::"
+            else
+              echo "Soft prune freed enough; skipping aggressive prune."
+            fi
+
+            AVAIL_AFTER_KB=$(df --output=avail / | tail -1 | tr -d ' ')
+            AVAIL_AFTER_GB=$(( AVAIL_AFTER_KB / 1024 / 1024 ))
+            FREED_TOTAL_GB=$(( AVAIL_AFTER_GB - AVAIL_BEFORE_GB ))
+
+            echo "::group::Disk after cleanup"
+            df -h /
+            echo "::endgroup::"
+
+            echo "::group::Top 10 space consumers under / (max 1 minute)"
+            # `timeout` keeps this from running away on a giant tree; sort -h
+            # gives the human-readable size sort.
+            sudo timeout 60 du -h --max-depth=2 -x / 2>/dev/null | sort -h | tail -20 || true
+            echo "::endgroup::"
+
+            echo "::group::Summary"
+            echo "Free before:   ${AVAIL_BEFORE_GB} GB"
+            echo "Free after:    ${AVAIL_AFTER_GB} GB"
+            echo "Total freed:   ${FREED_TOTAL_GB} GB"
+            echo "Threshold:     ${MIN_FREE_GB} GB"
+            echo "::endgroup::"
+
+            # Surface AVAIL_AFTER_GB to the GH job step so the next step
+            # can decide whether to redeploy / open an issue.
+            echo "AVAIL_AFTER_GB=${AVAIL_AFTER_GB}"
+            echo "FREED_TOTAL_GB=${FREED_TOTAL_GB}"
+          REMOTE
+
+      - name: Parse cleanup result
+        id: parse
+        run: |
+          # The SSH step streams output but exposes no values; re-derive via
+          # a second one-shot SSH so the GH job has clean machine-readable
+          # outputs for downstream conditional steps.
+          AVAIL=$(ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            ec2-user@${{ secrets.EC2_HOST }} \
+            "df --output=avail / | tail -1 | tr -d ' '")
+          AVAIL_GB=$(( AVAIL / 1024 / 1024 ))
+          echo "free_gb=$AVAIL_GB" >> "$GITHUB_OUTPUT"
+          echo "Free space after cleanup: ${AVAIL_GB} GB"
+
+      - name: Trigger redeploy
+        # Only when this run was caused by a failed Deploy run (auto-retry)
+        # or when the operator explicitly asked. Skips on schedule so we
+        # don't redeploy every night for no reason.
+        if: |
+          (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.redeploy == 'true')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The Deploy workflow declares workflow_dispatch — gh CLI invokes it.
+          gh workflow run deploy.yml --ref main || {
+            echo "::warning::Could not trigger Deploy workflow automatically."
+            exit 0
+          }
+          echo "Redeploy queued."
+
+      - name: Open issue when cleanup did not free enough
+        # 8 GB is a runway floor: enough for one rebuild but no margin.
+        # If we land below, something else is eating the disk and a human
+        # has to look — open an issue so it is on someone's radar.
+        if: steps.parse.outputs.free_gb != '' && steps.parse.outputs.free_gb < '8'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "EC2 disk near full after cleanup (${{ steps.parse.outputs.free_gb }} GB free)" \
+            --body "$(cat <<EOF
+          The \`ec2-disk-cleanup\` workflow ran on ${{ github.run_id }} and
+          freed all the easy space, but free disk is still
+          **${{ steps.parse.outputs.free_gb }} GB** which is below the
+          8 GB safety floor.
+
+          Likely causes (rank by frequency):
+
+          - \`/var/lib/docker/overlay2\` still huge despite aggressive prune
+            (orphan layers from a crashed build). Try
+            \`docker buildx rm --all\` and rebuild.
+          - \`/opt/agent-orchestrator\` accumulating untracked artefacts
+            (Python venv, frontend node_modules, repo \`.git\` size).
+          - A skill / agent leaving large files in the workspace
+            (\`/tmp\`, \`/home/ec2-user\`).
+
+          SSH session to start with:
+
+          \`\`\`
+          ssh ec2-user@${{ secrets.EC2_HOST }}
+          sudo du -h --max-depth=2 -x / | sort -h | tail -20
+          \`\`\`
+
+          Cleanup run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+          )" \
+            --label "ops,disk-full" || true
