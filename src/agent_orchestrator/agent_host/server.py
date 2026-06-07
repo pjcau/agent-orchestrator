@@ -378,7 +378,14 @@ class RemoteSkillAdapter(Skill):
 # ---------------------------------------------------------------------------
 
 
-PromptHandler = Callable[[str, list[RemoteSkillAdapter], str], Awaitable[None]]
+PromptHandler = Callable[[str, "SkillRegistry", str, Hello], Awaitable[None]]
+"""Async callable ``(prompt_text, skill_registry, run_id, hello) -> None``.
+
+The handler owns: running the agent, streaming ``AssistantText`` /
+``TurnEnd`` back over the WS (closure-captured), and any error reporting.
+``serve_agent_host`` only routes frames — it intentionally does NOT
+import :mod:`dashboard.agent_runner` so the import boundary holds.
+"""
 
 
 #: Minimal stand-in schema for tools whose real signature isn't known
@@ -490,10 +497,14 @@ async def drive_session(
     on a fatal :class:`AgentHostError`.
 
     ``on_prompt`` is the hook the dashboard wires to actually run the
-    agent for a turn (commit #3 will wire it to ``agent_runner.run_agent``).
-    Leaving it ``None`` makes the loop "echo-only" — useful for the unit
-    tests that only exercise frame routing and signature verification.
+    agent for a turn. Leaving it ``None`` makes the loop "echo-only" —
+    useful for the unit tests that only exercise frame routing and
+    signature verification. The handler receives a fresh
+    :class:`SkillRegistry` of :class:`RemoteSkillAdapter` instances
+    built once after handshake, so calling ``run_agent`` from inside
+    the handler is a single call away.
     """
+    skills = build_remote_registry(hello=hello, registry=registry, ws=ws, run_id=run_id)
     while True:
         try:
             raw = await ws.receive_json()
@@ -528,7 +539,7 @@ async def drive_session(
         elif isinstance(frame, Prompt):
             if on_prompt is None:
                 continue
-            await on_prompt(frame.text, [], run_id)  # adapters wired in commit #3
+            await on_prompt(frame.text, skills, run_id, hello)
         elif isinstance(frame, Cancel):
             logger.info(
                 "agent-host: cancel id=%s reason=%s (cancellation lands in commit #4)",

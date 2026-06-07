@@ -121,13 +121,12 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
         // the regular path.
         let _ = rt.api_client()?;
         let server_url = rt.server_url()?.to_string();
-        let token = rt
-            .storage
-            .load(&server_url)?
-            .ok_or(AgoError::NotAuthenticated)?;
+        let token_secret = rt.storage.load(&server_url)?.ok_or(AgoError::NotAuthenticated)?;
+        use secrecy::ExposeSecret;
+        let token = token_secret.expose_secret();
         return run_agent_host(
             &server_url,
-            &token,
+            token,
             &agent_string,
             &task,
             &model_string,

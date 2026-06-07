@@ -37,11 +37,13 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         // identical `NotAuthenticated` error rather than silently sending
         // a blank token.
         let _ = rt.api_client()?;
-        let token = rt
-            .storage
-            .load(&server_url)?
-            .ok_or(AgoError::NotAuthenticated)?;
-        return spawn_agent_host(&server_url, &token, &settings).await;
+        let token_secret = rt.storage.load(&server_url)?.ok_or(AgoError::NotAuthenticated)?;
+        // Briefly expose the secret as &str to hand it to the env var of
+        // the spawned subprocess. The token never crosses the argv
+        // boundary so it stays out of `ps` / `/proc/<pid>/cmdline`.
+        use secrecy::ExposeSecret;
+        let token = token_secret.expose_secret();
+        return spawn_agent_host(&server_url, token, &settings).await;
     }
     let mut settings = ChatSettings::resolve(rt, &args)?;
     let client = rt.api_client()?;

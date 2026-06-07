@@ -103,6 +103,7 @@ async def run_agent(
     conversation_manager: ConversationManager | None = None,
     sandbox: Sandbox | None = None,
     store: BaseStore | None = None,
+    skill_registry_override: Any = None,
 ) -> dict[str, Any]:
     """Run an agent on a task with real-time event emissions.
 
@@ -122,25 +123,32 @@ async def run_agent(
     """
     bus = event_bus or EventBus.get()
 
-    # Build skill registry (include sandboxed shell if a sandbox was supplied)
-    skill_registry = create_skill_registry(
-        allowed_commands=[
-            "ls",
-            "cat",
-            "head",
-            "tail",
-            "wc",
-            "grep",
-            "find",
-            "python",
-            "python3",
-            "pytest",
-            "ruff",
-            "git",
-        ],
-        working_directory=working_directory,
-        sandbox=sandbox,
-    )
+    # Skill registry resolution:
+    #  - When ``skill_registry_override`` is supplied (e.g. by the agent-host
+    #    WS handler) we trust it as-is — the caller has built a registry of
+    #    RemoteSkillAdapter instances that delegate execution to the CLI.
+    #  - Otherwise we build the standard local registry (file/glob/shell).
+    if skill_registry_override is not None:
+        skill_registry = skill_registry_override
+    else:
+        skill_registry = create_skill_registry(
+            allowed_commands=[
+                "ls",
+                "cat",
+                "head",
+                "tail",
+                "wc",
+                "grep",
+                "find",
+                "python",
+                "python3",
+                "pytest",
+                "ruff",
+                "git",
+            ],
+            working_directory=working_directory,
+            sandbox=sandbox,
+        )
 
     # Default tools if none specified
     if tools is None:

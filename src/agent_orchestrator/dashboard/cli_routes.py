@@ -559,8 +559,14 @@ async def agent_host_endpoint(ws: WebSocket) -> None:
         return
     await ws.accept()
     metrics = bind_agent_host_metrics(getattr(ws.app.state, "metrics_registry", None))
+
+    # Build the on_prompt handler here (not in agent_host/) so the
+    # agent_host package stays import-boundary clean (no dashboard import).
+    # Captures ws + per-request state in the closure.
+    on_prompt = _make_agent_host_prompt_handler(ws)
+
     try:
-        reason = await serve_agent_host(ws, metrics=metrics)
+        reason = await serve_agent_host(ws, metrics=metrics, on_prompt=on_prompt)
         logger.info(
             "agent-host: session ended reason=%s identity=%s",
             reason,
@@ -572,3 +578,47 @@ async def agent_host_endpoint(ws: WebSocket) -> None:
             await ws.close(code=1011, reason="internal_error")
         except Exception:  # noqa: BLE001
             pass
+
+
+def _make_agent_host_prompt_handler(ws: WebSocket):
+    """Closure that runs the agent loop with the client's remote skills.
+
+    Resolves the provider from the HELLO (defaults to OpenRouter — the
+    project default — when ``hello.provider`` is empty) and calls
+    :func:`dashboard.agent_runner.run_agent` with the supplied
+    :class:`SkillRegistry` as the override. The agent reply is streamed
+    back as ``AssistantText`` followed by ``TurnEnd``.
+
+    Errors during the agent run land as an ``Error`` frame on the WS so
+    the client can surface them — the WS stays alive for the next turn.
+    """
+    import os
+
+    from agent_orchestrator.agent_host.protocol import AssistantText, Error, TurnEnd
+
+    async def _handler(text: str, skills, run_id: str, hello) -> None:
+        try:
+            provider = _make_provider(
+                model=hello.model or "deepseek/deepseek-v4-flash",
+                provider_type=hello.provider or "openrouter",
+                ollama_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+                openrouter_key=os.environ.get("OPENROUTER_API_KEY", ""),
+            )
+            result = await run_agent(
+                agent_name=hello.agent or "backend",
+                task_description=text,
+                provider=provider,
+                max_steps=10,
+                skill_registry_override=skills,
+            )
+            output = str(result.get("output", "")) if isinstance(result, dict) else str(result)
+            if output:
+                await ws.send_json(AssistantText(chunk=output).to_dict())
+            await ws.send_json(
+                TurnEnd(status="ok" if result.get("success") is not False else "error").to_dict()
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("agent-host: turn failed: %s", exc)
+            await ws.send_json(Error(code="turn_failed", message=str(exc)[:200]).to_dict())
+
+    return _handler

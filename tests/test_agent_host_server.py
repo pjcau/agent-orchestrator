@@ -404,6 +404,55 @@ class TestRemoteSkillAdapter:
 
 
 # ---------------------------------------------------------------------------
+# drive_session — prompt routing
+# ---------------------------------------------------------------------------
+
+
+class TestDriveSessionPrompt:
+    """drive_session builds a remote SkillRegistry once and hands it to on_prompt."""
+
+    @pytest.mark.asyncio
+    async def test_on_prompt_receives_registry_and_run_id(self, signing_key):
+        from agent_orchestrator.agent_host import drive_session
+        from agent_orchestrator.core.skill import SkillRegistry
+
+        registry = PendingToolCallsRegistry()
+        ws = FakeWS()
+        hello = Hello(
+            tool_manifest=["file_read", "file_write"],
+            agent="backend",
+            model="tencent/hy3-preview",
+            provider="openrouter",
+        )
+        captured: dict = {}
+
+        async def on_prompt(text, skills, run_id, hello_in):
+            captured["text"] = text
+            captured["skills_type"] = type(skills)
+            captured["skill_names"] = sorted(
+                n for n in ["file_read", "file_write"] if skills.get(n) is not None
+            )
+            captured["run_id"] = run_id
+            captured["hello_agent"] = hello_in.agent
+
+        await ws.incoming.put(Prompt(text="hello world").to_dict())
+        # Terminate the loop deterministically.
+        await ws.incoming.put({"kind": "totally-unknown"})
+        await drive_session(
+            ws,
+            hello=hello,
+            run_id="r-1",
+            registry=registry,
+            on_prompt=on_prompt,
+        )
+        assert captured["text"] == "hello world"
+        assert captured["skills_type"] is SkillRegistry
+        assert captured["skill_names"] == ["file_read", "file_write"]
+        assert captured["run_id"] == "r-1"
+        assert captured["hello_agent"] == "backend"
+
+
+# ---------------------------------------------------------------------------
 # End-to-end driver
 # ---------------------------------------------------------------------------
 
