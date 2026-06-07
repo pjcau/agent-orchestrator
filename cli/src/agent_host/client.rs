@@ -63,6 +63,9 @@ pub struct ClientConfig {
     pub agent: String,
     pub model: String,
     pub provider: String,
+    /// Max agent steps per turn (`--max-steps`). Sent in HELLO; 0 lets
+    /// the server pick its default.
+    pub max_steps: u64,
     /// When true (default), shell_exec streams stdout chunks as the
     /// process produces them (sent as signed `tool_chunk` frames).
     pub stream_shell: bool,
@@ -74,6 +77,7 @@ impl Default for ClientConfig {
             agent: String::new(),
             model: String::new(),
             provider: String::new(),
+            max_steps: 0,
             stream_shell: true,
         }
     }
@@ -137,6 +141,7 @@ impl WsClient {
             agent: cfg.agent.clone(),
             model: cfg.model.clone(),
             provider: cfg.provider.clone(),
+            max_steps: cfg.max_steps,
         });
         self.send_frame(&hello).await?;
 

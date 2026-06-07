@@ -321,3 +321,51 @@ def test_agent_host_turn_end_surfaces_error_reason(monkeypatch):
     assert turn_end["error"] == "Max steps (10) reached"
     assert turn_end["input_tokens"] == 510
     assert turn_end["output_tokens"] == 456
+
+
+def _run_handler_capture_max_steps(hello_max_steps, monkeypatch):
+    """Drive the agent-host handler and return the max_steps run_agent got."""
+    import asyncio
+
+    import agent_orchestrator.dashboard.cli_routes as cr
+
+    captured: dict = {}
+
+    async def _fake_run_agent(*args, **kwargs):
+        captured["max_steps"] = kwargs.get("max_steps")
+        return {"success": True, "status": "completed", "output": "ok", "steps_taken": 1}
+
+    monkeypatch.setattr(cr, "run_agent", _fake_run_agent)
+    monkeypatch.setattr(cr, "_make_provider", lambda **kw: object())
+
+    class _FakeWS:
+        def __init__(self):
+            self.app = type("A", (), {"state": type("S", (), {})()})()
+
+        async def send_json(self, data):
+            pass
+
+    class _Hello:
+        agent = "backend"
+        model = "m"
+        provider = "openrouter"
+        max_steps = hello_max_steps
+
+    handler = cr._make_agent_host_prompt_handler(_FakeWS())
+    asyncio.run(handler("do it", object(), "run-1", _Hello()))
+    return captured["max_steps"]
+
+
+def test_agent_host_uses_client_max_steps(monkeypatch):
+    # Client-requested value is honoured.
+    assert _run_handler_capture_max_steps(25, monkeypatch) == 25
+
+
+def test_agent_host_max_steps_defaults_when_unset(monkeypatch):
+    # 0 (old client / unset) → server default, not the old hard-coded 10.
+    assert _run_handler_capture_max_steps(0, monkeypatch) == 30
+
+
+def test_agent_host_max_steps_clamped(monkeypatch):
+    # Absurd values are clamped to the safe ceiling.
+    assert _run_handler_capture_max_steps(99999, monkeypatch) == 100

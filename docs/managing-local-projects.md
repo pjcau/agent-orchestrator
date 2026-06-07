@@ -191,6 +191,9 @@ Resource bounds the server enforces:
 - 10 MB per call output cap, 4 concurrent streams per run.
 - `--mode prompt` is ignored when `--client-tools` is set — the agent
   loop is always on for client-side delegation to make sense.
+- Up to `--max-steps` agent steps per turn (default **30**, server-clamped
+  to 100). Sent in the handshake, so `ago chat --client-tools --max-steps 50`
+  gives a long multi-step task more room before `Max steps reached`.
 
 ---
 

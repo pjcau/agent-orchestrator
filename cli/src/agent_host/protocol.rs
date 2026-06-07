@@ -179,6 +179,10 @@ pub struct Hello {
     pub model: String,
     #[serde(default)]
     pub provider: String,
+    /// Max agent steps for a turn (the `--max-steps` flag). 0 = unset →
+    /// the server applies its own default and clamps to a ceiling.
+    #[serde(default)]
+    pub max_steps: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -462,6 +466,7 @@ mod tests {
             agent: "team-lead".into(),
             model: "tencent/hy3-preview".into(),
             provider: "openrouter".into(),
+            max_steps: 30,
         });
         assert_eq!(round_trip(f.clone()), f);
     }
@@ -575,6 +580,7 @@ mod tests {
             agent: "".into(),
             model: "".into(),
             provider: "".into(),
+            max_steps: 0,
         });
         let v = f.to_value();
         assert_eq!(v["kind"], KIND_HELLO);

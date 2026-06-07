@@ -790,6 +790,7 @@ async fn run_native_agent_host(
         agent: settings.agent.clone(),
         model: settings.model.clone(),
         provider: settings.provider.clone(),
+        max_steps: settings.max_steps as u64,
         stream_shell: true,
     };
     let session = ws

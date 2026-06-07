@@ -143,6 +143,7 @@ pub async fn run(rt: &Runtime, args: RunArgs) -> Result<()> {
             &task,
             &model_string,
             &provider_string,
+            max_steps,
         )
         .await;
     }
@@ -522,6 +523,7 @@ async fn run_agent_host_native(
     task: &str,
     model: &str,
     provider: &str,
+    max_steps: u32,
 ) -> Result<()> {
     use crate::agent_host::client::{connect, ClientConfig};
     use crate::agent_host::protocol::{Frame, Prompt as PromptFrame, KIND_PROMPT};
@@ -535,6 +537,7 @@ async fn run_agent_host_native(
         agent: agent.to_string(),
         model: model.to_string(),
         provider: provider.to_string(),
+        max_steps: max_steps as u64,
         stream_shell: true,
     };
     let session = ws

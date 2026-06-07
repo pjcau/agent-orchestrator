@@ -684,11 +684,18 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                 ollama_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
                 openrouter_key=os.environ.get("OPENROUTER_API_KEY", ""),
             )
+            # Honour the client's --max-steps (Hello.max_steps), falling
+            # back to a sensible default and clamping to a safe ceiling so
+            # a multi-step task (e.g. "add git": init + .gitignore + add +
+            # commit) is not cut off at the old hard-coded 10.
+            requested_steps = int(getattr(hello, "max_steps", 0) or 0)
+            max_steps = requested_steps if requested_steps > 0 else 30
+            max_steps = max(1, min(max_steps, 100))
             result = await run_agent(
                 agent_name=hello.agent or "backend",
                 task_description=text,
                 provider=provider,
-                max_steps=10,
+                max_steps=max_steps,
                 event_bus=bus,
                 skill_registry_override=skills,
             )

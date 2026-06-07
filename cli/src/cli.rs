@@ -202,8 +202,10 @@ pub struct ChatArgs {
     #[arg(long, value_name = "TYPE")]
     pub provider: Option<String>,
 
-    /// Maximum agent steps per turn (server-side cap). Ignored in prompt mode.
-    #[arg(long, value_name = "N", default_value_t = 10)]
+    /// Maximum agent steps per turn (server-side cap, clamped to 100).
+    /// Ignored in prompt mode. Multi-step tasks (e.g. "add git": init +
+    /// .gitignore + add + commit) need headroom, so the default is 30.
+    #[arg(long, value_name = "N", default_value_t = 30)]
     pub max_steps: u32,
 
     /// Disable the indicatif spinner (useful when output is piped).

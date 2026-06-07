@@ -133,6 +133,11 @@ class Hello(Frame):
     agent: str = ""
     model: str = ""
     provider: str = ""
+    # Max agent steps the user wants for a turn (the CLI ``--max-steps``
+    # flag). 0 means "unset" → the server applies its own default. The
+    # server clamps it to a safe ceiling. Additive field, so older
+    # clients that omit it simply get the default.
+    max_steps: int = 0
 
 
 @dataclass(frozen=True)
