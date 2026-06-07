@@ -780,17 +780,12 @@ async fn run_native_agent_host(
     token: &str,
     settings: &ChatSettings,
 ) -> Result<()> {
-    use crate::agent_host::client::{
-        connect, run_repl, ClientConfig, StdinShellConfirmer,
-    };
-    eprintln!(
-        "\x1b[2m· agent-host (native) connecting to {server_url}\x1b[0m"
-    );
-    let mut ws = connect(server_url, token).await.map_err(|e| {
-        AgoError::Other(format!("agent-host connect failed: {e:#}"))
-    })?;
-    let cwd = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    use crate::agent_host::client::{connect, run_repl, ClientConfig, StdinShellConfirmer};
+    eprintln!("\x1b[2m· agent-host (native) connecting to {server_url}\x1b[0m");
+    let mut ws = connect(server_url, token)
+        .await
+        .map_err(|e| AgoError::Other(format!("agent-host connect failed: {e:#}")))?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let cfg = ClientConfig {
         agent: settings.agent.clone(),
         model: settings.model.clone(),

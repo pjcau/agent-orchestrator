@@ -27,23 +27,20 @@
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{IsTerminal, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio_tungstenite::tungstenite::http::Request;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 
 use super::protocol::{
-    parse_frame_str, AssistantText, Cancel, ErrorFrame, Frame, Hello, Prompt, Step,
-    ToolCall, ToolChunk, ToolResult, TurnEnd, PROTOCOL_VERSION,
+    parse_frame_str, Frame, Hello, Prompt, Step, ToolCall, ToolChunk, ToolResult, PROTOCOL_VERSION,
 };
-use super::runner::{
-    CancelSignal, ChunkEmitter, LocalToolRunner, ShellConfirmer, ToolOutcome,
-};
+use super::runner::{CancelSignal, ChunkEmitter, LocalToolRunner, ShellConfirmer, ToolOutcome};
 use super::signing::{compute_signature, decode_hex_key};
 
 /// What the client learned during HELLO/ACK.
@@ -112,9 +109,8 @@ pub fn derive_ws_url(base_url: &str) -> String {
     format!("{with_scheme}/api/cli/v1/agent-host")
 }
 
-type WsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// Thin wrapper so the rest of the file can talk in `send_frame` /
 /// `receive_frame` terms instead of raw `Message`s.
@@ -156,11 +152,7 @@ impl WsClient {
                     signing_key,
                 })
             }
-            Frame::Error(e) => Err(anyhow!(
-                "server rejected HELLO: {} — {}",
-                e.code,
-                e.message
-            )),
+            Frame::Error(e) => Err(anyhow!("server rejected HELLO: {} — {}", e.code, e.message)),
             other => Err(anyhow!(
                 "unexpected first frame from server: {:?}",
                 std::mem::discriminant(&other)
@@ -169,23 +161,17 @@ impl WsClient {
     }
 
     pub async fn send_frame(&mut self, frame: &Frame) -> Result<()> {
-        let stream = self
-            .stream
-            .as_mut()
-            .ok_or_else(|| anyhow!("ws closed"))?;
+        let stream = self.stream.as_mut().ok_or_else(|| anyhow!("ws closed"))?;
         let payload = frame.to_json();
         stream
-            .send(Message::Text(payload.into()))
+            .send(Message::Text(payload))
             .await
             .context("ws send failed")?;
         Ok(())
     }
 
     pub async fn receive_frame(&mut self) -> Result<Frame> {
-        let stream = self
-            .stream
-            .as_mut()
-            .ok_or_else(|| anyhow!("ws closed"))?;
+        let stream = self.stream.as_mut().ok_or_else(|| anyhow!("ws closed"))?;
         loop {
             let msg = stream
                 .next()
@@ -218,7 +204,9 @@ impl WsClient {
     /// Take the stream so we can split it into sink/stream for the
     /// REPL phase where we need concurrent read + write.
     pub fn into_stream(mut self) -> Result<WsStream> {
-        self.stream.take().ok_or_else(|| anyhow!("ws already taken"))
+        self.stream
+            .take()
+            .ok_or_else(|| anyhow!("ws already taken"))
     }
 }
 
@@ -239,8 +227,7 @@ pub async fn run_repl(
 ) -> Result<()> {
     let runner = Arc::new(build_runner(&workspace, confirm));
     let session = Arc::new(session);
-    let cancels: Arc<Mutex<HashMap<String, CancelSignal>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let cancels: Arc<Mutex<HashMap<String, CancelSignal>>> = Arc::new(Mutex::new(HashMap::new()));
 
     // Split the WS into sink + stream so the receive loop can keep
     // reading while we send prompts and tool_results from another task.
@@ -278,7 +265,7 @@ pub async fn run_repl(
                     text,
                 });
                 let mut sink_lock = sink.lock().await;
-                if let Err(e) = sink_lock.send(Message::Text(frame.to_json().into())).await {
+                if let Err(e) = sink_lock.send(Message::Text(frame.to_json())).await {
                     eprintln!("[agent-host] ws send failed: {e}");
                     break;
                 }
@@ -338,11 +325,7 @@ fn spawn_stdin_reader(tx: mpsc::UnboundedSender<ReplInput>) {
 }
 
 // Sink + stream type aliases keep the function signatures readable.
-type WsSink = Arc<
-    Mutex<
-        futures_util::stream::SplitSink<WsStream, Message>,
-    >,
->;
+type WsSink = Arc<Mutex<futures_util::stream::SplitSink<WsStream, Message>>>;
 type WsStreamShared = Arc<Mutex<futures_util::stream::SplitStream<WsStream>>>;
 
 async fn receive_loop(
@@ -497,7 +480,12 @@ async fn handle_tool_call(
 
     let started = Instant::now();
     let outcome = runner
-        .run(&frame.name, frame.args.clone(), emitter, Some(cancel.clone()))
+        .run(
+            &frame.name,
+            frame.args.clone(),
+            emitter,
+            Some(cancel.clone()),
+        )
         .await;
     let elapsed_ms = started.elapsed().as_millis() as u64;
 
@@ -535,14 +523,18 @@ async fn send_tool_result(
         frame_id: uuid::Uuid::new_v4().simple().to_string(),
         timestamp: 0.0,
         tool_call_id: tool_call_id.into(),
-        status: if outcome.success { "ok".into() } else { "error".into() },
+        status: if outcome.success {
+            "ok".into()
+        } else {
+            "error".into()
+        },
         output: outcome.output.clone(),
         error_code: outcome.error_code.clone().unwrap_or_default(),
         nonce: nonce.into(),
         signature,
     });
     let mut snk = sink.lock().await;
-    if let Err(e) = snk.send(Message::Text(frame.to_json().into())).await {
+    if let Err(e) = snk.send(Message::Text(frame.to_json())).await {
         eprintln!("[agent-host] failed to send tool_result: {e}");
     }
 }
@@ -561,9 +553,7 @@ impl ChunkEmitter for WsChunkEmitter {
     fn emit<'a>(
         &'a mut self,
         chunk: &'a str,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = ()> + Send + 'a>,
-    > {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             let seq = self.seq;
             self.seq += 1;
@@ -586,7 +576,7 @@ impl ChunkEmitter for WsChunkEmitter {
                 signature,
             });
             let mut snk = self.sink.lock().await;
-            let _ = snk.send(Message::Text(frame.to_json().into())).await;
+            let _ = snk.send(Message::Text(frame.to_json())).await;
         })
     }
 }
@@ -678,7 +668,11 @@ fn print_progress_finished(
         let tail = if tail.is_empty() {
             String::new()
         } else {
-            format!(" {dim}— {tail}{reset}", dim = theme.dim, reset = theme.reset)
+            format!(
+                " {dim}— {tail}{reset}",
+                dim = theme.dim,
+                reset = theme.reset
+            )
         };
         eprintln!(
             "{dim}  {green}✓{reset}{dim} {name} in {ms}ms{reset}{tail}",
@@ -720,7 +714,11 @@ fn summarise_args(args: &HashMap<String, Value>) -> String {
                 let preview = arr
                     .iter()
                     .take(3)
-                    .map(|x| x.as_str().map(str::to_string).unwrap_or_else(|| x.to_string()))
+                    .map(|x| {
+                        x.as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| x.to_string())
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 let more = if arr.len() > 3 { ", …" } else { "" };
@@ -803,9 +801,7 @@ impl ShellConfirmer for StdinShellConfirmer {
         &'a self,
         binary: &'a str,
         high_risk: bool,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = bool> + Send + 'a>,
-    > {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
             let high_risk_label = if high_risk {
                 " (HIGH RISK: full shell access)"
@@ -851,6 +847,7 @@ fn build_runner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn derive_ws_url_https() {

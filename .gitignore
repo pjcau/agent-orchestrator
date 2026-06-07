@@ -29,6 +29,8 @@ build/
 # Rust (built via maturin develop)
 rust/target/
 rust/Cargo.lock
+# Rust CLI build artefacts
+cli/target/
 
 # Job logs
 jobs/

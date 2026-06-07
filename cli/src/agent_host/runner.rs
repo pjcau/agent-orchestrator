@@ -93,9 +93,7 @@ pub trait ShellConfirmer: Send + Sync {
         &'a self,
         binary: &'a str,
         high_risk: bool,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = bool> + Send + 'a>,
-    >;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>>;
 }
 
 /// Streaming emitter for shell stdout/stderr (4 KB chunks).
@@ -107,9 +105,7 @@ pub trait ChunkEmitter: Send {
     fn emit<'a>(
         &'a mut self,
         chunk: &'a str,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = ()> + Send + 'a>,
-    >;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>;
 }
 
 /// Cancellation signal raised by [`super::client`] when the server
@@ -168,17 +164,14 @@ impl LocalToolRunner {
         &self,
         name: &str,
         args: HashMap<String, Value>,
-        mut emit_chunk: Option<Box<dyn ChunkEmitter>>,
+        emit_chunk: Option<Box<dyn ChunkEmitter>>,
         cancel: Option<CancelSignal>,
     ) -> ToolOutcome {
         match name {
             "file_read" => self.do_file_read(&args).await,
             "file_write" => self.do_file_write(&args).await,
-            "shell_exec" => self
-                .do_shell_exec(&args, emit_chunk.as_deref_mut(), cancel)
-                .await,
-            other => ToolOutcome::err("unknown_tool")
-                .with_meta("tool", json!(other)),
+            "shell_exec" => self.do_shell_exec(&args, emit_chunk, cancel).await,
+            other => ToolOutcome::err("unknown_tool").with_meta("tool", json!(other)),
         }
     }
 
@@ -203,18 +196,14 @@ impl LocalToolRunner {
                     .with_meta("attempted", json!(path));
             }
             Err(e) => {
-                return ToolOutcome::err("sandbox_error")
-                    .with_meta("detail", json!(e.to_string()));
+                return ToolOutcome::err("sandbox_error").with_meta("detail", json!(e.to_string()));
             }
         };
         match fs::read_to_string(&resolved).await {
             Ok(content) => ToolOutcome::ok(Value::String(content)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                ToolOutcome::err("not_found")
-                    .with_meta("path", json!(resolved.display().to_string()))
-            }
-            Err(e) => ToolOutcome::err("io_error")
-                .with_meta("detail", json!(e.to_string())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => ToolOutcome::err("not_found")
+                .with_meta("path", json!(resolved.display().to_string())),
+            Err(e) => ToolOutcome::err("io_error").with_meta("detail", json!(e.to_string())),
         }
     }
 
@@ -235,8 +224,7 @@ impl LocalToolRunner {
         let content = match content_value {
             Some(Value::String(s)) => s,
             Some(Value::Null) => {
-                return ToolOutcome::err("missing_content")
-                    .with_meta("tool", json!("file_write"));
+                return ToolOutcome::err("missing_content").with_meta("tool", json!("file_write"));
             }
             Some(other) => other.to_string(),
             None => {
@@ -253,14 +241,12 @@ impl LocalToolRunner {
                     .with_meta("attempted", json!(path));
             }
             Err(e) => {
-                return ToolOutcome::err("sandbox_error")
-                    .with_meta("detail", json!(e.to_string()));
+                return ToolOutcome::err("sandbox_error").with_meta("detail", json!(e.to_string()));
             }
         };
         if let Some(parent) = resolved.parent() {
             if let Err(e) = fs::create_dir_all(parent).await {
-                return ToolOutcome::err("io_error")
-                    .with_meta("detail", json!(e.to_string()));
+                return ToolOutcome::err("io_error").with_meta("detail", json!(e.to_string()));
             }
         }
         match fs::write(&resolved, content.as_bytes()).await {
@@ -268,8 +254,7 @@ impl LocalToolRunner {
                 "bytes_written": content.len(),
                 "path": resolved.display().to_string(),
             })),
-            Err(e) => ToolOutcome::err("io_error")
-                .with_meta("detail", json!(e.to_string())),
+            Err(e) => ToolOutcome::err("io_error").with_meta("detail", json!(e.to_string())),
         }
     }
 
@@ -280,7 +265,7 @@ impl LocalToolRunner {
     async fn do_shell_exec(
         &self,
         args: &HashMap<String, Value>,
-        mut emit_chunk: Option<&mut (dyn ChunkEmitter)>,
+        mut emit_chunk: Option<Box<dyn ChunkEmitter>>,
         cancel: Option<CancelSignal>,
     ) -> ToolOutcome {
         // Refuse string-form argv outright — shell=True would be unsafe.
@@ -433,7 +418,15 @@ impl LocalToolRunner {
         let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
         let _ = drain_remaining(&mut stdout, &mut out_buf, SHELL_OUTPUT_CAP).await;
         let _ = drain_remaining(&mut stderr, &mut err_buf, SHELL_OUTPUT_CAP).await;
-        finalise_shell(argv, None, started.elapsed(), out_buf, err_buf, cancelled, timed_out)
+        finalise_shell(
+            argv,
+            None,
+            started.elapsed(),
+            out_buf,
+            err_buf,
+            cancelled,
+            timed_out,
+        )
     }
 }
 
@@ -475,11 +468,7 @@ where
     }
 }
 
-async fn drain_remaining<R>(
-    reader: &mut R,
-    sink: &mut Vec<u8>,
-    cap: usize,
-) -> std::io::Result<()>
+async fn drain_remaining<R>(reader: &mut R, sink: &mut Vec<u8>, cap: usize) -> std::io::Result<()>
 where
     R: AsyncReadExt + Unpin,
 {
@@ -545,8 +534,7 @@ fn finalise_shell(
         },
         metadata: HashMap::new(),
     };
-    out.metadata
-        .insert("argv0".into(), json!(argv[0]));
+    out.metadata.insert("argv0".into(), json!(argv[0]));
     out.metadata
         .insert("elapsed_ms".into(), json!(elapsed.as_millis() as u64));
     out
@@ -633,13 +621,10 @@ mod tests {
         let (_d, ws) = tmp_workspace();
         // Isolated allowlist so test order does not leak previous allows.
         let allow_path = ws.join(".allow.json");
-        let runner = LocalToolRunner::new(ws.clone())
-            .with_allowlist(ShellAllowlist::new(allow_path));
+        let runner =
+            LocalToolRunner::new(ws.clone()).with_allowlist(ShellAllowlist::new(allow_path));
         let mut args = HashMap::new();
-        args.insert(
-            "argv".into(),
-            json!(["pytest", "-q"]),
-        );
+        args.insert("argv".into(), json!(["pytest", "-q"]));
         let r = runner.run("shell_exec", args, None, None).await;
         assert!(!r.success);
         assert_eq!(r.error_code.as_deref(), Some("shell_denied"));
@@ -652,9 +637,7 @@ mod tests {
             &'a self,
             _binary: &'a str,
             _high_risk: bool,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = bool> + Send + 'a>,
-        > {
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
             Box::pin(async { true })
         }
     }

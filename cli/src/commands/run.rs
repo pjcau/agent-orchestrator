@@ -526,14 +526,11 @@ async fn run_agent_host_native(
     use crate::agent_host::client::{connect, ClientConfig};
     use crate::agent_host::protocol::{Frame, Prompt as PromptFrame, KIND_PROMPT};
 
-    eprintln!(
-        "\x1b[2m· agent-host (native) one-shot to {server_url}\x1b[0m"
-    );
-    let mut ws = connect(server_url, token).await.map_err(|e| {
-        AgoError::Other(format!("agent-host connect failed: {e:#}"))
-    })?;
-    let cwd = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    eprintln!("\x1b[2m· agent-host (native) one-shot to {server_url}\x1b[0m");
+    let mut ws = connect(server_url, token)
+        .await
+        .map_err(|e| AgoError::Other(format!("agent-host connect failed: {e:#}")))?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let cfg = ClientConfig {
         agent: agent.to_string(),
         model: model.to_string(),

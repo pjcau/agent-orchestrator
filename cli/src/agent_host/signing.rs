@@ -78,7 +78,13 @@ pub fn decode_hex_key(hex_str: &str) -> Result<Vec<u8>, KeyDecodeError> {
 /// an opaque tool name); no user-controlled content can smuggle a pipe.
 /// `name` is part of the message so a captured nonce can't be reused
 /// for a different tool.
-pub fn compute_signature(key: &[u8], run_id: &str, tool_call_id: &str, nonce: &str, name: &str) -> String {
+pub fn compute_signature(
+    key: &[u8],
+    run_id: &str,
+    tool_call_id: &str,
+    nonce: &str,
+    name: &str,
+) -> String {
     let msg = format!("{run_id}|{tool_call_id}|{nonce}|{name}");
     let mut mac = HmacSha256::new_from_slice(key).expect("HmacSha256 accepts any key length");
     mac.update(msg.as_bytes());

@@ -218,8 +218,7 @@ mod tests {
 
     #[test]
     fn workspace_must_exist() {
-        let result =
-            enforce_workspace(Path::new("/no/such/path/zzz"), "x", false);
+        let result = enforce_workspace(Path::new("/no/such/path/zzz"), "x", false);
         assert!(matches!(
             result,
             Err(SandboxError::WorkspaceMissing(_) | SandboxError::IoError(_))

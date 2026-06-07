@@ -101,9 +101,7 @@ impl Frame {
             Frame::ToolResult(f) => serde_json::to_value(f).expect("ToolResult serializes"),
             Frame::ToolChunk(f) => serde_json::to_value(f).expect("ToolChunk serializes"),
             Frame::Cancel(f) => serde_json::to_value(f).expect("Cancel serializes"),
-            Frame::AssistantText(f) => {
-                serde_json::to_value(f).expect("AssistantText serializes")
-            }
+            Frame::AssistantText(f) => serde_json::to_value(f).expect("AssistantText serializes"),
             Frame::TurnEnd(f) => serde_json::to_value(f).expect("TurnEnd serializes"),
             Frame::Error(f) => serde_json::to_value(f).expect("Error serializes"),
             Frame::Step(f) => serde_json::to_value(f).expect("Step serializes"),
@@ -131,9 +129,7 @@ pub fn parse_frame(v: &Value) -> Result<Frame, FrameError> {
         Some(KIND_TOOL_RESULT) => Ok(Frame::ToolResult(serde_json::from_value(v.clone())?)),
         Some(KIND_TOOL_CHUNK) => Ok(Frame::ToolChunk(serde_json::from_value(v.clone())?)),
         Some(KIND_CANCEL) => Ok(Frame::Cancel(serde_json::from_value(v.clone())?)),
-        Some(KIND_ASSISTANT_TEXT) => {
-            Ok(Frame::AssistantText(serde_json::from_value(v.clone())?))
-        }
+        Some(KIND_ASSISTANT_TEXT) => Ok(Frame::AssistantText(serde_json::from_value(v.clone())?)),
         Some(KIND_TURN_END) => Ok(Frame::TurnEnd(serde_json::from_value(v.clone())?)),
         Some(KIND_ERROR) => Ok(Frame::Error(serde_json::from_value(v.clone())?)),
         Some(KIND_STEP) => Ok(Frame::Step(serde_json::from_value(v.clone())?)),
@@ -155,7 +151,11 @@ pub fn parse_frame_str(raw: &str) -> Result<Frame, FrameError> {
 // inline. Defaults are provided so callers can build a frame with a
 // single named field and let the rest be filled in.
 
-macro_rules! ts_default { () => { now_ts() } }
+macro_rules! ts_default {
+    () => {
+        now_ts()
+    };
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hello {
@@ -369,21 +369,49 @@ pub struct ErrorFrame {
 // forward-compat parses.
 // ---------------------------------------------------------------------------
 
-fn default_kind_hello() -> String { KIND_HELLO.to_string() }
-fn default_kind_ack() -> String { KIND_ACK.to_string() }
-fn default_kind_prompt() -> String { KIND_PROMPT.to_string() }
-fn default_kind_tool_call() -> String { KIND_TOOL_CALL.to_string() }
-fn default_kind_tool_result() -> String { KIND_TOOL_RESULT.to_string() }
-fn default_kind_tool_chunk() -> String { KIND_TOOL_CHUNK.to_string() }
-fn default_kind_cancel() -> String { KIND_CANCEL.to_string() }
-fn default_kind_assistant_text() -> String { KIND_ASSISTANT_TEXT.to_string() }
-fn default_kind_turn_end() -> String { KIND_TURN_END.to_string() }
-fn default_kind_error() -> String { KIND_ERROR.to_string() }
-fn default_kind_step() -> String { KIND_STEP.to_string() }
+fn default_kind_hello() -> String {
+    KIND_HELLO.to_string()
+}
+fn default_kind_ack() -> String {
+    KIND_ACK.to_string()
+}
+fn default_kind_prompt() -> String {
+    KIND_PROMPT.to_string()
+}
+fn default_kind_tool_call() -> String {
+    KIND_TOOL_CALL.to_string()
+}
+fn default_kind_tool_result() -> String {
+    KIND_TOOL_RESULT.to_string()
+}
+fn default_kind_tool_chunk() -> String {
+    KIND_TOOL_CHUNK.to_string()
+}
+fn default_kind_cancel() -> String {
+    KIND_CANCEL.to_string()
+}
+fn default_kind_assistant_text() -> String {
+    KIND_ASSISTANT_TEXT.to_string()
+}
+fn default_kind_turn_end() -> String {
+    KIND_TURN_END.to_string()
+}
+fn default_kind_error() -> String {
+    KIND_ERROR.to_string()
+}
+fn default_kind_step() -> String {
+    KIND_STEP.to_string()
+}
 
-fn default_version() -> u32 { PROTOCOL_VERSION }
-fn default_status_ok() -> String { "ok".to_string() }
-fn default_ts() -> f64 { ts_default!() }
+fn default_version() -> u32 {
+    PROTOCOL_VERSION
+}
+fn default_status_ok() -> String {
+    "ok".to_string()
+}
+fn default_ts() -> f64 {
+    ts_default!()
+}
 
 // ---------------------------------------------------------------------------
 // Tests
