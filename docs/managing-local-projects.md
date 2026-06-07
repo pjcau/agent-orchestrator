@@ -132,6 +132,29 @@ handshake succeeds:
 > _
 ```
 
+### Live token meter
+
+During a turn the REPL no longer goes silent between steps. Each
+orchestrator step prints a dim status line with a **live token meter** —
+upstream (prompt) vs downstream (completion) tokens, accumulated cost,
+and current throughput — and the turn closes with a summary:
+
+```
+> Read README.md and write a summary into NOTES.md
+  [1] team-lead: planning            ↑1.2k ↓340 · $0.0021 · 88 tok/s
+  ↳ file_read(path=README.md)
+  ✓ file_read in 4ms — 1 file
+  [2] backend: writing NOTES.md      ↑3.4k ↓910 · $0.0061 · 132 tok/s
+  ↳ file_write(path=NOTES.md)
+  ✓ file_write in 6ms — 1 file
+  ✓ turn ok · 2 steps · ↑3.4k ↓910 · $0.0061
+```
+
+The meter is read from the `STEP` / `TURN_END` frames (fields
+`input_tokens` / `output_tokens` / `cost_usd`); `tok/s` is computed
+client-side. It renders on **stderr**, so piping stdout to a file
+(`ago run --client-tools "…" > out.md`) keeps the artefact clean.
+
 ---
 
 ## Security defaults (do not weaken without thought)
@@ -161,7 +184,10 @@ The CLI side enforces three guards before any tool runs:
 
 Resource bounds the server enforces:
 
-- 60 s TTL per delegated tool call (configurable in the registry).
+- 5 min TTL per delegated tool call — long enough to answer an
+  interactive confirmation without the connection dropping. Override with
+  `AGENT_HOST_TOOL_TTL_SECONDS` on the dashboard. (Was 60 s, which timed
+  out mid-confirmation; see Troubleshooting below.)
 - 10 MB per call output cap, 4 concurrent streams per run.
 - `--mode prompt` is ignored when `--client-tools` is set — the agent
   loop is always on for client-side delegation to make sense.
@@ -177,7 +203,8 @@ Resource bounds the server enforces:
 | `agent-host requires the websockets package` | Python harness not installed | `pip install agent-orchestrator` or `AGO_PYTHON=…` |
 | `path_outside_workspace` in agent output | Agent tried to write outside cwd | Run `ago` from a higher directory, or set `cwd` argument when spawning |
 | `shell_denied` | Non-interactive call to a new binary | Re-run in an interactive shell to confirm, or pre-populate the allow file |
-| `tool_timeout` | The local tool exceeded 60 s | Split into smaller calls, or raise the registry TTL in the dashboard config |
+| `peer closed connection` / `Broken pipe` while answering `allow … [y/N]` | You took longer than the tool TTL to confirm; the server timed out the call and the WS dropped | Fixed: the default TTL is now 5 min. Confirm promptly, or raise `AGENT_HOST_TOOL_TTL_SECONDS` on the dashboard |
+| `tool_timeout` | The local tool exceeded the TTL (default 5 min) | Split into smaller calls, or raise `AGENT_HOST_TOOL_TTL_SECONDS` |
 | Subprocess hangs on Ctrl-C | First Ctrl-C is the REPL's empty-line; second exits | press it twice |
 
 Per-feature deep dives:

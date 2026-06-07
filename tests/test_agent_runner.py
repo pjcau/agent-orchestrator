@@ -12,6 +12,7 @@ from agent_orchestrator.dashboard.agent_runner import (
     _parse_team_plan,
     _AGENT_ALIASES,
     _CATEGORY_FALLBACK_AGENTS,
+    run_agent,
     run_team,
 )
 from agent_orchestrator.dashboard.events import EventBus, EventType
@@ -875,3 +876,54 @@ class TestRunTeam:
             "quant-developer",
             "risk-analyst",
         }
+
+
+# ===== Token split (upstream/downstream meter) =====
+
+
+class TestTokenSplit:
+    """run_agent must surface input/output token split for the CLI meter.
+
+    The agent-host token meter (`↑input ↓output`) depends on these fields
+    being threaded out of the single-agent loop, both in the returned
+    envelope and in the per-step TOKEN_UPDATE events.
+    """
+
+    @pytest.mark.asyncio
+    async def test_return_envelope_carries_split(self):
+        # One completion (no tool calls) → one step with 10 in / 5 out.
+        provider = MockProvider(responses=["all done"])
+        result = await run_agent(
+            agent_name="backend",
+            task_description="do a thing",
+            provider=provider,
+            max_steps=3,
+        )
+        assert result["success"] is True
+        assert result["input_tokens"] == 10
+        assert result["output_tokens"] == 5
+        # Combined total stays consistent with the split.
+        assert result["total_tokens"] == result["input_tokens"] + result["output_tokens"]
+
+    @pytest.mark.asyncio
+    async def test_token_update_event_carries_split(self):
+        bus = EventBus()
+        sub = bus.subscribe()
+        provider = MockProvider(responses=["done"])
+        await run_agent(
+            agent_name="backend",
+            task_description="x",
+            provider=provider,
+            max_steps=2,
+            event_bus=bus,
+        )
+        # Drain the bus and look for a TOKEN_UPDATE that carries the split.
+        seen_split = False
+        while not sub.empty():
+            event = sub.get_nowait()
+            if event.event_type == EventType.TOKEN_UPDATE and isinstance(event.data, dict):
+                if "input_tokens" in event.data and "output_tokens" in event.data:
+                    assert event.data["input_tokens"] >= 0
+                    assert event.data["output_tokens"] >= 0
+                    seen_split = True
+        assert seen_split, "no TOKEN_UPDATE event carried the input/output split"

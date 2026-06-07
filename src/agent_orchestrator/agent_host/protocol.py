@@ -263,12 +263,21 @@ class TurnEnd(Frame):
     turn (not a single tool call). ``step_count`` is how many agent steps
     the server ran for the turn — useful for budget reporting in the CLI
     REPL footer.
+
+    ``input_tokens`` / ``output_tokens`` / ``cost_usd`` are the turn
+    totals (upstream prompt tokens, downstream completion tokens, and the
+    accumulated USD cost). They let the client render a final usage
+    summary; additive fields, so a v1 client that ignores them keeps
+    working.
     """
 
     kind: ClassVar[str] = KIND_TURN_END
 
     status: str = "ok"
     step_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -303,6 +312,13 @@ class Step(Frame):
     ~80 chars. ``agent`` is the sub-agent name when team-lead has
     delegated, empty string when the top-level agent is doing the work
     itself.
+
+    ``input_tokens`` / ``output_tokens`` / ``cost_usd`` are the
+    *cumulative* turn totals known at the moment this step was emitted
+    (upstream prompt tokens, downstream completion tokens, accumulated
+    USD cost). They turn the per-step progress line into a live token
+    meter; additive fields, so a v1 client that ignores them keeps
+    working.
     """
 
     kind: ClassVar[str] = KIND_STEP
@@ -311,6 +327,9 @@ class Step(Frame):
     total: int = 0
     label: str = ""
     agent: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
 
 
 _KIND_MAP: dict[str, type[Frame]] = {

@@ -26,6 +26,7 @@ from agent_orchestrator.agent_host import (
     Hello,
     Prompt,
     SigningKeyMissingError,
+    Step,
     ToolCall,
     ToolChunk,
     ToolResult,
@@ -121,6 +122,33 @@ class TestFrameRoundTrip:
     def test_turn_end(self):
         self._round_trip(TurnEnd(status="ok", step_count=7))
 
+    def test_turn_end_with_usage(self):
+        self._round_trip(
+            TurnEnd(
+                status="ok",
+                step_count=7,
+                input_tokens=1234,
+                output_tokens=567,
+                cost_usd=0.0123,
+            )
+        )
+
+    def test_step(self):
+        self._round_trip(Step(index=2, total=15, label="writing main.py", agent="backend"))
+
+    def test_step_with_usage(self):
+        self._round_trip(
+            Step(
+                index=3,
+                total=0,
+                label="thinking",
+                agent="team-lead",
+                input_tokens=4096,
+                output_tokens=512,
+                cost_usd=0.004,
+            )
+        )
+
     def test_error(self):
         self._round_trip(Error(code="version_unsupported", message="v2 only"))
 
@@ -179,6 +207,27 @@ class TestParseFrame:
         parsed = parse_frame(raw)
         assert isinstance(parsed, ToolCall)
         assert parsed.name == "file_read"
+
+    def test_old_step_without_usage_defaults_to_zero(self):
+        """Backward compatibility: a v1 server emits Step without usage.
+
+        A new client must still parse it, defaulting the token meter
+        fields to 0 rather than raising.
+        """
+        raw = {
+            "kind": "step",
+            "frame_id": "f",
+            "timestamp": 0.0,
+            "index": 1,
+            "total": 0,
+            "label": "x",
+            "agent": "",
+        }
+        parsed = parse_frame(raw)
+        assert isinstance(parsed, Step)
+        assert parsed.input_tokens == 0
+        assert parsed.output_tokens == 0
+        assert parsed.cost_usd == 0.0
 
     def test_hello_version_carried_through(self):
         """The data layer does not validate ``version`` — that's the server's

@@ -263,4 +263,7 @@ def test_run_invalid_provider_returns_400(monkeypatch):
         json={"agent": "backend", "task": "x", "model": "m"},
     )
     assert resp.status_code == 400
-    assert "nope" in resp.text
+    # The raw exception message must NOT leak to the client; the handler
+    # returns a sanitized error and logs the traceback server-side.
+    assert "nope" not in resp.text
+    assert "provider error" in resp.text

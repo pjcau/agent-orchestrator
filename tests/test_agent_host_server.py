@@ -78,6 +78,45 @@ def signing_key(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Tool TTL configuration
+# ---------------------------------------------------------------------------
+
+
+class TestToolTTLConfig:
+    """The per-tool result TTL must be generous and env-tunable.
+
+    Regression guard: a 60 s TTL was shorter than a human takes to answer
+    an interactive ``allow `ls`? [y/N]`` confirmation, so the call timed
+    out mid-prompt and the connection dropped (``Broken pipe``).
+    """
+
+    def test_default_is_generous(self, monkeypatch):
+        from agent_orchestrator.agent_host import server
+
+        monkeypatch.delenv("AGENT_HOST_TOOL_TTL_SECONDS", raising=False)
+        # Default must comfortably exceed a human confirmation latency.
+        assert server._tool_ttl_from_env() >= 120.0
+
+    def test_env_override(self, monkeypatch):
+        from agent_orchestrator.agent_host import server
+
+        monkeypatch.setenv("AGENT_HOST_TOOL_TTL_SECONDS", "42.5")
+        assert server._tool_ttl_from_env() == 42.5
+
+    def test_invalid_env_falls_back(self, monkeypatch):
+        from agent_orchestrator.agent_host import server
+
+        monkeypatch.setenv("AGENT_HOST_TOOL_TTL_SECONDS", "not-a-number")
+        assert server._tool_ttl_from_env(default=99.0) == 99.0
+
+    def test_non_positive_env_falls_back(self, monkeypatch):
+        from agent_orchestrator.agent_host import server
+
+        monkeypatch.setenv("AGENT_HOST_TOOL_TTL_SECONDS", "0")
+        assert server._tool_ttl_from_env(default=99.0) == 99.0
+
+
+# ---------------------------------------------------------------------------
 # Handshake
 # ---------------------------------------------------------------------------
 

@@ -59,6 +59,8 @@ class TaskResult:
     artifacts: dict[str, Any] = field(default_factory=dict)
     steps_taken: int = 0
     total_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
     total_cost_usd: float = 0.0
     error: str | None = None
     provider_used: str | None = None
