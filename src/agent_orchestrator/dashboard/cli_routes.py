@@ -24,6 +24,7 @@ from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from agent_orchestrator.agent_host import serve_agent_host
+from agent_orchestrator.agent_host.telemetry import bind as bind_agent_host_metrics
 from agent_orchestrator.core.cache_context import set_cache_context
 
 from .agent_runner import run_agent
@@ -557,8 +558,11 @@ async def agent_host_endpoint(ws: WebSocket) -> None:
         await ws.close(code=1008, reason="Authentication required")
         return
     await ws.accept()
+    metrics = bind_agent_host_metrics(
+        getattr(ws.app.state, "metrics_registry", None)
+    )
     try:
-        reason = await serve_agent_host(ws)
+        reason = await serve_agent_host(ws, metrics=metrics)
         logger.info(
             "agent-host: session ended reason=%s identity=%s",
             reason,

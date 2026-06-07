@@ -510,6 +510,7 @@ async def serve_agent_host(
     on_prompt: PromptHandler | None = None,
     registry: PendingToolCallsRegistry | None = None,
     run_id_factory: Callable[[], str] = lambda: secrets.token_hex(8),
+    metrics: object | None = None,
 ) -> str:
     """End-to-end driver: handshake then drive_session.
 
@@ -520,6 +521,10 @@ async def serve_agent_host(
     Catches :class:`AgentHostError` at the handshake step, emits the
     typed Error frame, and closes the WS with code 1008 (policy violation)
     — same as the rest of the dashboard for auth/policy errors.
+
+    ``metrics`` is an opaque handle from :func:`agent_host.telemetry.bind`
+    (``None`` if telemetry is disabled in this deployment). Emitted from
+    here so every reason path is accounted for.
     """
     registry = registry or PendingToolCallsRegistry()
     try:
@@ -527,12 +532,31 @@ async def serve_agent_host(
     except AgentHostError as exc:
         await _emit_error(ws, code=exc.code, message=exc.message)
         await ws.close(code=1008, reason=exc.code)
-        return f"protocol_error:{exc.code}"
+        reason = f"protocol_error:{exc.code}"
+        _bump_disconnect(metrics, reason)
+        return reason
 
-    return await drive_session(
+    reason = await drive_session(
         ws,
         hello=hello,
         run_id=run_id,
         registry=registry,
         on_prompt=on_prompt,
     )
+    _bump_disconnect(metrics, reason)
+    return reason
+
+
+def _bump_disconnect(metrics: object | None, reason: str) -> None:
+    if metrics is None:
+        return
+    counter = getattr(metrics, "disconnect_total", None)
+    if counter is None:
+        return
+    try:
+        counter.inc(labels={"reason": reason})
+    except TypeError:
+        # ``inc()`` may accept a positional value, label-less form on
+        # some backends — best-effort fallback so a stricter signature
+        # never crashes the WS.
+        counter.inc(1)
