@@ -303,6 +303,8 @@ async def run_agent(
             data={
                 "total_tokens": result.total_tokens,
                 "agent_tokens": result.total_tokens,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
                 "agent_cost_usd": result.total_cost_usd,
             },
         )
@@ -315,6 +317,8 @@ async def run_agent(
         "output": result.output,
         "steps_taken": result.steps_taken,
         "total_tokens": result.total_tokens,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
         "total_cost_usd": result.total_cost_usd,
         "elapsed_s": round(elapsed, 2),
         "error": result.error,
@@ -357,6 +361,8 @@ async def _instrumented_execute(
     retry_counts: dict[str, int] = {}
     total_cost = 0.0
     total_tokens = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
     start_time = time.monotonic()
     files_created: list[str] = []
     step_log: list[str] = []
@@ -371,6 +377,8 @@ async def _instrumented_execute(
                 output="Agent timed out",
                 steps_taken=steps,
                 total_tokens=total_tokens,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
                 total_cost_usd=total_cost,
                 error=f"Timeout after {elapsed:.0f}s",
                 artifacts={
@@ -424,11 +432,15 @@ async def _instrumented_execute(
         if hasattr(provider, "last_fallback_log") and provider.last_fallback_log:
             fallback_log.extend(provider.last_fallback_log)
 
+        total_input_tokens += completion.usage.input_tokens
+        total_output_tokens += completion.usage.output_tokens
         total_tokens += completion.usage.input_tokens + completion.usage.output_tokens
         total_cost += completion.usage.cost_usd
         steps += 1
 
-        # Emit incremental token/cost update after each step
+        # Emit incremental token/cost update after each step. The split
+        # (input/output) lets downstream consumers — the agent-host WS
+        # bridge in particular — render an upstream/downstream token meter.
         await event_bus.emit(
             Event(
                 event_type=EventType.TOKEN_UPDATE,
@@ -436,6 +448,8 @@ async def _instrumented_execute(
                 data={
                     "total_tokens": total_tokens,
                     "agent_tokens": total_tokens,
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
                     "agent_cost_usd": total_cost,
                 },
             )
@@ -454,6 +468,8 @@ async def _instrumented_execute(
                 output=completion.content,
                 steps_taken=steps,
                 total_tokens=total_tokens,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
                 total_cost_usd=total_cost,
                 artifacts={
                     "files_created": files_created,
@@ -482,6 +498,8 @@ async def _instrumented_execute(
                     output=f"Stalled: too many retries on {tool_call.name}",
                     steps_taken=steps,
                     total_tokens=total_tokens,
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
                     total_cost_usd=total_cost,
                     error=f"Max retries exceeded for: {approach_key}",
                     artifacts={
@@ -576,6 +594,8 @@ async def _instrumented_execute(
         output="Agent reached max steps without completing",
         steps_taken=steps,
         total_tokens=total_tokens,
+        input_tokens=total_input_tokens,
+        output_tokens=total_output_tokens,
         total_cost_usd=total_cost,
         error=f"Max steps ({config.max_steps}) reached",
         artifacts={

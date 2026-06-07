@@ -325,6 +325,15 @@ pub struct TurnEnd {
     pub status: String,
     #[serde(default)]
     pub step_count: u64,
+    /// Turn totals — upstream prompt tokens, downstream completion
+    /// tokens, accumulated USD cost. Additive: a server that does not
+    /// send them leaves these 0 (`#[serde(default)]`).
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cost_usd: f64,
 }
 
 /// Server → client. Progress indicator inside a turn — see
@@ -347,6 +356,15 @@ pub struct Step {
     pub label: String,
     #[serde(default)]
     pub agent: String,
+    /// Cumulative turn totals known when this step was emitted — turns
+    /// the progress line into a live token meter. Additive: a server
+    /// that does not send them leaves these 0 (`#[serde(default)]`).
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cost_usd: f64,
 }
 
 /// The wire kind is `error` but Rust reserves `Error` so we suffix.
@@ -560,6 +578,61 @@ mod tests {
         let parsed = parse_frame(&v).unwrap();
         if let Frame::Hello(h) = parsed {
             assert_eq!(h.version, 99);
+        } else {
+            panic!("kind drift");
+        }
+    }
+
+    #[test]
+    fn step_round_trip_with_usage() {
+        let f = Frame::Step(Step {
+            kind: KIND_STEP.into(),
+            frame_id: "f".into(),
+            timestamp: 0.0,
+            index: 3,
+            total: 0,
+            label: "thinking".into(),
+            agent: "team-lead".into(),
+            input_tokens: 4096,
+            output_tokens: 512,
+            cost_usd: 0.004,
+        });
+        assert_eq!(round_trip(f.clone()), f);
+    }
+
+    #[test]
+    fn turn_end_round_trip_with_usage() {
+        let f = Frame::TurnEnd(TurnEnd {
+            kind: KIND_TURN_END.into(),
+            frame_id: "f".into(),
+            timestamp: 0.0,
+            status: "ok".into(),
+            step_count: 7,
+            input_tokens: 1234,
+            output_tokens: 567,
+            cost_usd: 0.0123,
+        });
+        assert_eq!(round_trip(f.clone()), f);
+    }
+
+    #[test]
+    fn old_step_without_usage_defaults_to_zero() {
+        // A v1 server emits Step without the token meter fields — a new
+        // client must still parse it, defaulting them to 0.
+        let v = json!({
+            "kind": KIND_STEP,
+            "frame_id": "f",
+            "timestamp": 0.0,
+            "index": 1,
+            "total": 0,
+            "label": "x",
+            "agent": "",
+        });
+        let parsed = parse_frame(&v).expect("backward-compat parse");
+        if let Frame::Step(s) = parsed {
+            assert_eq!(s.input_tokens, 0);
+            assert_eq!(s.output_tokens, 0);
+            assert_eq!(s.cost_usd, 0.0);
         } else {
             panic!("kind drift");
         }

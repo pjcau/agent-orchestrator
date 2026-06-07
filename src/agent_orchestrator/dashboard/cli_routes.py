@@ -396,12 +396,15 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
 
     try:
         ollama = _ollama_url()
-    except ValueError as exc:
-        return JSONResponse(content={"success": False, "error": "invalid OLLAMA_BASE_URL"}, status_code=400)
+    except ValueError:
+        return JSONResponse(
+            content={"success": False, "error": "invalid OLLAMA_BASE_URL"},
+            status_code=400,
+        )
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     try:
         provider = _make_provider(model, provider_type, ollama, openrouter_key)
-    except Exception as exc:
+    except Exception:
         logger.exception("provider construction failed for %s/%s", model, provider_type)
         return JSONResponse(
             content={"success": False, "error": "provider error"},

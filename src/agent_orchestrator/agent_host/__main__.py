@@ -39,6 +39,7 @@ def _fmt_tokens(n: int) -> str:
         return f"{n / 1000:.1f}k"
     return f"{n / 1_000_000:.1f}M"
 
+
 logger = logging.getLogger("agent_host.cli")
 
 

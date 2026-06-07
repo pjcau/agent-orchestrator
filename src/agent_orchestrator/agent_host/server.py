@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 from typing import Any, Awaitable, Callable, Protocol
 
@@ -47,7 +48,41 @@ from .signing import compute_signature, new_nonce, new_session_key, verify_signa
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_TOOL_TTL_SECONDS = 60.0
+def _tool_ttl_from_env(default: float = 300.0) -> float:
+    """Resolve the per-tool result TTL (seconds) from the environment.
+
+    The TTL clock starts when the server sends a ``ToolCall`` and runs
+    until the client returns the matching ``ToolResult``. Crucially that
+    window includes any **human-in-the-loop confirmation** the client
+    shows (e.g. ``allow `ls`? [y/N]``). The old 60 s default was shorter
+    than a user typically takes to read and answer such a prompt, so the
+    call timed out mid-confirmation and the connection was torn down with
+    a ``Broken pipe`` / ``peer closed connection`` error. The default is
+    now generous (5 min) and overridable via
+    ``AGENT_HOST_TOOL_TTL_SECONDS`` so operators can tune it.
+    """
+    raw = os.environ.get("AGENT_HOST_TOOL_TTL_SECONDS")
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "agent-host: invalid AGENT_HOST_TOOL_TTL_SECONDS=%r, using %.0fs",
+            raw,
+            default,
+        )
+        return default
+    if value <= 0:
+        logger.warning(
+            "agent-host: AGENT_HOST_TOOL_TTL_SECONDS must be > 0, using %.0fs",
+            default,
+        )
+        return default
+    return value
+
+
+DEFAULT_TOOL_TTL_SECONDS = _tool_ttl_from_env()
 HANDSHAKE_TIMEOUT_SECONDS = 10.0
 
 

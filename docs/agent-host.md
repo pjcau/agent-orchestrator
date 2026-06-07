@@ -54,12 +54,26 @@ documented in
    - Mints `tool_call_id` + `nonce`.
    - HMAC-SHA-256 of `(run_id, tool_call_id, nonce, name)` using
      `JWT_SECRET_KEY` becomes the `signature`.
-   - Sends `TOOL_CALL`, awaits the matching `TOOL_RESULT` (60 s TTL).
+   - Sends `TOOL_CALL`, awaits the matching `TOOL_RESULT` (TTL = 5 min
+     default, see [Tuning the tool TTL](#tuning-the-tool-ttl)).
 6. Client verifies the HMAC, executes the tool, streams stdout in
    `TOOL_CHUNK` frames (for `shell_exec`), and finalises with a
    `TOOL_RESULT` signed with the same nonce.
-7. Agent loop continues. Final reply is streamed to the client as
-   `ASSISTANT_TEXT` chunks, terminated by `TURN_END`.
+7. Agent loop continues. Every orchestrator step also emits a `STEP`
+   frame carrying the **cumulative token meter** for the turn
+   (`input_tokens` upstream / `output_tokens` downstream / `cost_usd`),
+   so the client can render a live `↑12.3k ↓4.5k · $0.0123 · 78 tok/s`
+   status line instead of going silent. Final reply is streamed to the
+   client as `ASSISTANT_TEXT` chunks, terminated by `TURN_END` — which
+   carries the turn totals (`step_count`, `input_tokens`,
+   `output_tokens`, `cost_usd`) for a closing summary.
+
+   The token fields are additive: a v1 client that ignores them keeps
+   working (`Frame.from_dict` drops unknown fields and defaults missing
+   ones to 0). The server fills them from the `TOKEN_UPDATE` events that
+   `run_agent` emits after each step — see
+   [`dashboard/cli_routes.py`](../src/agent_orchestrator/dashboard/cli_routes.py)
+   `forward_steps`.
 
 ## Security model
 
@@ -139,6 +153,39 @@ WS handshakes — no env var to flip.
 Remove the `agent_host_endpoint` route registration in
 `cli_routes.py` (or guard it behind an env flag in a downstream
 override).  The protocol module remains harmless on its own.
+
+### Tuning the tool TTL
+
+When the server proxies a `TOOL_CALL`, the clock until the matching
+`TOOL_RESULT` starts immediately — and that window **includes any
+interactive confirmation the client shows the user** (e.g.
+``allow `ls`? [y/N]``). The original 60 s TTL was shorter than a human
+typically takes to read and answer such a prompt, so the call timed out
+mid-confirmation and the connection was torn down with a `Broken pipe` /
+`peer closed connection without sending TLS close_notify` error on the
+client.
+
+The default is now **300 s (5 min)** and overridable:
+
+```bash
+# Give users longer to answer confirmation prompts (seconds)
+export AGENT_HOST_TOOL_TTL_SECONDS=600
+```
+
+Invalid or non-positive values fall back to the default (logged at
+WARNING). See `_tool_ttl_from_env` in
+[`agent_host/server.py`](../src/agent_orchestrator/agent_host/server.py)
+and `TestToolTTLConfig` in
+[`tests/test_agent_host_server.py`](../tests/test_agent_host_server.py).
+
+> **Native client.** The Rust `ago` binary lives in [`cli/`](../cli).
+> It renders the token meter from the new `STEP`/`TURN_END` fields
+> ([`cli/src/agent_host/client.rs`](../cli/src/agent_host/client.rs)
+> `print_step` / `print_turn_end` / `Meter`) and already runs the
+> interactive shell confirmation on a blocking thread
+> (`StdinShellConfirmer` → `tokio::task::spawn_blocking`), so answering
+> `[y/N]` never stalls the WS read loop. The server TTL fix above is the
+> belt-and-braces guard that prevents the timeout regardless of client.
 
 ### Debugging a stuck session
 
