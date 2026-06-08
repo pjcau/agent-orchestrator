@@ -512,6 +512,35 @@ class TestRunTeam:
         assert "output" in result
 
     @pytest.mark.asyncio
+    async def test_team_result_reports_split_tokens_and_steps(self):
+        """run_team must return an input/output token split and a step count
+        so the agent-host TurnEnd shows real usage instead of ↑0 ↓0 (P2,
+        docs/ago-cli-improvements.md)."""
+        provider = MockProvider(
+            responses=[
+                '[{"agent": "backend", "task": "x"}]',
+                "done",
+                '{"sufficient": true}',
+                "Summary.",
+            ]
+        )
+        bus = EventBus()
+
+        with patch(
+            "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+            return_value=MOCK_REGISTRY,
+        ):
+            result = await run_team(task_description="x", provider=provider, event_bus=bus)
+
+        # Keys exist and are populated (team-lead plan/validation/summary plus
+        # the backend sub-agent all report usage via MockProvider).
+        assert result["input_tokens"] > 0
+        assert result["output_tokens"] > 0
+        assert result["steps_taken"] > 0
+        # The split reconciles with the aggregate the dashboard already used.
+        assert result["input_tokens"] + result["output_tokens"] == result["total_tokens"]
+
+    @pytest.mark.asyncio
     async def test_skill_registry_override_reaches_every_sub_agent(self):
         """A client-tools team run must hand the SAME local skill registry to
         every spawned sub-agent, so their file/shell calls execute on the

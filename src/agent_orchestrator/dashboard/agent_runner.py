@@ -924,6 +924,12 @@ async def run_team(
 
     start_time = time.time()
     total_tokens = 0
+    # Split + step accumulators so the agent-host TurnEnd reports real usage
+    # for team runs instead of ↑0 ↓0 (docs/ago-cli-improvements.md, P2). The
+    # team-lead's own plan/validation/summary calls each count as one step.
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_steps = 0
     total_cost = 0.0
     agent_outputs: dict[str, str] = {}
     agent_costs: dict[str, dict[str, Any]] = {}
@@ -1013,6 +1019,9 @@ async def run_team(
     plan_tokens = plan_completion.usage.input_tokens + plan_completion.usage.output_tokens
     plan_cost = plan_completion.usage.cost_usd
     total_tokens += plan_tokens
+    total_input_tokens += plan_completion.usage.input_tokens
+    total_output_tokens += plan_completion.usage.output_tokens
+    total_steps += 1
     total_cost += plan_cost
     plan = plan_completion.content
     agent_costs["team-lead (plan)"] = {
@@ -1211,6 +1220,9 @@ async def run_team(
         agent_tok = result.get("total_tokens", 0)
         agent_cost_val = result.get("total_cost_usd", 0.0)
         total_tokens += agent_tok
+        total_input_tokens += result.get("input_tokens", 0)
+        total_output_tokens += result.get("output_tokens", 0)
+        total_steps += result.get("steps_taken", 0)
         total_cost += agent_cost_val
         agent_outputs[event_key] = result.get("output", result.get("error", ""))
         agent_files[event_key] = result.get("files_created", [])
@@ -1296,6 +1308,9 @@ async def run_team(
     )
     val_cost = validation_completion.usage.cost_usd
     total_tokens += val_tokens
+    total_input_tokens += validation_completion.usage.input_tokens
+    total_output_tokens += validation_completion.usage.output_tokens
+    total_steps += 1
     total_cost += val_cost
     agent_costs["team-lead (validation)"] = {
         "tokens": val_tokens,
@@ -1349,6 +1364,9 @@ async def run_team(
             agent_tok = result.get("total_tokens", 0)
             agent_cost_val = result.get("total_cost_usd", 0.0)
             total_tokens += agent_tok
+            total_input_tokens += result.get("input_tokens", 0)
+            total_output_tokens += result.get("output_tokens", 0)
+            total_steps += result.get("steps_taken", 0)
             total_cost += agent_cost_val
             agent_outputs[event_key] = result.get("output", result.get("error", ""))
             agent_files[event_key] = result.get("files_created", [])
@@ -1397,6 +1415,9 @@ async def run_team(
     summary_tokens = summary_completion.usage.input_tokens + summary_completion.usage.output_tokens
     summary_cost = summary_completion.usage.cost_usd
     total_tokens += summary_tokens
+    total_input_tokens += summary_completion.usage.input_tokens
+    total_output_tokens += summary_completion.usage.output_tokens
+    total_steps += 1
     total_cost += summary_cost
     summary = summary_completion.content
     agent_costs["team-lead (summary)"] = {
@@ -1457,6 +1478,10 @@ async def run_team(
         "fallback_log": all_fallback_logs,
         "files_created": all_files,
         "total_tokens": total_tokens,
+        # P2: split + steps so the agent-host TurnEnd shows real usage, not ↑0 ↓0.
+        "input_tokens": total_input_tokens,
+        "output_tokens": total_output_tokens,
+        "steps_taken": total_steps,
         "total_cost_usd": total_cost,
         "elapsed_s": round(elapsed, 2),
         "smoke_test": (

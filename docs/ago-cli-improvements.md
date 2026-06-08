@@ -206,7 +206,16 @@ again. Server-side in the agent loop, or client-side in the runner.
 
 ---
 
-### P2 — `turn_end` reports zero tokens/steps for team runs
+### P2 — `turn_end` reports zero tokens/steps for team runs — ✅ DONE
+
+> **Status: implemented.** `run_team` in `dashboard/agent_runner.py` now
+> accumulates `total_input_tokens` / `total_output_tokens` / `total_steps`
+> alongside the existing `total_tokens` (team-lead plan/validation/summary
+> each count one step; sub-agents contribute their `input_tokens` /
+> `output_tokens` / `steps_taken`) and returns them, so the `TurnEnd` in
+> `cli_routes.py` reports real `↑/↓` and `steps` instead of zeros. Original
+> analysis below.
+
 
 **Evidence.**
 
