@@ -51,6 +51,26 @@ The cache is now fully wired into the execution pipeline:
 
 ---
 
+## Tool-result context cap
+
+Independent of response/tool caching, the agent loop caps how much of each
+tool result is folded back into the LLM conversation. Without it, a single
+large `file_read` or `shell_exec` re-enters the prompt on **every**
+subsequent step, so cost/latency grow with the square of the run length
+(measured: a code-reviewer run grew +470k tokens over 4 steps — see
+[ago-cli-improvements.md](ago-cli-improvements.md), P1).
+
+- **Where**: `core/agent.py`, at the point the `SkillResult` becomes a
+  `Role.TOOL` message — `cap_tool_result_content(str(result), limit)`.
+- **Knob**: `AgentConfig.max_tool_result_chars` (default **8000**; `0`
+  disables). It's a *context* cap, separate from the agent-host's 10 MB
+  transport cap (`cli/src/agent_host/runner.rs`).
+- **Behaviour**: keeps a head-heavy (2:1) head+tail slice with an explicit
+  `…[truncated N chars]…` marker, so the command echo / first lines and the
+  trailing summary both survive.
+
+---
+
 ## Integration Points (Where to Wire Cache)
 
 ### Point 1: LLM Node Cache (`llm_nodes.py`)

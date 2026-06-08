@@ -43,6 +43,10 @@ class AgentConfig:
     max_retries_per_approach: int = 3
     timeout_seconds: float = 300.0
     escalation_provider_key: str | None = None  # cloud provider for escalation
+    # Cap each tool result before it re-enters the LLM context. A single
+    # large file_read / shell_exec can otherwise dominate the prompt for the
+    # rest of the run (see docs/ago-cli-improvements.md, P1). 0 disables.
+    max_tool_result_chars: int = 8000
 
 
 @dataclass
@@ -65,6 +69,36 @@ class TaskResult:
     error: str | None = None
     provider_used: str | None = None
     escalated: bool = False
+
+
+def cap_tool_result_content(text: str, limit: int) -> str:
+    """Cap a tool result before it re-enters the LLM context.
+
+    A single large ``file_read`` / ``shell_exec`` can otherwise dominate the
+    prompt for the rest of an agent run, since every subsequent LLM call
+    re-sends the whole accumulated history (see ``docs/ago-cli-improvements.md``,
+    P1). This keeps a head+tail slice so both the start (headers, the command
+    that ran, early errors) and the end (summaries, exit notes) survive, with
+    an explicit marker naming how many characters were dropped.
+
+    ``limit <= 0`` disables the cap. This is a *context* cap applied where the
+    result is folded into the conversation — independent of the agent-host's
+    10 MB transport cap.
+    """
+    if limit <= 0 or len(text) <= limit:
+        return text
+    marker = "\n…[truncated {n} chars]…\n"
+    # Budget for the visible slices, leaving room for the worst-case marker.
+    reserve = len(marker.format(n=len(text)))
+    budget = max(limit - reserve, 0)
+    # Head-heavy 2:1 split — the start of a tool result is usually the most
+    # informative (command echo, first lines, error banners).
+    head_len = (budget * 2) // 3
+    tail_len = budget - head_len
+    dropped = len(text) - head_len - tail_len
+    head = text[:head_len]
+    tail = text[-tail_len:] if tail_len > 0 else ""
+    return f"{head}{marker.format(n=dropped)}{tail}"
 
 
 class Agent:
@@ -429,7 +463,9 @@ class Agent:
                 self._messages.append(
                     Message(
                         role=Role.TOOL,
-                        content=str(skill_result),
+                        content=cap_tool_result_content(
+                            str(skill_result), self.config.max_tool_result_chars
+                        ),
                         tool_call_id=tool_call.id,
                     )
                 )

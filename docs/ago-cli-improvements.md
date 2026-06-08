@@ -107,7 +107,17 @@ before ~800k).
 
 ---
 
-### P1 — Tool outputs are not capped before re-entering context
+### P1 — Tool outputs are not capped before re-entering context — ✅ DONE
+
+> **Status: implemented.** `core/agent.py` now folds each tool result into
+> the conversation through `cap_tool_result_content(str(result),
+> config.max_tool_result_chars)` (default **8000 chars**, `0` disables). It
+> keeps a head-heavy head+tail slice with a `…[truncated N chars]…` marker,
+> so a single large `file_read`/`shell_exec` can no longer dominate the rest
+> of the run. This is a *context* cap, independent of the 10 MB transport
+> cap. See [cache-strategy.md § Tool-result context cap](cache-strategy.md).
+> Original analysis below.
+
 
 **Evidence.** Single-step input jumps of **+60k tokens** (turn 1, step 55→57),
 and **+470k over 4 steps** for code-reviewer reading files. The shell output
