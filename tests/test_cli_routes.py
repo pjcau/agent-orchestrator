@@ -427,3 +427,38 @@ def test_agent_host_max_steps_defaults_when_unset(monkeypatch):
 def test_agent_host_max_steps_clamped(monkeypatch):
     # Absurd values are clamped to the safe ceiling.
     assert _run_handler_capture_max_steps(99999, monkeypatch) == 100
+
+
+# --- P3: richer Step labels -------------------------------------------------
+
+
+def test_step_label_prefers_explicit_action():
+    from agent_orchestrator.dashboard.cli_routes import _step_label
+
+    assert _step_label({"action": "shell_exec npm test"}) == "shell_exec npm test"
+    assert _step_label({"tool": "file_write"}) == "file_write"
+    assert _step_label({"message": "working"}) == "working"
+
+
+def test_step_label_surfaces_named_phase_and_reason():
+    from agent_orchestrator.dashboard.cli_routes import _step_label
+
+    # team-lead fallback step: no action/tool/message — phase + reason instead
+    # of a blank label.
+    label = _step_label({"step": "fallback", "reason": "Could not parse plan"})
+    assert "fallback" in label
+    assert "Could not parse plan" in label
+
+
+def test_step_label_numeric_step_is_not_used_as_label():
+    from agent_orchestrator.dashboard.cli_routes import _step_label
+
+    # A numeric step counter must not leak into the label text.
+    assert _step_label({"step": 3}) == ""
+
+
+def test_step_label_handles_non_dict():
+    from agent_orchestrator.dashboard.cli_routes import _step_label
+
+    assert _step_label(None) == ""
+    assert _step_label("nope") == ""

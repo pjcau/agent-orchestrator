@@ -8,6 +8,12 @@ frame trace; this document consolidates what the trace revealed.
 
 ---
 
+> **Implementation status (2026-06-08):** all findings actioned —
+> P1 error logging ✅, P1 output cap ✅, P0 compaction ✅, P2 back-off ✅,
+> P2 team turn_end ✅, P3 step meter ✅ (richer labels ◑ partial). Each item's
+> section below links to its code + docs. The denied-`rm` root cause is now
+> both diagnosable (P1) and self-limiting (P2).
+
 ## TL;DR
 
 The multi-agent orchestration **works and completes tasks** — including
@@ -245,7 +251,16 @@ team-lead branch in `src/agent_orchestrator/dashboard/cli_routes.py`.
 
 ---
 
-### P3 — Step progress meter shows `total=0`
+### P3 — Step progress meter shows `total=0` — ✅ DONE
+
+> **Status: implemented.** The agent-host `Step` frame now carries
+> `total=max_steps` (resolved up front in `cli_routes.py`), so the Rust
+> client's existing `[{index}/{total}]` renderer shows a real `[3/30]` meter.
+> Labels are also enriched via `_step_label()`: it prefers an explicit
+> `action`/`tool`/`message`, and otherwise surfaces a named phase
+> (team-lead's `fallback` / `atomic_validation`) plus any `reason`, so steps
+> no longer render blank. Original analysis below.
+
 
 **Evidence.** Every `Step` frame carries `total=0`, so the client can't render
 `[n/N]`. With parallel agents the `idx` is also a single global counter shared
@@ -257,7 +272,15 @@ global counter is less confusing — the per-agent colours already help here).
 
 ---
 
-### P3 — Generic step labels
+### P3 — Generic step labels — ◑ PARTIAL
+
+> **Status: partially implemented.** `_step_label()` (see the meter item
+> above) now surfaces named phases + reasons so team-lead steps aren't blank.
+> Carrying the *concrete tool + args* (e.g. `working: shell_exec npm test`)
+> still needs the single-agent loop to emit the tool name on its AGENT_STEP
+> event — today it only emits `message="thinking"/"working"` before the tool
+> call is known. Left as a follow-up. Original note below.
+
 
 `label` is usually `"thinking"`/`"working"`/empty. Carrying the current action
 or tool name (e.g. `working: shell_exec npm test`) would make the live trace

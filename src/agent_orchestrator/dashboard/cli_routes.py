@@ -59,6 +59,31 @@ def _safe_log(value: str) -> str:
     return str(value).replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
+def _step_label(data: Any) -> str:
+    """Build a human-readable label for a ``Step`` frame from an AGENT_STEP
+    event's free-form data dict (P3 — richer step labels).
+
+    Prefers an explicit ``action``/``tool``/``message``; otherwise surfaces a
+    named phase (team-lead emits ``step="fallback"`` / ``"atomic_validation"``)
+    and any ``reason``, so those steps render something instead of blank.
+    """
+    if not isinstance(data, dict):
+        return ""
+    action = data.get("action") or data.get("tool") or data.get("message") or ""
+    parts: list[str] = []
+    if action:
+        parts.append(str(action))
+    else:
+        # No explicit action — fall back to a named phase if `step` is a label.
+        step = data.get("step")
+        if isinstance(step, str):
+            parts.append(step)
+    reason = data.get("reason")
+    if reason:
+        parts.append(f"({reason})")
+    return " ".join(parts)
+
+
 cli_router = APIRouter(prefix="/api/cli/v1", tags=["cli"])
 
 
@@ -636,6 +661,13 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
         # (upstream prompt / downstream completion / USD cost).
         usage = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
 
+        # Honour the client's --max-steps (Hello.max_steps), falling back to a
+        # sensible default and clamping to a safe ceiling. Resolved up front so
+        # every Step frame can carry it as `total` for a real [n/N] meter (P3).
+        requested_steps = int(getattr(hello, "max_steps", 0) or 0)
+        max_steps = requested_steps if requested_steps > 0 else 30
+        max_steps = max(1, min(max_steps, 100))
+
         async def forward_steps() -> None:
             step_index = 0
             while True:
@@ -651,21 +683,12 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                         usage["cost_usd"] = float(event.data.get("agent_cost_usd", 0.0))
                 elif event.event_type == EventType.AGENT_STEP:
                     step_index += 1
-                    label = ""
-                    if isinstance(event.data, dict):
-                        # `run_agent` step events carry a free-form data
-                        # dict — pick a useful summary if available.
-                        label = str(
-                            event.data.get("action")
-                            or event.data.get("tool")
-                            or event.data.get("message")
-                            or ""
-                        )
+                    label = _step_label(event.data)
                     try:
                         await ws.send_json(
                             Step(
                                 index=step_index,
-                                total=0,  # max_steps available on caller side; left 0 for "unknown"
+                                total=max_steps,  # P3: enables a real [n/N] meter
                                 agent=event.agent_name or "",
                                 label=label[:200],
                                 input_tokens=usage["input_tokens"],
@@ -684,13 +707,7 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                 ollama_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
                 openrouter_key=os.environ.get("OPENROUTER_API_KEY", ""),
             )
-            # Honour the client's --max-steps (Hello.max_steps), falling
-            # back to a sensible default and clamping to a safe ceiling so
-            # a multi-step task (e.g. "add git": init + .gitignore + add +
-            # commit) is not cut off at the old hard-coded 10.
-            requested_steps = int(getattr(hello, "max_steps", 0) or 0)
-            max_steps = requested_steps if requested_steps > 0 else 30
-            max_steps = max(1, min(max_steps, 100))
+            # max_steps resolved above (used both here and for the Step meter).
             # `--agent team-lead` opts the turn into the multi-agent
             # orchestrator: team-lead decomposes the task and fans out to
             # specialist sub-agents (frontend, backend, …), mirroring the
