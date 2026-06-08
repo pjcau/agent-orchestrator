@@ -56,6 +56,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *cli/*.rs) ( cd \"$CLAUDE_PROJECT_DIR/cli\" && cargo fmt ) >/dev/null 2>&1 && echo '{\"systemMessage\":\"cargo fmt applied to cli/ — keeps the cli-rust fmt gate green\"}' ;; esac; } 2>/dev/null || true",
+            "timeout": 30
+          }
+        ]
       }
     ]
   }
