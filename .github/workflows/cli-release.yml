@@ -137,24 +137,56 @@ jobs:
       # of a second cargo invocation. The SBOM is per-target because the
       # dependency closure can differ slightly across cross-compile targets
       # (e.g. macOS-only keyring backends).
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+      # Both syft (SBOM) and cosign (signing) are fetched from github.com
+      # release assets, which return transient HTTP 504s during GitHub CDN
+      # incidents. The stock `anchore/sbom-action` / `sigstore/cosign-installer`
+      # actions do NOT retry — a single 504 fails the whole matrix job, and a
+      # 5-target × 2-download fan-out turns that into a coupon-collector
+      # lottery where `--failed` re-runs never converge. We install both tools
+      # ourselves wrapped in `nick-fields/retry`, so a transient 504 retries
+      # in-step instead of sinking the release. Same "retry to survive
+      # transient infra" pattern already used for the EC2 deploy.
+      - name: Generate SBOM (syft, retried)
+        uses: nick-fields/retry@v3
         with:
-          path: cli/
-          format: cyclonedx-json
-          output-file: ${{ env.ARTIFACT_NAME }}.cdx.json
-          upload-artifact: false
-          upload-release-assets: false
+          timeout_minutes: 6
+          max_attempts: 6
+          retry_wait_seconds: 25
+          shell: bash
+          command: |
+            set -euxo pipefail
+            curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+              | sh -s -- -b "${RUNNER_TEMP}/syftbin" v1.42.3
+            SYFT="${RUNNER_TEMP}/syftbin/syft"
+            [ -f "${SYFT}.exe" ] && SYFT="${SYFT}.exe"
+            "${SYFT}" scan "dir:cli/" -o "cyclonedx-json=${ARTIFACT_NAME}.cdx.json"
 
       # Cosign keyless signing — the GitHub OIDC token attests that this
       # workflow run produced the artifact. Signatures + certificates are
       # uploaded alongside the .tar.gz/.zip and verifiable via
       #   cosign verify-blob --certificate-identity '<workflow-url>' ...
       # which a downloader can run with no shared key material.
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+      - name: Install cosign (retried)
+        uses: nick-fields/retry@v3
         with:
-          cosign-release: v2.4.1
+          timeout_minutes: 5
+          max_attempts: 6
+          retry_wait_seconds: 25
+          shell: bash
+          command: |
+            set -euxo pipefail
+            ver=v2.4.1
+            os=$(uname -s | tr '[:upper:]' '[:lower:]')
+            case "${os}" in mingw*|msys*|cygwin*) os=windows ;; esac
+            arch=$(uname -m)
+            case "${arch}" in x86_64|amd64) arch=amd64 ;; arm64|aarch64) arch=arm64 ;; esac
+            ext=""; [ "${os}" = windows ] && ext=.exe
+            curl -sSfL \
+              "https://github.com/sigstore/cosign/releases/download/${ver}/cosign-${os}-${arch}${ext}" \
+              -o "${RUNNER_TEMP}/cosign${ext}"
+            chmod +x "${RUNNER_TEMP}/cosign${ext}"
+            # Expose to later steps (PATH additions apply to subsequent steps).
+            echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
 
       - name: Sign artifact (cosign keyless)
         shell: bash
