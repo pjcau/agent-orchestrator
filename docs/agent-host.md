@@ -75,6 +75,50 @@ documented in
    [`dashboard/cli_routes.py`](../src/agent_orchestrator/dashboard/cli_routes.py)
    `forward_steps`.
 
+## Single-agent vs multi-agent turns
+
+The agent-host endpoint picks the runner from the HELLO's `agent` field
+(`dashboard/cli_routes.py`, `_make_agent_host_prompt_handler`):
+
+| `--agent` | Server runner | Behaviour |
+|---|---|---|
+| anything but `team-lead` | `run_agent` | One agent loop. Default. |
+| `team-lead` | `run_team` | Multi-agent orchestrator: team-lead decomposes the task and fans out to specialist sub-agents (frontend, backend, devops, …), mirroring the web `POST /api/team/run`. |
+
+The key property that makes a CLI team run useful: **every spawned
+sub-agent shares the same client-side skill registry**. `run_team` now
+accepts `skill_registry_override` and threads it into each sub-agent's
+`run_agent` call, so a sub-agent's `file_write` / `shell_exec` executes
+on the **operator's machine** over the agent-host channel — not inside
+the server container. When the override is present, `run_team` also
+bypasses the server-side `sandbox_manager` for sub-agents (a container
+sandbox would never see tools that run locally).
+
+Each sub-agent's `STEP` frames already carry its name in the `agent`
+field, so the live progress lines read `[3/30] backend: writing api/main.py`,
+`[4/30] frontend: …`, interleaved as the batch runs.
+
+> **Security note.** A team run grants every sub-agent the same local
+> tool reach as a single-agent `--client-tools` session. The trust
+> boundary is unchanged by the fan-out: the CLI's path sandbox
+> (`enforce_workspace`) and shell allowlist still gate every call,
+> per sub-agent. Threat-modelled in
+> [`test_skill_registry_override_reaches_every_sub_agent`](../tests/test_agent_runner.py).
+
+### Terminal colour theme
+
+The Rust REPL (`cli/src/agent_host/client.rs`, `AnsiTheme`) colours
+output on stderr so a team run is readable at a glance:
+
+- Each agent name in a `STEP` line gets a **stable per-agent colour**
+  (`agent_color`, a deterministic hash into `AGENT_PALETTE`) plus bold,
+  so team-lead, backend, and frontend stay visually distinct for the
+  whole run. Red is reserved for failures.
+- Colour is disabled when **any** of: the global `--no-color` flag is
+  set, `NO_COLOR` is in the environment (<https://no-color.org>), or
+  stderr is not a TTY. The `--no-color` flag is threaded
+  `ChatSettings → run_repl → receive_loop → AnsiTheme::detect`.
+
 ## Security model
 
 | Threat | Guard | Test |

@@ -231,6 +231,7 @@ pub async fn run_repl(
     session: SessionInfo,
     workspace: PathBuf,
     confirm: Option<Box<dyn ShellConfirmer>>,
+    no_color: bool,
 ) -> Result<()> {
     let runner = Arc::new(build_runner(&workspace, confirm));
     let session = Arc::new(session);
@@ -258,6 +259,7 @@ pub async fn run_repl(
         session.clone(),
         runner.clone(),
         cancels.clone(),
+        no_color,
     ));
 
     // Main loop: only handles prompt input — everything else is event-driven.
@@ -395,8 +397,9 @@ async fn receive_loop(
     session: Arc<SessionInfo>,
     runner: Arc<LocalToolRunner>,
     cancels: Arc<Mutex<HashMap<String, CancelSignal>>>,
+    no_color: bool,
 ) {
-    let theme = AnsiTheme::detect();
+    let theme = AnsiTheme::detect(no_color);
     // Live token-meter state, reset per turn so tok/s reflects the
     // current turn rather than the whole session.
     let mut meter = Meter::new();
@@ -655,6 +658,20 @@ impl ChunkEmitter for WsChunkEmitter {
 // ANSI rendering
 // ---------------------------------------------------------------------------
 
+/// Stable per-agent foreground palette. A multi-agent (`--agent team-lead`)
+/// run interleaves Step frames from team-lead and several sub-agents on the
+/// same stream; giving each agent its own colour makes the fan-out readable
+/// at a glance. Red is deliberately excluded — it is reserved for failures.
+const AGENT_PALETTE: &[&str] = &[
+    "\x1b[36m", // cyan
+    "\x1b[33m", // yellow
+    "\x1b[35m", // magenta
+    "\x1b[34m", // blue
+    "\x1b[92m", // bright green
+    "\x1b[96m", // bright cyan
+    "\x1b[95m", // bright magenta
+];
+
 #[derive(Clone)]
 struct AnsiTheme {
     dim: &'static str,
@@ -662,11 +679,15 @@ struct AnsiTheme {
     red: &'static str,
     bold: &'static str,
     reset: &'static str,
+    colored: bool,
 }
 
 impl AnsiTheme {
-    fn detect() -> Self {
-        let no_color = std::env::var_os("NO_COLOR").is_some();
+    /// `force_no_color` is the resolved `--no-color` flag; it ORs with the
+    /// `NO_COLOR` env var (https://no-color.org) and the non-TTY check so any
+    /// one of them disables colour.
+    fn detect(force_no_color: bool) -> Self {
+        let no_color = force_no_color || std::env::var_os("NO_COLOR").is_some();
         let is_tty = std::io::stderr().is_terminal();
         if no_color || !is_tty {
             Self {
@@ -675,6 +696,7 @@ impl AnsiTheme {
                 red: "",
                 bold: "",
                 reset: "",
+                colored: false,
             }
         } else {
             Self {
@@ -683,8 +705,20 @@ impl AnsiTheme {
                 red: "\x1b[31m",
                 bold: "\x1b[1m",
                 reset: "\x1b[0m",
+                colored: true,
             }
         }
+    }
+
+    /// Deterministic colour for an agent name, stable across every Step so a
+    /// given sub-agent keeps one colour for the whole run. Empty string when
+    /// colour is disabled (the caller can wrap unconditionally).
+    fn agent_color(&self, name: &str) -> &'static str {
+        if !self.colored || name.is_empty() {
+            return "";
+        }
+        let hash: usize = name.bytes().map(|b| b as usize).sum();
+        AGENT_PALETTE[hash % AGENT_PALETTE.len()]
     }
 }
 
@@ -798,7 +832,17 @@ fn print_step(theme: &AnsiTheme, step: &Step, meter: &mut Meter) {
     let agent = if step.agent.is_empty() {
         String::new()
     } else {
-        format!(" {}:", step.agent)
+        // Colour the agent name with its stable per-agent colour + bold so
+        // each participant in a team run is instantly distinguishable. The
+        // trailing reset returns to the surrounding dim style.
+        format!(
+            " {color}{bold}{name}{reset}{dim}:",
+            color = theme.agent_color(&step.agent),
+            bold = theme.bold,
+            name = step.agent,
+            reset = theme.reset,
+            dim = theme.dim,
+        )
     };
     let meter_str = if step.input_tokens > 0 || step.output_tokens > 0 {
         let tok_s = meter.tok_per_s(step.output_tokens);
@@ -1172,5 +1216,59 @@ mod tests {
         assert_eq!(human_bytes(500), "500B");
         assert_eq!(human_bytes(1024), "1.0KB");
         assert_eq!(human_bytes(5 * 1024 * 1024), "5.0MB");
+    }
+
+    /// A coloured theme, constructed directly so the test does not depend on
+    /// the ambient TTY/NO_COLOR state of the CI runner.
+    fn colored_theme() -> AnsiTheme {
+        AnsiTheme {
+            dim: "\x1b[2m",
+            green: "\x1b[32m",
+            red: "\x1b[31m",
+            bold: "\x1b[1m",
+            reset: "\x1b[0m",
+            colored: true,
+        }
+    }
+
+    #[test]
+    fn force_no_color_disables_theme() {
+        // --no-color must win even on a TTY with no NO_COLOR env var.
+        let theme = AnsiTheme::detect(true);
+        assert!(!theme.colored);
+        assert_eq!(theme.dim, "");
+        assert_eq!(theme.bold, "");
+        assert_eq!(theme.agent_color("backend"), "");
+    }
+
+    #[test]
+    fn agent_color_is_stable_per_name() {
+        let theme = colored_theme();
+        // Same name → same colour every call (so a sub-agent keeps one colour).
+        assert_eq!(theme.agent_color("backend"), theme.agent_color("backend"));
+        // A returned colour is always a member of the palette.
+        assert!(AGENT_PALETTE.contains(&theme.agent_color("frontend")));
+    }
+
+    #[test]
+    fn agent_color_distinguishes_common_team_agents() {
+        let theme = colored_theme();
+        // The three agents a typical team run interleaves should not all
+        // collapse to a single colour — at least two distinct colours.
+        let colors = [
+            theme.agent_color("team-lead"),
+            theme.agent_color("backend"),
+            theme.agent_color("frontend"),
+        ];
+        let distinct: std::collections::HashSet<_> = colors.iter().collect();
+        assert!(
+            distinct.len() >= 2,
+            "expected varied colours, got {colors:?}"
+        );
+    }
+
+    #[test]
+    fn agent_color_empty_name_is_blank() {
+        assert_eq!(colored_theme().agent_color(""), "");
     }
 }

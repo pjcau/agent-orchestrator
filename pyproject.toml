@@ -50,6 +50,9 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.15.15",
     "vulture>=2.16",
+    # Static type checker — same engine as the editor's Pylance, so CLI/CI/editor
+    # agree. Gate is incremental (changed files), see scripts/typecheck.sh.
+    "pyright>=1.1.400",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -212,6 +212,7 @@ struct ChatSettings {
     model: String,
     provider: String,
     max_steps: u32,
+    no_color: bool,
 }
 
 impl ChatSettings {
@@ -245,6 +246,7 @@ impl ChatSettings {
             model,
             provider,
             max_steps,
+            no_color: rt.no_color,
         })
     }
 }
@@ -811,9 +813,15 @@ async fn run_native_agent_host(
             &session.model
         }
     );
-    run_repl(ws, session, cwd, Some(Box::new(StdinShellConfirmer)))
-        .await
-        .map_err(|e| AgoError::Other(format!("agent-host repl error: {e:#}")))?;
+    run_repl(
+        ws,
+        session,
+        cwd,
+        Some(Box::new(StdinShellConfirmer)),
+        settings.no_color,
+    )
+    .await
+    .map_err(|e| AgoError::Other(format!("agent-host repl error: {e:#}")))?;
     Ok(())
 }
 
@@ -832,6 +840,7 @@ mod tests {
             model: "m".into(),
             provider: "ollama".into(),
             max_steps: 10,
+            no_color: false,
         }
     }
 

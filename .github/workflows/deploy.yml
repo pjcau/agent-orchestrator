@@ -39,6 +39,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: true
+          # Full history so the type-check gate can diff against the base
+          # commit (github.event.before) to find changed Python files.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
@@ -54,6 +57,19 @@ jobs:
         run: |
           ruff check src/ tests/
           ruff format --check src/ tests/
+
+      - name: Type-check changed files (pyright)
+        run: |
+          # Incremental gate: a file touched in this push must be type-clean,
+          # even though the tree still carries a pre-existing backlog
+          # (scripts/typecheck.sh --all). Closes the gap where ruff+pytest
+          # pass but a real type error (wrong attribute, BaseException slipping
+          # an `except Exception`) only ever surfaced in the editor's Pylance.
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+          fi
+          TYPECHECK_BASE="$BASE" bash scripts/typecheck.sh --changed
 
       - name: Responsive lint (frontend)
         run: bash scripts/check_responsive.sh

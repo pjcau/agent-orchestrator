@@ -219,7 +219,7 @@ clusters:
         cx: 780
         cy: 580
         size: 32
-        description: Client-side tool delegation — single WS at /api/cli/v1/agent-host where the agent loop on agents-orchestrator.com proxies file_*/shell_exec to the user's local cwd via the `ago` CLI (subprocess). Includes strict path sandbox, shell allowlist, streaming TOOL_CHUNK with backpressure, server-driven cancellation, and PII-free Prometheus metrics. Full docs in docs/agent-host.md.
+        description: Client-side tool delegation — single WS at /api/cli/v1/agent-host where the agent loop on agents-orchestrator.com proxies file_*/shell_exec to the user's local cwd via the `ago` CLI (subprocess). `--agent team-lead` routes to the multi-agent orchestrator (run_team), fanning out to sub-agents that all run their tools locally via a shared skill registry; any other agent stays single-agent (run_agent). Includes strict path sandbox, shell allowlist, streaming TOOL_CHUNK with backpressure, server-driven cancellation, stable per-agent terminal colours, and PII-free Prometheus metrics. Full docs in docs/agent-host.md.
 
   - id: observability
     label: Observability

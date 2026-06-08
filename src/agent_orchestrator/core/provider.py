@@ -73,6 +73,15 @@ class StreamChunk:
 class Provider(ABC):
     """Abstract LLM provider. Implement this to add a new backend."""
 
+    #: Per-call log of router/model fallbacks, populated by providers that
+    #: try a chain of models (e.g. OpenRouter) and left unset by the rest.
+    #: Declared here — without a default — purely so type checkers know the
+    #: attribute and its type when callers read it. It is intentionally NOT
+    #: assigned a value: providers that don't do fallback never create it, so
+    #: ``hasattr(provider, "last_fallback_log")`` stays a meaningful runtime
+    #: gate (and there is no shared-mutable-default footgun).
+    last_fallback_log: list[dict]
+
     @abstractmethod
     async def complete(
         self,

@@ -356,6 +356,64 @@ def _run_handler_capture_max_steps(hello_max_steps, monkeypatch):
     return captured["max_steps"]
 
 
+def _drive_handler(agent_name, monkeypatch):
+    """Drive the agent-host handler for a given agent and report which
+    runner was invoked plus the skill registry it received."""
+    import asyncio
+
+    import agent_orchestrator.dashboard.cli_routes as cr
+
+    seen = {"runner": None, "skills": None, "team_kwargs": None}
+    skills_sentinel = object()
+
+    async def _fake_run_agent(*args, **kwargs):
+        seen["runner"] = "run_agent"
+        seen["skills"] = kwargs.get("skill_registry_override")
+        return {"success": True, "output": "ok", "steps_taken": 1}
+
+    async def _fake_run_team(*args, **kwargs):
+        seen["runner"] = "run_team"
+        seen["skills"] = kwargs.get("skill_registry_override")
+        seen["team_kwargs"] = kwargs
+        return {"success": True, "output": "team ok", "total_cost_usd": 0.0}
+
+    monkeypatch.setattr(cr, "run_agent", _fake_run_agent)
+    monkeypatch.setattr(cr, "run_team", _fake_run_team)
+    monkeypatch.setattr(cr, "_make_provider", lambda **kw: object())
+
+    class _FakeWS:
+        def __init__(self):
+            self.app = type("A", (), {"state": type("S", (), {})()})()
+
+        async def send_json(self, data):
+            pass
+
+    class _Hello:
+        agent = agent_name
+        model = "m"
+        provider = "openrouter"
+        max_steps = 0
+
+    handler = cr._make_agent_host_prompt_handler(_FakeWS())
+    asyncio.run(handler("do it", skills_sentinel, "run-1", _Hello()))
+    return seen, skills_sentinel
+
+
+def test_agent_host_team_lead_routes_to_run_team(monkeypatch):
+    # `--agent team-lead` opts into the multi-agent orchestrator, and the
+    # client-side skill registry is propagated so sub-agents run tools locally.
+    seen, skills = _drive_handler("team-lead", monkeypatch)
+    assert seen["runner"] == "run_team"
+    assert seen["skills"] is skills
+
+
+def test_agent_host_other_agent_uses_single_run_agent(monkeypatch):
+    # Any non-team-lead agent keeps the original single-agent loop.
+    seen, skills = _drive_handler("backend", monkeypatch)
+    assert seen["runner"] == "run_agent"
+    assert seen["skills"] is skills
+
+
 def test_agent_host_uses_client_max_steps(monkeypatch):
     # Client-requested value is honoured.
     assert _run_handler_capture_max_steps(25, monkeypatch) == 25

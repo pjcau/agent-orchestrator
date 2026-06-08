@@ -512,6 +512,76 @@ class TestRunTeam:
         assert "output" in result
 
     @pytest.mark.asyncio
+    async def test_skill_registry_override_reaches_every_sub_agent(self):
+        """A client-tools team run must hand the SAME local skill registry to
+        every spawned sub-agent, so their file/shell calls execute on the
+        operator's machine instead of the server container."""
+        plan_response = '[{"agent": "backend", "task": "API"}, {"agent": "frontend", "task": "UI"}]'
+        provider = MockProvider(responses=[plan_response, '{"sufficient": true}', "Summary."])
+        bus = EventBus()
+        sentinel_registry = object()
+        captured: list[dict] = []
+
+        async def _fake_run_agent(*args, **kwargs):
+            captured.append(kwargs)
+            return {
+                "success": True,
+                "output": "done",
+                "steps_taken": 1,
+                "total_tokens": 0,
+                "total_cost_usd": 0.0,
+            }
+
+        with (
+            patch(
+                "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+                return_value=MOCK_REGISTRY,
+            ),
+            patch("agent_orchestrator.dashboard.agent_runner.run_agent", _fake_run_agent),
+        ):
+            await run_team(
+                task_description="Build a full-stack app",
+                provider=provider,
+                event_bus=bus,
+                skill_registry_override=sentinel_registry,
+            )
+
+        # Both sub-agents ran, and each got the exact same override registry.
+        assert len(captured) == 2
+        assert all(c.get("skill_registry_override") is sentinel_registry for c in captured)
+        # Override path bypasses any server-side sandbox for sub-agents.
+        assert all(c.get("sandbox") is None for c in captured)
+
+    @pytest.mark.asyncio
+    async def test_no_skill_registry_override_passes_none(self):
+        """Without an override, sub-agents must receive None so run_agent
+        builds the standard server-side local registry (no behaviour change)."""
+        plan_response = '[{"agent": "backend", "task": "API"}]'
+        provider = MockProvider(responses=[plan_response, '{"sufficient": true}', "Summary."])
+        bus = EventBus()
+        captured: list[dict] = []
+
+        async def _fake_run_agent(*args, **kwargs):
+            captured.append(kwargs)
+            return {"success": True, "output": "done", "steps_taken": 1}
+
+        with (
+            patch(
+                "agent_orchestrator.dashboard.agents_registry.get_agent_registry",
+                return_value=MOCK_REGISTRY,
+            ),
+            patch("agent_orchestrator.dashboard.agent_runner.run_agent", _fake_run_agent),
+        ):
+            await run_team(
+                task_description="Build API",
+                provider=provider,
+                event_bus=bus,
+            )
+
+        assert len(captured) == 1
+        assert captured[0].get("skill_registry_override") is None
+
+    @pytest.mark.asyncio
     async def test_fallback_on_invalid_plan(self):
         """run_team should fall back to backend+frontend when plan parsing fails."""
         provider = MockProvider(

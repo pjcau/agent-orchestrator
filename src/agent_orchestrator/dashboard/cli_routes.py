@@ -27,7 +27,7 @@ from agent_orchestrator.agent_host import serve_agent_host
 from agent_orchestrator.agent_host.telemetry import bind as bind_agent_host_metrics
 from agent_orchestrator.core.cache_context import set_cache_context
 
-from .agent_runner import run_agent
+from .agent_runner import run_agent, run_team
 from .agents_registry import get_agent_registry
 from .auth import check_ws_auth, create_cli_token
 from .cli_device_flow import (
@@ -691,14 +691,31 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
             requested_steps = int(getattr(hello, "max_steps", 0) or 0)
             max_steps = requested_steps if requested_steps > 0 else 30
             max_steps = max(1, min(max_steps, 100))
-            result = await run_agent(
-                agent_name=hello.agent or "backend",
-                task_description=text,
-                provider=provider,
-                max_steps=max_steps,
-                event_bus=bus,
-                skill_registry_override=skills,
-            )
+            # `--agent team-lead` opts the turn into the multi-agent
+            # orchestrator: team-lead decomposes the task and fans out to
+            # specialist sub-agents (frontend, backend, …), mirroring the
+            # web `/api/team/run`. Every sub-agent shares the SAME client-side
+            # skill registry, so their file/shell calls execute on the
+            # operator's machine — see run_team(skill_registry_override=...).
+            # Any other agent name keeps the single-agent loop.
+            if (hello.agent or "") == "team-lead":
+                result = await run_team(
+                    task_description=text,
+                    provider=provider,
+                    max_steps=max_steps,
+                    max_sub_agent_steps=max_steps,
+                    event_bus=bus,
+                    skill_registry_override=skills,
+                )
+            else:
+                result = await run_agent(
+                    agent_name=hello.agent or "backend",
+                    task_description=text,
+                    provider=provider,
+                    max_steps=max_steps,
+                    event_bus=bus,
+                    skill_registry_override=skills,
+                )
             output = str(result.get("output", "")) if isinstance(result, dict) else str(result)
             if output:
                 await ws.send_json(AssistantText(chunk=output).to_dict())

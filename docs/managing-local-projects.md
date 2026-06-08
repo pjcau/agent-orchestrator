@@ -112,6 +112,14 @@ ago chat --client-tools
 > :quit
 ```
 
+**Single agent vs. team.** With the default `--agent team-lead` the
+server runs the **multi-agent orchestrator**: team-lead decomposes the
+task and fans out to specialist sub-agents, and — because this is a
+`--client-tools` session — every sub-agent's `file_write` / `shell_exec`
+runs in **your** cwd, not the server container. Pass any other agent
+(`--agent backend`) to get a single-agent loop instead. See
+[agent-host.md § Single-agent vs multi-agent turns](agent-host.md#single-agent-vs-multi-agent-turns).
+
 ```bash
 # One-shot run for a scriptable task.
 ago run --client-tools "Generate a FastAPI scaffold under api/ with a /health endpoint and a pytest test."
@@ -154,6 +162,11 @@ The meter is read from the `STEP` / `TURN_END` frames (fields
 `input_tokens` / `output_tokens` / `cost_usd`); `tok/s` is computed
 client-side. It renders on **stderr**, so piping stdout to a file
 (`ago run --client-tools "…" > out.md`) keeps the artefact clean.
+
+In a team run each agent name is printed in its own **stable colour**
+(team-lead, backend, frontend, … stay visually distinct for the whole
+run), making the interleaved fan-out easy to follow. Colour is disabled
+by `--no-color`, by `NO_COLOR=1`, or when stderr is not a TTY.
 
 ---
 

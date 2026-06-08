@@ -23,7 +23,7 @@ import time
 from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
+from starlette.requests import HTTPConnection, Request
 from starlette.responses import JSONResponse, RedirectResponse
 
 logger = logging.getLogger(__name__)
@@ -344,11 +344,15 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return JSONResponse({"error": "Authentication required"}, status_code=401)
 
 
-def check_ws_auth(request: Request, api_keys: set[str] | None = None) -> dict | None:
+def check_ws_auth(request: HTTPConnection, api_keys: set[str] | None = None) -> dict | None:
     """Check authentication for WebSocket connections.
 
     Must be called BEFORE ws.accept(). Returns user dict or None.
     Checks: X-API-Key header, ephemeral device-flow key, auth_session cookie, or dev mode.
+
+    Typed as ``HTTPConnection`` (the Starlette base of both ``Request`` and
+    ``WebSocket``) because callers pass a ``WebSocket``; only ``.headers`` and
+    ``.cookies`` are read, both of which live on that base.
     """
     # Dev mode
     if os.environ.get("ALLOW_DEV_MODE", "").lower() == "true":

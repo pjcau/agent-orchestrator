@@ -1,0 +1,15 @@
+{
+  "include": ["src/agent_orchestrator"],
+  "exclude": [
+    "**/.*",
+    "**/__pycache__",
+    "**/node_modules",
+    ".venv",
+    "rust"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning"
+}

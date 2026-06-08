@@ -765,7 +765,7 @@ def _detect_category(task: str) -> str:
     scores: dict[str, int] = {}
     for category, keywords in _CATEGORY_KEYWORDS.items():
         scores[category] = sum(1 for kw in keywords if kw in task_lower)
-    best = max(scores, key=scores.get) if scores else "software-engineering"
+    best = max(scores, key=lambda c: scores[c]) if scores else "software-engineering"
     return best if scores.get(best, 0) > 0 else "software-engineering"
 
 
@@ -881,6 +881,7 @@ async def run_team(
     conversation_manager: ConversationManager | None = None,
     sandbox_manager: SandboxManager | None = None,
     store: BaseStore | None = None,
+    skill_registry_override: Any = None,
 ) -> dict[str, Any]:
     """Run a multi-agent team with dynamic routing.
 
@@ -894,6 +895,18 @@ async def run_team(
         sandbox_manager: Optional SandboxManager. When provided, each
             sub-agent receives a session-scoped sandbox fetched via
             ``sandbox_manager.get_or_create(session_id)``.
+        skill_registry_override: Optional pre-built SkillRegistry shared by
+            EVERY sub-agent (the team-lead only plans, it runs no tools). The
+            agent-host WS handler passes its registry of RemoteSkillAdapters
+            here so a CLI ``--client-tools`` team run executes every
+            sub-agent's file/shell calls on the *operator's* machine instead
+            of the server container. SECURITY: this grants every spawned
+            sub-agent the same local tool reach as a single-agent client-tools
+            run — the CLI's path sandbox + shell allowlist remain the trust
+            boundary, unchanged by fan-out. When set, the server-side
+            ``sandbox_manager`` is bypassed for sub-agents (tools are remote,
+            so a server container sandbox would be both useless and
+            misleading).
 
     Flow:
       1. team-lead analyzes the task and selects agents from the registry
@@ -1136,8 +1149,12 @@ async def run_team(
         )
 
         # Resolve sandbox for this sub-agent when a manager is provided.
+        # Skipped entirely under a client-tools override: the sub-agent's
+        # tools run on the operator's machine, so a server-side container
+        # sandbox would never see them — pairing both would silently drop
+        # the local registry inside run_agent's sandbox branch.
         sub_sandbox: Sandbox | None = None
-        if sandbox_manager is not None:
+        if sandbox_manager is not None and skill_registry_override is None:
             try:
                 sub_sandbox = await sandbox_manager.get_or_create(session_id)
             except Exception:
@@ -1160,6 +1177,7 @@ async def run_team(
                 session_id=session_id,
                 sandbox=sub_sandbox,
                 store=store,
+                skill_registry_override=skill_registry_override,
             )
 
         await bus.emit(
@@ -1184,7 +1202,10 @@ async def run_team(
     )
 
     for item in sub_results:
-        if isinstance(item, Exception):
+        # `return_exceptions=True` yields BaseException too (e.g. a
+        # CancelledError, which is NOT an Exception in 3.8+). Narrow on
+        # BaseException so a cancelled sub-agent is skipped, not unpacked.
+        if isinstance(item, BaseException):
             continue
         event_key, result = item
         agent_tok = result.get("total_tokens", 0)
@@ -1320,7 +1341,9 @@ async def run_team(
             return_exceptions=True,
         )
         for item in re_results:
-            if isinstance(item, Exception):
+            # See the note above — narrow on BaseException so a cancelled
+            # re-delegated sub-agent is skipped rather than unpacked.
+            if isinstance(item, BaseException):
                 continue
             event_key, result = item
             agent_tok = result.get("total_tokens", 0)
