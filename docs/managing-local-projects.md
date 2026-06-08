@@ -318,6 +318,22 @@ Logs go to **stderr**, so they don't pollute a piped stdout. Paste this
 trace when reporting a problem — it shows exactly what the server sent
 and when.
 
+#### Record a whole session to a file
+
+To capture a session for later analysis (or to share), add the global
+`--log-file` flag. The file **always** records full debug logs regardless of
+`-v`, so your terminal can stay quiet while the file gets everything:
+
+```bash
+ago --log-file ago-session.log chat --client-tools
+# terminal at the default level; ago-session.log gets the full debug trace
+```
+
+The file is **appended** (so several invocations accumulate into one record),
+ANSI-free, and includes the WS frame trace, tool calls, errors, and timing —
+the same content as `-vvv` but written to disk. Hand off `ago-session.log`
+when you want someone to review what happened and suggest improvements.
+
 Per-feature deep dives:
 
 - Wire protocol catalogue: [agent-host.md § Architecture at a glance](agent-host.md#architecture-at-a-glance)

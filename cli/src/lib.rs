@@ -17,13 +17,13 @@ pub mod state;
 
 use clap::Parser;
 use std::io::IsTerminal;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 pub use error::{AgoError, Result};
 
 pub async fn run() -> Result<()> {
     let parsed = cli::Cli::parse();
-    init_logging(parsed.verbose);
+    init_logging(parsed.verbose, parsed.log_file.as_deref());
     let runtime = runtime::Runtime::from_args(&parsed)?;
     commands::dispatch(&runtime, parsed.command).await
 }
@@ -44,18 +44,49 @@ pub fn report_error(err: &AgoError) {
     }
 }
 
-fn init_logging(verbose: u8) {
+fn init_logging(verbose: u8, log_file: Option<&std::path::Path>) {
     let level = match verbose {
         0 => "warn",
         1 => "info",
         2 => "debug",
         _ => "trace",
     };
-    let filter = EnvFilter::try_from_env("AGO_LOG").unwrap_or_else(|_| EnvFilter::new(level));
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    // Terminal layer: honours -v / AGO_LOG, writes to stderr (so stdout stays
+    // clean for piping). Per-layer filter so the file layer can differ.
+    let stderr_filter =
+        EnvFilter::try_from_env("AGO_LOG").unwrap_or_else(|_| EnvFilter::new(level));
+    let stderr_layer = fmt::layer()
         .with_writer(std::io::stderr)
         .with_target(false)
+        .with_filter(stderr_filter);
+
+    // Optional file layer: ALWAYS at debug (so a recorded session is useful to
+    // share even when the terminal ran at the default warn level), no ANSI,
+    // appended so multiple invocations accumulate. A bad path warns and is
+    // skipped rather than aborting the command.
+    let file_layer = log_file.and_then(|path| {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            Ok(file) => Some(
+                fmt::layer()
+                    .with_ansi(false)
+                    .with_target(false)
+                    .with_writer(std::sync::Mutex::new(file))
+                    .with_filter(EnvFilter::new("debug")),
+            ),
+            Err(e) => {
+                eprintln!("warning: --log-file {}: {e}", path.display());
+                None
+            }
+        }
+    });
+
+    let _ = tracing_subscriber::registry()
+        .with(stderr_layer)
+        .with(file_layer)
         .try_init();
 }
 

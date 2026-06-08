@@ -20,6 +20,12 @@ pub struct Cli {
     #[arg(short = 'v', long, global = true, action = clap::ArgAction::Count)]
     pub verbose: u8,
 
+    /// Append full debug logs (WS frame trace, tool calls, errors, timing) to
+    /// FILE, regardless of -v. The terminal stays at the -v level; the file
+    /// always captures debug. Useful to record a session and share it.
+    #[arg(long, global = true, value_name = "FILE")]
+    pub log_file: Option<PathBuf>,
+
     /// Disable ANSI colour and code-fence formatting on stdout.
     /// `NO_COLOR=1` and a non-TTY stdout already disable colour
     /// automatically — this flag forces it off even on a TTY.
@@ -368,4 +374,31 @@ pub struct RunArgs {
     /// Legacy Python subprocess fallback for `--client-tools`. See chat.
     #[arg(long, hide = true, conflicts_with = "local")]
     pub client_tools_py: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_file_flag_parses() {
+        let cli = Cli::try_parse_from(["ago", "--log-file", "/tmp/ago.log", "whoami"]).unwrap();
+        assert_eq!(
+            cli.log_file.as_deref(),
+            Some(std::path::Path::new("/tmp/ago.log"))
+        );
+    }
+
+    #[test]
+    fn log_file_defaults_none() {
+        let cli = Cli::try_parse_from(["ago", "whoami"]).unwrap();
+        assert!(cli.log_file.is_none());
+    }
+
+    #[test]
+    fn log_file_is_global_after_subcommand() {
+        // global=true → accepted after the subcommand too.
+        let cli = Cli::try_parse_from(["ago", "whoami", "--log-file", "x.log"]).unwrap();
+        assert_eq!(cli.log_file.as_deref(), Some(std::path::Path::new("x.log")));
+    }
 }
