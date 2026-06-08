@@ -35,7 +35,13 @@ variable "instance_type" {
 }
 
 variable "root_volume_size" {
-  description = "Root EBS volume size in GB"
+  # WARNING: only ever INCREASE this. EBS cannot shrink in place, so lowering
+  # it forces a root-volume REPLACEMENT on `terraform apply` — a blank disk
+  # that destroys Postgres/Grafana/Prometheus/certs/job-archive state. The
+  # 100 GB is headroom for multi-stage build spikes (15-30 GB transient), not
+  # steady-state use (~12 GB). To go smaller, do a snapshot + manual volume
+  # swap in a maintenance window — see docs/phase0-cost-report.md.
+  description = "Root EBS volume size in GB (increase-only; see warning)"
   type        = number
   default     = 100
 }

@@ -30,7 +30,9 @@ variable "ssh_public_key" {
 }
 
 variable "root_volume_size" {
-  description = "Root EBS volume size in GB"
+  # Increase-only: lowering this replaces the root volume (blank disk, data
+  # loss). See the root variables.tf and docs/phase0-cost-report.md.
+  description = "Root EBS volume size in GB (increase-only; see warning)"
   type        = number
   default     = 100
 }

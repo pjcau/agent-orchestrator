@@ -98,6 +98,34 @@ up`s, OOM restarts, failed-deploy retries) that turned a $1.20/mo line into
 Net effect: redeploys are now free on the Cost Explorer line. Covered by
 `tests/test_aws_cost_exporter.py`.
 
+### EBS volume sizing — why we keep 100 GB (do NOT shrink in Terraform)
+
+The root volume is `gp3` 100 GB (`terraform` `root_volume_size`, ~$8.5/mo).
+Steady-state usage is low — **~12 GB / 100 GB (12%)** measured from the deploy's
+`df -h /`. Shrinking to 40 GB would save only **~$5/mo**, and it is **not** a
+safe or simple change:
+
+- **EBS volumes cannot be shrunk in place** — AWS only supports *growing* a
+  volume. Lowering `root_volume_size` in Terraform forces **replacement** of
+  the root volume, which gives the instance a **blank disk** and destroys all
+  on-disk state (Postgres DB, Grafana, Prometheus history, Let's Encrypt certs,
+  job archives). **Never `terraform apply` a smaller `root_volume_size`.**
+- The headroom is there for **build spikes**, not steady state: the multi-stage
+  React + Rust + Python `--no-cache` build consumes 15–30 GB transiently, which
+  is why the deploy prunes builder cache and aborts below 5 GB free. 40 GB
+  leaves ~28 GB margin — workable but tighter.
+
+If a smaller volume is ever genuinely needed, the **only safe path** is a
+maintenance-window volume swap, not Terraform:
+
+1. Stop the stack; take an EBS **snapshot** (backup).
+2. Create a new 40 GB `gp3` volume; attach it as a secondary device.
+3. `rsync` the root filesystem onto it and install the bootloader.
+4. Swap it in as the root device; detach the old volume once verified.
+
+Given the ~$5/mo saving versus the downtime + data-loss risk, the standing
+decision is to **keep 100 GB**.
+
 ### What's included in the running cost
 
 - Dashboard (FastAPI + HTTPS) at agents-orchestrator.com
