@@ -82,6 +82,22 @@ expected drop. Note that **each manual `aws-cost-audit` workflow run also calls
 Cost Explorer** (several `ce` calls per run), so bursts of manual audits inflate
 this line — prefer the weekly scheduled run.
 
+**Restart amplification fix (June 2026).** Even at a 24 h interval the exporter
+re-queried CE on *every container start* — and worse, it fetched **twice** per
+start (an eager `_fetch_costs()` in `main()` plus the refresh loop's immediate
+first iteration = 8 paid calls/restart). On a heavy deploy day (many `compose
+up`s, OOM restarts, failed-deploy retries) that turned a $1.20/mo line into
+~$14/mo. Two changes removed it:
+
+1. Dropped the redundant eager fetch in `main()` (8 → 4 calls per real fetch).
+2. Added an **on-disk cache** (`COST_CACHE_PATH`, a `costcache:` volume in
+   `docker-compose.prod.yml`) that survives restarts. A restart inside the
+   24 h window reuses the cached numbers and issues **zero** CE calls; only the
+   daily loop, once the cache ages out, does a real fetch and rewrites it.
+
+Net effect: redeploys are now free on the Cost Explorer line. Covered by
+`tests/test_aws_cost_exporter.py`.
+
 ### What's included in the running cost
 
 - Dashboard (FastAPI + HTTPS) at agents-orchestrator.com

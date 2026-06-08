@@ -1,7 +1,9 @@
 """AWS Cost Explorer + S3 metrics exporter for Prometheus.
 
-Queries AWS Cost Explorer API every hour and CloudWatch S3 metrics
-every 15 minutes. Exposes all on port 9101 in Prometheus text format.
+Queries AWS Cost Explorer API once per day (with an on-disk cache that
+survives restarts, so redeploys don't re-query the paid CE API) and
+CloudWatch S3 metrics every 15 minutes. Exposes all on port 9101 in
+Prometheus text format.
 
 Metrics exposed:
   aws_cost_daily_usd{service="..."} — today's cost per AWS service
@@ -20,7 +22,9 @@ Metrics exposed:
 from __future__ import annotations
 
 import datetime
+import json
 import logging
+import os
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -53,9 +57,75 @@ _lock = threading.Lock()
 # S3 refresh interval: 15 minutes (CloudWatch updates every ~5-10 min)
 S3_REFRESH_INTERVAL = 900
 
+# Persistent cache for the Cost Explorer result, on a mounted volume so it
+# SURVIVES container restarts. Without it, every `compose up`/redeploy/crash
+# re-queried CE on startup — at 4 paid calls ($0.01) per fetch and dozens of
+# restarts on a busy deploy day, CE became the single biggest bill line.
+# With the cache, a restart inside REFRESH_INTERVAL reuses the cached numbers
+# and issues ZERO CE calls.
+COST_CACHE_PATH = os.environ.get(
+    "COST_CACHE_PATH", "/var/cache/aws-cost-exporter/costs.json"
+)
+
 
 def _get_ce_client():
     return boto3.client("ce", region_name="us-east-1")
+
+
+def _load_cost_cache() -> dict | None:
+    """Return the cached cost payload, or None if absent/unreadable."""
+    try:
+        with open(COST_CACHE_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _cost_cache_is_fresh(payload: dict | None, now: float | None = None) -> bool:
+    """True if the cache exists and is younger than REFRESH_INTERVAL."""
+    if not payload:
+        return False
+    fetched_at = payload.get("fetched_at")
+    if not isinstance(fetched_at, (int, float)):
+        return False
+    now = time.time() if now is None else now
+    return (now - fetched_at) < REFRESH_INTERVAL
+
+
+def _save_cost_cache(
+    monthly_total: float,
+    forecast_amount: float,
+    today: dict[str, float],
+    yesterday: dict[str, float],
+    now: float | None = None,
+) -> None:
+    """Atomically persist the latest CE numbers so a restart can skip CE."""
+    payload = {
+        "fetched_at": time.time() if now is None else now,
+        "monthly_usd": monthly_total,
+        "forecast_usd": forecast_amount,
+        "today": today,
+        "yesterday": yesterday,
+    }
+    try:
+        os.makedirs(os.path.dirname(COST_CACHE_PATH) or ".", exist_ok=True)
+        tmp = f"{COST_CACHE_PATH}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, COST_CACHE_PATH)
+    except OSError:
+        logger.warning("Could not write cost cache at %s", COST_CACHE_PATH, exc_info=True)
+
+
+def _apply_cost_cache(payload: dict) -> None:
+    """Load cached values into the in-memory metric stores."""
+    with _lock:
+        _metrics["aws_cost_monthly_usd"] = float(payload.get("monthly_usd", 0.0))
+        _metrics["aws_cost_monthly_forecast_usd"] = float(payload.get("forecast_usd", 0.0))
+        _service_costs_today.clear()
+        _service_costs_today.update(payload.get("today", {}))
+        _service_costs_yesterday.clear()
+        _service_costs_yesterday.update(payload.get("yesterday", {}))
 
 
 def _enable_s3_request_metrics():
@@ -96,9 +166,26 @@ def _enable_s3_request_metrics():
         logger.exception("Failed to enable S3 request metrics")
 
 
-def _fetch_costs():
-    """Fetch costs from AWS Cost Explorer."""
+def _fetch_costs(force: bool = False):
+    """Fetch costs from AWS Cost Explorer, honouring the on-disk cache.
+
+    Unless ``force`` is set, a cache younger than ``REFRESH_INTERVAL`` is
+    reused and NO Cost Explorer calls are made — this is what makes a
+    container restart free. The daily refresh loop ages past the interval and
+    triggers a real fetch (which then rewrites the cache).
+    """
     global _metrics, _service_costs_today, _service_costs_yesterday
+
+    if not force:
+        cached = _load_cost_cache()
+        if _cost_cache_is_fresh(cached):
+            _apply_cost_cache(cached)
+            age_h = (time.time() - cached["fetched_at"]) / 3600
+            logger.info(
+                "Costs: cache hit (age %.1fh) — skipped 4 paid Cost Explorer calls",
+                age_h,
+            )
+            return
 
     try:
         ce = _get_ce_client()
@@ -178,6 +265,11 @@ def _fetch_costs():
             _service_costs_today.update(daily_costs_today)
             _service_costs_yesterday.clear()
             _service_costs_yesterday.update(daily_costs_yesterday)
+
+        # Persist so the next restart inside REFRESH_INTERVAL skips CE entirely.
+        _save_cost_cache(
+            monthly_total, forecast_amount, daily_costs_today, daily_costs_yesterday
+        )
 
         logger.info(
             "Costs updated: monthly=$%.2f, forecast=$%.2f, services_today=%d",
@@ -497,7 +589,12 @@ class MetricsHandler(BaseHTTPRequestHandler):
 
 
 def _cost_refresh_loop():
-    """Background thread that refreshes costs every hour."""
+    """Background thread that refreshes costs once per REFRESH_INTERVAL.
+
+    The first iteration consults the on-disk cache (free on a restart); once
+    the cache ages past the interval, a real Cost Explorer fetch runs and
+    rewrites it.
+    """
     while True:
         _fetch_costs()
         time.sleep(REFRESH_INTERVAL)
@@ -516,8 +613,10 @@ def main():
     # Enable S3 request metrics on all buckets (idempotent)
     _enable_s3_request_metrics()
 
-    # Initial fetch
-    _fetch_costs()
+    # No eager cost fetch here: the refresh loop's first iteration already
+    # fetches (and now consults the cache first), so calling it here too used
+    # to DOUBLE the Cost Explorer calls on every startup. S3 metrics are
+    # CloudWatch (effectively free), so an eager fetch is fine.
     _fetch_s3_metrics()
 
     # Background refresh threads

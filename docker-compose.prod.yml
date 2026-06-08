@@ -140,8 +140,14 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_DEFAULT_REGION=eu-west-1
+      - COST_CACHE_PATH=/var/cache/aws-cost-exporter/costs.json
     expose:
       - "9101"
+    volumes:
+      # Persist the Cost Explorer cache across restarts so a redeploy doesn't
+      # re-issue paid CE API calls (the cache only helps if it survives the
+      # container — see exporter.py COST_CACHE_PATH).
+      - costcache:/var/cache/aws-cost-exporter
     restart: unless-stopped
 
   # --- Prometheus ---
@@ -234,3 +240,4 @@ volumes:
   grafanadata:
   tempodata:
   certbot-webroot:
+  costcache:
