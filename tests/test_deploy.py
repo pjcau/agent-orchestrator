@@ -92,6 +92,31 @@ class TestDockerComposeProd:
         assert any("./certs" in v or "letsencrypt" in v for v in volumes)
 
 
+class TestSpotAutoRecovery:
+    """The site runs on a SPOT instance; a boot-time systemd unit must bring
+    the stack back after AWS reclaims and restarts it."""
+
+    UNIT = DOCKER_DIR / "systemd" / "agent-orchestrator.service"
+
+    def test_unit_file_exists(self):
+        assert self.UNIT.exists()
+
+    def test_unit_runs_compose_up_at_boot(self):
+        text = self.UNIT.read_text()
+        # Starts after docker, runs on every boot, brings the stack up.
+        assert "After=docker.service" in text
+        assert "WantedBy=multi-user.target" in text
+        assert "compose -f docker-compose.prod.yml" in text
+        assert "up -d" in text
+        # Guarded so a first boot before code is rsynced doesn't fail the unit.
+        assert "|| true" in text
+
+    def test_deploy_installs_and_enables_unit(self):
+        deploy = (ROOT / ".github" / "workflows" / "deploy.yml").read_text()
+        assert "docker/systemd/agent-orchestrator.service" in deploy
+        assert "systemctl enable agent-orchestrator.service" in deploy
+
+
 class TestNginxConfig:
     """Verify nginx reverse proxy configuration."""
 

@@ -187,6 +187,32 @@ All GitHub Secrets are injected into `.env.prod` on EC2 via the `_inject()` help
 
 Only `dashboard` and `aws-cost-exporter` are force-recreated on deploy. Stateful services (postgres, redis, nginx, tempo) are preserved between deploys to keep data/TLS state.
 
+### Spot instance resilience (boot-time auto-recovery)
+
+The EC2 instance is a **persistent spot** request with
+`instance_interruption_behavior = stop` (Terraform `modules/ec2`). Spot is
+~60-70 % cheaper than on-demand, but AWS can reclaim the instance: it is then
+**stopped** (EBS root volume + data persist) and the persistent request starts
+it again when capacity returns. The instance comes back, but a plain restart
+does **not** bring Docker containers up on its own — so the site used to stay
+down until a manual redeploy.
+
+Fix: a systemd unit, [`docker/systemd/agent-orchestrator.service`](../docker/systemd/agent-orchestrator.service),
+runs `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d` as
+a `oneshot` on **every boot** (`WantedBy=multi-user.target`, `After=docker.service`).
+On a spot stop → start the stack restarts itself with no human in the loop
+(images + volumes are already on the persisted EBS root volume). The deploy
+installs/refreshes it on the current instance every run
+(`sudo cp … && systemctl enable`); the `|| true` guard keeps a first boot
+before the code is rsynced from marking the unit failed. Covered by
+`tests/test_deploy.py::TestSpotAutoRecovery`.
+
+> A full **replacement** (new instance + fresh EBS volume, e.g. capacity gone
+> for a long time) still needs a deploy to restore code and data — the unit
+> only auto-recovers a stop → start of an already-deployed instance. The
+> hourly Uptime Check is the backstop that surfaces any outage the unit can't
+> self-heal.
+
 ### EC2 Disk Hygiene
 
 `docker compose build --no-cache` accumulates intermediate BuildKit layers

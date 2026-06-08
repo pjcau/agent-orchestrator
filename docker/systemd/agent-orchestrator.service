@@ -1,0 +1,21 @@
+[Unit]
+# Boot-time auto-recovery for the production stack on a SPOT instance.
+# AWS can reclaim the instance (interruption_behavior=stop); the persistent
+# spot request later starts it again. Without this unit the app stayed down
+# until a manual redeploy. This oneshot brings the whole stack back on every
+# boot — images and volumes persist on the EBS root volume, so it's just a
+# `compose up -d`. Installed/refreshed on each deploy (see .github/workflows/
+# deploy.yml); the `|| true` keeps it from failing before code is present.
+Description=Agent Orchestrator stack (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/agent-orchestrator
+ExecStart=/bin/bash -c 'cd /opt/agent-orchestrator && [ -f docker-compose.prod.yml ] && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d || true'
+
+[Install]
+WantedBy=multi-user.target

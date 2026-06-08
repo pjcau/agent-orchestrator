@@ -325,6 +325,14 @@ jobs:
             sleep $((attempt * 15))
           done
 
+          # Install/refresh the boot-time auto-recovery unit on the CURRENT
+          # instance. This is a spot instance — when AWS reclaims it
+          # (interruption_behavior=stop) and the persistent request restarts
+          # it, this oneshot brings the whole stack back with no manual
+          # redeploy. The unit file is versioned in the repo (rsynced to
+          # $APP_DIR), so this just copies it into place. Idempotent.
+          $SSH_CMD "sudo cp $APP_DIR/docker/systemd/agent-orchestrator.service /etc/systemd/system/agent-orchestrator.service && sudo systemctl daemon-reload && sudo systemctl enable agent-orchestrator.service"
+
           # Ensure postgres password matches .env.prod (fixes first-init mismatch)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T postgres psql -U orchestrator -c \"ALTER USER orchestrator WITH PASSWORD '${PG_PASS}';\"" 2>/dev/null || true
 
