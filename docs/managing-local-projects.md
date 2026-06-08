@@ -104,8 +104,9 @@ shell:
 ```
 
 Allowed keys: `server`, `agent`, `model`, `provider`, `max_steps`,
-`context`, `shell`. CLI flags override `.ago.yaml`; `.ago.yaml` overrides
-`~/.config/ago/config.toml`. Empty values fall through to the next layer.
+`context`, `shell`, `jail`. CLI flags override `.ago.yaml`; `.ago.yaml`
+overrides `~/.config/ago/config.toml`. Empty values fall through to the next
+layer.
 
 ### Shell policy (stop the `allow X? [y/N]` prompts)
 
@@ -153,6 +154,46 @@ Always pair it with a `deny` list, and **always deny the shells**
 `bash -c "…"` regardless of the rest of the blocklist. Prefer the explicit
 `allow:` list when you can; reach for `allow_all` only in throwaway/sandboxed
 checkouts you don't mind the agent operating freely in.
+
+### Jail-by-default: confine the whole session to the project (`jail`)
+
+The shell policy gates `shell_exec` by **binary name**, not by path — so even
+with `deny: [rm]`, an *allowed* binary (or one you approved once) can still
+write outside the project with an absolute path. `file_read`/`file_write` are
+hard-jailed to the project root, but `shell_exec` runs as your user with full
+filesystem access. The only way to *guarantee* nothing outside the root is
+touched is OS-level isolation.
+
+That is what `jail` gives you. It defaults to **`true`** (jail-by-default):
+
+```yaml
+jail: true     # (default) confine --client-tools runs to this folder
+# jail: false  # opt out — run --client-tools natively on the host
+```
+
+When `jail` is enabled and a `--client-tools` session starts **un-sandboxed**,
+the binary prints a one-line warning. The enforcement is provided by the
+bundled `ago` front-end wrapper (`cli/ago`): install it on your `PATH` *ahead*
+of the compiled binary (kept at `~/.local/libexec/ago`), and any
+`ago … --client-tools` is transparently run inside a container — no separate
+command to remember:
+
+```bash
+ago chat --client-tools --agent team-lead       # auto-jailed when jail: true
+```
+
+The wrapper runs the same `ago` binary inside a container that mounts **only**
+the current directory as `/work` (plus your `~/.config/ago` token and
+`~/.cache/ago` allowlist, read-write). `shell_exec` then physically cannot
+reach anything outside the project — an absolute `rm /home/you/…` hits a path
+that does not exist in the container. It sets `AGO_IN_JAIL=1` so the binary
+knows the session is sandboxed and skips the warning. Persist logs under
+`/work` (e.g. `--log-file /work/session.log`).
+
+`jail` resolution (first match wins): `AGO_JAIL` env (`true`/`false`) →
+`.ago.yaml` `jail:` → `~/.config/ago/launcher.toml` `jail =` → `true`. Commands
+without `--client-tools` always run natively. Inside the jail `allow_all: true`
+is reasonable — the container, not the shell policy, is the boundary.
 
 ---
 

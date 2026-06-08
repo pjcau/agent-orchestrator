@@ -264,6 +264,19 @@ impl Helper for ChatHelper {}
 
 pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
     if args.client_tools || args.client_tools_py {
+        // Jail-by-default safety net: client-tools runs execute shell_exec on
+        // the host, and the shell policy only gates by binary name, not path.
+        // When jail is enabled (the default) but we are NOT inside the sandbox
+        // (the jail-by-default `ago` wrapper sets AGO_IN_JAIL=1), warn that
+        // this session can touch files outside the project root. Warn-only — it
+        // never blocks the session.
+        if rt.jail_enabled() && std::env::var_os("AGO_IN_JAIL").is_none() {
+            eprintln!(
+                "\x1b[33m! jail enabled but this session is UNSANDBOXED — shell_exec can reach \
+                 the whole filesystem.\n  Launch via the jail-by-default `ago` wrapper to confine \
+                 it to this folder, or set `jail: false` in .ago.yaml to silence.\x1b[0m"
+            );
+        }
         // Agent-host mode. Same auth gate as the regular REST path so
         // failure messages match.
         let settings = ChatSettings::resolve(rt, &args)?;

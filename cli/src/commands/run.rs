@@ -872,6 +872,7 @@ mod tests {
                 max_steps: Some(42),
                 context: None,
                 shell: None,
+                jail: None,
             },
             None,
         );
@@ -921,6 +922,7 @@ mod tests {
                 max_steps: None,
                 context: None,
                 shell: None,
+                jail: None,
             },
             None,
         );

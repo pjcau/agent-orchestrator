@@ -224,6 +224,16 @@ pub mod runtime {
             self
         }
 
+        /// Whether `--client-tools` runs should be jailed in a container.
+        /// `.ago.yaml`'s `jail:` wins; defaults to `true` (jail-by-default)
+        /// when there is no project file or the key is omitted.
+        pub fn jail_enabled(&self) -> bool {
+            self.project
+                .as_ref()
+                .map(|p| p.jail_enabled())
+                .unwrap_or(true)
+        }
+
         /// Effective server URL: `.ago.yaml > config.toml`.
         pub fn effective_server(&self) -> Option<&str> {
             self.project

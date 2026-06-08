@@ -14,6 +14,31 @@ frame trace; this document consolidates what the trace revealed.
 > section below links to its code + docs. The denied-`rm` root cause is now
 > both diagnosable (P1) and self-limiting (P2).
 
+> **Live-trace verification (2026-06-09):** re-read `~/ago-session.log`
+> (409 tool-calls, 73 errors, 5 turns, 19:23–22:06 on 06-08). The trace
+> **straddles the upgrade** — the dashboard was restarted at **21:53**, so
+> the P3 meter flips `total=0 → total=40` mid-file — but it is otherwise a
+> *pre-improvement* trace and confirms the original diagnosis was real, not
+> hypothetical:
+>
+> | Item | Observed in trace | Reading |
+> |---|---|---|
+> | P0 compaction | backend context reached **872,379 input tokens** (threshold 60k) | did **not** fire — old server code, confirms the cost driver |
+> | P1 error reason | 73× `status=error` with **no** `reason=` | CLI binary predates the 23:14 P1 commit |
+> | P1 output cap | single-step `in=` jumps of +60–470k | uncapped — old server code |
+> | P2 turn_end | all 5 `turn_end` → `steps=0 in=0 out=0` | split-token mapping not yet live |
+> | P3 meter | `total=40` only after 21:53 restart | new server code engaged mid-session |
+>
+> **Error breakdown:** 65 `shell_exec` + 7 `file_write` = 73 / 409 (**18 %**).
+> Consistent with `shell_requires_argv_list` (agent emits shell *strings*),
+> but unconfirmable line-by-line until the CLI is rebuilt past the P1 commit.
+>
+> **Action to get a clean post-fix trace:** rebuild the CLI
+> (`cd cli && cargo install --path . --locked`) so `reason=` is logged, restart
+> the dashboard (`docker compose up -d --build dashboard`) so P0/P1-cap/P2 run,
+> then record a fresh session to `~/ago-session-new.log` and compare the same
+> four signals (peak `in=`, `reason=` on errors, `turn_end` tokens, `total`).
+
 ## TL;DR
 
 The multi-agent orchestration **works and completes tasks** — including
@@ -39,33 +64,46 @@ context, not doing new work.
 
 ---
 
-## ⭐ Confirmed root cause of the recurring tool errors: a blocked `rm`
+## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
-Across **every** turn the trace shows `shell_exec` results coming back
+Across **every** turn the trace showed `shell_exec` results coming back
 `status=error` — ~20+ of them, in clusters. With the (then) opaque logging we
-could only see *that* they failed, not *why*. The operator then reported the
-real-world symptom: **"I keep telling it to delete the duplicate files and it
-doesn't work."**
+could only see *that* they failed, not *why*, so the first hypothesis was a
+denied `rm` (the operator's symptom: *"I keep telling it to delete the
+duplicate files and it doesn't work."*).
 
-These are the same thing. `rm` is **not** in the global allowlist
-(`~/.cache/ago/shell-allow.json` held only `docker, find, git, ls, mkdir,
-node, npm, npx`), and the project shell policy denied it. So every time the
-agent ran `rm <duplicate>` the gate refused it → `status=error` → the file
-was never deleted → the user re-asked → the agent retried → more errors and
-more wasted context. A perfect, self-inflicted loop.
+**The P1 fix proved that hypothesis wrong.** Once the reason was logged
+(ago v0.5.16), the live trace showed the actual cause:
 
-**Two lessons, both already in the proposals below:**
+```
+status=error reason="shell_requires_argv_list: shell_exec via agent-host
+                      expects argv as a list; got a string"
+```
 
-1. **P1 (log the error reason)** would have made this *instantly* obvious —
-   `status=error reason="shell_denied: rm not allowed"` instead of a blank
-   `status=error`. This single change turns "it doesn't work" into a
-   one-line diagnosis. **Highest-leverage fix in this document.**
-2. **P2 (back off on repeated failures)** would have stopped the agent from
-   re-issuing the same denied `rm` dozens of times, saving steps and context.
+Every diagnosable failure so far is **`shell_requires_argv_list`**, not a
+denied binary. The agent (LLM) writes shell commands the way a human would —
+as a **string** with shell operators (`&&`, `|`, `>`, `$(…)`, globs, `for …`
+loops) — but the agent-host's `shell_exec` deliberately **refuses string
+commands** and only accepts an **argv list** (no `shell=True` → no injection).
+So a command like `find . -name '*.dup' -delete`, `rm $(…)`, or
+`for f in …; do rm "$f"; done` is rejected outright.
 
-Operator fix for the deletion itself: allow `rm` for that project (remove it
-from `.ago.yaml` `shell.deny`, add it to `shell.allow`) — `deny` is a hard
-block that even a confirmation can't override.
+This is almost certainly why "delete the duplicates" never worked: not because
+`rm` is denied, but because the agent expresses the deletion as a **shell
+string** the host won't run. The form of the command, not the binary.
+
+**Lessons:**
+
+1. **P1 (log the error reason) was the highest-leverage fix in this document** —
+   it turned an hour of "mysterious `status=error`" into a one-line diagnosis,
+   and corrected a wrong hypothesis (`rm` denied) into the real one
+   (`shell_requires_argv_list`). ✅ shipped in v0.5.16.
+2. **New finding — argv-list mismatch (P1-class):** the orchestrator should
+   teach sub-agents that `shell_exec` is *one program + argv, no shell
+   operators*, and/or offer a sandboxed `sh -c` path for compound commands
+   (weighed against the injection risk the current design avoids on purpose).
+3. **P2 (back off on repeated failures)** still applies — the agent re-issued
+   the same string-form command many times instead of switching to argv.
 
 ---
 

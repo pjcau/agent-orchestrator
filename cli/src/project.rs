@@ -36,6 +36,13 @@ pub struct ProjectPreset {
     /// when absent the global allowlist cache (`~/.cache/ago/shell-allow.json`)
     /// plus the interactive confirm prompt are the only gate.
     pub shell: Option<ShellPolicy>,
+    /// Run `--client-tools` sessions inside a container that mounts ONLY this
+    /// project dir, so `shell_exec` cannot touch the host filesystem (the shell
+    /// policy above only gates by binary name, not by path). Consumed by the
+    /// jail-by-default `ago` wrapper; the binary itself only *warns* when on
+    /// (or defaults on) but the session is running un-sandboxed. Defaults to
+    /// `true` when omitted — see [`ProjectPreset::jail_enabled`].
+    pub jail: Option<bool>,
 }
 
 /// Project-scoped shell policy layered on top of the global allowlist cache.
@@ -87,6 +94,13 @@ pub struct ContextOverrides {
 }
 
 impl ProjectPreset {
+    /// Whether `--client-tools` sessions for this project should run jailed in
+    /// a container. Defaults to `true` (jail-by-default) when `jail:` is omitted
+    /// from `.ago.yaml`; set `jail: false` to opt out.
+    pub fn jail_enabled(&self) -> bool {
+        self.jail.unwrap_or(true)
+    }
+
     /// Walk up from `start_dir` looking for the project file. Stops at
     /// `stop_at` (exclusive — that directory is not searched).
     pub fn discover(start_dir: &Path, stop_at: Option<&Path>) -> Result<Option<(PathBuf, Self)>> {
@@ -277,6 +291,32 @@ mod tests {
         let shell = preset.shell.as_ref().unwrap();
         assert_eq!(shell.allow, vec!["npm".to_string(), "tsc".to_string()]);
         assert_eq!(shell.deny, vec!["rm".to_string(), "curl".to_string()]);
+    }
+
+    #[test]
+    fn jail_defaults_true_when_omitted() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".ago.yaml"), "agent: a\n");
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert_eq!(preset.jail, None);
+        assert!(preset.jail_enabled());
+    }
+
+    #[test]
+    fn jail_false_opts_out() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".ago.yaml"), "agent: a\njail: false\n");
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert_eq!(preset.jail, Some(false));
+        assert!(!preset.jail_enabled());
+    }
+
+    #[test]
+    fn jail_true_parses() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".ago.yaml"), "jail: true\n");
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert!(preset.jail_enabled());
     }
 
     #[test]

@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+#
+# ago — jail-by-default front-end for the real `ago` binary.
+#
+# Install this on PATH *ahead* of the compiled binary (e.g. ~/.local/bin/ago) and
+# keep the real binary at AGO_REAL_BIN (default ~/.local/libexec/ago). When a
+# command uses --client-tools (the only case where tools execute on YOUR machine)
+# and jail is enabled, this wrapper runs the SAME binary inside a container that
+# mounts ONLY the current directory as /work — so shell_exec physically cannot
+# touch any file outside the project root, even with an absolute path like
+# `rm /home/you/...`. Everything else runs the binary natively.
+#
+# jail resolution (first match wins):
+#   1. $AGO_JAIL            (true/false)        — per-invocation override
+#   2. .ago.yaml `jail:`    (walked up from cwd)
+#   3. ~/.config/ago/launcher.toml `jail =`     — global default
+#   4. true                                     — jail-by-default
+set -euo pipefail
+
+REAL_BIN="${AGO_REAL_BIN:-$HOME/.local/libexec/ago}"
+LAUNCHER_CFG="${XDG_CONFIG_HOME:-$HOME/.config}/ago/launcher.toml"
+
+[ -x "$REAL_BIN" ] || { echo "ago: real binary not found at $REAL_BIN" >&2; exit 1; }
+
+# Already inside the jail container? Never recurse — run the binary directly.
+if [ "${AGO_IN_JAIL:-}" = "1" ]; then exec "$REAL_BIN" "$@"; fi
+
+read_jail_from_yaml() {
+  local dir="$PWD"
+  while :; do
+    for f in "$dir/.ago.yaml" "$dir/.ago.yml"; do
+      if [ -f "$f" ]; then
+        grep -E '^[[:space:]]*jail[[:space:]]*:' "$f" | head -1 \
+          | sed -E 's/.*:[[:space:]]*//; s/#.*//; s/[[:space:]]//g'
+        return
+      fi
+    done
+    [ "$dir" = "/" ] && return
+    dir="$(dirname "$dir")"
+  done
+}
+
+read_jail_from_launcher() {
+  [ -f "$LAUNCHER_CFG" ] || return
+  grep -E '^[[:space:]]*jail[[:space:]]*=' "$LAUNCHER_CFG" | head -1 \
+    | sed -E 's/.*=[[:space:]]*//; s/#.*//; s/["[:space:]]//g'
+}
+
+jail="${AGO_JAIL:-}"
+[ -z "$jail" ] && jail="$(read_jail_from_yaml)"
+[ -z "$jail" ] && jail="$(read_jail_from_launcher)"
+jail="${jail:-true}"
+
+# Does this invocation execute tools locally?
+wants_client_tools=false
+for a in "$@"; do
+  [ "$a" = "--client-tools" ] && { wants_client_tools=true; break; }
+done
+
+if [ "$jail" != "true" ] || ! $wants_client_tools; then
+  exec "$REAL_BIN" "$@"
+fi
+
+# ── Jailed run: same binary, inside a container mounting ONLY the project dir ──
+PROJECT="$(pwd)"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ago"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ago"
+IMAGE="${AGO_JAIL_IMAGE:-ubuntu:24.04}"
+
+mkdir -p "$CACHE_DIR"
+
+# Allocate a TTY only when stdin is one (interactive chat); stay pipe-friendly otherwise.
+TTY_FLAGS=(-i)
+[ -t 0 ] && [ -t 1 ] && TTY_FLAGS=(-i -t)
+
+# No --network host: the default bridge already gives outbound internet to reach
+# the remote server, while keeping the container off the host's loopback. If your
+# .ago.yaml points at https://localhost:5005, add `--network host` and AGO_INSECURE=1.
+# AGO_IN_JAIL=1 tells the binary the session IS sandboxed (skips its warning) and
+# stops this wrapper from recursing if it is the one on PATH inside the container.
+exec docker run --rm "${TTY_FLAGS[@]}" \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/home/u \
+  -e AGO_IN_JAIL=1 \
+  -e AGO_INSECURE="${AGO_INSECURE:-}" \
+  -v "$PROJECT":/work:rw \
+  -v "$REAL_BIN":/usr/local/bin/ago:ro \
+  -v "$CONFIG_DIR":/home/u/.config/ago:rw \
+  -v "$CACHE_DIR":/home/u/.cache/ago:rw \
+  -w /work \
+  "$IMAGE" \
+  ago "$@"
