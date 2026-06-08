@@ -167,8 +167,10 @@ cd ~/projects/my-app
 ago chat --client-tools
 
 > :help                                  # slash commands inside the REPL
+>                                         # (type ':' then Tab for a dropdown)
 > Read README.md and write a one-paragraph summary into NOTES.md
 … team-lead delegates to backend/frontend/ai-engineer as needed …
+> :cost                                   # tokens + USD spent so far this session
 > :quit
 ```
 

@@ -86,7 +86,7 @@ cd cli && cargo install --path . --locked
 | `ago jobs list [--limit N] [--json]` | Show recent server sessions with record counts and the first prompt. |
 | `ago jobs show <session_id> [--json]` | Print the records of a single session (job log). |
 | `ago jobs cancel <job_id>` | Request cancellation of a running team job. |
-| `ago chat [--mode agent\|prompt] [--agent N] [--model ID] [--provider T] [--max-steps N] [--no-progress]` | Interactive REPL. `--mode agent` (default) routes through the tool-using agent loop (`/api/cli/v1/run`); `--mode prompt` does a direct LLM completion (`/api/prompt`) — better for chat-style models. Slash commands: `:mode`, `:agent`, `:model`, `:provider`, `:max-steps`, `:reset`/`:clear`, `:info`, `:help`, `:quit`/`:exit`. **Supports `@file` / `@dir/` references in any input — see below.** |
+| `ago chat [--mode agent\|prompt] [--agent N] [--model ID] [--provider T] [--max-steps N] [--no-progress]` | Interactive REPL. `--mode agent` (default) routes through the tool-using agent loop (`/api/cli/v1/run`); `--mode prompt` does a direct LLM completion (`/api/prompt`) — better for chat-style models. Slash commands: `:mode`, `:agent`, `:model`, `:provider`, `:max-steps`, `:context`, `:cache`, `:cost`, `:reset`/`:clear`, `:info`, `:help`, `:quit`/`:exit`. Type `:` then **Tab** for a dropdown listing every command next to its explanation. `:cost` prints the cumulative tokens + USD spent since the session started (or the last `:reset`); each turn also auto-reports the running `Σ session: …` total. **Supports `@file` / `@dir/` references in any input — see below.** |
 | `ago run "<task>"` (and all variants) | Same `@file` / `@dir/` expansion as `ago chat` happens on the task string before sending. |
 | `ago completions <shell>` | Emit a shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`). |
 
@@ -477,19 +477,40 @@ conversation: f3a9c2 · type :help for slash commands
 > what's 2+2?
 4
 — 1.34s  35↑/2↓ tokens
+Σ session: 1 turn(s) · 35↑/2↓ tokens · $0.0000  (:reset to zero)
 
 > :model qwen2.5:3b
 ✓ model = qwen2.5:3b
 
+> :cost
+session: 1 turn(s) · 35↑/2↓ tokens · $0.0000
+(use :reset to zero the counter)
+
 > :reset
-✓ new conversation_id = ...
+✓ new conversation_id = ... · cost counter zeroed
 
 > :quit
 ```
 
 Inputs prefixed with `:` are slash commands (see table above); anything
 else is sent to the active agent with the current conversation_id so the
-server's `ConversationManager` restores prior turns. History is persisted
+server's `ConversationManager` restores prior turns.
+
+**Command dropdown.** Type `:` then press **Tab** to open a dropdown listing
+every slash command next to a one-line explanation (rendered with
+rustyline's `CompletionType::List`). Typing a prefix narrows it — `:mo`+Tab
+shows `:mode` and `:model`. A bare `:` also shows an inline `⇥ Tab to list
+commands` hint. The command catalog is a single source of truth in
+`cli/src/commands/chat.rs` (`SLASH_COMMANDS`), so `:help`, the dropdown, and
+the hinter never drift apart.
+
+**Cost tracking.** The REPL keeps a running total of input/output tokens and
+USD across every turn. It is printed as a dimmed `Σ session: …` line under
+each turn footer, queryable any time with `:cost`, and zeroed by
+`:reset`/`:clear` — so the figure always reflects spend since the start of
+the session or the last reset.
+
+History is persisted
 to `${XDG_DATA_HOME:-~/.local/share}/io.agent-orchestrator.ago/chat-history`
 so arrow-up works across sessions. The `AGO_INSECURE=1` dev escape hatch
 behaves the same as for `ago run`.

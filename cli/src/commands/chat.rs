@@ -15,14 +15,185 @@ use crate::error::{AgoError, Result};
 use crate::runtime::Runtime;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
-use rustyline::{Config as RlConfig, DefaultEditor, EditMode};
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::history::FileHistory;
+use rustyline::validate::Validator;
+use rustyline::{Config as RlConfig, CompletionType, Context as RlContext, EditMode, Editor, Helper};
+use std::borrow::Cow;
 use std::io::IsTerminal;
 use std::time::Duration;
 
 const DEFAULT_PROVIDER: &str = "ollama";
 const HISTORY_DIRNAME: &str = "ago";
 const HISTORY_FILENAME: &str = "chat-history";
+
+// ---------------------------------------------------------------------------
+// slash-command catalog (single source of truth)
+// ---------------------------------------------------------------------------
+
+/// One row of the slash-command palette. The same list drives `:help`, the
+/// Tab-completion dropdown, and the inline hinter — add a command here once
+/// and it shows up everywhere.
+struct SlashCmd {
+    /// Canonical name, typed as `:<name>` (e.g. `model` → `:model`).
+    name: &'static str,
+    /// Argument placeholder shown in help / completion (empty if none).
+    args: &'static str,
+    /// One-line explanation.
+    help: &'static str,
+}
+
+const SLASH_COMMANDS: &[SlashCmd] = &[
+    SlashCmd { name: "mode", args: "<agent|prompt>", help: "switch routing (agent loop vs direct LLM)" },
+    SlashCmd { name: "agent", args: "<name>", help: "switch agent (agent mode only)" },
+    SlashCmd { name: "model", args: "<id>", help: "switch model" },
+    SlashCmd { name: "provider", args: "<type>", help: "switch provider (anthropic / openai / openrouter / ollama / ...)" },
+    SlashCmd { name: "max-steps", args: "<N>", help: "cap agent steps per turn (agent mode only)" },
+    SlashCmd { name: "context", args: "", help: "show @file / @dir context limits" },
+    SlashCmd { name: "cache", args: "<on|off|purge|status>", help: "manage prompt caching" },
+    SlashCmd { name: "cost", args: "", help: "show accumulated tokens + cost since start / last :reset" },
+    SlashCmd { name: "reset", args: "", help: "new conversation thread + zero the cost counter" },
+    SlashCmd { name: "clear", args: "", help: "alias of :reset" },
+    SlashCmd { name: "info", args: "", help: "show current settings" },
+    SlashCmd { name: "help", args: "", help: "list slash commands" },
+    SlashCmd { name: "quit", args: "", help: "leave the session" },
+    SlashCmd { name: "exit", args: "", help: "alias of :quit" },
+];
+
+/// Render the `:help` block from [`SLASH_COMMANDS`] so help text can never
+/// drift from the dispatch table or the completer.
+fn render_help() -> String {
+    // Width of the widest ":name <args>" label, for column alignment.
+    let label = |c: &SlashCmd| {
+        if c.args.is_empty() {
+            format!(":{}", c.name)
+        } else {
+            format!(":{} {}", c.name, c.args)
+        }
+    };
+    let width = SLASH_COMMANDS.iter().map(|c| label(c).len()).max().unwrap_or(0);
+    let mut out = String::from("Slash commands (type ':' then Tab for a dropdown):\n");
+    for c in SLASH_COMMANDS {
+        out.push_str(&format!("  {:<width$}  {}\n", label(c), c.help, width = width));
+    }
+    // Trim the trailing newline so callers can `println!` cleanly.
+    out.pop();
+    out
+}
+
+// ---------------------------------------------------------------------------
+// session cost accounting (cumulative from start → :reset)
+// ---------------------------------------------------------------------------
+
+/// Running totals for the whole chat session. Accumulated on every
+/// successful turn and zeroed by `:reset` / `:clear`, so the figure always
+/// reflects spend since the start of the session or the last reset.
+#[derive(Default, Clone)]
+struct SessionTotals {
+    turns: u64,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_usd: f64,
+}
+
+impl SessionTotals {
+    fn add(&mut self, stats: &TurnStats) {
+        self.turns += 1;
+        self.input_tokens += stats.input_tokens;
+        self.output_tokens += stats.output_tokens;
+        self.cost_usd += stats.cost_usd;
+    }
+
+    /// Human-readable one-liner used by both the per-turn footer and `:cost`.
+    fn summary(&self) -> String {
+        if self.turns == 0 {
+            return "session: no turns yet — 0↑/0↓ tokens · $0.0000".to_string();
+        }
+        format!(
+            "session: {} turn(s) · {}↑/{}↓ tokens · ${:.4}",
+            self.turns, self.input_tokens, self.output_tokens, self.cost_usd
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// rustyline helper: Tab-completion dropdown for ':' commands + inline hint
+// ---------------------------------------------------------------------------
+
+/// Editor helper that turns the leading `:` into a discoverable command
+/// palette: pressing Tab after `:` lists every slash command next to its
+/// explanation, and an empty `:` shows a one-line "Tab to list" hint.
+struct ChatHelper {
+    no_color: bool,
+}
+
+impl Completer for ChatHelper {
+    type Candidate = Pair;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &RlContext<'_>,
+    ) -> rustyline::Result<(usize, Vec<Pair>)> {
+        // Only the command word (between ':' and the first space) completes.
+        if !line.starts_with(':') || pos > line.len() {
+            return Ok((pos, Vec::new()));
+        }
+        let after = &line[1..];
+        if after.contains(char::is_whitespace) {
+            // Command already chosen; we don't complete its arguments.
+            return Ok((pos, Vec::new()));
+        }
+        let partial = &line[1..pos];
+        let candidates = SLASH_COMMANDS
+            .iter()
+            .filter(|c| c.name.starts_with(partial))
+            .map(|c| {
+                let label = if c.args.is_empty() {
+                    format!(":{}", c.name)
+                } else {
+                    format!(":{} {}", c.name, c.args)
+                };
+                Pair {
+                    display: format!("{label:<30}{}", c.help),
+                    // Replace from index 1 (just after the ':') with the bare
+                    // command name and a trailing space, ready for an argument.
+                    replacement: format!("{} ", c.name),
+                }
+            })
+            .collect();
+        Ok((1, candidates))
+    }
+}
+
+impl Hinter for ChatHelper {
+    type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &RlContext<'_>) -> Option<String> {
+        if line == ":" && pos == 1 {
+            Some("  ⇥ Tab to list commands".to_string())
+        } else {
+            None
+        }
+    }
+}
+
+impl Highlighter for ChatHelper {
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        if self.no_color {
+            Cow::Borrowed(hint)
+        } else {
+            Cow::Owned(format!("\x1b[2m{hint}\x1b[0m"))
+        }
+    }
+}
+
+impl Validator for ChatHelper {}
+impl Helper for ChatHelper {}
 
 pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
     if args.client_tools || args.client_tools_py {
@@ -69,14 +240,11 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
     } else {
         uuid::Uuid::new_v4().to_string()
     };
-    let mut turn_count: u64 = 0;
-    let mut total_input_tokens: u64 = 0;
-    let mut total_output_tokens: u64 = 0;
-    let mut total_cost_usd: f64 = 0.0;
+    let mut totals = SessionTotals::default();
 
     print_banner(rt, &settings, &conversation_id)?;
 
-    let mut rl = build_editor()?;
+    let mut rl = build_editor(rt.no_color)?;
     let history_path = ensure_history_path();
     if let Some(p) = &history_path {
         let _ = rl.load_history(p);
@@ -106,14 +274,17 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
 
         // ---- slash commands ----
         if let Some(rest) = trimmed.strip_prefix(':') {
+            // `:cost` is handled here rather than in `handle_slash` because it
+            // reads the running totals that the REPL loop owns.
+            if rest.split_whitespace().next() == Some("cost") {
+                print_session_totals(&totals, rt.no_color, true);
+                continue;
+            }
             match handle_slash(rest, &mut settings, &mut conversation_id, rt) {
                 SlashOutcome::Continue => continue,
                 SlashOutcome::Quit => break,
                 SlashOutcome::Reset => {
-                    turn_count = 0;
-                    total_input_tokens = 0;
-                    total_output_tokens = 0;
-                    total_cost_usd = 0.0;
+                    totals = SessionTotals::default();
                     continue;
                 }
             }
@@ -165,10 +336,10 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
         .await
         {
             Ok(stats) => {
-                turn_count += 1;
-                total_input_tokens += stats.input_tokens;
-                total_output_tokens += stats.output_tokens;
-                total_cost_usd += stats.cost_usd;
+                totals.add(&stats);
+                // Cumulative spend since start / last :reset, dimmed under the
+                // per-turn footer.
+                print_session_totals(&totals, rt.no_color, false);
                 // Persist the conversation id so the next `--resume` picks
                 // it up. Best-effort: a state.toml write failure (e.g. RO
                 // home directory in CI) must not kill the REPL.
@@ -191,14 +362,24 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
                 // Stay in the REPL — transient errors should not kill the session.
             }
         }
-
-        let _ = turn_count;
-        let _ = total_input_tokens;
-        let _ = total_output_tokens;
-        let _ = total_cost_usd;
     }
 
     Ok(())
+}
+
+/// Print the cumulative session spend. `explicit` (`:cost`) goes to stdout in
+/// plain text; the per-turn auto-report goes dimmed to stderr next to the
+/// turn footer.
+fn print_session_totals(totals: &SessionTotals, no_color: bool, explicit: bool) {
+    let line = totals.summary();
+    if explicit {
+        println!("{line}");
+        println!("(use :reset to zero the counter)");
+    } else if no_color {
+        eprintln!("Σ {line}");
+    } else {
+        eprintln!("\x1b[2mΣ {line}  (:reset to zero)\x1b[0m");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -279,21 +460,7 @@ fn handle_slash(
 
     match cmd {
         "" | "help" => {
-            println!(
-                "Slash commands:\n\
-                 \x20 :mode <agent|prompt>  switch routing (agent loop vs direct LLM)\n\
-                 \x20 :agent <name>         switch agent (agent mode only)\n\
-                 \x20 :model <id>           switch model\n\
-                 \x20 :provider <type>      switch provider (anthropic / openai / openrouter / ollama / ...)\n\
-                 \x20 :max-steps <N>        cap agent steps per turn (agent mode only)\n\
-                 \x20 :context              show @file / @dir context limits\n\
-                 \x20 :cache <on|off|purge|status>  manage prompt caching (v0.4.1 wires server)\n\
-                 \x20 :reset                start a new conversation thread\n\
-                 \x20 :clear                alias of :reset\n\
-                 \x20 :info                 show current settings\n\
-                 \x20 :help                 this message\n\
-                 \x20 :quit / :exit         leave the session"
-            );
+            println!("{}", render_help());
             SlashOutcome::Continue
         }
         "quit" | "exit" => SlashOutcome::Quit,
@@ -417,7 +584,7 @@ fn handle_slash(
         },
         "reset" | "clear" => {
             *conversation_id = uuid::Uuid::new_v4().to_string();
-            println!("✓ new conversation_id = {}", conversation_id);
+            println!("✓ new conversation_id = {conversation_id} · cost counter zeroed");
             SlashOutcome::Reset
         }
         other => {
@@ -702,12 +869,18 @@ fn print_banner(rt: &Runtime, s: &ChatSettings, conv: &str) -> Result<()> {
     Ok(())
 }
 
-fn build_editor() -> Result<DefaultEditor> {
+fn build_editor(no_color: bool) -> Result<Editor<ChatHelper, FileHistory>> {
+    // `CompletionType::List` renders the matched commands as a multi-line
+    // dropdown (name + explanation per row) instead of inline cycling.
     let cfg = RlConfig::builder()
         .edit_mode(EditMode::Emacs)
         .auto_add_history(false)
+        .completion_type(CompletionType::List)
         .build();
-    DefaultEditor::with_config(cfg).map_err(|e| AgoError::Other(format!("rustyline init: {e}")))
+    let mut editor: Editor<ChatHelper, FileHistory> =
+        Editor::with_config(cfg).map_err(|e| AgoError::Other(format!("rustyline init: {e}")))?;
+    editor.set_helper(Some(ChatHelper { no_color }));
+    Ok(editor)
 }
 
 fn ensure_history_path() -> Option<std::path::PathBuf> {
@@ -955,5 +1128,103 @@ mod tests {
         let mut c = "abc".to_string();
         let outcome = handle_slash("nonsense", &mut s, &mut c, &rt);
         assert!(matches!(outcome, SlashOutcome::Continue));
+    }
+
+    // --- session cost accounting -------------------------------------------
+
+    #[test]
+    fn session_totals_accumulate() {
+        let mut t = SessionTotals::default();
+        t.add(&TurnStats { input_tokens: 10, output_tokens: 5, cost_usd: 0.01 });
+        t.add(&TurnStats { input_tokens: 20, output_tokens: 7, cost_usd: 0.02 });
+        assert_eq!(t.turns, 2);
+        assert_eq!(t.input_tokens, 30);
+        assert_eq!(t.output_tokens, 12);
+        assert!((t.cost_usd - 0.03).abs() < 1e-9);
+    }
+
+    #[test]
+    fn session_summary_zero_and_nonzero() {
+        let empty = SessionTotals::default();
+        assert!(empty.summary().contains("no turns yet"));
+        let mut t = SessionTotals::default();
+        t.add(&TurnStats { input_tokens: 100, output_tokens: 40, cost_usd: 0.1234 });
+        let s = t.summary();
+        assert!(s.contains("1 turn(s)"));
+        assert!(s.contains("100↑/40↓"));
+        assert!(s.contains("$0.1234"));
+    }
+
+    #[test]
+    fn reset_zeroes_totals() {
+        // Mirrors the loop: SlashOutcome::Reset replaces totals with default.
+        let mut t = SessionTotals::default();
+        t.add(&TurnStats { input_tokens: 5, output_tokens: 5, cost_usd: 0.5 });
+        t = SessionTotals::default();
+        assert_eq!(t.turns, 0);
+        assert!((t.cost_usd).abs() < 1e-9);
+        assert!(t.summary().contains("no turns yet"));
+    }
+
+    // --- slash-command palette ---------------------------------------------
+
+    #[test]
+    fn help_lists_every_command() {
+        let help = render_help();
+        for c in SLASH_COMMANDS {
+            assert!(help.contains(&format!(":{}", c.name)), "missing :{}", c.name);
+            assert!(help.contains(c.help), "missing help for :{}", c.name);
+        }
+        assert!(help.contains("Tab"));
+    }
+
+    fn complete(line: &str, pos: usize) -> (usize, Vec<Pair>) {
+        let helper = ChatHelper { no_color: true };
+        let hist = FileHistory::new();
+        let ctx = RlContext::new(&hist);
+        helper.complete(line, pos, &ctx).unwrap()
+    }
+
+    #[test]
+    fn completer_lists_all_on_bare_colon() {
+        let (start, pairs) = complete(":", 1);
+        assert_eq!(start, 1);
+        assert_eq!(pairs.len(), SLASH_COMMANDS.len());
+        // Display carries the explanation, replacement carries a bare name.
+        assert!(pairs.iter().any(|p| p.display.contains("switch model")));
+        assert!(pairs.iter().any(|p| p.replacement == "model "));
+    }
+
+    #[test]
+    fn completer_filters_by_prefix() {
+        let (start, pairs) = complete(":mo", 3);
+        assert_eq!(start, 1);
+        let names: Vec<&str> = pairs.iter().map(|p| p.replacement.trim()).collect();
+        assert!(names.contains(&"mode"));
+        assert!(names.contains(&"model"));
+        assert!(!names.contains(&"reset"));
+    }
+
+    #[test]
+    fn completer_stops_after_argument_space() {
+        // Once a command word is chosen we no longer offer command names.
+        let (_start, pairs) = complete(":model ", 7);
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn completer_ignores_non_slash_input() {
+        let (_start, pairs) = complete("hello", 5);
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn hinter_prompts_tab_on_bare_colon() {
+        let helper = ChatHelper { no_color: true };
+        let hist = FileHistory::new();
+        let ctx = RlContext::new(&hist);
+        assert!(helper.hint(":", 1, &ctx).is_some());
+        assert!(helper.hint(":m", 2, &ctx).is_none());
+        assert!(helper.hint("hello", 5, &ctx).is_none());
     }
 }
