@@ -226,14 +226,17 @@ impl WsClient {
 /// `confirm` is the user-prompt callback for new shell binaries (the
 /// `__main__.py` equivalent prompts on stderr); pass [`StdinShellConfirmer`]
 /// for the default behaviour.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_repl(
     ws: WsClient,
     session: SessionInfo,
     workspace: PathBuf,
     confirm: Option<Box<dyn ShellConfirmer>>,
     no_color: bool,
+    shell_allow: &[String],
+    shell_deny: &[String],
 ) -> Result<()> {
-    let runner = Arc::new(build_runner(&workspace, confirm));
+    let runner = Arc::new(build_runner(&workspace, confirm, shell_allow, shell_deny));
     let session = Arc::new(session);
     let cancels: Arc<Mutex<HashMap<String, CancelSignal>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -403,6 +406,11 @@ async fn receive_loop(
     // Live token-meter state, reset per turn so tok/s reflects the
     // current turn rather than the whole session.
     let mut meter = Meter::new();
+    // Buffer the assistant's reply for the turn so markdown (headings,
+    // **bold**, `code`, lists, ``` fences) can be rendered as a coherent
+    // block at TurnEnd. Streaming raw chunks can't colour markdown whose
+    // markers straddle chunk boundaries. Progress stays live via Step lines.
+    let mut assistant_buf = String::new();
     loop {
         let frame_res = {
             let mut s = stream.lock().await;
@@ -443,17 +451,32 @@ async fn receive_loop(
         debug_frame("recv", &frame);
         match frame {
             Frame::AssistantText(t) => {
-                print!("{}", t.chunk);
-                let _ = std::io::stdout().flush();
+                // Accumulate; rendered as a markdown block at TurnEnd.
+                assistant_buf.push_str(&t.chunk);
             }
             Frame::TurnEnd(t) => {
-                // End the assistant text on stdout, then a usage summary
-                // on stderr so a piped stdout stays clean.
+                // Render the buffered reply with markdown colouring, then a
+                // usage summary on stderr so a piped stdout stays clean.
+                // `highlight` returns the text byte-for-byte unchanged when
+                // colour is off (no_color / NO_COLOR / non-TTY), so pipes are
+                // unaffected.
+                if !assistant_buf.is_empty() {
+                    print!("{}", crate::render::highlight(&assistant_buf, no_color));
+                    assistant_buf.clear();
+                }
                 println!();
+                let _ = std::io::stdout().flush();
                 print_turn_end(&theme, &t);
                 meter.reset();
             }
             Frame::Error(e) => {
+                // Flush whatever the assistant produced before the error so
+                // partial output isn't lost.
+                if !assistant_buf.is_empty() {
+                    print!("{}", crate::render::highlight(&assistant_buf, no_color));
+                    let _ = std::io::stdout().flush();
+                    assistant_buf.clear();
+                }
                 eprintln!(
                     "\n{red}[agent-host] server error: {code} {msg}{reset}",
                     red = theme.red,
@@ -1098,8 +1121,11 @@ impl ShellConfirmer for StdinShellConfirmer {
 fn build_runner(
     workspace: &std::path::Path,
     confirm: Option<Box<dyn ShellConfirmer>>,
+    shell_allow: &[String],
+    shell_deny: &[String],
 ) -> LocalToolRunner {
-    let mut runner = LocalToolRunner::new(workspace.to_path_buf());
+    let mut runner =
+        LocalToolRunner::new(workspace.to_path_buf()).with_shell_policy(shell_allow, shell_deny);
     if let Some(c) = confirm {
         runner = runner.with_confirmer(c);
     }

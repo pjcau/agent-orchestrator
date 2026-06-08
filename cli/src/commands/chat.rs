@@ -213,6 +213,8 @@ struct ChatSettings {
     provider: String,
     max_steps: u32,
     no_color: bool,
+    shell_allow: Vec<String>,
+    shell_deny: Vec<String>,
 }
 
 impl ChatSettings {
@@ -240,6 +242,10 @@ impl ChatSettings {
             .or_else(|| preset.and_then(|p| p.provider.clone()))
             .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
         let max_steps = preset.and_then(|p| p.max_steps).unwrap_or(args.max_steps);
+        let (shell_allow, shell_deny) = preset
+            .and_then(|p| p.shell.as_ref())
+            .map(|s| (s.allow.clone(), s.deny.clone()))
+            .unwrap_or_default();
         Ok(Self {
             mode: args.mode,
             agent,
@@ -247,6 +253,8 @@ impl ChatSettings {
             provider,
             max_steps,
             no_color: rt.no_color,
+            shell_allow,
+            shell_deny,
         })
     }
 }
@@ -819,6 +827,8 @@ async fn run_native_agent_host(
         cwd,
         Some(Box::new(StdinShellConfirmer)),
         settings.no_color,
+        &settings.shell_allow,
+        &settings.shell_deny,
     )
     .await
     .map_err(|e| AgoError::Other(format!("agent-host repl error: {e:#}")))?;
@@ -841,6 +851,8 @@ mod tests {
             provider: "ollama".into(),
             max_steps: 10,
             no_color: false,
+            shell_allow: Vec::new(),
+            shell_deny: Vec::new(),
         }
     }
 

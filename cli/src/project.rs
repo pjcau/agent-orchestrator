@@ -32,6 +32,30 @@ pub struct ProjectPreset {
     /// Tune the `@file` / `@dir` expansion budget. Optional — built-in safe
     /// defaults apply when missing.
     pub context: Option<ContextOverrides>,
+    /// Per-project shell-command policy for `--client-tools` runs. Optional —
+    /// when absent the global allowlist cache (`~/.cache/ago/shell-allow.json`)
+    /// plus the interactive confirm prompt are the only gate.
+    pub shell: Option<ShellPolicy>,
+}
+
+/// Project-scoped shell policy layered on top of the global allowlist cache.
+///
+/// Precedence at the gate (see `LocalToolRunner`):
+///   1. `deny`  — a hard block: the binary is refused even if it appears in
+///      the global cache or the user would confirm it. Wins over everything.
+///   2. `allow` — pre-approved for THIS project: runs without a prompt and is
+///      NOT written to the global cache (stays project-local).
+///   3. global cache / interactive confirm (unchanged).
+///
+/// Entries are matched by `argv[0]` basename, same as the cache, so a path
+/// alias (`/usr/bin/rm`) cannot slip past a `deny: [rm]`.
+#[derive(Debug, Default, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ShellPolicy {
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
 }
 
 /// Per-project overrides for `@`-reference expansion. Any field that is
@@ -231,6 +255,38 @@ mod tests {
         let ctx = preset.context.as_ref().unwrap();
         assert_eq!(ctx.max_file_bytes, Some(4000));
         assert_eq!(ctx.exclude_extra, vec!["**/foo/**".to_string()]);
+    }
+
+    #[test]
+    fn shell_policy_parses() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join(".ago.yaml"),
+            "agent: a\nmodel: m\nshell:\n  allow:\n    - npm\n    - tsc\n  deny:\n    - rm\n    - curl\n",
+        );
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        let shell = preset.shell.as_ref().unwrap();
+        assert_eq!(shell.allow, vec!["npm".to_string(), "tsc".to_string()]);
+        assert_eq!(shell.deny, vec!["rm".to_string(), "curl".to_string()]);
+    }
+
+    #[test]
+    fn shell_policy_defaults_empty_lists() {
+        // `shell:` with only one side present — the other defaults to empty.
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".ago.yaml"), "shell:\n  deny:\n    - rm\n");
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        let shell = preset.shell.as_ref().unwrap();
+        assert!(shell.allow.is_empty());
+        assert_eq!(shell.deny, vec!["rm".to_string()]);
+    }
+
+    #[test]
+    fn shell_policy_unknown_key_rejected() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".ago.yaml"), "shell:\n  bogus: 1\n");
+        let err = ProjectPreset::discover(dir.path(), None).unwrap_err();
+        assert!(matches!(err, AgoError::Config(_)));
     }
 
     #[test]

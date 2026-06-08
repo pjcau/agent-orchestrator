@@ -88,11 +88,47 @@ agent:    team-lead              # multi-agent coordinator
 provider: openrouter
 model:    tencent/hy3-preview    # cheap + fast
 max_steps: 15                    # team-lead delegates; give it room
+
+# Optional: project-scoped shell policy for --client-tools runs.
+shell:
+  allow:                         # pre-approved here → never prompts, never
+    - npm                        #   written to the global cache
+    - npx
+    - node
+    - tsc
+    - pytest
+  deny:                          # HARD block — refused even if confirmed
+    - rm                         #   or already in the global cache
+    - curl
+    - docker
 ```
 
 Allowed keys: `server`, `agent`, `model`, `provider`, `max_steps`,
-`context`. CLI flags override `.ago.yaml`; `.ago.yaml` overrides
+`context`, `shell`. CLI flags override `.ago.yaml`; `.ago.yaml` overrides
 `~/.config/ago/config.toml`. Empty values fall through to the next layer.
+
+### Shell policy (stop the `allow X? [y/N]` prompts)
+
+By default the first use of each new binary under `--client-tools` asks
+`[agent-host] allow `npm`? [y/N]` and, once you say yes, persists it to the
+global cache `${XDG_CACHE_HOME:-~/.cache}/ago/shell-allow.json` (permanently
+— despite the legacy "for this session" wording). Two ways to pre-empt the
+prompts:
+
+- **Global cache** — edit `shell-allow.json` directly: `{"allowed": ["git",
+  "npm", "node", …]}`. ⚠️ A *running* `ago` session rewrites this file on its
+  next approval, so edit it when no session is live.
+- **Project policy (recommended)** — the `.ago.yaml` `shell:` block above. It
+  is read fresh every session, is **never persisted**, and is scoped to the
+  project. Precedence at the gate:
+  1. `deny` — a hard block; wins over the cache and over any confirm.
+  2. `allow` — pre-approved for this project; runs with no prompt, not saved
+     to the global cache.
+  3. global cache / interactive confirm (unchanged).
+
+  All entries match by `argv[0]` basename, so `deny: [rm]` also blocks
+  `/usr/bin/rm`. Avoid putting `bash`/`sh`/`zsh` in `allow` — they are full
+  shells and bypass the whole gate.
 
 ---
 
@@ -167,6 +203,13 @@ In a team run each agent name is printed in its own **stable colour**
 (team-lead, backend, frontend, … stay visually distinct for the whole
 run), making the interleaved fan-out easy to follow. Colour is disabled
 by `--no-color`, by `NO_COLOR=1`, or when stderr is not a TTY.
+
+The assistant's reply is rendered as **Markdown** on stdout: headings and
+`**bold**` are bold, `` `code` `` and ``` fenced blocks ``` are highlighted,
+and list markers are coloured. To keep the rendering coherent the reply is
+buffered and printed at end-of-turn (progress stays live on the Step lines).
+When stdout is piped or `--no-color`/`NO_COLOR` is set, the text is emitted
+byte-for-byte unchanged, so `ago run --client-tools "…" > out.md` stays clean.
 
 ---
 

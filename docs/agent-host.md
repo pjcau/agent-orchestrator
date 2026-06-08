@@ -163,6 +163,11 @@ agent-host channel — single-source-of-truth here is intentional.
   new binary prompts the user; later sessions hit the cache.
   General-purpose shells (`bash`, `sh`, `zsh`, `dash`, …) are flagged
   high-risk so the prompt carries an explicit warning.
+  A per-project `.ago.yaml` `shell:` block layers on top: `deny` is a
+  **hard block** (refused even if cached or confirmed), `allow` is a
+  project-local pre-approval (runs with no prompt, never written to the
+  global cache). Gate order: `deny` → project `allow` → cache/confirm.
+  See [managing-local-projects.md § Shell policy](managing-local-projects.md#shell-policy-stop-the-allow-x-yn-prompts).
 
 ## Telemetry
 

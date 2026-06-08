@@ -871,6 +871,7 @@ mod tests {
                 provider: Some("preset-provider".into()),
                 max_steps: Some(42),
                 context: None,
+                shell: None,
             },
             None,
         );
@@ -919,6 +920,7 @@ mod tests {
                 provider: None,
                 max_steps: None,
                 context: None,
+                shell: None,
             },
             None,
         );

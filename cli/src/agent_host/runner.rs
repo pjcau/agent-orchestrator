@@ -16,7 +16,7 @@
 //! straightforward (no WS, no signature plumbing).
 
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -118,6 +118,11 @@ pub struct LocalToolRunner {
     allowlist: tokio::sync::Mutex<ShellAllowlist>,
     confirm: Option<Box<dyn ShellConfirmer>>,
     shell_timeout: Duration,
+    /// Project-scoped shell policy (from `.ago.yaml`). `deny` hard-blocks,
+    /// `project_allow` pre-approves without touching the global cache.
+    /// Both are `argv[0]` basenames.
+    deny: HashSet<String>,
+    project_allow: HashSet<String>,
 }
 
 impl LocalToolRunner {
@@ -127,11 +132,28 @@ impl LocalToolRunner {
             allowlist: tokio::sync::Mutex::new(ShellAllowlist::at_default()),
             confirm: None,
             shell_timeout: SHELL_DEFAULT_TIMEOUT,
+            deny: HashSet::new(),
+            project_allow: HashSet::new(),
         }
     }
 
     pub fn with_allowlist(mut self, allowlist: ShellAllowlist) -> Self {
         self.allowlist = tokio::sync::Mutex::new(allowlist);
+        self
+    }
+
+    /// Apply a project shell policy. Entries are normalised to basenames so
+    /// they match the same way the allowlist cache does.
+    pub fn with_shell_policy(mut self, allow: &[String], deny: &[String]) -> Self {
+        let base = |s: &String| {
+            Path::new(s)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(s)
+                .to_string()
+        };
+        self.project_allow = allow.iter().map(base).collect();
+        self.deny = deny.iter().map(base).collect();
         self
     }
 
@@ -289,9 +311,27 @@ impl LocalToolRunner {
             return ToolOutcome::err("shell_empty_argv");
         }
 
+        // Basename of argv[0] for policy checks — same normalisation as the
+        // allowlist cache, so a path alias can't slip past deny/allow.
+        let bin_base = Path::new(&argv[0])
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&argv[0])
+            .to_string();
+
+        // Project policy: a `deny` entry is a HARD block — it wins over the
+        // global cache and over any confirm. Checked before everything else.
+        if self.deny.contains(&bin_base) {
+            return ToolOutcome::err("shell_denied_by_policy").with_meta(
+                "detail",
+                json!(format!("`{bin_base}` is denied by .ago.yaml shell.deny")),
+            );
+        }
+
         // Allowlist gate. First use of a new binary asks the confirmer;
-        // without one, refuse (fail-closed).
-        {
+        // without one, refuse (fail-closed). A project `allow` entry
+        // short-circuits the prompt without persisting to the global cache.
+        if !self.project_allow.contains(&bin_base) {
             let mut allow = self.allowlist.lock().await;
             match allow.contains(&argv) {
                 Ok(true) => {}
@@ -655,6 +695,59 @@ mod tests {
         let r = runner.run("shell_exec", args, None, None).await;
         assert!(r.success, "shell_exec failed: {r:?}");
         assert_eq!(r.output["returncode"], json!(0));
+    }
+
+    #[tokio::test]
+    async fn shell_deny_policy_blocks_even_with_approver() {
+        // A `deny` entry must win over an always-approving confirmer — the
+        // binary is refused before it can ever be spawned.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_confirmer(Box::new(AlwaysApprove))
+            .with_shell_policy(&[], &["rm".to_string()]);
+        let mut args = HashMap::new();
+        // Never actually runs — refused at the gate.
+        args.insert("argv".into(), json!(["rm", "-rf", "/tmp/nope"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(!r.success);
+        assert_eq!(r.error_code.as_deref(), Some("shell_denied_by_policy"));
+    }
+
+    #[tokio::test]
+    async fn shell_deny_matches_by_basename() {
+        // A path alias cannot slip past `deny: [rm]`.
+        let (_d, ws) = tmp_workspace();
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_confirmer(Box::new(AlwaysApprove))
+            .with_shell_policy(&[], &["rm".to_string()]);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["/usr/bin/rm", "-rf", "/tmp/nope"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(!r.success);
+        assert_eq!(r.error_code.as_deref(), Some("shell_denied_by_policy"));
+    }
+
+    #[tokio::test]
+    async fn shell_project_allow_runs_without_prompt_or_persist() {
+        // A project `allow` entry runs with NO confirmer present (which would
+        // otherwise refuse) and must NOT write the global allowlist cache.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path.clone()))
+            .with_shell_policy(&["true".to_string()], &[]);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["true"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "project-allowed binary should run: {r:?}");
+        assert_eq!(r.output["returncode"], json!(0));
+        // Project allow is session-local: the global cache is untouched.
+        assert!(
+            !allow_path.exists(),
+            "project allow must not persist to cache"
+        );
     }
 
     #[tokio::test]
