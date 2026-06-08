@@ -147,6 +147,11 @@ jobs:
       # in-step instead of sinking the release. Same "retry to survive
       # transient infra" pattern already used for the EC2 deploy.
       - name: Generate SBOM (syft, retried)
+        # Best-effort: retry covers brief GitHub-CDN blips; continue-on-error
+        # keeps a SUSTAINED github.com/releases outage (504s past all retries)
+        # from blocking the actual binary release. SBOM is attached when the
+        # download succeeds and skipped (with a warning) when it doesn't.
+        continue-on-error: true
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 6
@@ -167,6 +172,9 @@ jobs:
       #   cosign verify-blob --certificate-identity '<workflow-url>' ...
       # which a downloader can run with no shared key material.
       - name: Install cosign (retried)
+        # Best-effort, same rationale as the SBOM step: a sustained outage on
+        # cosign's release assets must not block the binary release.
+        continue-on-error: true
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 5
@@ -189,6 +197,9 @@ jobs:
             echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
 
       - name: Sign artifact (cosign keyless)
+        # Best-effort: skipped cleanly if cosign couldn't be installed during
+        # an outage (no signature/cert produced; release still ships).
+        continue-on-error: true
         shell: bash
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -208,7 +219,10 @@ jobs:
             ${{ env.ARTIFACT }}.sig
             ${{ env.ARTIFACT }}.cert
             ${{ env.ARTIFACT_NAME }}.cdx.json
-          if-no-files-found: error
+          # warn (not error): the binary archive is always present, but the
+          # best-effort .sig/.cert/.cdx.json may be absent during a GitHub
+          # outage — a missing attestation must not fail the upload.
+          if-no-files-found: warn
 
   release:
     name: github release
@@ -253,7 +267,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ago ${{ github.ref_name }}
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          # false: the .sig/.cert/.cdx.json globs are best-effort and may be
+          # absent if a GitHub outage blocked syft/cosign. The archives +
+          # SHA256SUMS always match, so the release still publishes.
+          fail_on_unmatched_files: false
           body: |
             ## Verification
 
