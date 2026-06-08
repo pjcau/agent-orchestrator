@@ -293,7 +293,21 @@ jobs:
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans --timeout 30" || true
           # Second sweep after compose down — catches anything compose missed.
           $SSH_CMD "docker ps -aq --filter 'name=agent-orchestrator' | xargs -r docker rm -f" || true
-          $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"
+          # Retry `compose up -d` up to 3× with backoff: Docker Hub and
+          # GHCR sometimes throttle anonymous pulls (`toomanyrequests`)
+          # and a single 503-style failure used to fail the whole deploy.
+          # Retries are cheap because already-pulled layers are skipped.
+          for attempt in 1 2 3; do
+            if $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d"; then
+              break
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "::error::compose up -d failed 3× — bailing"
+              exit 1
+            fi
+            echo "::warning::compose up -d failed (attempt $attempt/3) — retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
 
           # Ensure postgres password matches .env.prod (fixes first-init mismatch)
           $SSH_CMD "cd $APP_DIR && docker compose -f docker-compose.prod.yml exec -T postgres psql -U orchestrator -c \"ALTER USER orchestrator WITH PASSWORD '${PG_PASS}';\"" 2>/dev/null || true
