@@ -21,7 +21,9 @@ use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::history::FileHistory;
 use rustyline::validate::Validator;
-use rustyline::{Config as RlConfig, CompletionType, Context as RlContext, EditMode, Editor, Helper};
+use rustyline::{
+    CompletionType, Config as RlConfig, Context as RlContext, EditMode, Editor, Helper,
+};
 use std::borrow::Cow;
 use std::io::IsTerminal;
 use std::time::Duration;
@@ -47,20 +49,76 @@ struct SlashCmd {
 }
 
 const SLASH_COMMANDS: &[SlashCmd] = &[
-    SlashCmd { name: "mode", args: "<agent|prompt>", help: "switch routing (agent loop vs direct LLM)" },
-    SlashCmd { name: "agent", args: "<name>", help: "switch agent (agent mode only)" },
-    SlashCmd { name: "model", args: "<id>", help: "switch model" },
-    SlashCmd { name: "provider", args: "<type>", help: "switch provider (anthropic / openai / openrouter / ollama / ...)" },
-    SlashCmd { name: "max-steps", args: "<N>", help: "cap agent steps per turn (agent mode only)" },
-    SlashCmd { name: "context", args: "", help: "show @file / @dir context limits" },
-    SlashCmd { name: "cache", args: "<on|off|purge|status>", help: "manage prompt caching" },
-    SlashCmd { name: "cost", args: "", help: "show accumulated tokens + cost since start / last :reset" },
-    SlashCmd { name: "reset", args: "", help: "new conversation thread + zero the cost counter" },
-    SlashCmd { name: "clear", args: "", help: "alias of :reset" },
-    SlashCmd { name: "info", args: "", help: "show current settings" },
-    SlashCmd { name: "help", args: "", help: "list slash commands" },
-    SlashCmd { name: "quit", args: "", help: "leave the session" },
-    SlashCmd { name: "exit", args: "", help: "alias of :quit" },
+    SlashCmd {
+        name: "mode",
+        args: "<agent|prompt>",
+        help: "switch routing (agent loop vs direct LLM)",
+    },
+    SlashCmd {
+        name: "agent",
+        args: "<name>",
+        help: "switch agent (agent mode only)",
+    },
+    SlashCmd {
+        name: "model",
+        args: "<id>",
+        help: "switch model",
+    },
+    SlashCmd {
+        name: "provider",
+        args: "<type>",
+        help: "switch provider (anthropic / openai / openrouter / ollama / ...)",
+    },
+    SlashCmd {
+        name: "max-steps",
+        args: "<N>",
+        help: "cap agent steps per turn (agent mode only)",
+    },
+    SlashCmd {
+        name: "context",
+        args: "",
+        help: "show @file / @dir context limits",
+    },
+    SlashCmd {
+        name: "cache",
+        args: "<on|off|purge|status>",
+        help: "manage prompt caching",
+    },
+    SlashCmd {
+        name: "cost",
+        args: "",
+        help: "show accumulated tokens + cost since start / last :reset",
+    },
+    SlashCmd {
+        name: "reset",
+        args: "",
+        help: "new conversation thread + zero the cost counter",
+    },
+    SlashCmd {
+        name: "clear",
+        args: "",
+        help: "alias of :reset",
+    },
+    SlashCmd {
+        name: "info",
+        args: "",
+        help: "show current settings",
+    },
+    SlashCmd {
+        name: "help",
+        args: "",
+        help: "list slash commands",
+    },
+    SlashCmd {
+        name: "quit",
+        args: "",
+        help: "leave the session",
+    },
+    SlashCmd {
+        name: "exit",
+        args: "",
+        help: "alias of :quit",
+    },
 ];
 
 /// Render the `:help` block from [`SLASH_COMMANDS`] so help text can never
@@ -74,10 +132,19 @@ fn render_help() -> String {
             format!(":{} {}", c.name, c.args)
         }
     };
-    let width = SLASH_COMMANDS.iter().map(|c| label(c).len()).max().unwrap_or(0);
+    let width = SLASH_COMMANDS
+        .iter()
+        .map(|c| label(c).len())
+        .max()
+        .unwrap_or(0);
     let mut out = String::from("Slash commands (type ':' then Tab for a dropdown):\n");
     for c in SLASH_COMMANDS {
-        out.push_str(&format!("  {:<width$}  {}\n", label(c), c.help, width = width));
+        out.push_str(&format!(
+            "  {:<width$}  {}\n",
+            label(c),
+            c.help,
+            width = width
+        ));
     }
     // Trim the trailing newline so callers can `println!` cleanly.
     out.pop();
@@ -1135,8 +1202,16 @@ mod tests {
     #[test]
     fn session_totals_accumulate() {
         let mut t = SessionTotals::default();
-        t.add(&TurnStats { input_tokens: 10, output_tokens: 5, cost_usd: 0.01 });
-        t.add(&TurnStats { input_tokens: 20, output_tokens: 7, cost_usd: 0.02 });
+        t.add(&TurnStats {
+            input_tokens: 10,
+            output_tokens: 5,
+            cost_usd: 0.01,
+        });
+        t.add(&TurnStats {
+            input_tokens: 20,
+            output_tokens: 7,
+            cost_usd: 0.02,
+        });
         assert_eq!(t.turns, 2);
         assert_eq!(t.input_tokens, 30);
         assert_eq!(t.output_tokens, 12);
@@ -1148,7 +1223,11 @@ mod tests {
         let empty = SessionTotals::default();
         assert!(empty.summary().contains("no turns yet"));
         let mut t = SessionTotals::default();
-        t.add(&TurnStats { input_tokens: 100, output_tokens: 40, cost_usd: 0.1234 });
+        t.add(&TurnStats {
+            input_tokens: 100,
+            output_tokens: 40,
+            cost_usd: 0.1234,
+        });
         let s = t.summary();
         assert!(s.contains("1 turn(s)"));
         assert!(s.contains("100↑/40↓"));
@@ -1159,7 +1238,11 @@ mod tests {
     fn reset_zeroes_totals() {
         // Mirrors the loop: SlashOutcome::Reset replaces totals with default.
         let mut t = SessionTotals::default();
-        t.add(&TurnStats { input_tokens: 5, output_tokens: 5, cost_usd: 0.5 });
+        t.add(&TurnStats {
+            input_tokens: 5,
+            output_tokens: 5,
+            cost_usd: 0.5,
+        });
         t = SessionTotals::default();
         assert_eq!(t.turns, 0);
         assert!((t.cost_usd).abs() < 1e-9);
@@ -1172,7 +1255,11 @@ mod tests {
     fn help_lists_every_command() {
         let help = render_help();
         for c in SLASH_COMMANDS {
-            assert!(help.contains(&format!(":{}", c.name)), "missing :{}", c.name);
+            assert!(
+                help.contains(&format!(":{}", c.name)),
+                "missing :{}",
+                c.name
+            );
             assert!(help.contains(c.help), "missing help for :{}", c.name);
         }
         assert!(help.contains("Tab"));
