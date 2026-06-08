@@ -15,6 +15,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+# The exporter imports boto3 at module load. It's a dev dependency, but skip
+# cleanly rather than error if a contributor's env lacks it.
+pytest.importorskip("boto3")
+
 EXPORTER_PATH = (
     Path(__file__).resolve().parent.parent / "docker" / "aws-cost-exporter" / "exporter.py"
 )
