@@ -47,6 +47,14 @@ class AgentConfig:
     # large file_read / shell_exec can otherwise dominate the prompt for the
     # rest of the run (see docs/ago-cli-improvements.md, P1). 0 disables.
     max_tool_result_chars: int = 8000
+    # Mid-run context compaction (docs/ago-cli-improvements.md, P0). When the
+    # context the provider just billed exceeds this many input tokens, the
+    # oldest middle messages are elided — keeping task setup + recent turns —
+    # so a long run stops re-sending its whole history on every step. The
+    # cost of an uncompacted run grows ~quadratically. 0 disables.
+    compaction_token_threshold: int = 60000
+    compaction_keep_head: int = 2  # task/context/history setup messages
+    compaction_keep_tail: int = 20  # most-recent messages to preserve verbatim
 
 
 @dataclass
@@ -99,6 +107,57 @@ def cap_tool_result_content(text: str, limit: int) -> str:
     head = text[:head_len]
     tail = text[-tail_len:] if tail_len > 0 else ""
     return f"{head}{marker.format(n=dropped)}{tail}"
+
+
+def compact_messages(
+    messages: list[Message],
+    *,
+    keep_head: int,
+    keep_tail: int,
+) -> tuple[list[Message], int]:
+    """Elide the middle of a long working context to control cost.
+
+    Within a single agent run the message history only grows — every LLM
+    call re-sends it in full, so cost/latency climb roughly quadratically
+    with run length (see ``docs/ago-cli-improvements.md``, P0). This keeps
+    the first ``keep_head`` messages (task description, injected context,
+    any conversation history) and the last ``keep_tail`` messages (recent
+    turns), replacing the span between them with a single summary marker.
+
+    The kept tail never *starts* on a ``Role.TOOL`` message — that would
+    orphan a tool response whose assistant ``tool_call`` was dropped, which
+    most providers reject. (Dangling assistant tool_calls left in the head
+    are repaired separately by :func:`recover_dangling_tool_calls`.)
+
+    Returns ``(new_messages, dropped_count)``; ``dropped_count == 0`` means
+    nothing was elided and ``messages`` is returned unchanged.
+    """
+    n = len(messages)
+    if keep_head < 0 or keep_tail < 0 or n <= keep_head + keep_tail + 1:
+        return messages, 0
+
+    # Walk the tail boundary forward off any leading TOOL messages so the
+    # preserved tail begins on a USER/ASSISTANT message.
+    tail_start = n - keep_tail
+    while tail_start < n and messages[tail_start].role == Role.TOOL:
+        tail_start += 1
+    if tail_start <= keep_head:
+        return messages, 0
+
+    dropped = messages[keep_head:tail_start]
+    if not dropped:
+        return messages, 0
+
+    dropped_chars = sum(len(m.content or "") for m in dropped)
+    marker = Message(
+        role=Role.USER,
+        content=(
+            f"[context compacted: {len(dropped)} earlier messages "
+            f"(~{dropped_chars} chars) elided to control cost]"
+        ),
+    )
+    new_messages = messages[:keep_head] + [marker] + messages[tail_start:]
+    return new_messages, len(dropped)
 
 
 class Agent:
@@ -305,6 +364,8 @@ class Agent:
         retry_counts: dict[str, int] = {}
         total_cost = 0.0
         total_tokens = 0
+        last_input_tokens = 0  # context size the provider last billed (P0 trigger)
+        compactions = 0
         start_time = time.monotonic()
 
         while steps < self.config.max_steps:
@@ -326,6 +387,29 @@ class Agent:
                 span.set_attribute("agent.status", result.status.value)
                 span.end()
                 return result
+
+            # P0: compact the context when the last billed turn crossed the
+            # threshold, BEFORE recovery (which then repairs any tool_call
+            # left dangling by the elision) and before the next LLM call so
+            # the savings land immediately.
+            if (
+                self.config.compaction_token_threshold > 0
+                and last_input_tokens > self.config.compaction_token_threshold
+            ):
+                self._messages, dropped = compact_messages(
+                    self._messages,
+                    keep_head=self.config.compaction_keep_head,
+                    keep_tail=self.config.compaction_keep_tail,
+                )
+                if dropped:
+                    compactions += 1
+                    last_input_tokens = 0  # re-measure on the next completion
+                    logger.info(
+                        "Context compacted: agent=%s dropped=%d messages (trigger=%d tokens)",
+                        self.config.name,
+                        dropped,
+                        self.config.compaction_token_threshold,
+                    )
 
             # Recover any dangling tool calls before sending to LLM
             self._messages = recover_dangling_tool_calls(
@@ -364,6 +448,7 @@ class Agent:
 
             total_tokens += completion.usage.input_tokens + completion.usage.output_tokens
             total_cost += completion.usage.cost_usd
+            last_input_tokens = completion.usage.input_tokens  # P0 compaction trigger
             steps += 1
 
             # --- Guardrail: output check ---
@@ -394,6 +479,7 @@ class Agent:
                 span.set_attribute("agent.steps_taken", steps)
                 span.set_attribute("agent.total_tokens", total_tokens)
                 span.set_attribute("agent.total_cost_usd", total_cost)
+                span.set_attribute("agent.compactions", compactions)
                 span.set_attribute("agent.status", result.status.value)
                 span.end()
                 return result

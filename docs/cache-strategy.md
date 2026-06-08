@@ -71,6 +71,31 @@ subsequent step, so cost/latency grow with the square of the run length
 
 ---
 
+## Mid-run context compaction
+
+The per-result cap above bounds a *single* tool result; compaction bounds the
+*whole* accumulated history. Within one agent run the message list only grows
+and is re-sent in full on every LLM call, so an uncompacted long run costs
+~quadratically (measured: a backend run climbed step4 2.9k → step69 852k input
+tokens — see [ago-cli-improvements.md](ago-cli-improvements.md), P0).
+
+- **Where**: `core/agent.py`, at the top of the agent loop, using the
+  `input_tokens` the provider billed on the previous completion as a free,
+  exact size signal.
+- **Trigger**: `AgentConfig.compaction_token_threshold` (default **60000**;
+  `0` disables).
+- **Strategy**: `compact_messages()` keeps the first `compaction_keep_head`
+  messages (task description, injected context, conversation history) and the
+  last `compaction_keep_tail` messages (recent turns), eliding the middle into
+  a single `[context compacted: N earlier messages (~M chars) elided]` marker.
+- **Validity**: it runs *before* `recover_dangling_tool_calls`, which injects
+  placeholders for any assistant `tool_call` whose response was dropped; and
+  the preserved tail never *starts* on a `Role.TOOL` message, so no orphan
+  tool responses are produced. The `agent.compactions` OTel span attribute
+  counts how often it fired in a run.
+
+---
+
 ## Integration Points (Where to Wire Cache)
 
 ### Point 1: LLM Node Cache (`llm_nodes.py`)

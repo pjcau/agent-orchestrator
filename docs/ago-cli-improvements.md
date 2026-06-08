@@ -78,7 +78,21 @@ block that even a confirmation can't override.
 
 ## Findings, prioritised by impact
 
-### P0 — No context compaction inside a sub-agent run (biggest cost driver)
+### P0 — No context compaction inside a sub-agent run (biggest cost driver) — ✅ DONE
+
+> **Status: implemented.** `core/agent.py` now compacts mid-run: after every
+> completion it records the billed `input_tokens`, and when that crosses
+> `AgentConfig.compaction_token_threshold` (default **60 000**, `0` disables)
+> the loop elides the oldest middle messages via `compact_messages()` —
+> keeping `compaction_keep_head` setup messages + `compaction_keep_tail`
+> recent ones, with a `[context compacted: …]` marker. It runs *before*
+> `recover_dangling_tool_calls`, which repairs any tool_call the elision left
+> dangling; the kept tail never starts on a `Role.TOOL` message, so no orphan
+> tool responses are produced. A `agent.compactions` span attribute records
+> how often it fired. See
+> [cache-strategy.md § Mid-run context compaction](cache-strategy.md).
+> Original analysis below.
+
 
 **Evidence.** Within a single agent run the cumulative input grows monotonically
 and never resets:
