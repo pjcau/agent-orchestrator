@@ -215,6 +215,7 @@ struct ChatSettings {
     no_color: bool,
     shell_allow: Vec<String>,
     shell_deny: Vec<String>,
+    shell_allow_all: bool,
 }
 
 impl ChatSettings {
@@ -242,9 +243,9 @@ impl ChatSettings {
             .or_else(|| preset.and_then(|p| p.provider.clone()))
             .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
         let max_steps = preset.and_then(|p| p.max_steps).unwrap_or(args.max_steps);
-        let (shell_allow, shell_deny) = preset
+        let (shell_allow, shell_deny, shell_allow_all) = preset
             .and_then(|p| p.shell.as_ref())
-            .map(|s| (s.allow.clone(), s.deny.clone()))
+            .map(|s| (s.allow.clone(), s.deny.clone(), s.allow_all))
             .unwrap_or_default();
         Ok(Self {
             mode: args.mode,
@@ -255,6 +256,7 @@ impl ChatSettings {
             no_color: rt.no_color,
             shell_allow,
             shell_deny,
+            shell_allow_all,
         })
     }
 }
@@ -829,6 +831,7 @@ async fn run_native_agent_host(
         settings.no_color,
         &settings.shell_allow,
         &settings.shell_deny,
+        settings.shell_allow_all,
     )
     .await
     .map_err(|e| AgoError::Other(format!("agent-host repl error: {e:#}")))?;
@@ -853,6 +856,7 @@ mod tests {
             no_color: false,
             shell_allow: Vec::new(),
             shell_deny: Vec::new(),
+            shell_allow_all: false,
         }
     }
 

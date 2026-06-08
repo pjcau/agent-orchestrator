@@ -121,14 +121,38 @@ prompts:
 - **Project policy (recommended)** — the `.ago.yaml` `shell:` block above. It
   is read fresh every session, is **never persisted**, and is scoped to the
   project. Precedence at the gate:
-  1. `deny` — a hard block; wins over the cache and over any confirm.
-  2. `allow` — pre-approved for this project; runs with no prompt, not saved
+  1. `deny` — a hard block; wins over the cache, over `allow_all`, and over
+     any confirm.
+  2. `allow_all` — when `true`, flips the gate to **default-allow**: any
+     binary not in `deny` runs with no prompt (see below).
+  3. `allow` — pre-approved for this project; runs with no prompt, not saved
      to the global cache.
-  3. global cache / interactive confirm (unchanged).
+  4. global cache / interactive confirm (unchanged, fail-closed default).
 
   All entries match by `argv[0]` basename, so `deny: [rm]` also blocks
   `/usr/bin/rm`. Avoid putting `bash`/`sh`/`zsh` in `allow` — they are full
   shells and bypass the whole gate.
+
+#### "Deny a few, allow everything else"
+
+The default gate is **fail-closed**: an `allow`/`deny` pair still prompts for
+anything not listed. To invert it — run anything *except* a blocklist — set
+`allow_all: true`:
+
+```yaml
+shell:
+  allow_all: true                       # run any command…
+  deny: [rm, curl, docker, sudo, bash, sh, zsh]   # …except these (hard block)
+```
+
+⚠️ **This is an intentional security relaxation.** With `allow_all` the agent
+can run arbitrary binaries on your machine without asking — only `deny` stops
+it. The file path-sandbox still applies, but shell commands are wide open.
+Always pair it with a `deny` list, and **always deny the shells**
+(`bash`, `sh`, `zsh`, …): otherwise the agent can run anything via
+`bash -c "…"` regardless of the rest of the blocklist. Prefer the explicit
+`allow:` list when you can; reach for `allow_all` only in throwaway/sandboxed
+checkouts you don't mind the agent operating freely in.
 
 ---
 

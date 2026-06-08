@@ -235,8 +235,15 @@ pub async fn run_repl(
     no_color: bool,
     shell_allow: &[String],
     shell_deny: &[String],
+    shell_allow_all: bool,
 ) -> Result<()> {
-    let runner = Arc::new(build_runner(&workspace, confirm, shell_allow, shell_deny));
+    let runner = Arc::new(build_runner(
+        &workspace,
+        confirm,
+        shell_allow,
+        shell_deny,
+        shell_allow_all,
+    ));
     let session = Arc::new(session);
     let cancels: Arc<Mutex<HashMap<String, CancelSignal>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -1123,9 +1130,13 @@ fn build_runner(
     confirm: Option<Box<dyn ShellConfirmer>>,
     shell_allow: &[String],
     shell_deny: &[String],
+    shell_allow_all: bool,
 ) -> LocalToolRunner {
-    let mut runner =
-        LocalToolRunner::new(workspace.to_path_buf()).with_shell_policy(shell_allow, shell_deny);
+    let mut runner = LocalToolRunner::new(workspace.to_path_buf()).with_shell_policy(
+        shell_allow,
+        shell_deny,
+        shell_allow_all,
+    );
     if let Some(c) = confirm {
         runner = runner.with_confirmer(c);
     }

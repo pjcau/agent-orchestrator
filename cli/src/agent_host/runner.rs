@@ -120,9 +120,11 @@ pub struct LocalToolRunner {
     shell_timeout: Duration,
     /// Project-scoped shell policy (from `.ago.yaml`). `deny` hard-blocks,
     /// `project_allow` pre-approves without touching the global cache.
-    /// Both are `argv[0]` basenames.
+    /// Both are `argv[0]` basenames. `allow_all` flips the gate to
+    /// default-allow (anything not in `deny` runs without a prompt).
     deny: HashSet<String>,
     project_allow: HashSet<String>,
+    allow_all: bool,
 }
 
 impl LocalToolRunner {
@@ -134,6 +136,7 @@ impl LocalToolRunner {
             shell_timeout: SHELL_DEFAULT_TIMEOUT,
             deny: HashSet::new(),
             project_allow: HashSet::new(),
+            allow_all: false,
         }
     }
 
@@ -143,8 +146,9 @@ impl LocalToolRunner {
     }
 
     /// Apply a project shell policy. Entries are normalised to basenames so
-    /// they match the same way the allowlist cache does.
-    pub fn with_shell_policy(mut self, allow: &[String], deny: &[String]) -> Self {
+    /// they match the same way the allowlist cache does. `allow_all` flips
+    /// the gate to default-allow (anything not in `deny` runs unprompted).
+    pub fn with_shell_policy(mut self, allow: &[String], deny: &[String], allow_all: bool) -> Self {
         let base = |s: &String| {
             Path::new(s)
                 .file_name()
@@ -154,6 +158,7 @@ impl LocalToolRunner {
         };
         self.project_allow = allow.iter().map(base).collect();
         self.deny = deny.iter().map(base).collect();
+        self.allow_all = allow_all;
         self
     }
 
@@ -329,9 +334,12 @@ impl LocalToolRunner {
         }
 
         // Allowlist gate. First use of a new binary asks the confirmer;
-        // without one, refuse (fail-closed). A project `allow` entry
-        // short-circuits the prompt without persisting to the global cache.
-        if !self.project_allow.contains(&bin_base) {
+        // without one, refuse (fail-closed). Two project-policy
+        // short-circuits run without prompting and WITHOUT persisting to the
+        // global cache: `allow_all` (anything not denied) and an explicit
+        // project `allow` entry. `deny` was already enforced above and wins
+        // over both.
+        if !self.allow_all && !self.project_allow.contains(&bin_base) {
             let mut allow = self.allowlist.lock().await;
             match allow.contains(&argv) {
                 Ok(true) => {}
@@ -706,7 +714,7 @@ mod tests {
         let runner = LocalToolRunner::new(ws.clone())
             .with_allowlist(ShellAllowlist::new(allow_path))
             .with_confirmer(Box::new(AlwaysApprove))
-            .with_shell_policy(&[], &["rm".to_string()]);
+            .with_shell_policy(&[], &["rm".to_string()], false);
         let mut args = HashMap::new();
         // Never actually runs — refused at the gate.
         args.insert("argv".into(), json!(["rm", "-rf", "/tmp/nope"]));
@@ -721,7 +729,7 @@ mod tests {
         let (_d, ws) = tmp_workspace();
         let runner = LocalToolRunner::new(ws.clone())
             .with_confirmer(Box::new(AlwaysApprove))
-            .with_shell_policy(&[], &["rm".to_string()]);
+            .with_shell_policy(&[], &["rm".to_string()], false);
         let mut args = HashMap::new();
         args.insert("argv".into(), json!(["/usr/bin/rm", "-rf", "/tmp/nope"]));
         let r = runner.run("shell_exec", args, None, None).await;
@@ -737,7 +745,7 @@ mod tests {
         let allow_path = ws.join(".allow.json");
         let runner = LocalToolRunner::new(ws.clone())
             .with_allowlist(ShellAllowlist::new(allow_path.clone()))
-            .with_shell_policy(&["true".to_string()], &[]);
+            .with_shell_policy(&["true".to_string()], &[], false);
         let mut args = HashMap::new();
         args.insert("argv".into(), json!(["true"]));
         let r = runner.run("shell_exec", args, None, None).await;
@@ -748,6 +756,35 @@ mod tests {
             !allow_path.exists(),
             "project allow must not persist to cache"
         );
+    }
+
+    #[tokio::test]
+    async fn shell_allow_all_runs_unlisted_without_prompt() {
+        // allow_all flips the gate to default-allow: an unlisted binary runs
+        // with NO confirmer present and is NOT persisted to the cache.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path.clone()))
+            .with_shell_policy(&[], &[], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["true"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "allow_all should run unlisted binary: {r:?}");
+        assert!(!allow_path.exists(), "allow_all must not persist to cache");
+    }
+
+    #[tokio::test]
+    async fn shell_deny_wins_over_allow_all() {
+        // Even with allow_all, a denied binary is a hard block.
+        let (_d, ws) = tmp_workspace();
+        let runner =
+            LocalToolRunner::new(ws.clone()).with_shell_policy(&[], &["rm".to_string()], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["rm", "-rf", "/tmp/nope"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(!r.success);
+        assert_eq!(r.error_code.as_deref(), Some("shell_denied_by_policy"));
     }
 
     #[tokio::test]

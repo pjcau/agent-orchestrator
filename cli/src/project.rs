@@ -42,16 +42,25 @@ pub struct ProjectPreset {
 ///
 /// Precedence at the gate (see `LocalToolRunner`):
 ///   1. `deny`  — a hard block: the binary is refused even if it appears in
-///      the global cache or the user would confirm it. Wins over everything.
-///   2. `allow` — pre-approved for THIS project: runs without a prompt and is
+///      the global cache or the user would confirm it. Wins over everything,
+///      including `allow_all`.
+///   2. `allow_all` — when true, flips the gate to default-ALLOW: any binary
+///      not in `deny` runs with no prompt. Trades the fail-closed default for
+///      convenience — the agent can run arbitrary commands, so always pair it
+///      with a `deny` list (at least `rm`, `curl`, `sudo`, and the shells).
+///   3. `allow` — pre-approved for THIS project: runs without a prompt and is
 ///      NOT written to the global cache (stays project-local).
-///   3. global cache / interactive confirm (unchanged).
+///   4. global cache / interactive confirm (unchanged, fail-closed default).
 ///
 /// Entries are matched by `argv[0]` basename, same as the cache, so a path
 /// alias (`/usr/bin/rm`) cannot slip past a `deny: [rm]`.
 #[derive(Debug, Default, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ShellPolicy {
+    /// Flip to default-allow: run anything not in `deny` without prompting.
+    /// Opt-in and intentionally insecure-by-design; defaults to false.
+    #[serde(default)]
+    pub allow_all: bool,
     #[serde(default)]
     pub allow: Vec<String>,
     #[serde(default)]
@@ -268,6 +277,30 @@ mod tests {
         let shell = preset.shell.as_ref().unwrap();
         assert_eq!(shell.allow, vec!["npm".to_string(), "tsc".to_string()]);
         assert_eq!(shell.deny, vec!["rm".to_string(), "curl".to_string()]);
+    }
+
+    #[test]
+    fn shell_policy_allow_all_parses() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join(".ago.yaml"),
+            "shell:\n  allow_all: true\n  deny:\n    - rm\n    - bash\n",
+        );
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        let shell = preset.shell.as_ref().unwrap();
+        assert!(shell.allow_all);
+        assert_eq!(shell.deny, vec!["rm".to_string(), "bash".to_string()]);
+    }
+
+    #[test]
+    fn shell_policy_allow_all_defaults_false() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join(".ago.yaml"),
+            "shell:\n  allow:\n    - npm\n",
+        );
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert!(!preset.shell.as_ref().unwrap().allow_all);
     }
 
     #[test]
