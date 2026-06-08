@@ -635,7 +635,19 @@ async fn send_tool_result(
         nonce: nonce.into(),
         signature,
     });
-    debug_frame("send", &frame);
+    if outcome.success {
+        debug_frame("send", &frame);
+    } else {
+        // P1: the runner stashes the human-readable cause (denied binary,
+        // path outside workspace, io error, …) in `outcome.metadata`, which
+        // is NOT carried on the wire. Log it here, where we still have it,
+        // so the trace explains *why* a tool failed.
+        debug!(
+            "send tool_result id={} status=error reason=\"{}\"",
+            tool_call_id,
+            failure_reason(outcome)
+        );
+    }
     let mut snk = sink.lock().await;
     if let Err(e) = snk.send(Message::Text(frame.to_json())).await {
         eprintln!("[agent-host] failed to send tool_result: {e}");
@@ -756,6 +768,49 @@ impl AnsiTheme {
 /// `ago -vv chat --client-tools` or `AGO_LOG=debug`. Lets the user share
 /// exactly what crossed the wire (token fields, error reasons, timing)
 /// when something looks stuck.
+/// Render a JSON value to a compact single-line string for the debug log,
+/// truncated so a large tool payload can't flood the trace. Plain strings
+/// are shown unquoted; everything else is compact JSON.
+fn compact_value(v: &Value) -> String {
+    const MAX: usize = 200;
+    if v.is_null() {
+        return "-".to_string();
+    }
+    let s = match v.as_str() {
+        Some(s) => s.to_string(),
+        None => v.to_string(),
+    };
+    let s = s.replace('\n', " ");
+    if s.chars().count() > MAX {
+        let head: String = s.chars().take(MAX).collect();
+        format!("{head}…[+{} chars]", s.chars().count() - MAX)
+    } else {
+        s
+    }
+}
+
+/// Build a one-line failure reason from a failed [`ToolOutcome`]: the typed
+/// `error_code` plus the most descriptive metadata field the runner left
+/// behind. Returns an empty string for successful outcomes. This is the P1
+/// fix — it turns a bare `status=error` into an actionable diagnosis.
+fn failure_reason(outcome: &ToolOutcome) -> String {
+    if outcome.success {
+        return String::new();
+    }
+    let code = outcome.error_code.as_deref().unwrap_or("error");
+    // Prefer the richest metadata field; the runner uses these keys.
+    let detail = ["detail", "attempted", "path", "tool", "got_keys"]
+        .iter()
+        .find_map(|k| outcome.metadata.get(*k))
+        .map(compact_value)
+        .unwrap_or_default();
+    if detail.is_empty() {
+        code.to_string()
+    } else {
+        format!("{code}: {detail}")
+    }
+}
+
 fn debug_frame(dir: &str, f: &Frame) {
     match f {
         Frame::Hello(h) => debug!("{dir} hello version={} agent={}", h.version, h.agent),
@@ -763,10 +818,25 @@ fn debug_frame(dir: &str, f: &Frame) {
         Frame::Prompt(p) => debug!("{dir} prompt {}B", p.text.len()),
         Frame::ToolCall(tc) => debug!("{dir} tool_call id={} name={}", tc.tool_call_id, tc.name),
         Frame::ToolResult(tr) => {
-            debug!(
-                "{dir} tool_result id={} status={}",
-                tr.tool_call_id, tr.status
-            )
+            if tr.status == "ok" {
+                debug!("{dir} tool_result id={} status=ok", tr.tool_call_id)
+            } else {
+                // P1: never log a bare `status=error`. Surface the typed
+                // error_code and any payload so `--log-file` traces are
+                // self-diagnosing (e.g. a denied `rm` shows the reason
+                // instead of a blank failure).
+                debug!(
+                    "{dir} tool_result id={} status={} error_code={} output={}",
+                    tr.tool_call_id,
+                    tr.status,
+                    if tr.error_code.is_empty() {
+                        "-"
+                    } else {
+                        &tr.error_code
+                    },
+                    compact_value(&tr.output)
+                )
+            }
         }
         Frame::ToolChunk(c) => {
             debug!(
@@ -1186,6 +1256,49 @@ mod tests {
         let s = summarise_args(&m);
         assert!(s.contains("file_path=note.md"));
         assert!(s.contains("content=<2048B>"));
+    }
+
+    // --- P1: tool-error reason logging -------------------------------------
+
+    #[test]
+    fn failure_reason_empty_for_success() {
+        let ok = ToolOutcome::ok(json!("hello"));
+        assert_eq!(failure_reason(&ok), "");
+    }
+
+    #[test]
+    fn failure_reason_includes_code_and_detail() {
+        // Mirrors the real denied-`rm` case: error_code + a `detail` meta.
+        let denied = ToolOutcome::err("shell_denied_by_policy")
+            .with_meta("detail", json!("rm not allowed by project policy"));
+        let r = failure_reason(&denied);
+        assert!(r.starts_with("shell_denied_by_policy:"), "got {r}");
+        assert!(r.contains("rm not allowed by project policy"), "got {r}");
+    }
+
+    #[test]
+    fn failure_reason_falls_back_to_code_only() {
+        let bare = ToolOutcome::err("shell_empty_argv");
+        assert_eq!(failure_reason(&bare), "shell_empty_argv");
+    }
+
+    #[test]
+    fn failure_reason_uses_attempted_when_no_detail() {
+        let outside = ToolOutcome::err("path_outside_workspace")
+            .with_meta("tool", json!("file_read"))
+            .with_meta("attempted", json!("/etc/passwd"));
+        let r = failure_reason(&outside);
+        assert!(r.contains("path_outside_workspace"), "got {r}");
+        // `detail` is absent, so the next preferred key (`attempted`) wins.
+        assert!(r.contains("/etc/passwd"), "got {r}");
+    }
+
+    #[test]
+    fn compact_value_truncates_and_flattens() {
+        assert_eq!(compact_value(&Value::Null), "-");
+        assert_eq!(compact_value(&json!("a\nb")), "a b");
+        let long = compact_value(&json!("x".repeat(500)));
+        assert!(long.contains("…[+300 chars]"), "got {long}");
     }
 
     #[test]

@@ -189,6 +189,29 @@ The `run_id_hash` keeps the label opaque so dashboards cannot correlate
 a single user session by glancing at the metrics page. The underlying
 `run_id` continues to appear in the structured audit logs.
 
+### Debug trace (`ago --log-file`)
+
+`ago --log-file <path> chat --client-tools …` records every wire frame
+via `debug_frame` in [`cli/src/agent_host/client.rs`](../cli/src/agent_host/client.rs).
+Failed tool calls are **never** logged as a bare `status=error`: the
+client surfaces the typed `error_code` and the most descriptive metadata
+field the runner left behind (`detail` → `attempted` → `path` → `tool`),
+so a trace is self-diagnosing. For example, a tool denied by the project
+shell policy reads:
+
+```
+send tool_result id=… status=error reason="shell_denied_by_policy: rm not allowed by project policy"
+```
+
+The reason is assembled CLI-side by `failure_reason()` because the
+runner's `ToolOutcome.metadata` is intentionally **not** carried on the
+wire (the signed frame binds only `output` + `error_code`). To triage a
+session, grep the log:
+
+```bash
+grep 'status=error' ~/ago-session.log
+```
+
 ## Operating
 
 ### Enabling the endpoint
