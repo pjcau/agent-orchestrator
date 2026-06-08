@@ -261,7 +261,12 @@ jobs:
           fi
           log=$(mktemp)
           gh run view "$fail" --log >"$log" 2>/dev/null || true
-          mapfile -t ids < <(grep -oE 'PYSEC-[0-9]+-[0-9]+|CVE-[0-9]{4}-[0-9]+' "$log" | sort -u)
+          # Filter out CodeQL paths first — CodeQL ships query files
+          # named after CVE IDs (e.g. python-queries/Security/CVE-2018-1281/...)
+          # that the regex would otherwise capture as a fake advisory.
+          grep -v -E '/python-queries/|/java-queries/|/javascript-queries/|\.qlx?|\.bqrs' "$log" \
+            > "$log.cleaned"
+          mapfile -t ids < <(grep -oE 'PYSEC-[0-9]+-[0-9]+|CVE-[0-9]{4}-[0-9]+' "$log.cleaned" | sort -u)
           if [ ${#ids[@]} -eq 0 ]; then
             echo "Security Scan failed but no advisory IDs found in log."
             exit 0
