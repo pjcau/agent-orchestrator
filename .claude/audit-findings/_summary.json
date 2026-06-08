@@ -1,0 +1,35 @@
+{
+  "started_at": "2026-06-04T22:10:43Z",
+  "model": "tencent/hy3-preview",
+  "min_value_score": 6.0,
+  "total_candidates": 26,
+  "results": [
+    {
+      "url": "https://github.com/robert-mcdermott/ai-knowledge-graph",
+      "title": "robert-mcdermott/ai-knowledge-graph",
+      "outcome": "improvements-found",
+      "items": 20,
+      "top_value_score": 9.0,
+      "elapsed_s": 57.4,
+      "findings_file": ".claude/audit-findings/robert-mcdermott__ai-knowledge-graph.md"
+    },
+    {
+      "url": "https://github.com/autobrr/netronome",
+      "title": "autobrr/netronome",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 103.9,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/TencentCloud/CubeSandbox",
+      "title": "TencentCloud/CubeSandbox",
+      "outcome": "improvements-found",
+      "items": 20,
+      "top_value_score": 9.0,
+      "elapsed_s": 84.9,
+      "findings_file": ".claude/audit-findings/TencentCloud__CubeSandbox.md"
+    }
+  ]
+}
