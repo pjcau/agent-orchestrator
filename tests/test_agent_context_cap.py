@@ -248,3 +248,108 @@ async def test_loop_triggers_compaction(caplog):
     assert any("Context compacted" in r.message for r in caplog.records)
     # The accumulated context was bounded, not left to grow with every step.
     assert len(agent._messages) < 12
+
+
+# --- P2: back-off on repeatedly-failing commands ---------------------------
+
+
+class _AlwaysFailSkill(Skill):
+    """A skill that always fails, counting how many times it actually ran."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    @property
+    def name(self) -> str:
+        return "rm"
+
+    @property
+    def description(self) -> str:
+        return "remove (always denied here)"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"path": {"type": "string"}}}
+
+    async def execute(self, params: dict) -> SkillResult:
+        self.calls += 1
+        return SkillResult(success=False, output=None, error="shell_denied")
+
+
+class _RepeatSameCallProvider(Provider):
+    """Always issues the identical failing tool call, never finishing."""
+
+    @property
+    def model_id(self) -> str:
+        return "fake"
+
+    @property
+    def capabilities(self) -> ModelCapabilities:
+        return ModelCapabilities(max_context=4096, max_output_tokens=1024)
+
+    @property
+    def input_cost_per_million(self) -> float:
+        return 1.0
+
+    @property
+    def output_cost_per_million(self) -> float:
+        return 2.0
+
+    async def complete(self, messages, tools=None, system=None, **kw):
+        return Completion(
+            content="deleting",
+            tool_calls=[ToolCall(id="dup", name="rm", arguments={"path": "/dup"})],
+            usage=Usage(input_tokens=10, output_tokens=5, cost_usd=0.001),
+        )
+
+    async def stream(self, messages, tools=None, system=None, **kw):
+        yield StreamChunk(content="done", finish_reason="stop")
+
+
+@pytest.mark.asyncio
+async def test_repeated_failure_is_short_circuited():
+    skill = _AlwaysFailSkill()
+    registry = SkillRegistry()
+    registry.register(skill)
+    config = AgentConfig(
+        name="backoff-agent",
+        role="test",
+        provider_key="fake",
+        tools=["rm"],
+        max_steps=8,
+        max_retries_per_approach=99,  # let the failure back-off fire first
+        max_tool_failures_per_approach=2,
+    )
+    agent = Agent(config, _RepeatSameCallProvider(), registry)
+
+    await agent.execute(Task(description="delete the dup"))
+
+    # The doomed command ran at most the failure threshold, then was
+    # short-circuited rather than executed again and again.
+    assert skill.calls == 2
+    assert any(
+        m.role == Role.TOOL and "[not executed]" in (m.content or "") for m in agent._messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_backoff_disabled_lets_command_rerun():
+    skill = _AlwaysFailSkill()
+    registry = SkillRegistry()
+    registry.register(skill)
+    config = AgentConfig(
+        name="no-backoff-agent",
+        role="test",
+        provider_key="fake",
+        tools=["rm"],
+        max_steps=5,
+        max_retries_per_approach=99,
+        max_tool_failures_per_approach=0,  # disabled
+    )
+    agent = Agent(config, _RepeatSameCallProvider(), registry)
+
+    await agent.execute(Task(description="delete the dup"))
+
+    # With back-off off, the command runs every step (no short-circuit).
+    assert skill.calls == 5
+    assert not any("[not executed]" in (m.content or "") for m in agent._messages)

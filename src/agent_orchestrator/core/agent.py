@@ -55,6 +55,12 @@ class AgentConfig:
     compaction_token_threshold: int = 60000
     compaction_keep_head: int = 2  # task/context/history setup messages
     compaction_keep_tail: int = 20  # most-recent messages to preserve verbatim
+    # After an identical tool call (same name + arguments) has FAILED this
+    # many times in a run, the next identical call is short-circuited with a
+    # nudge instead of executed — so the agent stops re-issuing a doomed
+    # command (e.g. a denied `rm`) and is steered to change approach
+    # (docs/ago-cli-improvements.md, P2). 0 disables.
+    max_tool_failures_per_approach: int = 2
 
 
 @dataclass
@@ -362,6 +368,7 @@ class Agent:
         tool_defs = self._get_tool_definitions()
         steps = 0
         retry_counts: dict[str, int] = {}
+        failure_counts: dict[str, int] = {}  # per-approach failures (P2 back-off)
         total_cost = 0.0
         total_tokens = 0
         last_input_tokens = 0  # context size the provider last billed (P0 trigger)
@@ -537,6 +544,29 @@ class Agent:
                     span.end()
                     return result
 
+                # P2: short-circuit a call whose identical arguments have
+                # already failed enough times, instead of executing it again.
+                # Re-issuing a doomed command burns steps + context; nudge the
+                # model to change approach rather than stalling the whole run.
+                prior_failures = failure_counts.get(approach_key, 0)
+                if (
+                    self.config.max_tool_failures_per_approach > 0
+                    and prior_failures >= self.config.max_tool_failures_per_approach
+                ):
+                    self._messages.append(
+                        Message(
+                            role=Role.TOOL,
+                            content=(
+                                f"[not executed] This exact {tool_call.name} call has "
+                                f"already failed {prior_failures} time(s) this run. Do "
+                                f"not retry it — change the arguments or try a different "
+                                f"approach."
+                            ),
+                            tool_call_id=tool_call.id,
+                        )
+                    )
+                    continue
+
                 # Track clarification status for pause/resume
                 if tool_call.name == "ask_clarification":
                     self._status = TaskStatus.WAITING_FOR_CLARIFICATION
@@ -545,6 +575,10 @@ class Agent:
 
                 if tool_call.name == "ask_clarification":
                     self._status = TaskStatus.RUNNING
+
+                # Count failures per approach so the back-off above can fire.
+                if not skill_result.success:
+                    failure_counts[approach_key] = prior_failures + 1
 
                 self._messages.append(
                     Message(

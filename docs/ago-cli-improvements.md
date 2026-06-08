@@ -193,7 +193,17 @@ This single change makes sessions like this self-diagnosing.
 
 ---
 
-### P2 — No back-off on repeatedly-failing commands
+### P2 — No back-off on repeatedly-failing commands — ✅ DONE
+
+> **Status: implemented.** The agent loop now tracks failures per approach
+> (`tool name + arguments`) in `failure_counts`. Once an identical call has
+> failed `AgentConfig.max_tool_failures_per_approach` times (default **2**,
+> `0` disables), the next identical call is **not executed** — the loop
+> appends a `[not executed] … already failed N times … try a different
+> approach` tool message and moves on, so the agent stops burning steps +
+> context on a doomed command (the denied-`rm` loop) and is steered to
+> pivot, rather than stalling the whole run. Original analysis below.
+
 
 **Evidence.** Error clusters recur throughout; the agent keeps re-issuing
 commands that fail, burning steps **and** inflating context with the failure
