@@ -55,6 +55,19 @@ class AgentConfig:
     compaction_token_threshold: int = 60000
     compaction_keep_head: int = 2  # task/context/history setup messages
     compaction_keep_tail: int = 20  # most-recent messages to preserve verbatim
+    # After compaction, retain at most this fraction of the threshold in
+    # estimated tokens. The kept tail is sized *dynamically* to fit this
+    # budget — a smaller threshold therefore keeps fewer recent messages, so
+    # the context the next call sends scales with the threshold instead of a
+    # fixed message count that can balloon far past it (the 140k-vs-60k gap in
+    # docs/ago-cli-improvements.md). 0.6 leaves headroom for the next step's
+    # additions before the threshold is re-crossed.
+    compaction_target_ratio: float = 0.6
+    # Never drop the tail below this many recent messages, even if they alone
+    # exceed the token budget — the agent still needs its immediate context to
+    # make progress. Tool results are already capped (max_tool_result_chars),
+    # so a few recent messages stay bounded.
+    compaction_min_keep_tail: int = 4
     # After an identical tool call (same name + arguments) has FAILED this
     # many times in a run, the next identical call is short-circuited with a
     # nudge instead of executed — so the agent stops re-issuing a doomed
@@ -115,11 +128,64 @@ def cap_tool_result_content(text: str, limit: int) -> str:
     return f"{head}{marker.format(n=dropped)}{tail}"
 
 
+def estimate_message_tokens(messages: list[Message]) -> int:
+    """Cheap, provider-agnostic estimate of the tokens a message list costs.
+
+    Used to size compaction *before* paying for an LLM call, so the context we
+    send can be bounded dynamically rather than only reacting after a turn was
+    already billed over the threshold. Approximates ~4 characters per token
+    (close enough for byte-pair tokenizers on English/code) over message
+    content plus serialized ``tool_calls`` arguments — the two fields that
+    actually grow during a run. System prompt and tool schemas are excluded;
+    the caller's threshold accounts for that fixed overhead via its ratio.
+    """
+    chars = 0
+    for m in messages:
+        chars += len(m.content or "")
+        for tc in m.tool_calls or ():
+            # Arguments are the variable part of a tool call (a pasted command,
+            # a file path list); name/id are negligible.
+            chars += len(str(tc.arguments))
+    return chars // 4
+
+
+def _dynamic_keep_tail(
+    messages: list[Message],
+    *,
+    keep_head: int,
+    keep_tail: int,
+    token_budget: int,
+    min_keep_tail: int,
+) -> int:
+    """Largest tail size in ``[min_keep_tail, keep_tail]`` that, together with
+    the head, fits ``token_budget`` estimated tokens.
+
+    Monotonic: a longer tail never costs fewer tokens, so we grow until it no
+    longer fits and keep the last size that did. Falls back to ``min_keep_tail``
+    when even that overflows the budget (the floor is honored over the budget —
+    we never strand the agent without recent context).
+    """
+    n = len(messages)
+    head_tokens = estimate_message_tokens(messages[:keep_head])
+    max_tail = min(keep_tail, max(n - keep_head, 0))
+    floor = min(min_keep_tail, max_tail)
+    chosen = floor
+    for size in range(floor, max_tail + 1):
+        tail_tokens = estimate_message_tokens(messages[n - size :]) if size else 0
+        if head_tokens + tail_tokens <= token_budget:
+            chosen = size
+        else:
+            break
+    return chosen
+
+
 def compact_messages(
     messages: list[Message],
     *,
     keep_head: int,
     keep_tail: int,
+    token_budget: int | None = None,
+    min_keep_tail: int = 0,
 ) -> tuple[list[Message], int]:
     """Elide the middle of a long working context to control cost.
 
@@ -135,16 +201,37 @@ def compact_messages(
     most providers reject. (Dangling assistant tool_calls left in the head
     are repaired separately by :func:`recover_dangling_tool_calls`.)
 
+    When ``token_budget`` is set, the tail size is chosen *dynamically* — the
+    largest suffix (capped at ``keep_tail``, floored at ``min_keep_tail``)
+    whose estimated tokens fit the budget — so the retained context scales with
+    the budget instead of a fixed message count. This is what bounds the peak
+    near the threshold: a few large recent messages trigger a smaller tail, and
+    a count-based early return is skipped (few-but-huge messages still compact).
+
     Returns ``(new_messages, dropped_count)``; ``dropped_count == 0`` means
     nothing was elided and ``messages`` is returned unchanged.
     """
     n = len(messages)
-    if keep_head < 0 or keep_tail < 0 or n <= keep_head + keep_tail + 1:
+    if keep_head < 0 or keep_tail < 0:
         return messages, 0
+
+    if token_budget is not None and token_budget > 0:
+        effective_keep_tail = _dynamic_keep_tail(
+            messages,
+            keep_head=keep_head,
+            keep_tail=keep_tail,
+            token_budget=token_budget,
+            min_keep_tail=min_keep_tail,
+        )
+    else:
+        # Count-based mode: nothing to do when the history is already short.
+        if n <= keep_head + keep_tail + 1:
+            return messages, 0
+        effective_keep_tail = keep_tail
 
     # Walk the tail boundary forward off any leading TOOL messages so the
     # preserved tail begins on a USER/ASSISTANT message.
-    tail_start = n - keep_tail
+    tail_start = n - effective_keep_tail
     while tail_start < n and messages[tail_start].role == Role.TOOL:
         tail_start += 1
     if tail_start <= keep_head:
@@ -395,28 +482,39 @@ class Agent:
                 span.end()
                 return result
 
-            # P0: compact the context when the last billed turn crossed the
-            # threshold, BEFORE recovery (which then repairs any tool_call
-            # left dangling by the elision) and before the next LLM call so
-            # the savings land immediately.
-            if (
-                self.config.compaction_token_threshold > 0
-                and last_input_tokens > self.config.compaction_token_threshold
-            ):
-                self._messages, dropped = compact_messages(
-                    self._messages,
-                    keep_head=self.config.compaction_keep_head,
-                    keep_tail=self.config.compaction_keep_tail,
-                )
-                if dropped:
-                    compactions += 1
-                    last_input_tokens = 0  # re-measure on the next completion
-                    logger.info(
-                        "Context compacted: agent=%s dropped=%d messages (trigger=%d tokens)",
-                        self.config.name,
-                        dropped,
-                        self.config.compaction_token_threshold,
+            # P0: compact the context BEFORE recovery (which then repairs any
+            # tool_call left dangling by the elision) and before the next LLM
+            # call so the savings land immediately. Trigger on EITHER the last
+            # billed input (accurate, but one step late) OR a pre-call estimate
+            # of the current history (catches a single step that ballooned past
+            # the threshold before it is ever billed). Compaction then shrinks
+            # the tail dynamically to a fraction of the threshold, so the next
+            # call's context scales with the threshold rather than overshooting
+            # to multiples of it (docs/ago-cli-improvements.md, P0 follow-up).
+            threshold = self.config.compaction_token_threshold
+            if threshold > 0:
+                estimated_tokens = estimate_message_tokens(self._messages)
+                if last_input_tokens > threshold or estimated_tokens > threshold:
+                    target_budget = max(int(threshold * self.config.compaction_target_ratio), 1)
+                    self._messages, dropped = compact_messages(
+                        self._messages,
+                        keep_head=self.config.compaction_keep_head,
+                        keep_tail=self.config.compaction_keep_tail,
+                        token_budget=target_budget,
+                        min_keep_tail=self.config.compaction_min_keep_tail,
                     )
+                    if dropped:
+                        compactions += 1
+                        last_input_tokens = 0  # re-measure on the next completion
+                        logger.info(
+                            "Context compacted: agent=%s dropped=%d messages "
+                            "(trigger=%d tokens, target=%d, est_before=%d)",
+                            self.config.name,
+                            dropped,
+                            threshold,
+                            target_budget,
+                            estimated_tokens,
+                        )
 
             # Recover any dangling tool calls before sending to LLM
             self._messages = recover_dangling_tool_calls(

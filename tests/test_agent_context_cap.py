@@ -179,6 +179,109 @@ def test_compaction_negative_keeps_are_safe():
     assert out is msgs
 
 
+# --- P0 follow-up: dynamic, threshold-scaled compaction --------------------
+
+
+def _big_round(i: int, size: int) -> list[Message]:
+    """A tool round whose result is ``size`` chars — to drive token estimates."""
+    call_id = f"call{i}"
+    return [
+        Message(
+            role=Role.ASSISTANT,
+            content="",
+            tool_calls=[ToolCall(id=call_id, name="file_read", arguments={"n": i})],
+        ),
+        Message(role=Role.TOOL, content="x" * size, tool_call_id=call_id),
+    ]
+
+
+def test_estimate_message_tokens_counts_content_and_args():
+    from agent_orchestrator.core.agent import estimate_message_tokens
+
+    msgs = [
+        Message(role=Role.USER, content="a" * 40),  # 40 chars
+        Message(
+            role=Role.ASSISTANT,
+            content="b" * 8,
+            tool_calls=[ToolCall(id="c", name="t", arguments={"k": "v" * 12})],
+        ),
+    ]
+    # ~4 chars/token over content + serialized args; just assert it scales and
+    # is non-trivial rather than pinning an exact tokenizer value.
+    est = estimate_message_tokens(msgs)
+    assert est >= (40 + 8) // 4
+    assert est > 0
+
+
+def test_dynamic_budget_keeps_fewer_messages_for_lower_threshold():
+    # Same history; a tighter token budget must retain a smaller tail. This is
+    # the core property the user asked for: fewer tokens when the threshold is
+    # lower.
+    msgs = [Message(role=Role.USER, content="the task")]
+    for i in range(20):
+        msgs.extend(_big_round(i, size=400))  # ~100 tokens per result
+
+    out_loose, dropped_loose = compact_messages(
+        msgs, keep_head=1, keep_tail=20, token_budget=2000, min_keep_tail=2
+    )
+    out_tight, dropped_tight = compact_messages(
+        msgs, keep_head=1, keep_tail=20, token_budget=400, min_keep_tail=2
+    )
+    assert dropped_tight > dropped_loose > 0
+    # Tighter budget => fewer messages retained.
+    assert len(out_tight) < len(out_loose)
+
+
+def test_dynamic_budget_bounds_retained_tokens_near_target():
+    from agent_orchestrator.core.agent import estimate_message_tokens
+
+    msgs = [Message(role=Role.USER, content="head")]
+    for i in range(30):
+        msgs.extend(_big_round(i, size=400))  # ~100 tokens each, ~3000 total
+
+    budget = 600
+    out, dropped = compact_messages(
+        msgs, keep_head=1, keep_tail=30, token_budget=budget, min_keep_tail=2
+    )
+    assert dropped > 0
+    # Retained estimate stays bounded by the budget plus the small marker /
+    # one boundary message of slack — never the full unbounded history.
+    assert estimate_message_tokens(out) <= budget + 200
+    assert estimate_message_tokens(out) < estimate_message_tokens(msgs)
+
+
+def test_dynamic_min_keep_tail_is_honored_over_budget():
+    # Each recent message alone exceeds the budget; the floor still keeps the
+    # agent's immediate context rather than stranding it.
+    msgs = [Message(role=Role.USER, content="head")]
+    for i in range(10):
+        msgs.extend(_big_round(i, size=4000))  # ~1000 tokens each
+
+    out, dropped = compact_messages(
+        msgs, keep_head=1, keep_tail=20, token_budget=100, min_keep_tail=3
+    )
+    assert dropped > 0
+    # The floor keeps recent context rather than stranding the agent: the most
+    # recent message always survives, and roughly min_keep_tail messages are
+    # retained (the no-orphan TOOL-walk may shave at most one off the floor).
+    assert out[-1] is msgs[-1]
+    assert len(out) >= 1 + 1 + (3 - 1)
+
+
+def test_dynamic_budget_compacts_few_but_huge_messages():
+    # Count-based mode would early-return (only 5 messages), but a token budget
+    # must still compact when those few messages are individually enormous.
+    msgs = [
+        Message(role=Role.USER, content="head"),
+        *_big_round(0, size=40000),  # ~10k tokens
+        *_big_round(1, size=40000),
+    ]
+    out, dropped = compact_messages(
+        msgs, keep_head=1, keep_tail=20, token_budget=2000, min_keep_tail=1
+    )
+    assert dropped > 0
+
+
 # --- P0: compaction fires inside the real agent loop -----------------------
 
 
@@ -248,6 +351,113 @@ async def test_loop_triggers_compaction(caplog):
     assert any("Context compacted" in r.message for r in caplog.records)
     # The accumulated context was bounded, not left to grow with every step.
     assert len(agent._messages) < 12
+
+
+class _BigReadFileSkill(Skill):
+    """Returns a large result every call, so the working context would grow
+    unbounded without compaction (mirrors a real file_read/shell_exec)."""
+
+    @property
+    def name(self) -> str:
+        return "read_file"
+
+    @property
+    def description(self) -> str:
+        return "Read a big file"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"path": {"type": "string"}}}
+
+    async def execute(self, params: dict) -> SkillResult:
+        return SkillResult(success=True, output="D" * 40_000)
+
+
+class _TokenizerProvider(Provider):
+    """Reports ``input_tokens`` equal to the *actual estimated size of the
+    context it was handed* — a stand-in for a real tokenizer. This makes the
+    per-step ``usage.input_tokens`` a faithful measure of "tokens we sent",
+    so the test can assert the dynamic compaction actually bounds it."""
+
+    def __init__(self, rounds: int):
+        self._rounds = rounds
+        self._n = 0
+        self.reported_inputs: list[int] = []
+
+    @property
+    def model_id(self) -> str:
+        return "fake-tok"
+
+    @property
+    def capabilities(self) -> ModelCapabilities:
+        return ModelCapabilities(max_context=1_000_000, max_output_tokens=1024)
+
+    @property
+    def input_cost_per_million(self) -> float:
+        return 1.0
+
+    @property
+    def output_cost_per_million(self) -> float:
+        return 2.0
+
+    async def complete(self, messages, tools=None, system=None, **kw):
+        from agent_orchestrator.core.agent import estimate_message_tokens
+
+        sent = estimate_message_tokens(list(messages))
+        self.reported_inputs.append(sent)
+        self._n += 1
+        usage = Usage(input_tokens=sent, output_tokens=5, cost_usd=0.001)
+        if self._n <= self._rounds:
+            return Completion(
+                content="working",
+                tool_calls=[
+                    ToolCall(id=f"tc{self._n}", name="read_file", arguments={"path": f"/{self._n}"})
+                ],
+                usage=usage,
+            )
+        return Completion(content="done", tool_calls=[], usage=usage)
+
+    async def stream(self, messages, tools=None, system=None, **kw):
+        yield StreamChunk(content="done", finish_reason="stop")
+
+
+@pytest.mark.asyncio
+async def test_loop_dynamic_compaction_bounds_sent_context():
+    # A long run whose every tool result is huge. Without the dynamic bound the
+    # per-step context would climb without limit (the 140k→235k we saw live);
+    # with it, the context the provider is handed stays near the threshold.
+    registry = SkillRegistry()
+    registry.register(_BigReadFileSkill())
+    threshold = 4000
+    config = AgentConfig(
+        name="bounded-agent",
+        role="test",
+        provider_key="fake-tok",
+        tools=["read_file"],
+        max_steps=25,
+        max_tool_result_chars=8000,  # P1 cap (~2k tokens per result)
+        compaction_token_threshold=threshold,
+        compaction_target_ratio=0.6,
+        compaction_keep_head=1,
+        compaction_keep_tail=20,
+        compaction_min_keep_tail=2,
+    )
+    provider = _TokenizerProvider(rounds=20)
+    agent = Agent(config, provider, registry)
+
+    result = await agent.execute(Task(description="read many big files"))
+    assert result.status == TaskStatus.COMPLETED
+
+    peak = max(provider.reported_inputs)
+    # The sent context is bounded to a small multiple of the threshold — it
+    # never grows with run length. (One step's worth of fresh tool output can
+    # sit on top of a target-sized retained context before the next compaction.)
+    assert peak < threshold * 2.5, f"context not bounded: peak={peak}"
+    # And it genuinely stayed flat: the last third of the run is no larger than
+    # the first third (no monotonic climb).
+    first_third = provider.reported_inputs[: len(provider.reported_inputs) // 3]
+    last_third = provider.reported_inputs[-len(provider.reported_inputs) // 3 :]
+    assert max(last_third) <= max(first_third) + threshold
 
 
 # --- P2: back-off on repeatedly-failing commands ---------------------------
