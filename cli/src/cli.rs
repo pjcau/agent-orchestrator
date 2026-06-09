@@ -44,6 +44,14 @@ pub enum Command {
     Logout(LogoutArgs),
     /// Display the authenticated identity for the active server.
     Whoami,
+    /// Internal: print the stored token for the active server to stdout.
+    ///
+    /// Used by the jail launcher (`cli/ago`) to bridge the host keychain into
+    /// the sandbox container via `AGO_TOKEN`, since the container has no OS
+    /// Secret Service. Hidden from `--help`; prints nothing when not
+    /// authenticated.
+    #[command(name = "print-token", hide = true)]
+    PrintToken,
     /// Inspect or modify the CLI configuration.
     Config(ConfigArgs),
     /// Run a task against an agent on the active server.
@@ -400,5 +408,13 @@ mod tests {
         // global=true → accepted after the subcommand too.
         let cli = Cli::try_parse_from(["ago", "whoami", "--log-file", "x.log"]).unwrap();
         assert_eq!(cli.log_file.as_deref(), Some(std::path::Path::new("x.log")));
+    }
+
+    #[test]
+    fn print_token_subcommand_parses() {
+        // Hidden launcher helper: still a valid subcommand even though it is
+        // omitted from --help.
+        let cli = Cli::try_parse_from(["ago", "print-token"]).unwrap();
+        assert!(matches!(cli.command, Command::PrintToken));
     }
 }

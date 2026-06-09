@@ -384,9 +384,17 @@ impl LocalToolRunner {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
+                // Inside the jail the container ships a bare base image, so a
+                // missing binary is most often "not installed in the image"
+                // rather than a typo. Surface that cause so the agent adapts
+                // and the operator knows the fix (see
+                // docs/managing-local-projects.md § Jail-by-default).
+                let in_jail = std::env::var("AGO_IN_JAIL").as_deref() == Ok("1");
+                let not_found = e.kind() == std::io::ErrorKind::NotFound;
+                let detail = spawn_failure_detail(&e.to_string(), &argv[0], not_found, in_jail);
                 return ToolOutcome::err("shell_spawn_failed")
                     .with_meta("argv0", json!(argv[0]))
-                    .with_meta("detail", json!(e.to_string()));
+                    .with_meta("detail", json!(detail));
             }
         };
 
@@ -538,6 +546,22 @@ where
     Ok(())
 }
 
+/// Build the `detail` for a `shell_spawn_failed` outcome. When the binary was
+/// not found *and* we are running inside the jail container, append a hint that
+/// the bare jail image is the likely cause and how to fix it — otherwise return
+/// the raw OS error unchanged. Pure so it is unit-testable without spawning.
+fn spawn_failure_detail(base: &str, argv0: &str, not_found: bool, in_jail: bool) -> String {
+    if not_found && in_jail {
+        format!(
+            "{base} — '{argv0}' is not installed in the jail image; \
+             use a richer image via `jail_image:` in .ago.yaml or the \
+             AGO_JAIL_IMAGE env var"
+        )
+    } else {
+        base.to_string()
+    }
+}
+
 fn finalise_shell(
     argv: Vec<String>,
     status: Option<std::process::ExitStatus>,
@@ -651,6 +675,24 @@ mod tests {
         let r = runner.run("file_read", args, None, None).await;
         assert!(!r.success);
         assert_eq!(r.error_code.as_deref(), Some("path_outside_workspace"));
+    }
+
+    #[test]
+    fn spawn_detail_adds_jail_hint_when_not_found_in_jail() {
+        let d = spawn_failure_detail("No such file or directory (os error 2)", "git", true, true);
+        assert!(d.contains("No such file or directory"));
+        assert!(d.contains("'git' is not installed in the jail image"));
+        assert!(d.contains("jail_image"));
+    }
+
+    #[test]
+    fn spawn_detail_unchanged_outside_jail() {
+        let base = "No such file or directory (os error 2)";
+        // Not in jail: raw error, no hint (the binary is genuinely missing on
+        // the host, not a jail-image gap).
+        assert_eq!(spawn_failure_detail(base, "git", true, false), base);
+        // In jail but a non-NotFound error (e.g. permission): no image hint.
+        assert_eq!(spawn_failure_detail(base, "git", false, true), base);
     }
 
     #[tokio::test]

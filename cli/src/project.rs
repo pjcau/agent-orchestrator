@@ -43,6 +43,13 @@ pub struct ProjectPreset {
     /// (or defaults on) but the session is running un-sandboxed. Defaults to
     /// `true` when omitted — see [`ProjectPreset::jail_enabled`].
     pub jail: Option<bool>,
+    /// Container image the jail wrapper runs `--client-tools` sessions in. The
+    /// default base (`ubuntu:24.04`) is bare, so `shell_exec` of tools the
+    /// agent reaches for (`git`, `rg`, `python`, …) fails with
+    /// `shell_spawn_failed`. Point this at a richer image to pre-install the
+    /// toolchain. Consumed by the `ago` wrapper; precedence is
+    /// `AGO_JAIL_IMAGE` env > this key > the built-in default.
+    pub jail_image: Option<String>,
 }
 
 /// Project-scoped shell policy layered on top of the global allowlist cache.
@@ -317,6 +324,28 @@ mod tests {
         write(&dir.path().join(".ago.yaml"), "jail: true\n");
         let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
         assert!(preset.jail_enabled());
+    }
+
+    #[test]
+    fn jail_image_omitted_is_none() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".ago.yaml"), "agent: a\n");
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert_eq!(preset.jail_image, None);
+    }
+
+    #[test]
+    fn jail_image_parses() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join(".ago.yaml"),
+            "jail: true\njail_image: ghcr.io/acme/ago-jail:latest\n",
+        );
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert_eq!(
+            preset.jail_image.as_deref(),
+            Some("ghcr.io/acme/ago-jail:latest")
+        );
     }
 
     #[test]

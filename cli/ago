@@ -46,6 +46,30 @@ read_jail_from_launcher() {
     | sed -E 's/.*=[[:space:]]*//; s/#.*//; s/["[:space:]]//g'
 }
 
+# Read `jail_image:` from the nearest .ago.yaml walking up from cwd. The jail
+# default image is bare ubuntu, so a project that needs git/rg/python/etc. can
+# point this at a richer image to avoid `shell_spawn_failed`. Image values
+# contain colons (`registry:tag`, `host:port`), so we strip only the KEY prefix
+# up to the FIRST colon — never a greedy `.*:` that would eat the tag.
+read_jail_image_from_yaml() {
+  local dir="$PWD" f line
+  while :; do
+    for f in "$dir/.ago.yaml" "$dir/.ago.yml"; do
+      if [ -f "$f" ]; then
+        line="$(grep -E '^[[:space:]]*jail_image[[:space:]]*:' "$f" | head -1 || true)"
+        line="${line#*:}"     # drop `  jail_image:` (first colon only)
+        line="${line%%#*}"    # drop trailing comment
+        # Trim surrounding whitespace and one layer of quotes.
+        printf '%s' "$line" \
+          | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^["'"'"']//; s/["'"'"']$//'
+        return 0
+      fi
+    done
+    [ "$dir" = "/" ] && return 0
+    dir="$(dirname "$dir")"
+  done
+}
+
 jail="${AGO_JAIL:-}"
 [ -z "$jail" ] && jail="$(read_jail_from_yaml)"
 [ -z "$jail" ] && jail="$(read_jail_from_launcher)"
@@ -65,13 +89,61 @@ fi
 PROJECT="$(pwd)"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ago"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ago"
-IMAGE="${AGO_JAIL_IMAGE:-ubuntu:24.04}"
+# Image precedence: AGO_JAIL_IMAGE env > .ago.yaml `jail_image:` > default.
+IMAGE="${AGO_JAIL_IMAGE:-}"
+[ -z "$IMAGE" ] && IMAGE="$(read_jail_image_from_yaml)"
+IMAGE="${IMAGE:-ubuntu:24.04}"
 
 mkdir -p "$CACHE_DIR"
 
 # Allocate a TTY only when stdin is one (interactive chat); stay pipe-friendly otherwise.
 TTY_FLAGS=(-i)
 [ -t 0 ] && [ -t 1 ] && TTY_FLAGS=(-i -t)
+
+# Bridge the host keychain into the sandbox. The container has no OS Secret
+# Service, so KeyringStorage there fails with PermissionDenied. Read the token
+# HERE (where the keychain works) via the real binary and forward it through
+# AGO_TOKEN, which the binary's EnvOverrideStorage prefers. The secret never
+# touches disk — it only lives in this process's env. Empty when not logged in,
+# in which case the container reports NotAuthenticated as usual. Passing `-e
+# AGO_TOKEN` (no value) below inherits it without exposing it in `docker run`'s
+# argv / `ps`.
+if [ -z "${AGO_TOKEN:-}" ]; then
+  AGO_TOKEN="$("$REAL_BIN" print-token 2>/dev/null || true)"
+fi
+export AGO_TOKEN
+
+# `--log-file` may point outside the project (e.g. ~/ago-session.log). The jail
+# only mounts /work, so such a path does not exist in the container and the
+# binary warns "No such file or directory". Bind-mount the specific log FILE
+# (never its directory — that would re-expose the host tree the jail exists to
+# hide) at the same absolute path the already-tilde-expanded arg refers to.
+LOG_MOUNT=()
+log_path=""
+prev=""
+for a in "$@"; do
+  case "$a" in
+    --log-file=*) log_path="${a#--log-file=}" ;;
+    *) [ "$prev" = "--log-file" ] && log_path="$a" ;;
+  esac
+  prev="$a"
+done
+if [ -n "$log_path" ]; then
+  case "$log_path" in
+    /*) abs_log="$log_path" ;;
+    *)  abs_log="$PROJECT/$log_path" ;;
+  esac
+  # Paths under the project are already covered by the /work mount; only
+  # out-of-project logs need their own file mount.
+  case "$abs_log" in
+    "$PROJECT"/*) : ;;
+    *)
+      mkdir -p "$(dirname "$abs_log")"
+      [ -e "$abs_log" ] || : > "$abs_log"
+      LOG_MOUNT=(-v "$abs_log":"$abs_log":rw)
+      ;;
+  esac
+fi
 
 # No --network host: the default bridge already gives outbound internet to reach
 # the remote server, while keeping the container off the host's loopback. If your
@@ -82,11 +154,13 @@ exec docker run --rm "${TTY_FLAGS[@]}" \
   --user "$(id -u):$(id -g)" \
   -e HOME=/home/u \
   -e AGO_IN_JAIL=1 \
+  -e AGO_TOKEN \
   -e AGO_INSECURE="${AGO_INSECURE:-}" \
   -v "$PROJECT":/work:rw \
   -v "$REAL_BIN":/usr/local/bin/ago:ro \
   -v "$CONFIG_DIR":/home/u/.config/ago:rw \
   -v "$CACHE_DIR":/home/u/.cache/ago:rw \
+  ${LOG_MOUNT[@]+"${LOG_MOUNT[@]}"} \
   -w /work \
   "$IMAGE" \
   ago "$@"

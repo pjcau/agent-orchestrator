@@ -9,6 +9,7 @@ pub mod config;
 pub mod jobs;
 pub mod login;
 pub mod logout;
+pub mod print_token;
 pub mod run;
 pub mod self_cmd;
 pub mod whoami;
@@ -18,6 +19,7 @@ pub async fn dispatch(rt: &Runtime, cmd: Command) -> Result<()> {
         Command::Login(args) => login::run(rt, args).await,
         Command::Logout(args) => logout::run(rt, args),
         Command::Whoami => whoami::run(rt).await,
+        Command::PrintToken => print_token::run(rt).await,
         Command::Config(args) => config::run(rt, args),
         Command::Run(args) => run::run(rt, args).await,
         Command::Jobs(args) => jobs::run(rt, args).await,

@@ -104,9 +104,9 @@ shell:
 ```
 
 Allowed keys: `server`, `agent`, `model`, `provider`, `max_steps`,
-`context`, `shell`, `jail`. CLI flags override `.ago.yaml`; `.ago.yaml`
-overrides `~/.config/ago/config.toml`. Empty values fall through to the next
-layer.
+`context`, `shell`, `jail`, `jail_image`. CLI flags override `.ago.yaml`;
+`.ago.yaml` overrides `~/.config/ago/config.toml`. Empty values fall through to
+the next layer.
 
 ### Shell policy (stop the `allow X? [y/N]` prompts)
 
@@ -183,17 +183,55 @@ ago chat --client-tools --agent team-lead       # auto-jailed when jail: true
 ```
 
 The wrapper runs the same `ago` binary inside a container that mounts **only**
-the current directory as `/work` (plus your `~/.config/ago` token and
+the current directory as `/work` (plus your `~/.config/ago` config and
 `~/.cache/ago` allowlist, read-write). `shell_exec` then physically cannot
 reach anything outside the project — an absolute `rm /home/you/…` hits a path
 that does not exist in the container. It sets `AGO_IN_JAIL=1` so the binary
-knows the session is sandboxed and skips the warning. Persist logs under
-`/work` (e.g. `--log-file /work/session.log`).
+knows the session is sandboxed and skips the warning.
+
+**Token bridge.** Your token lives in the OS keychain (macOS Keychain, Linux
+Secret Service), which does **not** exist inside the container — a naive jailed
+run fails with `token storage error: Platform secure storage failure:
+PermissionDenied`. The wrapper avoids this by reading the token on the host
+(via the hidden `ago print-token` helper) and forwarding it into the sandbox
+through `AGO_TOKEN`, which the binary's env-override storage prefers. The secret
+never touches disk; it lives only in the launcher's environment for the run. If
+`AGO_TOKEN` is already set in your shell, the wrapper passes it through
+unchanged. When you are not logged in, nothing is forwarded and the container
+reports `NotAuthenticated` as usual.
+
+**`--log-file` outside the project.** The jail only mounts `/work`, so a log
+path elsewhere (e.g. `--log-file ~/ago-session.log`) would otherwise warn `No
+such file or directory`. The wrapper detects an out-of-project `--log-file`,
+creates the file on the host, and bind-mounts that **single file** (never its
+directory — that would re-expose the host tree) at the same absolute path, so
+the log lands where you asked. Paths under the project (e.g. `--log-file
+/work/session.log` or a relative `session.log`) are already covered by the
+`/work` mount.
 
 `jail` resolution (first match wins): `AGO_JAIL` env (`true`/`false`) →
 `.ago.yaml` `jail:` → `~/.config/ago/launcher.toml` `jail =` → `true`. Commands
 without `--client-tools` always run natively. Inside the jail `allow_all: true`
 is reasonable — the container, not the shell policy, is the boundary.
+
+**Jail image (`jail_image`).** The default jail image is **bare `ubuntu:24.04`**,
+which ships almost nothing beyond coreutils. When the agent runs a tool that is
+not in the image — `git`, `rg`, `python`, `node`, a build toolchain — the call
+fails with `shell_spawn_failed`, and inside the jail the error now spells out
+the cause: *"'git' is not installed in the jail image; use a richer image via
+`jail_image:` in .ago.yaml or the AGO_JAIL_IMAGE env var"*. The agent usually
+adapts, but each miss wastes a step, so point the jail at an image that has your
+project's toolchain:
+
+```yaml
+# .ago.yaml
+jail: true
+jail_image: ghcr.io/acme/dev-base:latest   # git + rg + python3 + node, etc.
+```
+
+Image resolution (first match wins): `AGO_JAIL_IMAGE` env → `.ago.yaml`
+`jail_image:` → built-in `ubuntu:24.04`. The image must already be pullable by
+your local Docker/OrbStack (the wrapper does not build it).
 
 ---
 
@@ -376,6 +414,11 @@ The file is **appended** (so several invocations accumulate into one record),
 ANSI-free, and includes the WS frame trace, tool calls, errors, and timing —
 the same content as `-vvv` but written to disk. Hand off `ago-session.log`
 when you want someone to review what happened and suggest improvements.
+
+Under the jail (the default for `--client-tools`), an absolute log path outside
+the project — e.g. `--log-file ~/ago-session.log` — is handled transparently:
+the launcher bind-mounts that single file into the sandbox so the write lands
+on your host. See [Jail-by-default](#jail-by-default-confine-the-whole-session-to-the-project-jail).
 
 Per-feature deep dives:
 

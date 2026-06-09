@@ -873,6 +873,7 @@ mod tests {
                 context: None,
                 shell: None,
                 jail: None,
+                jail_image: None,
             },
             None,
         );
@@ -923,6 +924,7 @@ mod tests {
                 context: None,
                 shell: None,
                 jail: None,
+                jail_image: None,
             },
             None,
         );

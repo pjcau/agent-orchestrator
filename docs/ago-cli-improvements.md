@@ -39,6 +39,45 @@ frame trace; this document consolidates what the trace revealed.
 > then record a fresh session to `~/ago-session-new.log` and compare the same
 > four signals (peak `in=`, `reason=` on errors, `turn_end` tokens, `total`).
 
+> **Clean post-fix verification (2026-06-09, CLI v0.5.18 + jail-by-default):**
+> recorded a fresh `--client-tools` team run (`team-lead` → `code-reviewer` +
+> `devops`) to `~/ago-session.log` with the **v0.5.18 jailed** launcher. This is
+> the clean post-fix trace the block above asked for. Four signals confirmed:
+>
+> | Signal | Pre-fix (06-08) | Post-fix (06-09, v0.5.18) | Reading |
+> |---|---|---|---|
+> | `reason=` on errors | 73× error, **none** had `reason=` | **0/N** errors lack `reason=` | **P1 fixed** — every error now diagnosable |
+> | P3 meter `total=` | `total=0` until 21:53 restart | `total=40` **from step 1** | **P3 live** |
+> | P0 compaction | never fired (peaked 872k `in=`) | **fires** (idx 23: 62k→41k; idx 35: 118k→102k) | **P0 live** but see ⚠️ below |
+> | Jail token + log | n/a | **0** `PermissionDenied` / secure-storage / log-file errors | **v0.5.18 jail fix verified live** |
+>
+> **✅ The v0.5.18 jail fix works end-to-end.** The token bridge (host keychain →
+> `AGO_TOKEN` → sandbox) and the out-of-project `--log-file ~/ago-session.log`
+> bind-mount both function: the session connected and logged with **zero**
+> `Platform secure storage failure: PermissionDenied` and **zero**
+> `No such file or directory` on the log path — the two errors that originally
+> blocked the run.
+>
+> **Two new findings from the post-fix trace — both actioned (2026-06-09):**
+>
+> ✅ **P0 compaction now bounds the peak dynamically.** It used to trim yet let
+> per-step `in=` climb to **140,476 tokens** — 2.3× the 60k threshold — because
+> the kept tail was a fixed message count that could itself exceed the
+> threshold. Fixed: compaction now sizes the retained tail to a **fraction of
+> the threshold** (`compaction_target_ratio`, default 0.6) and triggers on a
+> **pre-call estimate** as well as the last billed turn, so a single ballooning
+> turn is caught before it is sent. Lower threshold ⇒ fewer tokens retained.
+> See [P0 follow-up — compaction did not bound the peak](#p0-follow-up--compaction-did-not-bound-the-peak).
+> *(Server-side: takes effect once the orchestrator is redeployed with this
+> `core/agent.py`.)*
+>
+> ✅ **`shell_spawn_failed: No such file or directory (os error 2)`** — was 2× in
+> the jailed `devops` turn, a binary absent from the **bare `ubuntu:24.04` jail
+> image**. Fixed client-side (ago v0.5.18): the in-jail error now names the cause
+> and the fix, and `.ago.yaml` gained `jail_image:` to run the sandbox in an
+> image that has the project toolchain. See
+> [P2 — Jail base image lacks common tooling](#p2--jail-base-image-lacks-common-tooling).
+
 ## TL;DR
 
 The multi-agent orchestration **works and completes tasks** — including
@@ -165,6 +204,41 @@ before ~800k).
 
 ---
 
+### P0 follow-up — compaction did not bound the peak — ✅ DONE
+
+> **Status: implemented (server-side, `core/agent.py`).** The 2026-06-09 trace
+> showed compaction *firing* yet per-step `in=` still reaching **140k tokens**
+> (2.3× the 60k threshold). Two root causes, both fixed.
+
+**Cause.** (1) The kept tail was a **fixed message count** (`keep_tail=20`);
+twenty recent messages — each a capped-but-non-trivial tool result — can alone
+exceed the threshold, so compaction could never get the context below it. (2)
+The trigger was **purely reactive** (`last_input_tokens > threshold`), so a
+single turn that ballooned mid-run was only caught *after* it had already been
+billed.
+
+**Fix.**
+- **Dynamic, threshold-scaled tail.** `compact_messages` now takes a
+  `token_budget`; `_dynamic_keep_tail` keeps the largest suffix (≤ `keep_tail`,
+  ≥ `compaction_min_keep_tail`) whose **estimated tokens** fit the budget. The
+  budget is `compaction_target_ratio × threshold` (default 0.6), so a *lower
+  threshold retains fewer tokens* — the context the next call sends scales with
+  the threshold instead of overshooting to a multiple of it.
+- **Proactive trigger.** The loop estimates the current history
+  (`estimate_message_tokens`, ~4 chars/token over content + tool-call args) and
+  compacts when **either** that estimate **or** the last billed input crosses
+  the threshold — catching a single ballooning turn before it is sent.
+- **Few-but-huge handled.** With a budget set, the old "history is short →
+  skip" early return is bypassed, so a handful of enormous messages still
+  compact.
+
+Config: `compaction_target_ratio` (0.6), `compaction_min_keep_tail` (4) on
+`AgentConfig`. Tests: `test_dynamic_*` in `tests/test_agent_context_cap.py`.
+*Effect on the live remote run requires redeploying the orchestrator with this
+`core/agent.py`.*
+
+---
+
 ### P1 — Tool outputs are not capped before re-entering context — ✅ DONE
 
 > **Status: implemented.** `core/agent.py` now folds each tool result into
@@ -286,6 +360,45 @@ team-lead branch in `src/agent_orchestrator/dashboard/cli_routes.py`.
 
 **Proposed fix.** Map `run_team`'s `total_tokens` (and a step count) into the
 `TurnEnd` fields so the summary reflects real usage.
+
+---
+
+### P2 — Jail base image lacks common tooling — ✅ DONE (ago v0.5.18)
+
+> **Status: implemented.** Surfaced by the 2026-06-09 post-fix trace (see the
+> verification block near the top): two `shell_spawn_failed: No such file or
+> directory (os error 2)` errors in a jailed `devops` turn.
+>
+> **Shipped:** (1) the runner enriches the in-jail spawn error
+> (`cli/src/agent_host/runner.rs`, `spawn_failure_detail`) so a missing binary
+> reads *"'X' is not installed in the jail image; use a richer image via
+> `jail_image:` in .ago.yaml or the AGO_JAIL_IMAGE env var"* instead of a bare
+> `os error 2`; (2) `.ago.yaml` gained **`jail_image:`**
+> (`ProjectPreset.jail_image`), and the `cli/ago` launcher resolves the image
+> `AGO_JAIL_IMAGE` env → `.ago.yaml jail_image:` → `ubuntu:24.04`. Tests:
+> `spawn_detail_*` in runner.rs, `jail_image_*` in project.rs. Docs:
+> `managing-local-projects.md` § Jail-by-default.
+
+**Symptom.** Under jail-by-default (v0.5.17+), `--client-tools` `shell_exec`
+runs inside the launcher's container, whose default image is **bare
+`ubuntu:24.04`** (`cli/ago`, `AGO_JAIL_IMAGE`). Common dev tools the agent
+reaches for — `git`, `rg`, `python`, `node`, build toolchains — are not in that
+base, so the spawn fails with `os error 2`. The agent self-recovers (the next
+command returns `ok`), so the run still completes, but every miss burns a step
+and a model round-trip.
+
+**Cause.** The jail mounts the project and the binary but installs no tooling;
+`ubuntu:24.04` ships almost nothing beyond coreutils.
+
+**Proposed fix (any of, in order of effort).**
+1. **Document + nudge:** the `AGO_JAIL_IMAGE` override already exists — call it
+   out in `docs/managing-local-projects.md` with a recommended image, and emit a
+   clearer error hint when a spawn fails inside the jail
+   (`binary 'X' not found in jail image; set AGO_JAIL_IMAGE=…`).
+2. **Ship a batteries-included default image** (`ago/jail:latest` with git, rg,
+   python3, node, build-essential) and point `AGO_JAIL_IMAGE` at it by default.
+3. **Let `.ago.yaml` declare a `jail_image:`** so a project pins its own
+   toolchain.
 
 ---
 
