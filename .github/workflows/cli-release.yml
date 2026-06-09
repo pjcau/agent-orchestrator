@@ -152,7 +152,7 @@ jobs:
         # from blocking the actual binary release. SBOM is attached when the
         # download succeeds and skipped (with a warning) when it doesn't.
         continue-on-error: true
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 6
           max_attempts: 6
@@ -175,7 +175,7 @@ jobs:
         # Best-effort, same rationale as the SBOM step: a sustained outage on
         # cosign's release assets must not block the binary release.
         continue-on-error: true
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 5
           max_attempts: 6
