@@ -111,6 +111,17 @@ class OpenAIProvider(Provider):
             kwargs["tools"] = self._convert_tools(tools)
 
         response = await client.chat.completions.create(**kwargs)
+        # Some upstreams — notably preview models proxied via OpenRouter — return
+        # a 200 whose `choices` is null/empty when the model refused, was
+        # moderated, or errored upstream (the body carries an `error` instead).
+        # Guard it: a bare `response.choices[0]` would crash with an opaque
+        # "'NoneType' object is not subscriptable", surfaced to the user as
+        # `turn_failed`. Raising a clear, catchable error instead lets the
+        # OpenRouter fallback chain try another model.
+        if not response.choices:
+            err = getattr(response, "error", None)
+            detail = f" (upstream error: {err})" if err else ""
+            raise RuntimeError(f"{self._model}: model returned no choices{detail}")
         choice = response.choices[0]
 
         tool_calls = []

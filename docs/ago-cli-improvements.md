@@ -111,6 +111,16 @@ frame trace; this document consolidates what the trace revealed.
 > (jailed) is unaffected and works. Likely an EOF/stdin or one-shot
 > agent-host-lifecycle issue specific to `run`, **not** the v0.5.18 jail
 > mechanics. See [P3 — `ago run --client-tools` one-shot hangs](#p3--ago-run---client-tools-one-shot-hangs).
+>
+> ✅ **`turn_failed: 'NoneType' object is not subscriptable` — FIXED.** Surfaced
+> live during a testAgo run on `tencent/hy3-preview`: the agent had read a few
+> files (context ~15.5k, well below the compaction threshold — so unrelated to
+> the new compaction/breaker) and the turn crashed. Root cause: `OpenAIProvider.
+> complete()` did a bare `response.choices[0]`, and the preview model returned a
+> 200 with `choices=None` (refusal / moderation / upstream error). Fixed by
+> guarding `response.choices` and raising a clear, catchable error so the
+> OpenRouter fallback chain tries another model instead of crashing the turn.
+> Tests: `tests/test_openai_provider.py`.
 
 ## TL;DR
 
