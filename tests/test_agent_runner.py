@@ -1026,3 +1026,184 @@ class TestTokenSplit:
                     assert event.data["output_tokens"] >= 0
                     seen_split = True
         assert seen_split, "no TOKEN_UPDATE event carried the input/output split"
+
+
+# ===== _instrumented_execute: parity with the tested core loop =====
+# The dashboard/agent-host run THIS loop (not core.Agent.execute). These tests
+# assert it now carries the same compaction, circuit breaker, tool-result cap,
+# and the minimal-changes steer — so production behaviour matches the core loop
+# instead of drifting (a live run peaked at ~251k tokens and ignored the
+# minimal-change rule because none of those lived in this loop).
+
+from agent_orchestrator.dashboard.agent_runner import (  # noqa: E402
+    _instrumented_execute,
+    _MINIMAL_CHANGES_STEER,
+)
+from agent_orchestrator.core.agent import (  # noqa: E402
+    AgentConfig,
+    Task,
+    TaskStatus,
+    estimate_message_tokens,
+)
+from agent_orchestrator.core.provider import ToolCall  # noqa: E402
+from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_instrumented_system_prompt_carries_minimal_changes_steer():
+    captured: dict = {}
+
+    class _Capture(MockProvider):
+        async def complete(self, messages, tools=None, system=None, **kwargs):
+            captured["system"] = system
+            return Completion(content="ok", tool_calls=[], usage=Usage(10, 5, 0.0))
+
+    config = AgentConfig(name="a", role="You are backend.", provider_key="x", tools=[], max_steps=3)
+    res = await _instrumented_execute(
+        config=config,
+        provider=_Capture(),
+        skill_registry=SkillRegistry(),
+        task=Task(description="hi"),
+        event_bus=EventBus.get(),
+    )
+    assert res.status == TaskStatus.COMPLETED
+    assert "You are backend." in captured["system"]
+    assert _MINIMAL_CHANGES_STEER in captured["system"]
+
+
+class _SpawnFailSkill(Skill):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    @property
+    def name(self) -> str:
+        return "shell_exec"
+
+    @property
+    def description(self) -> str:
+        return "shell"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"argv": {"type": "array"}}}
+
+    async def execute(self, params: dict) -> SkillResult:
+        self.calls += 1
+        return SkillResult(success=False, output=None, error="shell_spawn_failed")
+
+
+class _VaryingFailProvider(MockProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self._n = 0
+
+    async def complete(self, messages, tools=None, system=None, **kwargs):
+        self._n += 1
+        return Completion(
+            content="trying",
+            tool_calls=[
+                ToolCall(
+                    id=f"c{self._n}", name="shell_exec", arguments={"argv": ["x", f"#{self._n}"]}
+                )
+            ],
+            usage=Usage(input_tokens=10, output_tokens=5, cost_usd=0.0),
+        )
+
+
+@pytest.mark.asyncio
+async def test_instrumented_breaker_stops_varying_failure_grind():
+    skill = _SpawnFailSkill()
+    reg = SkillRegistry()
+    reg.register(skill)
+    config = AgentConfig(
+        name="b",
+        role="r",
+        provider_key="x",
+        tools=["shell_exec"],
+        max_steps=40,
+        max_retries_per_approach=99,
+        max_tool_failures_per_approach=99,
+        max_consecutive_tool_failures=4,
+    )
+    res = await _instrumented_execute(
+        config=config,
+        provider=_VaryingFailProvider(),
+        skill_registry=reg,
+        task=Task(description="run x"),
+        event_bus=EventBus.get(),
+    )
+    assert res.status == TaskStatus.STALLED
+    assert "Circuit breaker" in (res.error or "")
+    assert skill.calls == 4  # stopped at the threshold, not 40
+    assert res.steps_taken < 40
+    assert "sandbox" in res.output or "jail" in res.output
+
+
+class _BigReadSkill(Skill):
+    @property
+    def name(self) -> str:
+        return "file_read"
+
+    @property
+    def description(self) -> str:
+        return "read"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}}
+
+    async def execute(self, params: dict) -> SkillResult:
+        return SkillResult(success=True, output="D" * 40_000)
+
+
+class _TokenizerProvider(MockProvider):
+    def __init__(self, rounds: int) -> None:
+        super().__init__()
+        self._rounds = rounds
+        self._n = 0
+        self.sent: list[int] = []
+
+    async def complete(self, messages, tools=None, system=None, **kwargs):
+        sent = estimate_message_tokens(list(messages))
+        self.sent.append(sent)
+        self._n += 1
+        usage = Usage(input_tokens=sent, output_tokens=5, cost_usd=0.0)
+        if self._n <= self._rounds:
+            return Completion(
+                content="w",
+                tool_calls=[ToolCall(id=f"c{self._n}", name="file_read", arguments={"p": self._n})],
+                usage=usage,
+            )
+        return Completion(content="done", tool_calls=[], usage=usage)
+
+
+@pytest.mark.asyncio
+async def test_instrumented_compaction_bounds_sent_context():
+    reg = SkillRegistry()
+    reg.register(_BigReadSkill())
+    threshold = 4000
+    config = AgentConfig(
+        name="c",
+        role="r",
+        provider_key="x",
+        tools=["file_read"],
+        max_steps=25,
+        max_tool_result_chars=8000,
+        compaction_token_threshold=threshold,
+        compaction_target_ratio=0.6,
+        compaction_keep_head=1,
+        compaction_keep_tail=20,
+        compaction_min_keep_tail=2,
+    )
+    provider = _TokenizerProvider(rounds=20)
+    res = await _instrumented_execute(
+        config=config,
+        provider=provider,
+        skill_registry=reg,
+        task=Task(description="read"),
+        event_bus=EventBus.get(),
+    )
+    assert res.status == TaskStatus.COMPLETED
+    peak = max(provider.sent)
+    # Bounded near the threshold instead of climbing with run length.
+    assert peak < threshold * 2.5, f"context not bounded: peak={peak}"

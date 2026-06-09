@@ -122,6 +122,33 @@ frame trace; this document consolidates what the trace revealed.
 > OpenRouter fallback chain tries another model instead of crashing the turn.
 > Tests: `tests/test_openai_provider.py`.
 
+> **⚠️→✅ Root-cause: TWO agent loops had drifted (2026-06-09).** A clean testAgo
+> retry exposed that the compaction + breaker work had no effect in production:
+> per-step context peaked at **251k** (threshold 60k) and the minimal-change
+> rule was ignored. Reason: the dashboard / agent-host actually run
+> `dashboard/agent_runner.py::_instrumented_execute` — a second copy of the
+> agent loop (for live EventBus events) — **not** `core.Agent.execute`, where
+> compaction, the circuit breaker, and the P1 tool-result cap had been added.
+> The earlier "compaction firing" readings were misattributed: the `in=` dips
+> were sub-agent **handoffs** (fresh context), not compaction.
+>
+> **Fixed** by porting all three into `_instrumented_execute`, **reusing the
+> core helpers** (`compact_messages`, `estimate_message_tokens`,
+> `cap_tool_result_content`, `_UNRECOVERABLE_ENV_ERRORS`,
+> `recover_dangling_tool_calls`) so the two loops can't silently diverge on this
+> behaviour again, plus a `_MINIMAL_CHANGES_STEER` appended to every agent's
+> system prompt (anti-sprawl, applies to all projects). Tests now run against
+> the REAL loop: `test_instrumented_compaction_bounds_sent_context`,
+> `test_instrumented_breaker_stops_varying_failure_grind`,
+> `test_instrumented_system_prompt_carries_minimal_changes_steer`.
+>
+> 🔲 **Follow-up — per-project `AGO.md` is dropped under `--client-tools`.** The
+> agent-host `Prompt` frame carries only `text` (no `cache_context` field), and
+> the client-tools path never folds `AGO.md` into the prompt — so a project's
+> `AGO.md` never reaches the server (the `_MINIMAL_CHANGES_STEER` covers the
+> sprawl case regardless). Fixing the general feature needs a CLI change
+> (fold instructions into the agent-host prompt) + release.
+
 ## TL;DR
 
 The multi-agent orchestration **works and completes tasks** — including

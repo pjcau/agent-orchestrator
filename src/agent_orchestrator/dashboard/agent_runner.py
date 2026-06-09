@@ -18,7 +18,17 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from ..core.agent import AgentConfig, Task, TaskResult, TaskStatus
+from ..core.agent import (
+    _UNRECOVERABLE_ENV_ERRORS,
+    AgentConfig,
+    Task,
+    TaskResult,
+    TaskStatus,
+    cap_tool_result_content,
+    compact_messages,
+    estimate_message_tokens,
+)
+from ..core.tool_recovery import recover_dangling_tool_calls
 from ..core.cache import InMemoryCache
 from ..core.conversation import ConversationManager
 from ..core.store import BaseStore
@@ -29,6 +39,20 @@ from ..skills import FileReadSkill, FileWriteSkill, GlobSkill, ShellExecSkill
 from ..skills.sandboxed_shell import SandboxedShellSkill
 from .events import Event, EventBus, EventType
 from .sandbox_manager import SandboxManager
+
+# Appended to every agent's system prompt: a standing discipline toward minimal,
+# focused changes. Universally safe (it never forbids legitimate file creation,
+# only gratuitous sprawl) and applies to every project regardless of whether a
+# per-project AGO.md reached the server.
+_MINIMAL_CHANGES_STEER = (
+    "\n\nWorking discipline (always apply): make the SMALLEST change that "
+    "satisfies the task. Touch only the files the task requires, and prefer "
+    "editing an existing file over creating a new one. Never create "
+    "status / summary / evidence / verification / report files (e.g. "
+    "*_SUMMARY.md, *_EVIDENCE.md, *_COMPLETE.md, CLEANUP_REPORT.md) — report "
+    "what you did in your final reply, not as committed files. Do not "
+    "restructure, rename, or reformat code that is unrelated to the task."
+)
 
 logger = logging.getLogger(__name__)
 
@@ -338,8 +362,21 @@ async def _instrumented_execute(
     session_id: str = "",
     conversation_history: list[Message] | None = None,
 ) -> TaskResult:
-    """Execute agent loop with real-time event emissions for each step."""
+    """Execute agent loop with real-time event emissions for each step.
+
+    This is the loop the dashboard / agent-host actually run (it mirrors
+    ``core.Agent.execute`` but emits live ``EventBus`` events). It reuses the
+    core helpers for context compaction, the consecutive-failure circuit
+    breaker, and the per-tool-result cap so production behaviour matches the
+    tested core loop instead of drifting from it.
+    """
     messages: list[Message] = []
+
+    # Every agent gets a standing nudge toward minimal, focused changes — a live
+    # run, asked only to delete stray files, restructured the whole project and
+    # wrote a gratuitous CLEANUP_REPORT.md (docs/ago-cli-improvements.md, scope
+    # creep / file sprawl). Appended to the role so it survives every step.
+    system_prompt = config.role + _MINIMAL_CHANGES_STEER
 
     # Prepend conversation history for multi-turn context
     if conversation_history:
@@ -367,6 +404,9 @@ async def _instrumented_execute(
     files_created: list[str] = []
     step_log: list[str] = []
     fallback_log: list[dict] = []
+    last_input_tokens = 0  # context the provider last billed (compaction trigger)
+    consecutive_failures = 0  # tool failures since last success (circuit breaker)
+    streak_error_codes: list[str] = []
 
     while steps < config.max_steps:
         # Timeout check
@@ -387,6 +427,29 @@ async def _instrumented_execute(
                     "fallback_log": fallback_log,
                 },
             )
+
+        # Mid-run context compaction (mirrors core.Agent.execute, reusing the
+        # same helpers). Without this the dashboard/agent-host loop re-sent a
+        # ballooning history every step — a live run peaked at ~251k input
+        # tokens against a 60k threshold. Trigger on either the last billed
+        # input or a pre-call estimate, then shrink the tail to a fraction of
+        # the threshold so the sent context scales with the threshold.
+        threshold = config.compaction_token_threshold
+        if threshold > 0:
+            estimated_tokens = estimate_message_tokens(messages)
+            if last_input_tokens > threshold or estimated_tokens > threshold:
+                target_budget = max(int(threshold * config.compaction_target_ratio), 1)
+                messages, dropped = compact_messages(
+                    messages,
+                    keep_head=config.compaction_keep_head,
+                    keep_tail=config.compaction_keep_tail,
+                    token_budget=target_budget,
+                    min_keep_tail=config.compaction_min_keep_tail,
+                )
+                if dropped:
+                    last_input_tokens = 0  # re-measure on the next completion
+                    # Repair any tool_call left dangling by the elision.
+                    messages = recover_dangling_tool_calls(messages, session_id=config.name)
 
         # Emit step event. ``message`` gives the agent-host Step frame a
         # non-empty label so the CLI shows "[1] team-lead: thinking"
@@ -410,7 +473,7 @@ async def _instrumented_execute(
         completion = await provider.complete(
             messages=messages,
             tools=tool_defs if tool_defs else None,
-            system=config.role,
+            system=system_prompt,
             max_tokens=current_max_tokens,
         )
 
@@ -426,7 +489,7 @@ async def _instrumented_execute(
                     completion = await provider.complete(
                         messages=messages,
                         tools=tool_defs if tool_defs else None,
-                        system=config.role,
+                        system=system_prompt,
                         max_tokens=current_max_tokens,
                     )
                 except Exception:
@@ -442,6 +505,7 @@ async def _instrumented_execute(
         total_output_tokens += completion.usage.output_tokens
         total_tokens += completion.usage.input_tokens + completion.usage.output_tokens
         total_cost += completion.usage.cost_usd
+        last_input_tokens = completion.usage.input_tokens  # compaction trigger
         steps += 1
 
         # Emit incremental token/cost update after each step. The split
@@ -536,6 +600,19 @@ async def _instrumented_execute(
 
             result = await skill_registry.execute(tool_call.name, tool_call.arguments)
 
+            # Circuit-breaker bookkeeping: count consecutive failures (any
+            # success clears the streak), so a varying grind — the model trying
+            # to obtain a tool the sandbox cannot provide — is stopped instead
+            # of burning the whole step budget.
+            if not result.success:
+                consecutive_failures += 1
+                err_code = getattr(result, "error", None)
+                if err_code:
+                    streak_error_codes.append(err_code)
+            else:
+                consecutive_failures = 0
+                streak_error_codes.clear()
+
             # Track files and steps
             if tool_call.name == "file_write" and result.success:
                 fpath = tool_call.arguments.get("file_path", "?")
@@ -590,10 +667,48 @@ async def _instrumented_execute(
             messages.append(
                 Message(
                     role=Role.TOOL,
-                    content=str(result),
+                    content=cap_tool_result_content(str(result), config.max_tool_result_chars),
                     tool_call_id=tool_call.id,
                 )
             )
+
+            # Circuit breaker: too many failures in a row with no progress.
+            # Stop with an actionable message instead of grinding to max_steps.
+            if (
+                config.max_consecutive_tool_failures > 0
+                and consecutive_failures >= config.max_consecutive_tool_failures
+            ):
+                distinct_codes = list(dict.fromkeys(streak_error_codes))
+                env_blocked = any(c in _UNRECOVERABLE_ENV_ERRORS for c in distinct_codes)
+                hint = (
+                    " Some required tools appear unavailable in this environment "
+                    "and cannot be installed here (e.g. a sandbox/jail with no "
+                    "network or privileges); configure the sandbox image to "
+                    "include them rather than retrying."
+                    if env_blocked
+                    else " Change strategy instead of repeating failing calls."
+                )
+                return TaskResult(
+                    status=TaskStatus.STALLED,
+                    output=(
+                        f"Stopped after {consecutive_failures} consecutive tool "
+                        f"failures without progress.{hint}"
+                    ),
+                    steps_taken=steps,
+                    total_tokens=total_tokens,
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    total_cost_usd=total_cost,
+                    error=(
+                        f"Circuit breaker: {consecutive_failures} consecutive tool "
+                        f"failures (codes: {', '.join(distinct_codes) or 'n/a'})"
+                    ),
+                    artifacts={
+                        "files_created": files_created,
+                        "step_log": step_log,
+                        "fallback_log": fallback_log,
+                    },
+                )
 
     return TaskResult(
         status=TaskStatus.STALLED,
