@@ -7,6 +7,11 @@ on:
       - "docs/**"
       - "*.md"
       - "terraform/**"
+      # The Rust CLI ships via cli-release.yml (tag push), not the server image.
+      # Redeploying the dashboard on every cli/ commit is wasteful AND restarts
+      # the server, dropping active agent-host WS sessions mid-turn.
+      - "cli/**"
+      - "docker/ago-jail/**"
 
   workflow_dispatch:
 
