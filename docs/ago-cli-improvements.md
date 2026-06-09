@@ -174,6 +174,17 @@ context, not doing new work.
 
 ---
 
+> **✅ RESOLVED (2026-06-09, ago v0.5.19).** A fresh long trace still showed
+> this as the single most frequent error (35× in one session) — every one a
+> wasted step, regardless of model. Fixed in `runner.rs`: `shell_exec` now
+> accepts a command **string** and tokenizes it with `shlex` (shell-FREE — no
+> `sh -c`, so metacharacters are not interpreted and `argv[0]` still passes the
+> allowlist/deny policy). Unbalanced quotes return a clear `shell_unparseable_command`
+> with the `["bash","-lc","<cmd>"]` hint for genuine pipelines. Tests:
+> `shell_argv_string_is_tokenized_not_rejected`, `shell_string_runs_when_allowed`,
+> `shell_string_deny_still_applies_to_argv0`, `shell_unparseable_string_is_clear`.
+> The section below is the original diagnosis, kept for context.
+
 ## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
 Across **every** turn the trace showed `shell_exec` results coming back

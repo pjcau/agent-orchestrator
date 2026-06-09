@@ -295,19 +295,32 @@ impl LocalToolRunner {
         mut emit_chunk: Option<Box<dyn ChunkEmitter>>,
         cancel: Option<CancelSignal>,
     ) -> ToolOutcome {
-        // Refuse string-form argv outright — shell=True would be unsafe.
+        // The model very often sends a command STRING ("npm install") instead
+        // of an argv list. Rather than rejecting it (which just burns a step —
+        // it was the single most frequent error in live traces), tokenize the
+        // string with shlex. This is shell-FREE: no `sh -c`, so metacharacters
+        // are not interpreted and there is no injection — argv[0] still passes
+        // the allowlist/deny policy below exactly like the list form.
         let argv_value = first_present_value(args, &["argv", "command", "cmd", "args"]);
         let argv: Vec<String> = match argv_value {
             Some(Value::Array(arr)) => arr
                 .iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect(),
-            Some(Value::String(_)) => {
-                return ToolOutcome::err("shell_requires_argv_list").with_meta(
-                    "detail",
-                    json!("shell_exec via agent-host expects argv as a list; got a string"),
-                );
-            }
+            Some(Value::String(s)) => match shlex::split(s.as_str()) {
+                Some(parts) if !parts.is_empty() => parts,
+                // Unbalanced quotes / empty → can't tokenize safely.
+                _ => {
+                    return ToolOutcome::err("shell_unparseable_command").with_meta(
+                        "detail",
+                        json!(
+                            "could not parse the command string into arguments; \
+                             pass argv as a list, e.g. [\"npm\", \"install\"]. For a \
+                             pipeline/redirection use [\"bash\", \"-lc\", \"<cmd>\"]"
+                        ),
+                    );
+                }
+            },
             _ => {
                 return ToolOutcome::err("shell_empty_argv");
             }
@@ -546,12 +559,28 @@ where
     Ok(())
 }
 
-/// Build the `detail` for a `shell_spawn_failed` outcome. When the binary was
-/// not found *and* we are running inside the jail container, append a hint that
-/// the bare jail image is the likely cause and how to fix it — otherwise return
-/// the raw OS error unchanged. Pure so it is unit-testable without spawning.
+/// Shell builtins that are NOT real executables, so spawning them always fails
+/// with "not found". `shell_exec` runs one process with no shell and no
+/// persistent cwd, so the agent must fold these into a single command instead.
+const SHELL_BUILTINS: &[&str] = &["cd", "export", "source", ".", "alias", "pushd", "popd"];
+
+/// Build the `detail` for a `shell_spawn_failed` outcome.
+///
+/// Priority of hints (most specific first):
+/// 1. `argv0` is a shell builtin (e.g. `cd`) — it is not an executable and
+///    `shell_exec` keeps no cwd between calls, so explain how to chain it.
+/// 2. not found *inside the jail* — the bare image likely lacks the binary.
+/// 3. otherwise the raw OS error, unchanged.
+///
+/// Pure so it is unit-testable without spawning.
 fn spawn_failure_detail(base: &str, argv0: &str, not_found: bool, in_jail: bool) -> String {
-    if not_found && in_jail {
+    if not_found && SHELL_BUILTINS.contains(&argv0) {
+        format!(
+            "{base} — '{argv0}' is a shell builtin, not a program, and shell_exec \
+             runs a single process with no persistent working directory. Chain it \
+             into one command instead, e.g. argv = [\"bash\", \"-lc\", \"cd sub && <cmd>\"]"
+        )
+    } else if not_found && in_jail {
         format!(
             "{base} — '{argv0}' is not installed in the jail image; \
              use a richer image via `jail_image:` in .ago.yaml or the \
@@ -695,15 +724,89 @@ mod tests {
         assert_eq!(spawn_failure_detail(base, "git", false, true), base);
     }
 
+    #[test]
+    fn spawn_detail_explains_shell_builtin() {
+        // `cd` (and friends) are builtins, not programs — the hint must explain
+        // the stateless-shell_exec gotcha, and take priority over the jail hint.
+        let base = "No such file or directory (os error 2)";
+        for builtin in ["cd", "export", "source"] {
+            let d = spawn_failure_detail(base, builtin, true, true);
+            assert!(
+                d.contains("shell builtin"),
+                "missing builtin hint for {builtin}"
+            );
+            assert!(d.contains("bash"), "missing chaining example for {builtin}");
+            // The jail-image hint must NOT also fire for a builtin.
+            assert!(
+                !d.contains("jail image"),
+                "builtin {builtin} wrongly got jail hint"
+            );
+        }
+        // A real missing binary still gets the jail hint, not the builtin one.
+        let d = spawn_failure_detail(base, "git", true, true);
+        assert!(d.contains("jail image"));
+        assert!(!d.contains("shell builtin"));
+    }
+
     #[tokio::test]
-    async fn shell_argv_string_rejected() {
+    async fn shell_argv_string_is_tokenized_not_rejected() {
+        // A command STRING is now tokenized with shlex (shell-free), not bounced
+        // with "needs a list" — it goes through the SAME policy as an argv list.
+        // Here: non-interactive, isolated allowlist -> denied by policy, proving
+        // it parsed to argv ["pytest","-q"] rather than being string-rejected.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner =
+            LocalToolRunner::new(ws.clone()).with_allowlist(ShellAllowlist::new(allow_path));
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!("pytest -q"));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(!r.success);
+        assert_eq!(r.error_code.as_deref(), Some("shell_denied"));
+        assert_ne!(r.error_code.as_deref(), Some("shell_requires_argv_list"));
+    }
+
+    #[tokio::test]
+    async fn shell_string_runs_when_allowed() {
+        // The split must produce a runnable argv: "true arg" -> ["true","arg"].
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_confirmer(Box::new(AlwaysApprove));
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!("true ignored-arg"));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "shell_exec from string failed: {r:?}");
+        assert_eq!(r.output["returncode"], json!(0));
+    }
+
+    #[tokio::test]
+    async fn shell_string_deny_still_applies_to_argv0() {
+        // Tokenizing must NOT bypass the deny policy: "rm -rf x" -> argv0 "rm".
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_confirmer(Box::new(AlwaysApprove))
+            .with_shell_policy(&[], &["rm".to_string()], false);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!("rm -rf /tmp/nope"));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(!r.success);
+        assert_eq!(r.error_code.as_deref(), Some("shell_denied_by_policy"));
+    }
+
+    #[tokio::test]
+    async fn shell_unparseable_string_is_clear() {
+        // Unbalanced quotes can't tokenize -> a clear, actionable error.
         let (_d, ws) = tmp_workspace();
         let runner = LocalToolRunner::new(ws);
         let mut args = HashMap::new();
-        args.insert("argv".into(), json!("rm -rf /"));
+        args.insert("argv".into(), json!("echo \"unterminated"));
         let r = runner.run("shell_exec", args, None, None).await;
         assert!(!r.success);
-        assert_eq!(r.error_code.as_deref(), Some("shell_requires_argv_list"));
+        assert_eq!(r.error_code.as_deref(), Some("shell_unparseable_command"));
     }
 
     #[tokio::test]

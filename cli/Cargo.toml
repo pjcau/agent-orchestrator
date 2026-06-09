@@ -1,6 +1,6 @@
 [package]
 name = "ago"
-version = "0.5.18"
+version = "0.5.19"
 edition = "2021"
 description = "Agent Orchestrator CLI — talk to a remote orchestrator from your local project."
 license = "MIT"
@@ -40,6 +40,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
 globset = "0.4"
+# Safe, shell-free tokenization of a command string into argv when the model
+# sends `shell_exec` a string instead of a list (see runner.rs). No shell is
+# spawned, so metacharacters are not interpreted — argv[0] still goes through
+# the allowlist policy.
+shlex = "1"
 eventsource-stream = "0.2"
 futures-util = "0.3"
 open = { version = "5", default-features = false }
