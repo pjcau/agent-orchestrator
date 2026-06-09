@@ -78,6 +78,39 @@ frame trace; this document consolidates what the trace revealed.
 > image that has the project toolchain. See
 > [P2 — Jail base image lacks common tooling](#p2--jail-base-image-lacks-common-tooling).
 
+> **Live verification + delivery (2026-06-09, ago v0.5.18, prod redeploy):**
+> The remote was redeployed with the dynamic-compaction core (deploy run
+> succeeded; a non-jailed `ago run` round-tripped `OK` in 3.9s — prod loop
+> healthy). The spawn-hint was then confirmed in a **real jailed session**: a
+> piloted `ago chat --client-tools` ran `cowsay ciao` and the tool result was
+>
+> ```
+> reason="shell_spawn_failed: No such file or directory (os error 2) — 'cowsay'
+>  is not installed in the jail image; use a richer image via `jail_image:` in
+>  .ago.yaml or the AGO_JAIL_IMAGE env var"
+> ```
+>
+> The controlled run made exactly ONE attempt, got the hint, and stopped at
+> step 2 — correct. ago v0.5.18 was tagged for release on the strength of this.
+>
+> **Two non-blocking follow-ups observed (open):**
+>
+> 🔲 **Agent burns all `max_steps` on an unrecoverable jail spawn-fail.** A
+> separate interactive session hit the full 40 steps because the agent kept
+> trying to *obtain* the missing binary (`apt install …`, alternatives) — which
+> the bare, network/sudo-less jail can never satisfy. The P2 back-off only
+> short-circuits *identical* repeated calls, so a varying sequence loops to the
+> ceiling. Candidate fix: when `shell_spawn_failed` (NotFound) fires inside the
+> jail, steer the agent to stop and surface "set `jail_image:`" rather than
+> grind. See [P3 — agent loops on unrecoverable jail spawn-fail](#p3--agent-loops-on-unrecoverable-jail-spawn-fail).
+>
+> 🔲 **`ago run --client-tools` one-shot hangs after handshake.** The jailed
+> *non-interactive* `run` path connects (handshake OK, token bridged) but never
+> sends the prompt / advances — the container sits idle. `chat --client-tools`
+> (jailed) is unaffected and works. Likely an EOF/stdin or one-shot
+> agent-host-lifecycle issue specific to `run`, **not** the v0.5.18 jail
+> mechanics. See [P3 — `ago run --client-tools` one-shot hangs](#p3--ago-run---client-tools-one-shot-hangs).
+
 ## TL;DR
 
 The multi-agent orchestration **works and completes tasks** — including
@@ -436,6 +469,46 @@ global counter is less confusing — the per-agent colours already help here).
 `label` is usually `"thinking"`/`"working"`/empty. Carrying the current action
 or tool name (e.g. `working: shell_exec npm test`) would make the live trace
 far more readable. Minor, but cheap.
+
+---
+
+### P3 — agent loops on unrecoverable jail spawn-fail — 🔲 OPEN
+
+> **Status: open (2026-06-09).** Observed live: a jailed session hit the full
+> `max_steps=40` after `cowsay` was missing — the agent kept trying to *obtain*
+> the binary (`apt install …`, alternatives) instead of giving up.
+
+**Symptom.** Inside the jail, a binary that is not in the image can usually not
+be installed either (no network, no sudo). The agent doesn't know that, so it
+spends the whole step budget on doomed `apt`/`pip`/`curl` attempts. The P2
+back-off (`max_tool_failures_per_approach`) only catches *identical* repeated
+calls; a varying command sequence sidesteps it.
+
+**Proposed fix.** When `shell_spawn_failed` (NotFound) fires under
+`AGO_IN_JAIL=1`, attach a stronger steer to the tool result — e.g. mark the
+approach as unrecoverable so the loop nudges the agent to stop and report
+"missing tool → set `jail_image:`" rather than keep grinding. Pairs with the
+existing spawn-hint (which already names the fix to the human).
+
+---
+
+### P3 — `ago run --client-tools` one-shot hangs — 🔲 OPEN
+
+> **Status: open (2026-06-09).** The jailed *non-interactive* `ago run
+> --client-tools` connects (handshake OK, token bridged) but never sends the
+> prompt or advances — the container sits idle until killed.
+
+**Symptom.** `ago run --client-tools --agent X "task"` reaches `connected
+run_id=…` then produces zero `send prompt` / `recv step` frames.
+`chat --client-tools` (jailed) is unaffected and runs tools normally, so this
+is **not** a jail-mechanics defect (token bridge, mounts, image all verified)
+— it is specific to the one-shot `run` path.
+
+**Likely cause / next step.** Probably an EOF/stdin or agent-host one-shot
+lifecycle difference: piloting `chat` via a piped stdin showed the connection
+tearing down at EOF mid-step, hinting the one-shot `run` may close the
+agent-host session before the first prompt round-trips. Reproduce with
+`--log-file`, compare the `run` vs `chat` agent-host teardown order.
 
 ---
 
