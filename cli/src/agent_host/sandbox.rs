@@ -96,17 +96,36 @@ pub fn enforce_workspace(
     let resolved = match candidate.canonicalize() {
         Ok(p) => p,
         Err(_) => {
-            let parent = candidate
-                .parent()
-                .ok_or_else(|| SandboxError::PathEscape(raw.to_string()))?;
-            let parent_canon = parent
-                .canonicalize()
-                .map_err(|_| SandboxError::PathEscape(raw.to_string()))?;
-            let file_name = candidate
-                .file_name()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(""));
-            parent_canon.join(file_name)
+            // The leaf — and possibly SEVERAL intermediate dirs — may not exist
+            // yet. That is legitimate for file_write into a fresh nested path
+            // like `apps/01/src/backend/main.py`. Walk up to the NEAREST
+            // EXISTING ancestor, canonicalize it (resolving symlinks and `..`
+            // in the real prefix), then rejoin the non-existent tail. Canonical
+            // containment of the rejoined path is still the security boundary.
+            let mut existing = candidate.as_path();
+            let mut tail: Vec<std::ffi::OsString> = Vec::new();
+            let anchor = loop {
+                if let Ok(c) = existing.canonicalize() {
+                    break c;
+                }
+                let name = existing
+                    .file_name()
+                    .ok_or_else(|| SandboxError::PathEscape(raw.to_string()))?;
+                // A `..`/`.` in the NON-existent tail can't be resolved against
+                // the filesystem and could fool the prefix check — refuse it.
+                if name == ".." || name == "." {
+                    return Err(SandboxError::PathEscape(raw.to_string()));
+                }
+                tail.push(name.to_os_string());
+                existing = existing
+                    .parent()
+                    .ok_or_else(|| SandboxError::PathEscape(raw.to_string()))?;
+            };
+            let mut resolved = anchor;
+            for seg in tail.iter().rev() {
+                resolved.push(seg);
+            }
+            resolved
         }
     };
 
@@ -149,6 +168,34 @@ mod tests {
     fn parent_traversal_rejected() {
         let dir = tmp_dir();
         let result = enforce_workspace(dir.path(), "../escape.txt", false);
+        assert!(matches!(result, Err(SandboxError::PathEscape(_))));
+    }
+
+    #[test]
+    fn deep_nonexistent_nested_path_accepted() {
+        // Regression: writing a new file into several not-yet-created nested
+        // dirs (only the leaf's PARENT was canonicalized before, so this was
+        // wrongly rejected as path_outside_workspace).
+        let dir = tmp_dir();
+        let out = enforce_workspace(dir.path(), "apps/01/src/backend/main.py", false).unwrap();
+        assert!(out.starts_with(dir.path().canonicalize().unwrap()));
+        assert!(out.ends_with("apps/01/src/backend/main.py"));
+    }
+
+    #[test]
+    fn deep_nonexistent_absolute_inside_accepted() {
+        // Same, but the model passed an absolute /work-style path.
+        let dir = tmp_dir();
+        let abs = dir.path().join("apps/01/src/backend/Dockerfile");
+        let out = enforce_workspace(dir.path(), abs.to_str().unwrap(), false).unwrap();
+        assert!(out.starts_with(dir.path().canonicalize().unwrap()));
+    }
+
+    #[test]
+    fn nonexistent_tail_with_dotdot_rejected() {
+        // A `..` inside the non-existent tail must NOT slip through the rejoin.
+        let dir = tmp_dir();
+        let result = enforce_workspace(dir.path(), "newdir/../../escape.txt", false);
         assert!(matches!(result, Err(SandboxError::PathEscape(_))));
     }
 

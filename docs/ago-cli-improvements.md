@@ -185,6 +185,19 @@ context, not doing new work.
 > `shell_string_deny_still_applies_to_argv0`, `shell_unparseable_string_is_clear`.
 > The section below is the original diagnosis, kept for context.
 
+> **✅ RESOLVED — false `path_outside_workspace` on new nested files (ago v0.5.20).**
+> A live run that DID start committing still threw 11× `path_outside_workspace`
+> on paths plainly inside `/work` (e.g. `/work/apps/01/src/backend/main.py`).
+> Root cause in `sandbox.rs::enforce_workspace`: for a non-existent target it
+> canonicalized only the **immediate** parent — if intermediate dirs didn't
+> exist yet (a fresh nested path), that failed and the path was wrongly rejected
+> as an escape. Fixed by walking up to the **nearest existing ancestor**,
+> canonicalizing it, then rejoining the missing tail (with a `..`-in-tail guard
+> so the rejoin can't be fooled). `file_write` already `mkdir -p`s the parents,
+> so writes into deep new dirs now succeed. Tests:
+> `deep_nonexistent_nested_path_accepted`, `deep_nonexistent_absolute_inside_accepted`,
+> `nonexistent_tail_with_dotdot_rejected`.
+
 ## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
 Across **every** turn the trace showed `shell_exec` results coming back
