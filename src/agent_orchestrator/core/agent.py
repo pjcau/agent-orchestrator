@@ -22,6 +22,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Skill / agent-host error codes that mean the tool is fundamentally
+# unavailable in this environment: retrying with different arguments cannot
+# fix it (a missing executable a sandbox/jail has no way to install). Used only
+# to make the circuit-breaker's stop message actionable — it does not change
+# WHEN the breaker fires (that is purely consecutive-failure count).
+_UNRECOVERABLE_ENV_ERRORS = frozenset({"shell_spawn_failed"})
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -74,6 +81,15 @@ class AgentConfig:
     # command (e.g. a denied `rm`) and is steered to change approach
     # (docs/ago-cli-improvements.md, P2). 0 disables.
     max_tool_failures_per_approach: int = 2
+    # Circuit breaker: stop after this many CONSECUTIVE tool failures with no
+    # successful tool call in between — regardless of whether the failing calls
+    # were identical. This catches the "grind" the identical-args back-off
+    # above misses: the model keeps VARYING a doomed approach (e.g. trying to
+    # obtain a tool the sandbox cannot provide — `cowsay` → `apt-get install` →
+    # `pip install` → …), burning the whole step budget for nothing. Resets to
+    # zero on any tool success, so a run making real progress is never cut.
+    # 0 disables. (docs/ago-cli-improvements.md, P3 — unrecoverable jail spawn.)
+    max_consecutive_tool_failures: int = 6
 
 
 @dataclass
@@ -456,6 +472,8 @@ class Agent:
         steps = 0
         retry_counts: dict[str, int] = {}
         failure_counts: dict[str, int] = {}  # per-approach failures (P2 back-off)
+        consecutive_failures = 0  # tool failures since the last success (breaker)
+        streak_error_codes: list[str] = []  # codes seen in the current streak
         total_cost = 0.0
         total_tokens = 0
         last_input_tokens = 0  # context size the provider last billed (P0 trigger)
@@ -674,9 +692,17 @@ class Agent:
                 if tool_call.name == "ask_clarification":
                     self._status = TaskStatus.RUNNING
 
-                # Count failures per approach so the back-off above can fire.
+                # Count failures per approach so the back-off above can fire,
+                # and track the consecutive-failure streak for the breaker. Any
+                # success means the agent is making progress — clear the streak.
                 if not skill_result.success:
                     failure_counts[approach_key] = prior_failures + 1
+                    consecutive_failures += 1
+                    if skill_result.error:
+                        streak_error_codes.append(skill_result.error)
+                else:
+                    consecutive_failures = 0
+                    streak_error_codes.clear()
 
                 self._messages.append(
                     Message(
@@ -687,6 +713,48 @@ class Agent:
                         tool_call_id=tool_call.id,
                     )
                 )
+
+                # Circuit breaker: too many failures in a row with no progress.
+                # Stop instead of grinding through the rest of the step budget
+                # on a doomed approach (P3). The message is actionable when the
+                # failures look environmental (e.g. a tool missing from a jail
+                # image) so the operator knows the real fix.
+                if (
+                    self.config.max_consecutive_tool_failures > 0
+                    and consecutive_failures >= self.config.max_consecutive_tool_failures
+                ):
+                    distinct_codes = list(dict.fromkeys(streak_error_codes))
+                    env_blocked = any(c in _UNRECOVERABLE_ENV_ERRORS for c in distinct_codes)
+                    hint = (
+                        " Some required tools appear unavailable in this "
+                        "environment and cannot be installed here (e.g. a sandbox "
+                        "or jail with no network/privileges); configure the "
+                        "sandbox image to include them rather than retrying."
+                        if env_blocked
+                        else " Change strategy instead of repeating failing calls."
+                    )
+                    result = TaskResult(
+                        status=TaskStatus.STALLED,
+                        output=(
+                            f"Stopped after {consecutive_failures} consecutive tool "
+                            f"failures without progress.{hint}"
+                        ),
+                        steps_taken=steps,
+                        total_tokens=total_tokens,
+                        total_cost_usd=total_cost,
+                        error=(
+                            f"Circuit breaker: {consecutive_failures} consecutive "
+                            f"tool failures (codes: {', '.join(distinct_codes) or 'n/a'})"
+                        ),
+                        provider_used=provider.model_id,
+                    )
+                    span.set_attribute("agent.steps_taken", steps)
+                    span.set_attribute("agent.total_tokens", total_tokens)
+                    span.set_attribute("agent.total_cost_usd", total_cost)
+                    span.set_attribute("agent.compactions", compactions)
+                    span.set_attribute("agent.status", result.status.value)
+                    span.end()
+                    return result
 
         result = TaskResult(
             status=TaskStatus.STALLED,

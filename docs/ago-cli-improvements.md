@@ -93,16 +93,17 @@ frame trace; this document consolidates what the trace revealed.
 > The controlled run made exactly ONE attempt, got the hint, and stopped at
 > step 2 — correct. ago v0.5.18 was tagged for release on the strength of this.
 >
-> **Two non-blocking follow-ups observed (open):**
+> **Follow-ups:**
 >
-> 🔲 **Agent burns all `max_steps` on an unrecoverable jail spawn-fail.** A
-> separate interactive session hit the full 40 steps because the agent kept
+> ✅ **Agent burns all `max_steps` on an unrecoverable jail spawn-fail — FIXED.**
+> A separate interactive session hit the full 40 steps because the agent kept
 > trying to *obtain* the missing binary (`apt install …`, alternatives) — which
 > the bare, network/sudo-less jail can never satisfy. The P2 back-off only
-> short-circuits *identical* repeated calls, so a varying sequence loops to the
-> ceiling. Candidate fix: when `shell_spawn_failed` (NotFound) fires inside the
-> jail, steer the agent to stop and surface "set `jail_image:`" rather than
-> grind. See [P3 — agent loops on unrecoverable jail spawn-fail](#p3--agent-loops-on-unrecoverable-jail-spawn-fail).
+> short-circuits *identical* repeated calls, so a varying sequence looped to the
+> ceiling. Fixed with a **consecutive-failure circuit breaker**
+> (`max_consecutive_tool_failures`, resets on any success) that stops the run
+> with a `jail_image`-actionable message. See
+> [P3 — agent loops on unrecoverable jail spawn-fail](#p3--agent-loops-on-unrecoverable-jail-spawn-fail).
 >
 > 🔲 **`ago run --client-tools` one-shot hangs after handshake.** The jailed
 > *non-interactive* `run` path connects (handshake OK, token bridged) but never
@@ -472,11 +473,12 @@ far more readable. Minor, but cheap.
 
 ---
 
-### P3 — agent loops on unrecoverable jail spawn-fail — 🔲 OPEN
+### P3 — agent loops on unrecoverable jail spawn-fail — ✅ DONE
 
-> **Status: open (2026-06-09).** Observed live: a jailed session hit the full
-> `max_steps=40` after `cowsay` was missing — the agent kept trying to *obtain*
-> the binary (`apt install …`, alternatives) instead of giving up.
+> **Status: implemented (2026-06-09, server-side `core/agent.py`).** Observed
+> live: a jailed session hit the full `max_steps=40` after `cowsay` was missing
+> — the agent kept trying to *obtain* the binary (`apt install …`, alternatives)
+> instead of giving up.
 
 **Symptom.** Inside the jail, a binary that is not in the image can usually not
 be installed either (no network, no sudo). The agent doesn't know that, so it
@@ -484,11 +486,21 @@ spends the whole step budget on doomed `apt`/`pip`/`curl` attempts. The P2
 back-off (`max_tool_failures_per_approach`) only catches *identical* repeated
 calls; a varying command sequence sidesteps it.
 
-**Proposed fix.** When `shell_spawn_failed` (NotFound) fires under
-`AGO_IN_JAIL=1`, attach a stronger steer to the tool result — e.g. mark the
-approach as unrecoverable so the loop nudges the agent to stop and report
-"missing tool → set `jail_image:`" rather than keep grinding. Pairs with the
-existing spawn-hint (which already names the fix to the human).
+**Fix — a consecutive-failure circuit breaker** (deliberately general, not
+keyed to a CLI string). `AgentConfig.max_consecutive_tool_failures` (default 6,
+0 disables) counts tool failures with **no successful tool call in between**,
+regardless of whether the failing calls were identical — so the varying grind
+(`cowsay` → `apt-get` → `pip` → …) is caught where the identical-args back-off
+is blind. The counter **resets on any tool success**, so a healthy run that
+occasionally retries is never cut short. On trip the run stops `STALLED` with an
+**actionable** message: when the streak's error codes intersect
+`_UNRECOVERABLE_ENV_ERRORS` (currently `shell_spawn_failed`), it tells the
+operator the sandbox is missing tools it cannot install — i.e. set `jail_image:`
+— rather than emitting a vague stall. Pairs with the client-side spawn-hint
+(which already names the fix in the tool result). Tests:
+`test_circuit_breaker_stops_varying_failure_grind`,
+`test_circuit_breaker_resets_on_success`. *Takes effect on the remote once
+redeployed.*
 
 ---
 

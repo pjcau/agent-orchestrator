@@ -516,6 +516,153 @@ class _RepeatSameCallProvider(Provider):
         yield StreamChunk(content="done", finish_reason="stop")
 
 
+class _VaryingSpawnFailSkill(Skill):
+    """A shell tool whose every call fails with `shell_spawn_failed` — a binary
+    missing from the (jail) environment. Counts real executions."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    @property
+    def name(self) -> str:
+        return "shell_exec"
+
+    @property
+    def description(self) -> str:
+        return "run a shell command"
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"argv": {"type": "array"}}}
+
+    async def execute(self, params: dict) -> SkillResult:
+        self.calls += 1
+        return SkillResult(success=False, output=None, error="shell_spawn_failed")
+
+
+class _VaryingFailProvider(Provider):
+    """Simulates the grind: a DIFFERENT failing command every step (cowsay →
+    apt-get → pip → …), so the identical-args back-off never trips."""
+
+    def __init__(self) -> None:
+        self._n = 0
+
+    @property
+    def model_id(self) -> str:
+        return "fake"
+
+    @property
+    def capabilities(self) -> ModelCapabilities:
+        return ModelCapabilities(max_context=4096, max_output_tokens=1024)
+
+    @property
+    def input_cost_per_million(self) -> float:
+        return 1.0
+
+    @property
+    def output_cost_per_million(self) -> float:
+        return 2.0
+
+    async def complete(self, messages, tools=None, system=None, **kw):
+        self._n += 1
+        # Each attempt is a distinct command → distinct approach_key.
+        argv = [["cowsay", "hi"], ["apt-get", "install", "cowsay"], ["pip", "install", "cowsay"]][
+            self._n % 3
+        ] + [f"#{self._n}"]
+        return Completion(
+            content="trying to get the tool",
+            tool_calls=[ToolCall(id=f"c{self._n}", name="shell_exec", arguments={"argv": argv})],
+            usage=Usage(input_tokens=10, output_tokens=5, cost_usd=0.001),
+        )
+
+    async def stream(self, messages, tools=None, system=None, **kw):
+        yield StreamChunk(content="done", finish_reason="stop")
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_stops_varying_failure_grind():
+    skill = _VaryingSpawnFailSkill()
+    registry = SkillRegistry()
+    registry.register(skill)
+    config = AgentConfig(
+        name="breaker-agent",
+        role="test",
+        provider_key="fake",
+        tools=["shell_exec"],
+        max_steps=40,  # the grind would otherwise burn all of these
+        max_retries_per_approach=99,
+        max_tool_failures_per_approach=99,  # disable identical-args back-off
+        max_consecutive_tool_failures=4,
+    )
+    agent = Agent(config, _VaryingFailProvider(), registry)
+
+    result = await agent.execute(Task(description="run cowsay"))
+
+    # Stopped by the breaker after ~4 failures — NOT after 40 steps.
+    assert result.status == TaskStatus.STALLED
+    assert "Circuit breaker" in (result.error or "")
+    assert skill.calls == 4
+    assert result.steps_taken < 40
+    # Message is actionable: the failures were environmental (missing binary).
+    assert "sandbox" in result.output or "jail" in result.output
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_resets_on_success():
+    # A success between failures must reset the streak so a healthy run that
+    # occasionally retries is never cut short.
+    class _Skill(Skill):
+        def __init__(self):
+            self.n = 0
+
+        @property
+        def name(self):
+            return "shell_exec"
+
+        @property
+        def description(self):
+            return "x"
+
+        @property
+        def parameters(self):
+            return {"type": "object", "properties": {}}
+
+        async def execute(self, params):
+            self.n += 1
+            # Fail, fail, succeed, repeat — never 3 in a row.
+            ok = self.n % 3 == 0
+            return SkillResult(success=ok, output="ok" if ok else None, error=None if ok else "x")
+
+    class _Prov(_VaryingFailProvider):
+        async def complete(self, messages, tools=None, system=None, **kw):
+            self._n += 1
+            if self._n > 12:  # finish so the test terminates
+                return Completion(content="done", tool_calls=[], usage=Usage(1, 1, 0.0))
+            return Completion(
+                content="step",
+                tool_calls=[
+                    ToolCall(id=f"c{self._n}", name="shell_exec", arguments={"i": self._n})
+                ],
+                usage=Usage(input_tokens=10, output_tokens=5, cost_usd=0.0),
+            )
+
+    registry = SkillRegistry()
+    registry.register(_Skill())
+    config = AgentConfig(
+        name="ok-agent",
+        role="test",
+        provider_key="fake",
+        tools=["shell_exec"],
+        max_steps=20,
+        max_consecutive_tool_failures=3,  # would trip if streak never reset
+    )
+    agent = Agent(config, _Prov(), registry)
+    result = await agent.execute(Task(description="work"))
+    # The periodic success keeps the streak under 3, so the run completes
+    # normally instead of being broken.
+    assert result.status == TaskStatus.COMPLETED
+
+
 @pytest.mark.asyncio
 async def test_repeated_failure_is_short_circuited():
     skill = _AlwaysFailSkill()
