@@ -406,5 +406,11 @@
     "added": "2026-06-07T22:43:29Z",
     "source": "github-star",
     "notes": "an open source, extensible AI agent that goes beyond code suggestions - install, execute, edit, and test with any LLM | Language: Rust | Topics: acp, ai, ai-agents, mcp"
+  },
+  {
+    "url": "https://github.com/Egonex-AI/Understand-Anything",
+    "added": "2026-05-24T20:22:36Z",
+    "source": "github-star",
+    "notes": "Graphs that teach > graphs that impress. Turn any code into an interactive knowledge graph you can explore, search, and ask questions about. Works with Claude Code, Codex, Cursor, Copilot, Gemini CLI, | Language: TypeScript | Topics: antigravity-skills, business-knowledge, claude-code, claude-skills, codebase-analysis"
   }
 ]
