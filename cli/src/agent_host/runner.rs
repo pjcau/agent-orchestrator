@@ -338,6 +338,18 @@ impl LocalToolRunner {
             return ToolOutcome::err("shell_empty_argv");
         }
 
+        // Under allow_all the model also sends builtins / shell operators as an
+        // argv LIST (e.g. ["cd","app"] or ["cd","app","&&","pytest"]) — which a
+        // direct spawn rejects (`cd` is not a program). Reconstruct a shell line
+        // and run it via `bash -lc`, same as the string path. Operators are kept
+        // raw; every other token is shell-quoted so args with spaces survive.
+        // Normal commands (no builtin, no operator) stay a direct spawn.
+        let argv: Vec<String> = if self.allow_all && argv[0] != "bash" && list_needs_shell(&argv) {
+            vec!["bash".to_string(), "-lc".to_string(), join_for_shell(&argv)]
+        } else {
+            argv
+        };
+
         // Basename of argv[0] for policy checks — same normalisation as the
         // allowlist cache, so a path alias can't slip past deny/allow.
         let bin_base = Path::new(&argv[0])
@@ -572,6 +584,37 @@ where
 /// with "not found". `shell_exec` runs one process with no shell and no
 /// persistent cwd, so the agent must fold these into a single command instead.
 const SHELL_BUILTINS: &[&str] = &["cd", "export", "source", ".", "alias", "pushd", "popd"];
+
+/// Shell control operators that, if present as their own argv token, mean the
+/// model intended a real shell line (pipeline / conjunction / redirection).
+const SHELL_OPERATORS: &[&str] = &[
+    "&&", "||", "|", ";", ">", ">>", "<", "<<", "&", "2>", "2>&1", "|&",
+];
+
+/// Whether an argv LIST should be handed to a shell rather than spawned
+/// directly: it leads with a builtin (`cd`…) or contains a control operator.
+fn list_needs_shell(argv: &[String]) -> bool {
+    SHELL_BUILTINS.contains(&argv[0].as_str())
+        || argv.iter().any(|a| SHELL_OPERATORS.contains(&a.as_str()))
+}
+
+/// Re-join an argv list into a `bash -lc` command line: control operators stay
+/// raw so they keep their shell meaning, every other token is shell-quoted so
+/// arguments containing spaces / metacharacters survive intact.
+fn join_for_shell(argv: &[String]) -> String {
+    argv.iter()
+        .map(|a| {
+            if SHELL_OPERATORS.contains(&a.as_str()) {
+                a.clone()
+            } else {
+                shlex::try_quote(a)
+                    .map(|c| c.into_owned())
+                    .unwrap_or_else(|_| a.clone())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 /// Build the `detail` for a `shell_spawn_failed` outcome.
 ///
@@ -850,6 +893,96 @@ mod tests {
         let r = runner.run("shell_exec", args, None, None).await;
         assert!(r.success, "pipeline should run: {r:?}");
         assert_eq!(r.output["stdout"].as_str().unwrap_or_default().trim(), "HI");
+    }
+
+    #[test]
+    fn list_needs_shell_detects_builtins_and_operators() {
+        assert!(list_needs_shell(&["cd".into(), "x".into()]));
+        assert!(list_needs_shell(&[
+            "echo".into(),
+            "hi".into(),
+            "&&".into(),
+            "ls".into()
+        ]));
+        assert!(list_needs_shell(&["a".into(), "|".into(), "b".into()]));
+        assert!(!list_needs_shell(&["echo".into(), "hello".into()]));
+        assert!(!list_needs_shell(&["ls".into(), "-la".into()]));
+    }
+
+    #[test]
+    fn join_for_shell_quotes_args_keeps_operators() {
+        // operators raw, spaced arg quoted.
+        let line = join_for_shell(&["echo".into(), "a b".into(), "&&".into(), "ls".into()]);
+        assert_eq!(line, "echo 'a b' && ls");
+    }
+
+    #[tokio::test]
+    async fn shell_list_cd_chain_runs_via_shell() {
+        // The real-world regression: ["cd","sub","&&","pwd"] as a LIST must run.
+        let (_d, ws) = tmp_workspace();
+        std::fs::create_dir(ws.join("sub")).unwrap();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_shell_policy(&[], &[], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["cd", "sub", "&&", "pwd"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "list cd chain should run: {r:?}");
+        assert!(r.output["stdout"]
+            .as_str()
+            .unwrap_or_default()
+            .trim_end()
+            .ends_with("sub"));
+    }
+
+    #[tokio::test]
+    async fn shell_list_bare_cd_is_noop_success_not_error() {
+        // ["cd","sub"] alone no longer errors as a builtin — it's a no-op ok.
+        let (_d, ws) = tmp_workspace();
+        std::fs::create_dir(ws.join("sub")).unwrap();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_shell_policy(&[], &[], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["cd", "sub"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "bare cd should be a no-op success: {r:?}");
+        assert_eq!(r.error_code, None);
+    }
+
+    #[tokio::test]
+    async fn shell_list_normal_command_stays_direct() {
+        // No builtin/operator → direct spawn, args preserved verbatim.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_shell_policy(&[], &[], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["echo", "hello world"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "{r:?}");
+        assert_eq!(
+            r.output["stdout"].as_str().unwrap_or_default().trim(),
+            "hello world"
+        );
+    }
+
+    #[tokio::test]
+    async fn shell_list_cd_strict_still_fails_without_allow_all() {
+        // Without allow_all, a list `cd` keeps the strict (direct-spawn) path.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_confirmer(Box::new(AlwaysApprove));
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["cd", "sub"]));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(!r.success);
+        assert_eq!(r.error_code.as_deref(), Some("shell_spawn_failed"));
     }
 
     #[tokio::test]

@@ -229,6 +229,20 @@ context, not doing new work.
 > socket dead and tell the user to retry with `--resume`. Test:
 > `liveness_probe_thresholds_are_sane`.
 
+> **✅ RESOLVED — `cd` cascade also when sent as an argv LIST (ago v0.5.24).**
+> v0.5.22 only routed STRINGS through `bash -lc`, but the model usually emits
+> `argv` as a LIST (`["cd","app"]` or `["cd","app","&&","pytest"]`), which kept
+> spawning `cd` directly → `'cd' is a shell builtin` + the downstream
+> `shell_nonzero_exit` cascade persisted. Now, under `allow_all`, a list that
+> leads with a builtin or contains a shell operator (`&&`, `|`, `>`, …) is
+> rebuilt into a `bash -lc` line — operators kept raw, other tokens shell-quoted
+> (`list_needs_shell` / `join_for_shell`). Plain commands (`["ls","-la"]`) stay a
+> direct spawn. Tests: `shell_list_cd_chain_runs_via_shell`,
+> `shell_list_bare_cd_is_noop_success_not_error`, `shell_list_normal_command_stays_direct`,
+> `shell_list_cd_strict_still_fails_without_allow_all`, `join_for_shell_quotes_args_keeps_operators`.
+> NB: a bare `cd` in one call followed by a command in the NEXT call still won't
+> persist cwd (needs per-agent stateful cwd — deferred).
+
 ## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
 Across **every** turn the trace showed `shell_exec` results coming back
