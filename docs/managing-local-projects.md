@@ -373,6 +373,28 @@ buffered and printed at end-of-turn (progress stays live on the Step lines).
 When stdout is piped or `--no-color`/`NO_COLOR` is set, the text is emitted
 byte-for-byte unchanged, so `ago run --client-tools "…" > out.md` stays clean.
 
+### Stopping a runaway turn
+
+The orchestrator builds and grows the conversation context **server-side**, so
+a team-lead that keeps fanning out can quietly drive one turn to dozens of
+steps and dollars of spend. The CLI can't shrink that context, but it gives you
+two client-side controls:
+
+- **Ctrl-C cancels the in-flight turn.** During a turn Ctrl-C aborts the run and
+  drops you back to the `>` prompt (`⊘ turn interrupted (Ctrl-C)`) instead of
+  being ignored or killing the process. (At the empty prompt Ctrl-C still just
+  clears the line — press it twice, or use `:quit`, to exit.)
+- **A cost guardrail nudges you.** The first time a single turn's cumulative
+  cost crosses each increment, a warning is printed above the meter:
+
+  ```
+  ⚠ this turn so far: 78 steps · $0.1500 — press Ctrl-C to stop
+  ```
+
+  The increment defaults to **$0.10**; set `AGO_TURN_COST_WARN_USD` to another
+  value, or to `0` to disable the warnings entirely. It only makes a runaway
+  *visible* — the real fix for context bloat is server-side compaction.
+
 ---
 
 ## Security defaults (do not weaken without thought)
@@ -426,9 +448,10 @@ Resource bounds the server enforces:
 | `shell_denied` | Non-interactive call to a new binary | Re-run in an interactive shell to confirm, or pre-populate the allow file |
 | `peer closed connection` / `Broken pipe` while answering `allow … [y/N]` | You took longer than the tool TTL to confirm; the server timed out the call and the WS dropped | Fixed: the default TTL is now 5 min. Confirm promptly, or raise `AGENT_HOST_TOOL_TTL_SECONDS` on the dashboard |
 | `tool_timeout` | The local tool exceeded the TTL (default 5 min) | Split into smaller calls, or raise `AGENT_HOST_TOOL_TTL_SECONDS` |
-| Subprocess hangs on Ctrl-C | First Ctrl-C is the REPL's empty-line; second exits | press it twice |
+| Ctrl-C at the `>` prompt does nothing useful | At the empty prompt the first Ctrl-C clears the line; a second exits | press it twice, or `:quit` |
+| A long / runaway turn can't be stopped | Fixed in ago ≥ 0.5.26 — Ctrl-C *during a turn* now cancels the in-flight run and returns you to the prompt (`⊘ turn interrupted`) instead of being ignored or killing the process | `ago self update`, then press Ctrl-C once while it's working |
 | `✗ turn error` with a reason | The turn failed server-side; the reason is now shown after the `—` (e.g. `Max steps (10) reached`) | Act on the reason; rerun, raise `--max-steps`, or simplify the task |
-| Turn looks stuck / agent seems frozen | A long LLM step with no output, or a swallowed error | Run with debug frames (below) and share the output |
+| Turn looks stuck / agent seems frozen | A long LLM step with no output, or a swallowed error | Press Ctrl-C to abort the turn, then run with debug frames (below) and share the output |
 | Stuck right after `allow … [y/N]` (your `y` shows as a new prompt) | Fixed in ago ≥ 0.5.9 — the REPL reader and the confirmation prompt used to race for stdin, so `y` was sent as a chat message and the confirmation hung | `ago self update` to 0.5.9+ |
 
 ### Debug mode (frame-level trace)
