@@ -104,7 +104,7 @@ shell:
 ```
 
 Allowed keys: `server`, `agent`, `model`, `provider`, `max_steps`,
-`context`, `shell`, `jail`, `jail_image`. CLI flags override `.ago.yaml`;
+`context`, `shell`, `jail`, `jail_image`, `jail_docker`. CLI flags override `.ago.yaml`;
 `.ago.yaml` overrides `~/.config/ago/config.toml`. Empty values fall through to
 the next layer.
 
@@ -232,6 +232,63 @@ jail_image: ghcr.io/acme/dev-base:latest   # git + rg + python3 + node, etc.
 Image resolution (first match wins): `AGO_JAIL_IMAGE` env → `.ago.yaml`
 `jail_image:` → built-in `ubuntu:24.04`. The image must already be pullable by
 your local Docker/OrbStack (the wrapper does not build it).
+
+**Bundled batteries-included image (`ago-jail:latest`).** The repo ships a
+ready-made jail image at [`docker/ago-jail/Dockerfile`](../docker/ago-jail/Dockerfile)
+so you don't have to assemble a toolchain. Build it once and point `.ago.yaml`
+at it:
+
+```bash
+docker build -t ago-jail:latest docker/ago-jail   # OrbStack
+```
+
+```yaml
+# .ago.yaml
+jail: true
+jail_image: ago-jail:latest
+```
+
+It ships the commands an agent reaches for on a real build/test/devops task:
+git, ripgrep, jq, curl/wget, openssh-client, **Python 3** (+ pip/venv),
+**Node 22** with **pnpm**/**yarn**, the **build toolchain** (make,
+build-essential), network/process probes (**`ss`**, **`lsof`**, **`ps`**,
+netstat, ping, dig, nc), database clients (**`psql`**/`pg_isready`,
+**`sqlite3`**), the **Docker CLI** + **Compose**/**Buildx** plugins, and a
+`sudo` shim (the jail runs as an arbitrary uid with no real root, so the shim
+just drops the prefix and execs the rest instead of failing to spawn).
+
+**Docker inside the jail (`jail_docker`).** The image ships only the Docker
+*client*. By default the launcher does **not** bind-mount the host Docker
+socket, so `docker compose config`/`build`-context checks work but `up`/`ps`
+fail with *"cannot connect to the Docker daemon"*. To let the agent actually
+drive the stack (e.g. a project whose `package.json` is all `docker compose …`),
+opt in:
+
+```yaml
+# .ago.yaml
+jail: true
+jail_image: ago-jail:latest
+jail_docker: true          # or env: AGO_JAIL_DOCKER=true
+```
+
+When on, the launcher (a) bind-mounts the host Docker socket and adds the
+container user to the socket's group, and (b) mounts the project at its **real
+host path** (instead of `/work`, with the workdir following) — required so
+Compose's relative volume paths resolve on the host daemon rather than pointing
+at nonexistent `/work/…` dirs. Socket resolution: `AGO_JAIL_DOCKER_SOCK` env →
+`DOCKER_HOST` → active `docker context` → `~/.orbstack/run/docker.sock` →
+`/var/run/docker.sock`. The launcher prints a one-line warning each run while
+this is active.
+
+> **⚠ Security.** `jail_docker: true` hands the host Docker socket to the
+> sandbox — that is root-equivalent on the host (it can launch privileged
+> containers and mount the host filesystem) and **punctures the jail's file
+> isolation**. Enable it per project only when you accept that trade-off. Leave
+> it off (the default) and run the live stack from the host whenever you can.
+
+> **Rebuild to refresh.** A running `--client-tools` session is pinned to the
+> image its container started from; rebuilding `ago-jail:latest` only takes
+> effect on the **next** `ago chat`/`ago run` invocation.
 
 ---
 
