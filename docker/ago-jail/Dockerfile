@@ -42,13 +42,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         python3-venv \
         python-is-python3 \
-        nodejs \
-        npm \
     && rm -rf /var/lib/apt/lists/*
 
-# pnpm + yarn via corepack (ships with the npm we just installed). Enabling
-# corepack makes `pnpm`/`yarn` resolve on first use without a global install.
-RUN corepack enable || true
+# Node via NodeSource: Ubuntu's apt node is 18, but current pnpm/yarn need
+# Node >= 22. A dev jail should ship a modern Node anyway.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# pnpm + yarn as real global binaries (Node 22 from NodeSource is new enough).
+# Installed directly via npm — no corepack shims that would re-download the
+# package manager on first use at runtime. Non-`|| true` so a failure breaks
+# the build instead of shipping a half-equipped image.
+RUN npm install -g pnpm yarn
 
 # The launcher passes HOME=/home/u and runs as an arbitrary host uid. Pre-create
 # a world-writable home so tools that touch $HOME (npm cache, git) don't fail
@@ -56,7 +62,10 @@ RUN corepack enable || true
 RUN mkdir -p /home/u && chmod 0777 /home/u
 ENV HOME=/home/u
 
-# Sanity: fail the build if a core tool is missing.
-RUN git --version && node --version && python3 --version && rg --version >/dev/null
+# Sanity: fail the build if a core tool is missing (incl. pnpm — it silently
+# went missing once when corepack enable no-op'd, see git history).
+RUN git --version && node --version && python3 --version \
+    && python --version && rg --version >/dev/null \
+    && pnpm --version && yarn --version
 
 WORKDIR /work
