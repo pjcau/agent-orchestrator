@@ -172,6 +172,7 @@ Everything detailed lives under `docs/`. Use this map to jump straight to the ri
 ### Quality & Evaluation
 - **P2 Evaluator Framework: EvalCase/Run/Score/Report, RubricEvaluator, LLMJudge, EvalSuite, CLI runner, REST API** → [docs/abstractions.md § Quality](docs/abstractions.md) and [docs/architecture.md § Evaluator Pipeline](docs/architecture.md)
 - **Bundled smoke dataset + CLI** → `evals/datasets/smoke.json`, `evals/runners/cli.py`
+- **Context-strategy benchmark (compaction cost vs. correctness, deterministic)** → `evals/context_benchmark.py` (`python -m evals.context_benchmark`); writeup in [docs/ago-cli-improvements.md](docs/ago-cli-improvements.md)
 
 ### Engineering Practices
 - **P3 Guardrails (PIIScanner, SecretsScanner, PromptInjectionDetector, OutputSchemaGuard, CostGuard, YAML config)** → `src/agent_orchestrator/core/guardrails.py` and `docs/abstractions.md`
