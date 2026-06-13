@@ -219,6 +219,16 @@ context, not doing new work.
 > the strict, shell-free path. Tests: `shell_string_allow_all_runs_through_shell_with_cd`,
 > `shell_string_allow_all_runs_pipeline`, `shell_string_allow_all_still_honors_deny_bash`.
 
+> **✅ RESOLVED — REPL hangs forever on a dead/silent server (ago v0.5.23).** A
+> live session froze: the server went silent after a step (hung LLM call or a
+> dropped socket) and the client's receive loop `await`ed a frame that never
+> came, with no way to notice. Added a liveness probe: after `IDLE_PROBE` (45 s)
+> of silence the client pings; a live server (even mid slow-LLM-call) auto-pongs
+> and the timer resets, so slow turns are never aborted; only after
+> `MAX_SILENT_PROBES` (3) unanswered pings in a row (~135 s) does it declare the
+> socket dead and tell the user to retry with `--resume`. Test:
+> `liveness_probe_thresholds_are_sane`.
+
 ## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
 Across **every** turn the trace showed `shell_exec` results coming back

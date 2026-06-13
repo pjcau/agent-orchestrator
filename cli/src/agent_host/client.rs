@@ -358,6 +358,13 @@ fn stdin_router() -> &'static StdinRouter {
 const PASTE_START: &str = "\x1b[200~";
 const PASTE_END: &str = "\x1b[201~";
 
+// Connection-liveness probe: after this much server silence, ping; after this
+// many unanswered pings in a row, declare the socket dead instead of hanging.
+// 45s × 3 ≈ 135s of NO ping response — slow LLM turns keep the link alive via
+// the auto-pong, so only a truly dropped connection trips it.
+const IDLE_PROBE: std::time::Duration = std::time::Duration::from_secs(45);
+const MAX_SILENT_PROBES: u32 = 3;
+
 /// One step of the bracketed-paste state machine.
 #[derive(Debug, PartialEq)]
 enum Feed {
@@ -485,32 +492,60 @@ async fn receive_loop(
     // block at TurnEnd. Streaming raw chunks can't colour markdown whose
     // markers straddle chunk boundaries. Progress stays live via Step lines.
     let mut assistant_buf = String::new();
+    // Liveness: if the server sends nothing for IDLE_PROBE, send a ping. A live
+    // server (even mid slow-LLM-call) replies Pong and we reset. Only if it
+    // never answers `MAX_SILENT_PROBES` pings in a row do we declare the
+    // connection dead — so a genuinely slow turn is never aborted, but a
+    // silently-dropped socket no longer hangs the REPL forever.
+    let mut silent_probes: u32 = 0;
     loop {
-        let frame_res = {
+        let next = {
             let mut s = stream.lock().await;
-            match s.next().await {
-                Some(Ok(Message::Text(t))) => Some(parse_frame_str(&t)),
-                Some(Ok(Message::Binary(_))) => {
-                    // Agent-host protocol is text-only. A binary frame
-                    // means a misconfigured peer or a future extension —
-                    // log + ignore rather than crash the loop.
-                    eprintln!("[agent-host] unexpected binary frame ignored");
-                    None
-                }
-                Some(Ok(Message::Ping(p))) => {
-                    let mut snk = sink.lock().await;
-                    let _ = snk.send(Message::Pong(p)).await;
-                    None
-                }
-                Some(Ok(Message::Pong(_))) => None,
-                Some(Ok(Message::Close(_))) | None => {
-                    eprintln!("\n[agent-host] connection closed");
+            tokio::time::timeout(IDLE_PROBE, s.next()).await
+        };
+        let frame_res = match next {
+            Err(_elapsed) => {
+                silent_probes += 1;
+                if silent_probes >= MAX_SILENT_PROBES {
+                    eprintln!(
+                        "\n[agent-host] no response from server for ~{}s — connection \
+                         appears dead. Press Enter, then re-send (use --resume to \
+                         continue the conversation).",
+                        IDLE_PROBE.as_secs() * MAX_SILENT_PROBES as u64
+                    );
                     return;
                 }
-                Some(Ok(_)) => None,
-                Some(Err(e)) => {
-                    eprintln!("\n[agent-host] ws error: {e}");
-                    return;
+                let mut snk = sink.lock().await;
+                let _ = snk.send(Message::Ping(Vec::new())).await;
+                continue;
+            }
+            Ok(opt) => {
+                // Any frame (including a Pong) proves the link is alive.
+                silent_probes = 0;
+                match opt {
+                    Some(Ok(Message::Text(t))) => Some(parse_frame_str(&t)),
+                    Some(Ok(Message::Binary(_))) => {
+                        // Agent-host protocol is text-only. A binary frame
+                        // means a misconfigured peer or a future extension —
+                        // log + ignore rather than crash the loop.
+                        eprintln!("[agent-host] unexpected binary frame ignored");
+                        None
+                    }
+                    Some(Ok(Message::Ping(p))) => {
+                        let mut snk = sink.lock().await;
+                        let _ = snk.send(Message::Pong(p)).await;
+                        None
+                    }
+                    Some(Ok(Message::Pong(_))) => None,
+                    Some(Ok(Message::Close(_))) | None => {
+                        eprintln!("\n[agent-host] connection closed");
+                        return;
+                    }
+                    Some(Ok(_)) => None,
+                    Some(Err(e)) => {
+                        eprintln!("\n[agent-host] ws error: {e}");
+                        return;
+                    }
                 }
             }
         };
@@ -1295,6 +1330,16 @@ mod tests {
             derive_ws_url("https://agents-orchestrator.com"),
             "wss://agents-orchestrator.com/api/cli/v1/agent-host"
         );
+    }
+
+    #[test]
+    fn liveness_probe_thresholds_are_sane() {
+        // Must ping at least once before declaring death, and the total grace
+        // (IDLE_PROBE × MAX_SILENT_PROBES) must be generous enough that a slow
+        // but alive turn — which keeps the link warm via auto-pong — is never
+        // aborted. Guards against a footgun like MAX_SILENT_PROBES = 0.
+        assert!(MAX_SILENT_PROBES >= 2);
+        assert!(IDLE_PROBE.as_secs() * MAX_SILENT_PROBES as u64 >= 90);
     }
 
     #[test]
