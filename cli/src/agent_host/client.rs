@@ -236,6 +236,10 @@ pub async fn run_repl(
     shell_allow: &[String],
     shell_deny: &[String],
     shell_allow_all: bool,
+    // Project instructions (AGO.md). The agent-host Prompt frame carries only
+    // text, so we fold these into the FIRST prompt of the session — the server
+    // keeps them in the conversation for the rest of the run.
+    instructions: Option<String>,
 ) -> Result<()> {
     let runner = Arc::new(build_runner(
         &workspace,
@@ -273,10 +277,13 @@ pub async fn run_repl(
     ));
 
     // Main loop: only handles prompt input — everything else is event-driven.
+    let mut pending_instructions = instructions.filter(|s| !s.trim().is_empty());
     while let Some(input) = prompt_rx.recv().await {
         match input {
             ReplInput::Quit => break,
             ReplInput::Prompt(text) => {
+                // Fold AGO.md into the first prompt only (consumed once).
+                let text = fold_instructions(&mut pending_instructions, text);
                 let frame = Frame::Prompt(Prompt {
                     kind: super::protocol::KIND_PROMPT.into(),
                     frame_id: uuid::Uuid::new_v4().simple().to_string(),
@@ -364,6 +371,17 @@ const PASTE_END: &str = "\x1b[201~";
 // the auto-pong, so only a truly dropped connection trips it.
 const IDLE_PROBE: std::time::Duration = std::time::Duration::from_secs(45);
 const MAX_SILENT_PROBES: u32 = 3;
+
+/// Fold one-time project instructions (AGO.md) into a prompt: prepend on the
+/// first call, consuming them, then pass prompts through verbatim. The
+/// agent-host Prompt frame carries only text, so this is how a project's
+/// AGO.md reaches the server under `--client-tools`.
+fn fold_instructions(pending: &mut Option<String>, text: String) -> String {
+    match pending.take() {
+        Some(instr) => format!("{instr}\n\n---\n\n{text}"),
+        None => text,
+    }
+}
 
 /// One step of the bracketed-paste state machine.
 #[derive(Debug, PartialEq)]
@@ -1330,6 +1348,24 @@ mod tests {
             derive_ws_url("https://agents-orchestrator.com"),
             "wss://agents-orchestrator.com/api/cli/v1/agent-host"
         );
+    }
+
+    #[test]
+    fn fold_instructions_prepends_once_then_consumes() {
+        let mut p = Some("PROJECT RULES".to_string());
+        assert_eq!(
+            fold_instructions(&mut p, "do x".into()),
+            "PROJECT RULES\n\n---\n\ndo x"
+        );
+        // Consumed — later prompts are untouched.
+        assert_eq!(fold_instructions(&mut p, "do y".into()), "do y");
+        assert!(p.is_none());
+    }
+
+    #[test]
+    fn fold_instructions_none_is_passthrough() {
+        let mut p: Option<String> = None;
+        assert_eq!(fold_instructions(&mut p, "hi".into()), "hi");
     }
 
     #[test]

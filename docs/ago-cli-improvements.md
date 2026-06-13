@@ -243,6 +243,16 @@ context, not doing new work.
 > NB: a bare `cd` in one call followed by a command in the NEXT call still won't
 > persist cwd (needs per-agent stateful cwd — deferred).
 
+> **✅ RESOLVED — per-project `AGO.md` now reaches the server under
+> `--client-tools` (ago v0.5.25).** The agent-host `Prompt` frame carries only
+> text (no `cache_context` field), so a project's `AGO.md` was silently dropped
+> in client-tools mode — the agent never saw rules like "don't run docker in the
+> jail, prepare the compose instead." Now `run_native_agent_host` reads
+> `rt.instructions` and `run_repl` folds it into the **first** prompt of the
+> session (`fold_instructions`, consumed once; the server keeps it in the
+> conversation). Tests: `fold_instructions_prepends_once_then_consumes`,
+> `fold_instructions_none_is_passthrough`. Closes the earlier follow-up.
+
 ## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
 Across **every** turn the trace showed `shell_exec` results coming back

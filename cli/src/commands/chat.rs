@@ -295,8 +295,12 @@ pub async fn run(rt: &Runtime, args: ChatArgs) -> Result<()> {
             // because users should default to the native client.
             return spawn_agent_host(&server_url, token, &settings).await;
         }
-        // Native Rust client — no Python dependency.
-        return run_native_agent_host(&server_url, token, &settings).await;
+        // Native Rust client — no Python dependency. Fold AGO.md (project
+        // instructions) into the first prompt: the agent-host Prompt frame
+        // carries only text, so without this a project's AGO.md never reaches
+        // the server under --client-tools.
+        let instructions = rt.instructions.as_ref().map(|i| i.as_cache_block());
+        return run_native_agent_host(&server_url, token, &settings, instructions).await;
     }
     let mut settings = ChatSettings::resolve(rt, &args)?;
     let client = rt.api_client()?;
@@ -1044,6 +1048,7 @@ async fn run_native_agent_host(
     server_url: &str,
     token: &str,
     settings: &ChatSettings,
+    instructions: Option<String>,
 ) -> Result<()> {
     use crate::agent_host::client::{connect, run_repl, ClientConfig, StdinShellConfirmer};
     eprintln!("\x1b[2m· agent-host (native) connecting to {server_url}\x1b[0m");
@@ -1085,6 +1090,7 @@ async fn run_native_agent_host(
         &settings.shell_allow,
         &settings.shell_deny,
         settings.shell_allow_all,
+        instructions,
     )
     .await
     .map_err(|e| AgoError::Other(format!("agent-host repl error: {e:#}")))?;
