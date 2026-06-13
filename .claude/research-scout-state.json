@@ -167,7 +167,14 @@
       "improvements": [],
       "outcome": "no-improvements",
       "reason": "LLM response JSON is malformed: Expecting value"
+    },
+    "https://github.com/humanlayer/12-factor-agents": {
+      "processed_at": "2026-06-13T03:13:35.942718+00:00",
+      "summary": "humanlayer/12-factor-agents",
+      "improvements": [],
+      "outcome": "no-improvements",
+      "reason": "LLM response JSON is malformed: Unterminated string starting at"
     }
   },
-  "last_run": "2026-06-12T03:14:10.411625+00:00"
+  "last_run": "2026-06-13T03:13:35.942803+00:00"
 }
