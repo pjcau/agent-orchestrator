@@ -198,6 +198,15 @@ context, not doing new work.
 > `deep_nonexistent_nested_path_accepted`, `deep_nonexistent_absolute_inside_accepted`,
 > `nonexistent_tail_with_dotdot_rejected`.
 
+> **✅ RESOLVED — multi-line paste fired N parallel turns (ago v0.5.21).** The
+> `--client-tools` REPL read stdin line-by-line, so pasting a 5-line block sent
+> 5 prompts → 5 team runs at once (live log: 8 prompts in 1.5 ms). Fixed by
+> enabling **bracketed paste** (`ESC[?2004h`): a `feed_paste_line` state machine
+> collapses an `ESC[200~…ESC[201~` block into ONE prompt (inner newlines kept; a
+> pasted `:quit` is content, not a command). Tests:
+> `feed_multiline_paste_is_one_prompt`, `feed_single_line_paste_collapses`,
+> `feed_typed_line_passes_through`, `feed_pasted_quit_is_not_a_command`.
+
 ## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
 Across **every** turn the trace showed `shell_exec` results coming back

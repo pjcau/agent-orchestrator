@@ -354,42 +354,109 @@ fn stdin_router() -> &'static StdinRouter {
     ROUTER.get_or_init(StdinRouter::default)
 }
 
+// Bracketed-paste markers a terminal wraps a paste in once mode `?2004` is on.
+const PASTE_START: &str = "\x1b[200~";
+const PASTE_END: &str = "\x1b[201~";
+
+/// One step of the bracketed-paste state machine.
+#[derive(Debug, PartialEq)]
+enum Feed {
+    /// A completed paste collapsed into ONE message (markers stripped, inner
+    /// newlines preserved). Never a slash-command — pasted text is content.
+    Pasted(String),
+    /// A normal typed line (newline still attached; caller trims).
+    Typed(String),
+    /// Mid-paste accumulation — nothing to send yet.
+    Pending,
+}
+
+/// Feed one raw `read_line` (newline included) into the paste state machine.
+/// `buf` is `Some` while inside a paste. This is what stops a 5-line paste from
+/// firing 5 separate turns: the whole bracketed block becomes a single
+/// `Pasted` prompt.
+fn feed_paste_line(buf: &mut Option<String>, raw: &str) -> Feed {
+    if let Some(acc) = buf.as_mut() {
+        if let Some(j) = raw.find(PASTE_END) {
+            acc.push_str(&raw[..j]);
+            let content = std::mem::take(acc);
+            *buf = None;
+            return Feed::Pasted(content);
+        }
+        acc.push_str(raw);
+        return Feed::Pending;
+    }
+    if let Some(i) = raw.find(PASTE_START) {
+        let rest = &raw[i + PASTE_START.len()..];
+        // A short paste may open and close on the same line.
+        if let Some(j) = rest.find(PASTE_END) {
+            return Feed::Pasted(rest[..j].to_string());
+        }
+        *buf = Some(rest.to_string());
+        return Feed::Pending;
+    }
+    Feed::Typed(raw.to_string())
+}
+
 fn spawn_stdin_reader(tx: mpsc::UnboundedSender<ReplInput>) {
     std::thread::spawn(move || {
+        // Turn ON bracketed paste so a multi-line paste arrives as ONE block
+        // (ESC[200~…ESC[201~) instead of N lines that each fire a turn.
+        eprint!("\x1b[?2004h");
+        let _ = std::io::stderr().flush();
         let stdin = std::io::stdin();
         let mut line = String::new();
+        let mut paste: Option<String> = None;
+        let send_quit = |tx: &mpsc::UnboundedSender<ReplInput>| {
+            eprint!("\x1b[?2004l"); // restore paste mode on the way out
+            let _ = std::io::stderr().flush();
+            let _ = tx.send(ReplInput::Quit);
+        };
         loop {
             line.clear();
-            eprint!("> ");
-            let _ = std::io::stderr().flush();
+            if paste.is_none() {
+                eprint!("> ");
+                let _ = std::io::stderr().flush();
+            }
             match stdin.lock().read_line(&mut line) {
                 Ok(0) => {
-                    let _ = tx.send(ReplInput::Quit);
+                    send_quit(&tx);
                     break;
                 }
-                Ok(_) => {
-                    let trimmed = line.trim_end_matches('\n').to_string();
-                    // A pending confirmation claims this line first — the
-                    // user's y/N must answer the prompt, not become a new
-                    // chat message.
-                    if stdin_router().try_deliver(&trimmed) {
-                        continue;
-                    }
-                    match trimmed.as_str() {
-                        ":quit" | ":q" | "exit" | "quit" => {
-                            let _ = tx.send(ReplInput::Quit);
+                Ok(_) => match feed_paste_line(&mut paste, &line) {
+                    Feed::Pending => {}
+                    Feed::Pasted(content) => {
+                        // A paste is always content — never a slash-command and
+                        // never a confirmation answer.
+                        if !content.trim().is_empty()
+                            && tx.send(ReplInput::Prompt(content)).is_err()
+                        {
                             break;
                         }
-                        "" => continue,
-                        _ => {
-                            if tx.send(ReplInput::Prompt(trimmed)).is_err() {
+                    }
+                    Feed::Typed(t) => {
+                        let trimmed = t.trim_end_matches('\n').to_string();
+                        // A pending confirmation claims this line first — the
+                        // user's y/N must answer the prompt, not become a new
+                        // chat message.
+                        if stdin_router().try_deliver(&trimmed) {
+                            continue;
+                        }
+                        match trimmed.as_str() {
+                            ":quit" | ":q" | "exit" | "quit" => {
+                                send_quit(&tx);
                                 break;
+                            }
+                            "" => continue,
+                            _ => {
+                                if tx.send(ReplInput::Prompt(trimmed)).is_err() {
+                                    break;
+                                }
                             }
                         }
                     }
-                }
+                },
                 Err(_) => {
-                    let _ = tx.send(ReplInput::Quit);
+                    send_quit(&tx);
                     break;
                 }
             }
@@ -1227,6 +1294,53 @@ mod tests {
         assert_eq!(
             derive_ws_url("https://agents-orchestrator.com"),
             "wss://agents-orchestrator.com/api/cli/v1/agent-host"
+        );
+    }
+
+    #[test]
+    fn feed_typed_line_passes_through() {
+        let mut buf = None;
+        assert_eq!(
+            feed_paste_line(&mut buf, "hello\n"),
+            Feed::Typed("hello\n".into())
+        );
+        assert!(buf.is_none());
+    }
+
+    #[test]
+    fn feed_single_line_paste_collapses() {
+        let mut buf = None;
+        // ESC[200~ hi there ESC[201~ on one line.
+        let raw = "\x1b[200~hi there\x1b[201~\n";
+        assert_eq!(
+            feed_paste_line(&mut buf, raw),
+            Feed::Pasted("hi there".into())
+        );
+        assert!(buf.is_none());
+    }
+
+    #[test]
+    fn feed_multiline_paste_is_one_prompt() {
+        // The regression: 5 pasted lines must become ONE prompt, not 5.
+        let mut buf = None;
+        assert_eq!(feed_paste_line(&mut buf, "\x1b[200~line1\n"), Feed::Pending);
+        assert_eq!(feed_paste_line(&mut buf, "line2\n"), Feed::Pending);
+        assert_eq!(feed_paste_line(&mut buf, "line3\n"), Feed::Pending);
+        assert_eq!(feed_paste_line(&mut buf, "line4\n"), Feed::Pending);
+        assert_eq!(
+            feed_paste_line(&mut buf, "line5\x1b[201~\n"),
+            Feed::Pasted("line1\nline2\nline3\nline4\nline5".into())
+        );
+        assert!(buf.is_none());
+    }
+
+    #[test]
+    fn feed_pasted_quit_is_not_a_command() {
+        // A pasted ":quit" is content, never a quit — Pasted, not Typed.
+        let mut buf = None;
+        assert_eq!(
+            feed_paste_line(&mut buf, "\x1b[200~:quit\x1b[201~\n"),
+            Feed::Pasted(":quit".into())
         );
     }
 
