@@ -207,6 +207,18 @@ context, not doing new work.
 > `feed_multiline_paste_is_one_prompt`, `feed_single_line_paste_collapses`,
 > `feed_typed_line_passes_through`, `feed_pasted_quit_is_not_a_command`.
 
+> **✅ RESOLVED — stateless `cd` cascade / `shell_nonzero_exit` (ago v0.5.22).**
+> `shell_exec` ran one stateless process, so the model's natural `cd subdir`
+> (a builtin) failed, then the *next* command ran in `/work` not the subdir and
+> failed too — the dominant error class in a live trace (77× `shell_nonzero_exit`).
+> Fix: **when `allow_all` is set** (the sandbox/container is the boundary, not a
+> per-binary allowlist), a command **string** runs through `bash -lc`, so
+> `cd x && cmd`, pipes, redirects, globs and builtins work as written. Gated on
+> `allow_all` so a real `deny`/`allow` policy is never bypassed (`bash` itself
+> still passes the deny gate). Argv **lists** and non-`allow_all` strings keep
+> the strict, shell-free path. Tests: `shell_string_allow_all_runs_through_shell_with_cd`,
+> `shell_string_allow_all_runs_pipeline`, `shell_string_allow_all_still_honors_deny_bash`.
+
 ## ⭐ Confirmed root cause of the recurring tool errors: `shell_requires_argv_list`
 
 Across **every** turn the trace showed `shell_exec` results coming back

@@ -295,18 +295,27 @@ impl LocalToolRunner {
         mut emit_chunk: Option<Box<dyn ChunkEmitter>>,
         cancel: Option<CancelSignal>,
     ) -> ToolOutcome {
-        // The model very often sends a command STRING ("npm install") instead
-        // of an argv list. Rather than rejecting it (which just burns a step —
-        // it was the single most frequent error in live traces), tokenize the
-        // string with shlex. This is shell-FREE: no `sh -c`, so metacharacters
-        // are not interpreted and there is no injection — argv[0] still passes
-        // the allowlist/deny policy below exactly like the list form.
+        // The model very often sends a command STRING ("cd app && pytest")
+        // instead of an argv list. How we handle it depends on the policy:
+        //
+        // * allow_all → the sandbox/container is the security boundary, NOT a
+        //   per-binary allowlist. So run the string through a shell
+        //   (`bash -lc`): the model's natural `cd x && cmd`, pipes, redirects,
+        //   globs and builtins work, killing the cascading shell_nonzero_exit
+        //   that a single stateless process produced. `bash` itself still
+        //   passes the deny gate below, so a `deny: [bash]` is honored.
+        // * otherwise → tokenize with shlex (shell-FREE, no metacharacters) so
+        //   argv[0] still passes the per-binary deny/allow policy. Never bypass
+        //   a real allowlist by silently invoking a shell.
         let argv_value = first_present_value(args, &["argv", "command", "cmd", "args"]);
         let argv: Vec<String> = match argv_value {
             Some(Value::Array(arr)) => arr
                 .iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect(),
+            Some(Value::String(s)) if self.allow_all => {
+                vec!["bash".to_string(), "-lc".to_string(), s.clone()]
+            }
             Some(Value::String(s)) => match shlex::split(s.as_str()) {
                 Some(parts) if !parts.is_empty() => parts,
                 // Unbalanced quotes / empty → can't tokenize safely.
@@ -800,6 +809,7 @@ mod tests {
     #[tokio::test]
     async fn shell_unparseable_string_is_clear() {
         // Unbalanced quotes can't tokenize -> a clear, actionable error.
+        // (Only the strict, non-allow_all path tokenizes.)
         let (_d, ws) = tmp_workspace();
         let runner = LocalToolRunner::new(ws);
         let mut args = HashMap::new();
@@ -807,6 +817,54 @@ mod tests {
         let r = runner.run("shell_exec", args, None, None).await;
         assert!(!r.success);
         assert_eq!(r.error_code.as_deref(), Some("shell_unparseable_command"));
+    }
+
+    #[tokio::test]
+    async fn shell_string_allow_all_runs_through_shell_with_cd() {
+        // allow_all -> a string runs via `bash -lc`, so `cd sub && pwd` works
+        // (the stateless-shell_exec cascade fix). pwd must land in the subdir.
+        let (_d, ws) = tmp_workspace();
+        std::fs::create_dir(ws.join("sub")).unwrap();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_shell_policy(&[], &[], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!("cd sub && pwd"));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "bash -lc cd should succeed: {r:?}");
+        let out = r.output["stdout"].as_str().unwrap_or_default();
+        assert!(out.trim_end().ends_with("sub"), "cwd not in sub: {out:?}");
+    }
+
+    #[tokio::test]
+    async fn shell_string_allow_all_runs_pipeline() {
+        // Pipes/redirects work under allow_all (a real shell), not under strict.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_shell_policy(&[], &[], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!("echo hi | tr a-z A-Z"));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(r.success, "pipeline should run: {r:?}");
+        assert_eq!(r.output["stdout"].as_str().unwrap_or_default().trim(), "HI");
+    }
+
+    #[tokio::test]
+    async fn shell_string_allow_all_still_honors_deny_bash() {
+        // The shell wrapper must not bypass a `deny: [bash]` — argv0 is `bash`.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_shell_policy(&[], &["bash".to_string()], true);
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!("echo hi"));
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(!r.success);
+        assert_eq!(r.error_code.as_deref(), Some("shell_denied_by_policy"));
     }
 
     #[tokio::test]
