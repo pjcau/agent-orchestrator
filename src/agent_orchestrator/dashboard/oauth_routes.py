@@ -224,6 +224,8 @@ def _safe_return_to(request: Request) -> str:
     threat model — we only ever want to send the user back to the
     device-flow approval page or the chat home.
     """
+    from urllib.parse import urlparse
+
     raw = request.cookies.get("auth_return_to", "")
     # A leading "//" makes the path protocol-relative (`//evil.com/foo`),
     # which the browser interprets as an absolute URL. Catch that first.
@@ -231,7 +233,11 @@ def _safe_return_to(request: Request) -> str:
         return "/"
     for prefix in _RETURN_TO_PREFIXES:
         if raw.startswith(prefix):
-            return raw
+            # Double-check the result is a relative path (no scheme, no netloc)
+            parsed = urlparse(raw)
+            if not parsed.scheme and not parsed.netloc:
+                return raw
+            break
     return "/"
 
 
