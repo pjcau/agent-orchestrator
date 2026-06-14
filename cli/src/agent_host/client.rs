@@ -1246,19 +1246,26 @@ fn print_progress_finished(
     }
 }
 
+/// Truncate `s` to at most `max` bytes on a UTF-8 char boundary, appending `…`
+/// if it was shortened. Plain byte slicing (`&s[..n]`) / `String::truncate`
+/// panic when `n` lands inside a multibyte char (e.g. `…`, `—`, `×`).
+fn truncate_ellipsis(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
+}
+
 fn summarise_args(args: &HashMap<String, Value>) -> String {
     let mut parts: Vec<String> = Vec::new();
     for (k, v) in args {
         let snippet = match v {
             Value::String(s) if k == "content" => format!("content=<{}B>", s.len()),
-            Value::String(s) => {
-                let mut sv = s.clone();
-                if sv.len() > 40 {
-                    sv.truncate(37);
-                    sv.push('…');
-                }
-                format!("{k}={sv}")
-            }
+            Value::String(s) => format!("{k}={}", truncate_ellipsis(s, 40)),
             Value::Array(arr) => {
                 let preview = arr
                     .iter()
@@ -1277,12 +1284,7 @@ fn summarise_args(args: &HashMap<String, Value>) -> String {
         };
         parts.push(snippet);
     }
-    let joined = parts.join(", ");
-    if joined.len() > 80 {
-        format!("{}…", &joined[..79])
-    } else {
-        joined
-    }
+    truncate_ellipsis(&parts.join(", "), 80)
 }
 
 fn summarise_output(output: &Value) -> String {
@@ -1318,12 +1320,7 @@ fn summarise_output(output: &Value) -> String {
     if let Value::String(s) = output {
         return human_bytes(s.len());
     }
-    let s = output.to_string();
-    if s.len() > 60 {
-        format!("{}…", &s[..57])
-    } else {
-        s
-    }
+    truncate_ellipsis(&output.to_string(), 57)
 }
 
 fn human_bytes(n: usize) -> String {
@@ -1401,6 +1398,25 @@ fn build_runner(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn truncate_ellipsis_is_char_boundary_safe() {
+        // Short strings pass through unchanged.
+        assert_eq!(truncate_ellipsis("hello", 40), "hello");
+        // ASCII over the limit truncates + ellipsis.
+        let long = "a".repeat(100);
+        let out = truncate_ellipsis(&long, 80);
+        assert!(out.ends_with('…') && out.len() <= 80 + '…'.len_utf8());
+        // Multibyte char straddling the cut must NOT panic, and the result is
+        // valid UTF-8 ending on a boundary (regression for the `&s[..n]` panic).
+        let s = format!("{}…{}", "x".repeat(78), "y".repeat(40)); // '…' spans bytes 78..81
+        let out = truncate_ellipsis(&s, 80);
+        assert!(out.is_char_boundary(out.len() - '…'.len_utf8()));
+        // summarise_args with a long unicode value does not panic.
+        let mut args = std::collections::HashMap::new();
+        args.insert("cmd".to_string(), json!(" — ".repeat(50)));
+        let _ = summarise_args(&args);
+    }
 
     #[test]
     fn derive_ws_url_https() {
