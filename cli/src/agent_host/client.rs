@@ -750,7 +750,7 @@ async fn handle_tool_call(
     };
 
     let started = Instant::now();
-    let outcome = runner
+    let mut outcome = runner
         .run(
             &frame.name,
             frame.args.clone(),
@@ -771,6 +771,25 @@ async fn handle_tool_call(
         .after(&frame.name, &args_val, outcome.error_code.is_some());
     if let Some(msg) = notice {
         eprintln!("{}{}{}", theme.red, msg, theme.reset);
+    }
+
+    // No-progress detection (feature B): if the same error *signature* (set by
+    // the runner's error digest) keeps recurring across attempts, inject a nudge
+    // into the result the agent sees, so it stops varying the command and fixes
+    // the unchanged root cause.
+    if let Some(sig) = outcome
+        .metadata
+        .get("error_signature")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+    {
+        let nudge = guard.lock().await.note_signature(&sig);
+        if let Some(msg) = nudge {
+            if let serde_json::Value::Object(map) = &mut outcome.output {
+                map.insert("guard_note".into(), serde_json::Value::String(msg.clone()));
+            }
+            eprintln!("{}{}{}", theme.red, msg, theme.reset);
+        }
     }
 
     {
@@ -991,12 +1010,55 @@ fn failure_reason(outcome: &ToolOutcome) -> String {
     }
 }
 
+/// One-line, log-safe summary of a tool call's args, so `--log-file` traces
+/// show *what* a step did — the command for `shell_exec`, the path for the file
+/// tools — not just the tool name. Without this the trace is "35 file_read, 24
+/// shell_exec" with no way to see which files or commands (the gap that made a
+/// stuck session impossible to diagnose from the log alone).
+fn summarize_args(name: &str, args: &HashMap<String, Value>) -> String {
+    match name {
+        "shell_exec" => {
+            if let Some(Value::Array(argv)) = args.get("argv") {
+                let cmd = argv
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| v.to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                return compact_value(&Value::String(cmd));
+            }
+            match args.get("command").or_else(|| args.get("cmd")) {
+                Some(c) => compact_value(c),
+                None => "?".to_string(),
+            }
+        }
+        "file_read" | "file_write" => ["file_path", "path", "filepath"]
+            .iter()
+            .find_map(|k| args.get(*k))
+            .map(compact_value)
+            .unwrap_or_else(|| "?".to_string()),
+        _ => {
+            let mut keys: Vec<&str> = args.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            compact_value(&Value::String(keys.join(",")))
+        }
+    }
+}
+
 fn debug_frame(dir: &str, f: &Frame) {
     match f {
         Frame::Hello(h) => debug!("{dir} hello version={} agent={}", h.version, h.agent),
         Frame::Ack(a) => debug!("{dir} ack run_id={} model={}", a.run_id, a.model),
         Frame::Prompt(p) => debug!("{dir} prompt {}B", p.text.len()),
-        Frame::ToolCall(tc) => debug!("{dir} tool_call id={} name={}", tc.tool_call_id, tc.name),
+        Frame::ToolCall(tc) => debug!(
+            "{dir} tool_call id={} name={} args={}",
+            tc.tool_call_id,
+            tc.name,
+            summarize_args(&tc.name, &tc.args)
+        ),
         Frame::ToolResult(tr) => {
             if tr.status == "ok" {
                 debug!("{dir} tool_result id={} status=ok", tr.tool_call_id)
@@ -1573,6 +1635,38 @@ mod tests {
         assert_eq!(compact_value(&json!("a\nb")), "a b");
         let long = compact_value(&json!("x".repeat(500)));
         assert!(long.contains("…[+300 chars]"), "got {long}");
+    }
+
+    #[test]
+    fn summarize_args_shows_command_path_and_keys() {
+        let mut shell = HashMap::new();
+        shell.insert(
+            "argv".to_string(),
+            json!(["npm", "test", "--", "--watchAll=false"]),
+        );
+        assert_eq!(
+            summarize_args("shell_exec", &shell),
+            "npm test -- --watchAll=false"
+        );
+
+        let mut shell_str = HashMap::new();
+        shell_str.insert("command".to_string(), json!("pytest -q"));
+        assert_eq!(summarize_args("shell_exec", &shell_str), "pytest -q");
+
+        let mut path = HashMap::new();
+        path.insert("path".to_string(), json!("src/App.test.js"));
+        assert_eq!(summarize_args("file_read", &path), "src/App.test.js");
+        assert_eq!(summarize_args("file_write", &path), "src/App.test.js");
+
+        // Unknown tool → sorted key set, so the line is still informative.
+        let mut other = HashMap::new();
+        other.insert("zeta".to_string(), json!(1));
+        other.insert("alpha".to_string(), json!(2));
+        assert_eq!(summarize_args("mystery", &other), "alpha,zeta");
+
+        // Missing args never panic — they degrade to a marker.
+        assert_eq!(summarize_args("shell_exec", &HashMap::new()), "?");
+        assert_eq!(summarize_args("file_read", &HashMap::new()), "?");
     }
 
     #[test]

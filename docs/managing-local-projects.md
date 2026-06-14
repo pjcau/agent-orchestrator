@@ -454,6 +454,21 @@ damage:
 | **Failure density** | `AGO_FAIL_DENSITY` (0 = off) | Catches *scattered*-failure thrash that the exact-repeat loop guard misses — many **different** failing commands. Halts the turn when ≥ N of the last `AGO_LOOP_WINDOW` tool calls failed, regardless of which command. |
 | **Failure breaker** | `AGO_FAIL_WARN` (8), `AGO_FAIL_HALT` (0 = off) | A global *consecutive*-failure streak. At `warn` it prints a notice; at `halt` (opt-in) it stops running further tools this turn. |
 | **Hard caps** | `AGO_TURN_MAX_STEPS` (0 = off), `AGO_TURN_MAX_USD` (0 = off) | Fed from each `Step` frame. Once a cap trips the turn is **halted**: every further tool call is refused so no more commands run on your machine. |
+| **No-progress nudge** | `AGO_NO_PROGRESS` (3; 0 = off) | Convergence aid, not a brake. Fingerprints each failed command's *error* (not the command). When the same error signature recurs ≥ N times — even across **different** commands — a `no-progress` note is injected into the tool result telling the agent the root cause is unchanged, so it stops varying the command and fixes the actual error. |
+
+These last two are the *anti-thrash* (halt) layer; the loop/density/breaker stop
+runaway. The **error digest** below is the *convergence* layer — it helps the
+agent fix the problem rather than just stopping it.
+
+**Error digest (`AGO_ERROR_DIGEST`, on; `AGO_ERROR_DIGEST_BYTES`, 4000).** When a
+`shell_exec` fails with large output (a pytest run, a `cargo`/`tsc` build, a
+`docker compose` log), the downstream context cap keeps only a head+tail slice —
+which preserves the *summary* (`34 errors`) but elides the **middle**, where the
+actual diagnosis lives (the first traceback, the `OperationalError: …` line, the
+`error[E0599]`). The CLI holds the full output, so for failures it sends an
+**error-salient digest** instead (head + the error/traceback lines + tail),
+guaranteeing the root cause survives. This is what feeds the no-progress
+fingerprint above. Disable with `AGO_ERROR_DIGEST=false` to send raw output.
 
 When a cap, the breaker, or density halts the turn you'll see, on stderr:
 

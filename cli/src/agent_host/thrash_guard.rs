@@ -54,6 +54,9 @@ pub struct GuardConfig {
     /// Failures within the window (any command) that halt the turn — catches
     /// scattered-failure thrash the exact-repeat loop guard misses (0 = off).
     pub fail_density: u32,
+    /// Repeats of the same error *signature* (across any command) that trigger a
+    /// "no-progress" nudge injected into the tool result (0 = off). Feature "B".
+    pub no_progress: u32,
     /// Step index that halts the turn (0 = off).
     pub max_steps: u64,
     /// Cumulative turn cost (USD) that halts the turn (0 = off).
@@ -69,6 +72,7 @@ impl Default for GuardConfig {
             fail_warn: 8,
             fail_halt: 0,
             fail_density: 0,
+            no_progress: 3,
             max_steps: 0,
             max_usd: 0.0,
         }
@@ -103,6 +107,9 @@ impl GuardConfig {
             fail_density: env_u32_opt("AGO_FAIL_DENSITY")
                 .or(g.and_then(|g| g.fail_density))
                 .unwrap_or(d.fail_density),
+            no_progress: env_u32_opt("AGO_NO_PROGRESS")
+                .or(g.and_then(|g| g.no_progress))
+                .unwrap_or(d.no_progress),
             max_steps: env_u64_opt("AGO_TURN_MAX_STEPS")
                 .or(g.and_then(|g| g.max_steps))
                 .unwrap_or(d.max_steps),
@@ -135,6 +142,8 @@ pub struct TurnGuard {
     cfg: GuardConfig,
     /// Recent calls as `(hash, was_error)`, capped at `cfg.loop_window`.
     recent: VecDeque<(u64, bool)>,
+    /// Recent error signatures (any command), for no-progress detection.
+    recent_sigs: VecDeque<String>,
     /// Global consecutive-failure streak across all tools.
     consec_fail: u32,
     /// Whether the `fail_warn` notice has already fired this streak.
@@ -148,6 +157,7 @@ impl TurnGuard {
         Self {
             cfg,
             recent: VecDeque::new(),
+            recent_sigs: VecDeque::new(),
             consec_fail: 0,
             warned: false,
             halted: None,
@@ -244,6 +254,35 @@ impl TurnGuard {
         None
     }
 
+    /// Record an error *signature* (feature B). When the same signature recurs
+    /// `no_progress` times across recent attempts — regardless of which command
+    /// produced it — return a nudge to inject into the tool result: the agent is
+    /// changing commands but not the outcome, i.e. not converging.
+    pub fn note_signature(&mut self, signature: &str) -> Option<String> {
+        if self.cfg.no_progress == 0 || signature.is_empty() {
+            return None;
+        }
+        const WINDOW: usize = 16;
+        self.recent_sigs.push_back(signature.to_string());
+        while self.recent_sigs.len() > WINDOW {
+            self.recent_sigs.pop_front();
+        }
+        let count = self
+            .recent_sigs
+            .iter()
+            .filter(|s| s.as_str() == signature)
+            .count() as u32;
+        if count >= self.cfg.no_progress {
+            Some(format!(
+                "no-progress: the same error has occurred {count}× across your recent attempts — \
+                 \"{signature}\". The root cause has not changed; stop varying the command and \
+                 fix THIS (different file / config / approach), or report the blocker."
+            ))
+        } else {
+            None
+        }
+    }
+
     /// Call on each `Step` frame with the cumulative index and turn cost.
     /// Returns a message the first time a hard cap trips.
     pub fn on_step(&mut self, index: u64, cost_usd: f64) -> Option<String> {
@@ -283,6 +322,7 @@ impl TurnGuard {
     /// Reset all per-turn state. Call on `TurnEnd`.
     pub fn reset(&mut self) {
         self.recent.clear();
+        self.recent_sigs.clear();
         self.consec_fail = 0;
         self.warned = false;
         self.halted = None;
@@ -332,6 +372,7 @@ mod tests {
             fail_warn: 0,
             fail_halt: 0,
             fail_density: 0,
+            no_progress: 0,
             max_steps: 0,
             max_usd: 0.0,
         }
@@ -423,6 +464,27 @@ mod tests {
             g.before("other", &json!({"z": 9})),
             Decision::Block(_)
         ));
+    }
+
+    #[test]
+    fn no_progress_nudges_on_repeated_signature_across_commands() {
+        let mut c = cfg();
+        c.no_progress = 3;
+        let mut g = TurnGuard::new(c);
+        let sig = "operationalerror: could not translate host name \"db\"";
+        assert!(g.note_signature(sig).is_none()); // 1
+        assert!(g.note_signature(sig).is_none()); // 2
+        let n = g.note_signature(sig); // 3 → nudge, even though "commands" differ
+        assert!(
+            n.is_some_and(|m| m.starts_with("no-progress") && m.contains("could not translate"))
+        );
+        // A different error signature resets the count for that fingerprint.
+        assert!(g.note_signature("keyerror: 'x'").is_none());
+        // Empty signature / disabled → never nudges.
+        assert!(g.note_signature("").is_none());
+        let mut off = cfg();
+        off.no_progress = 0;
+        assert!(TurnGuard::new(off).note_signature(sig).is_none());
     }
 
     #[test]

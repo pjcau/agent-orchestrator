@@ -89,6 +89,9 @@ pub struct GuardSettings {
     /// Failures within the window (any command) that halt the turn — catches
     /// scattered-failure thrash the exact-repeat guard misses (default 0 = off).
     pub fail_density: Option<u32>,
+    /// Repeats of the same error signature that trigger a no-progress nudge
+    /// injected into the tool result (default 3; 0 = off).
+    pub no_progress: Option<u32>,
     /// Step index that halts the turn (default 0 = off).
     pub max_steps: Option<u64>,
     /// Cumulative turn cost (USD) that halts the turn (default 0 = off).
