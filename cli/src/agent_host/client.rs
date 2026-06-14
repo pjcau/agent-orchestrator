@@ -43,6 +43,7 @@ use super::protocol::{
 };
 use super::runner::{CancelSignal, ChunkEmitter, LocalToolRunner, ShellConfirmer, ToolOutcome};
 use super::signing::{compute_signature, decode_hex_key};
+use super::thrash_guard::{Decision, GuardConfig, TurnGuard};
 use tracing::debug;
 
 /// What the client learned during HELLO/ACK.
@@ -250,6 +251,11 @@ pub async fn run_repl(
     ));
     let session = Arc::new(session);
     let cancels: Arc<Mutex<HashMap<String, CancelSignal>>> = Arc::new(Mutex::new(HashMap::new()));
+    // Client-side thrash guard at the tool-execution boundary (loop guard,
+    // consecutive-failure breaker, hard step/cost caps). Shared across the
+    // concurrently-spawned tool tasks and the step-frame handler.
+    let guard: Arc<Mutex<TurnGuard>> =
+        Arc::new(Mutex::new(TurnGuard::new(GuardConfig::from_env())));
 
     // Split the WS into sink + stream so the receive loop can keep
     // reading while we send prompts and tool_results from another task.
@@ -273,6 +279,7 @@ pub async fn run_repl(
         session.clone(),
         runner.clone(),
         cancels.clone(),
+        guard.clone(),
         no_color,
     ));
 
@@ -499,6 +506,7 @@ async fn receive_loop(
     session: Arc<SessionInfo>,
     runner: Arc<LocalToolRunner>,
     cancels: Arc<Mutex<HashMap<String, CancelSignal>>>,
+    guard: Arc<Mutex<TurnGuard>>,
     no_color: bool,
 ) {
     let theme = AnsiTheme::detect(no_color);
@@ -595,6 +603,8 @@ async fn receive_loop(
                 let _ = std::io::stdout().flush();
                 print_turn_end(&theme, &t);
                 meter.reset();
+                // Per-turn thrash state is scoped to one turn.
+                guard.lock().await.reset();
             }
             Frame::Error(e) => {
                 // Flush whatever the assistant produced before the error so
@@ -621,8 +631,9 @@ async fn receive_loop(
                 let sink = sink.clone();
                 let cancels = cancels.clone();
                 let theme = theme.clone();
+                let guard = guard.clone();
                 tokio::spawn(async move {
-                    handle_tool_call(tc, session, runner, sink, cancels, theme).await;
+                    handle_tool_call(tc, session, runner, sink, cancels, guard, theme).await;
                 });
             }
             Frame::Cancel(c) => {
@@ -633,6 +644,11 @@ async fn receive_loop(
             }
             Frame::Step(s) => {
                 print_step(&theme, &s, &mut meter);
+                // Hard step/cost caps (opt-in). On trip, the guard halts the
+                // turn so subsequent tool calls are refused locally.
+                if let Some(msg) = guard.lock().await.on_step(s.index, s.cost_usd) {
+                    eprintln!("{}{}{}", theme.red, msg, theme.reset);
+                }
             }
             _ => {}
         }
@@ -645,6 +661,7 @@ async fn handle_tool_call(
     runner: Arc<LocalToolRunner>,
     sink: WsSink,
     cancels: Arc<Mutex<HashMap<String, CancelSignal>>>,
+    guard: Arc<Mutex<TurnGuard>>,
     theme: AnsiTheme,
 ) {
     let run_id = session.run_id.clone();
@@ -670,6 +687,32 @@ async fn handle_tool_call(
             &frame.name,
             key,
             &ToolOutcome::err("signature_invalid"),
+        )
+        .await;
+        return;
+    }
+
+    // Canonical (sorted-key) view of the args for the thrash guard's hash.
+    // `to_value` on a HashMap yields a BTreeMap-backed Object, so the hash is
+    // stable regardless of HashMap iteration order.
+    let args_val = serde_json::to_value(&frame.args).unwrap_or_default();
+
+    // Thrash guard: if this exact call has been failing on repeat, or the turn
+    // has been halted by a cap/breaker, refuse to run it and return a synthetic
+    // error so no further local side effects happen and the server is nudged to
+    // change approach.
+    if let Decision::Block(reason) = guard.lock().await.before(&frame.name, &args_val) {
+        let outcome = ToolOutcome::err(&reason);
+        print_progress_finished(&theme, &frame, &outcome, 0);
+        guard.lock().await.after(&frame.name, &args_val, true);
+        send_tool_result(
+            &sink,
+            &run_id,
+            &frame.tool_call_id,
+            &frame.nonce,
+            &frame.name,
+            key,
+            &outcome,
         )
         .await;
         return;
@@ -712,6 +755,17 @@ async fn handle_tool_call(
     let elapsed_ms = started.elapsed().as_millis() as u64;
 
     print_progress_finished(&theme, &frame, &outcome, elapsed_ms);
+
+    // Record the outcome for the loop guard / failure breaker; print any notice
+    // (consecutive-failure warning or breaker halt) it raises.
+    if let Some(msg) =
+        guard
+            .lock()
+            .await
+            .after(&frame.name, &args_val, outcome.error_code.is_some())
+    {
+        eprintln!("{}{}{}", theme.red, msg, theme.reset);
+    }
 
     {
         let mut map = cancels.lock().await;

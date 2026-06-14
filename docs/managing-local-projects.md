@@ -435,6 +435,38 @@ Resource bounds the server enforces:
   to 100). Sent in the handshake, so `ago chat --client-tools --max-steps 50`
   gives a long multi-step task more room before `Max steps reached`.
 
+### Thrash guard (client-side loop & cost limits)
+
+The agent loop runs **server-side**, and its own loop/failure guards can leak:
+in multi-agent fan-out `max_steps` is *per-agent* (so a team-lead run easily
+runs past it), and the server's loop detector hashes the *exact* tool call, so a
+shell command that varies by a byte slips past. The symptom is a turn that keeps
+re-running near-identical **failing** commands while per-step latency climbs with
+the context.
+
+The CLI adds an independent guard at the one choke point it controls — the
+tool-execution boundary. It needs no server cooperation and limits the *local*
+damage:
+
+| Mechanism | Env (default) | Behaviour |
+|---|---|---|
+| **Loop guard** | `AGO_LOOP_GUARD` (**on**), `AGO_LOOP_THRESHOLD` (3), `AGO_LOOP_WINDOW` (10) | If the same call has **failed** ≥ threshold times in the recent window, the next identical call is **not executed** — it returns a synthetic `loop_blocked` error that nudges the agent to change approach. Counts *failures only*, so legitimate polling (e.g. waiting for `docker compose ps` to go healthy, which returns success) never trips it. |
+| **Failure breaker** | `AGO_FAIL_WARN` (8), `AGO_FAIL_HALT` (0 = off) | A global consecutive-failure streak. At `warn` it prints a notice; at `halt` (opt-in) it stops running further tools this turn. |
+| **Hard caps** | `AGO_TURN_MAX_STEPS` (0 = off), `AGO_TURN_MAX_USD` (0 = off) | Fed from each `Step` frame. Once a cap trips the turn is **halted**: every further tool call is refused so no more commands run on your machine. |
+
+When a cap or the breaker halts the turn you'll see, on stderr:
+
+```
+⊘ turn halted by client: step cap reached (40 ≥ AGO_TURN_MAX_STEPS=40). No further
+  tools will run this turn — press Ctrl-C or type :quit (resume later with --resume).
+```
+
+Only the **loop guard** is on by default (it is precise — failures-only — and
+low-false-positive). The breaker-halt and hard caps are opt-in; set them per
+session, e.g. `AGO_TURN_MAX_USD=0.50 ago chat --client-tools`. Disable the loop
+guard entirely with `AGO_LOOP_GUARD=false` if an agent legitimately needs to
+retry an identical failing command.
+
 ---
 
 ## Troubleshooting
