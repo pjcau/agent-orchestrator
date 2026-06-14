@@ -982,7 +982,19 @@ mod tests {
         args.insert("argv".into(), json!(["cd", "sub"]));
         let r = runner.run("shell_exec", args, None, None).await;
         assert!(!r.success);
-        assert_eq!(r.error_code.as_deref(), Some("shell_spawn_failed"));
+        // `cd` is a shell builtin, so the strict direct-spawn path fails — which
+        // is the point of the test. *How* it fails is platform-dependent: Linux
+        // has no `cd` binary (shell_spawn_failed), while macOS ships a
+        // `/usr/bin/cd` shim that spawns and exits non-zero (shell_nonzero_exit).
+        // Either proves it ran directly rather than via a bash wrapper.
+        assert!(
+            matches!(
+                r.error_code.as_deref(),
+                Some("shell_spawn_failed") | Some("shell_nonzero_exit")
+            ),
+            "unexpected error_code: {:?}",
+            r.error_code
+        );
     }
 
     #[tokio::test]

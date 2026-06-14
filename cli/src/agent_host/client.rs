@@ -1374,8 +1374,11 @@ mod tests {
         // (IDLE_PROBE × MAX_SILENT_PROBES) must be generous enough that a slow
         // but alive turn — which keeps the link warm via auto-pong — is never
         // aborted. Guards against a footgun like MAX_SILENT_PROBES = 0.
-        assert!(MAX_SILENT_PROBES >= 2);
-        assert!(IDLE_PROBE.as_secs() * MAX_SILENT_PROBES as u64 >= 90);
+        // These are invariants over `const`s, so assert them at compile time —
+        // a runtime assert on a constant is what clippy's
+        // `assertions_on_constants` (denied in CI) rightly flags.
+        const _: () = assert!(MAX_SILENT_PROBES >= 2);
+        const _: () = assert!(IDLE_PROBE.as_secs() * MAX_SILENT_PROBES as u64 >= 90);
     }
 
     #[test]
