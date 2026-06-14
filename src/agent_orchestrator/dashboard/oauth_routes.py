@@ -288,7 +288,7 @@ async def callback_github(request: Request):
                 "role": user["role"],
             }
         )
-        response = RedirectResponse(_safe_return_to(request), status_code=302)
+        response = RedirectResponse("/", status_code=302)
         response.set_cookie(
             "auth_session", jwt_token, httponly=True, secure=True, samesite="lax", max_age=14400
         )
@@ -358,7 +358,7 @@ async def callback_google(request: Request):
                 "role": user["role"],
             }
         )
-        response = RedirectResponse(_safe_return_to(request), status_code=302)
+        response = RedirectResponse("/", status_code=302)
         response.set_cookie(
             "auth_session",
             jwt_token,
