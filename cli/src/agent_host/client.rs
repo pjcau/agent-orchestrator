@@ -646,8 +646,11 @@ async fn receive_loop(
             Frame::Step(s) => {
                 print_step(&theme, &s, &mut meter);
                 // Hard step/cost caps (opt-in). On trip, the guard halts the
-                // turn so subsequent tool calls are refused locally.
-                if let Some(msg) = guard.lock().await.on_step(s.index, s.cost_usd) {
+                // turn so subsequent tool calls are refused locally. Bind the
+                // result so the lock is released before the body (the tokio
+                // Mutex is not re-entrant).
+                let halt = guard.lock().await.on_step(s.index, s.cost_usd);
+                if let Some(msg) = halt {
                     eprintln!("{}{}{}", theme.red, msg, theme.reset);
                 }
             }
@@ -701,8 +704,10 @@ async fn handle_tool_call(
     // Thrash guard: if this exact call has been failing on repeat, or the turn
     // has been halted by a cap/breaker, refuse to run it and return a synthetic
     // error so no further local side effects happen and the server is nudged to
-    // change approach.
-    if let Decision::Block(reason) = guard.lock().await.before(&frame.name, &args_val) {
+    // change approach. Bind the decision so the lock is released before the body
+    // — the tokio Mutex is NOT re-entrant, and the body locks the guard again.
+    let decision = guard.lock().await.before(&frame.name, &args_val);
+    if let Decision::Block(reason) = decision {
         let outcome = ToolOutcome::err(&reason);
         print_progress_finished(&theme, &frame, &outcome, 0);
         guard.lock().await.after(&frame.name, &args_val, true);
@@ -758,13 +763,13 @@ async fn handle_tool_call(
     print_progress_finished(&theme, &frame, &outcome, elapsed_ms);
 
     // Record the outcome for the loop guard / failure breaker; print any notice
-    // (consecutive-failure warning or breaker halt) it raises.
-    if let Some(msg) =
-        guard
-            .lock()
-            .await
-            .after(&frame.name, &args_val, outcome.error_code.is_some())
-    {
+    // (consecutive-failure warning or breaker halt) it raises. Bind first so the
+    // lock is released before the body (non-re-entrant tokio Mutex).
+    let notice = guard
+        .lock()
+        .await
+        .after(&frame.name, &args_val, outcome.error_code.is_some());
+    if let Some(msg) = notice {
         eprintln!("{}{}{}", theme.red, msg, theme.reset);
     }
 

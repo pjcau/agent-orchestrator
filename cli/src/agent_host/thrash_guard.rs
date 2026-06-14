@@ -492,6 +492,28 @@ mod tests {
         assert_eq!(r.max_usd, 0.25); // untouched by env
     }
 
+    // Regression: handle_tool_call's block path locks the guard for `before`
+    // and again for `after`. The tokio Mutex is NOT re-entrant, so holding the
+    // first lock across the body (e.g. via an `if let` temporary) deadlocks.
+    // This mirrors the corrected sequence and asserts it completes promptly.
+    #[tokio::test]
+    async fn halted_block_path_does_not_deadlock() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        use tokio::sync::Mutex;
+        let mut c = cfg();
+        c.max_steps = 1;
+        let g = Arc::new(Mutex::new(TurnGuard::new(c)));
+        g.lock().await.on_step(1, 0.0); // halt the turn
+        let r = tokio::time::timeout(Duration::from_secs(2), async {
+            let decision = g.lock().await.before("t", &json!({})); // lock released here
+            assert!(matches!(decision, Decision::Block(_)));
+            g.lock().await.after("t", &json!({}), true); // would hang if still held
+        })
+        .await;
+        assert!(r.is_ok(), "block path deadlocked");
+    }
+
     #[test]
     fn reset_clears_halt_and_streak() {
         let mut c = cfg();
