@@ -104,7 +104,7 @@ shell:
 ```
 
 Allowed keys: `server`, `agent`, `model`, `provider`, `max_steps`,
-`context`, `shell`, `jail`, `jail_image`. CLI flags override `.ago.yaml`;
+`context`, `shell`, `jail`, `jail_image`, `jail_docker`. CLI flags override `.ago.yaml`;
 `.ago.yaml` overrides `~/.config/ago/config.toml`. Empty values fall through to
 the next layer.
 
@@ -233,6 +233,63 @@ Image resolution (first match wins): `AGO_JAIL_IMAGE` env → `.ago.yaml`
 `jail_image:` → built-in `ubuntu:24.04`. The image must already be pullable by
 your local Docker/OrbStack (the wrapper does not build it).
 
+**Bundled batteries-included image (`ago-jail:latest`).** The repo ships a
+ready-made jail image at [`docker/ago-jail/Dockerfile`](../docker/ago-jail/Dockerfile)
+so you don't have to assemble a toolchain. Build it once and point `.ago.yaml`
+at it:
+
+```bash
+docker build -t ago-jail:latest docker/ago-jail   # OrbStack
+```
+
+```yaml
+# .ago.yaml
+jail: true
+jail_image: ago-jail:latest
+```
+
+It ships the commands an agent reaches for on a real build/test/devops task:
+git, ripgrep, jq, curl/wget, openssh-client, **Python 3** (+ pip/venv),
+**Node 22** with **pnpm**/**yarn**, the **build toolchain** (make,
+build-essential), network/process probes (**`ss`**, **`lsof`**, **`ps`**,
+netstat, ping, dig, nc), database clients (**`psql`**/`pg_isready`,
+**`sqlite3`**), the **Docker CLI** + **Compose**/**Buildx** plugins, and a
+`sudo` shim (the jail runs as an arbitrary uid with no real root, so the shim
+just drops the prefix and execs the rest instead of failing to spawn).
+
+**Docker inside the jail (`jail_docker`).** The image ships only the Docker
+*client*. By default the launcher does **not** bind-mount the host Docker
+socket, so `docker compose config`/`build`-context checks work but `up`/`ps`
+fail with *"cannot connect to the Docker daemon"*. To let the agent actually
+drive the stack (e.g. a project whose `package.json` is all `docker compose …`),
+opt in:
+
+```yaml
+# .ago.yaml
+jail: true
+jail_image: ago-jail:latest
+jail_docker: true          # or env: AGO_JAIL_DOCKER=true
+```
+
+When on, the launcher (a) bind-mounts the host Docker socket and adds the
+container user to the socket's group, and (b) mounts the project at its **real
+host path** (instead of `/work`, with the workdir following) — required so
+Compose's relative volume paths resolve on the host daemon rather than pointing
+at nonexistent `/work/…` dirs. Socket resolution: `AGO_JAIL_DOCKER_SOCK` env →
+`DOCKER_HOST` → active `docker context` → `~/.orbstack/run/docker.sock` →
+`/var/run/docker.sock`. The launcher prints a one-line warning each run while
+this is active.
+
+> **⚠ Security.** `jail_docker: true` hands the host Docker socket to the
+> sandbox — that is root-equivalent on the host (it can launch privileged
+> containers and mount the host filesystem) and **punctures the jail's file
+> isolation**. Enable it per project only when you accept that trade-off. Leave
+> it off (the default) and run the live stack from the host whenever you can.
+
+> **Rebuild to refresh.** A running `--client-tools` session is pinned to the
+> image its container started from; rebuilding `ago-jail:latest` only takes
+> effect on the **next** `ago chat`/`ago run` invocation.
+
 ---
 
 ## Daily workflow
@@ -316,6 +373,28 @@ buffered and printed at end-of-turn (progress stays live on the Step lines).
 When stdout is piped or `--no-color`/`NO_COLOR` is set, the text is emitted
 byte-for-byte unchanged, so `ago run --client-tools "…" > out.md` stays clean.
 
+### Stopping a runaway turn
+
+The orchestrator builds and grows the conversation context **server-side**, so
+a team-lead that keeps fanning out can quietly drive one turn to dozens of
+steps and dollars of spend. The CLI can't shrink that context, but it gives you
+two client-side controls:
+
+- **Ctrl-C cancels the in-flight turn.** During a turn Ctrl-C aborts the run and
+  drops you back to the `>` prompt (`⊘ turn interrupted (Ctrl-C)`) instead of
+  being ignored or killing the process. (At the empty prompt Ctrl-C still just
+  clears the line — press it twice, or use `:quit`, to exit.)
+- **A cost guardrail nudges you.** The first time a single turn's cumulative
+  cost crosses each increment, a warning is printed above the meter:
+
+  ```
+  ⚠ this turn so far: 78 steps · $0.1500 — press Ctrl-C to stop
+  ```
+
+  The increment defaults to **$0.10**; set `AGO_TURN_COST_WARN_USD` to another
+  value, or to `0` to disable the warnings entirely. It only makes a runaway
+  *visible* — the real fix for context bloat is server-side compaction.
+
 ---
 
 ## Security defaults (do not weaken without thought)
@@ -369,9 +448,10 @@ Resource bounds the server enforces:
 | `shell_denied` | Non-interactive call to a new binary | Re-run in an interactive shell to confirm, or pre-populate the allow file |
 | `peer closed connection` / `Broken pipe` while answering `allow … [y/N]` | You took longer than the tool TTL to confirm; the server timed out the call and the WS dropped | Fixed: the default TTL is now 5 min. Confirm promptly, or raise `AGENT_HOST_TOOL_TTL_SECONDS` on the dashboard |
 | `tool_timeout` | The local tool exceeded the TTL (default 5 min) | Split into smaller calls, or raise `AGENT_HOST_TOOL_TTL_SECONDS` |
-| Subprocess hangs on Ctrl-C | First Ctrl-C is the REPL's empty-line; second exits | press it twice |
+| Ctrl-C at the `>` prompt does nothing useful | At the empty prompt the first Ctrl-C clears the line; a second exits | press it twice, or `:quit` |
+| A long / runaway turn can't be stopped | Fixed in ago ≥ 0.5.26 — Ctrl-C *during a turn* now cancels the in-flight run and returns you to the prompt (`⊘ turn interrupted`) instead of being ignored or killing the process | `ago self update`, then press Ctrl-C once while it's working |
 | `✗ turn error` with a reason | The turn failed server-side; the reason is now shown after the `—` (e.g. `Max steps (10) reached`) | Act on the reason; rerun, raise `--max-steps`, or simplify the task |
-| Turn looks stuck / agent seems frozen | A long LLM step with no output, or a swallowed error | Run with debug frames (below) and share the output |
+| Turn looks stuck / agent seems frozen | A long LLM step with no output, or a swallowed error | Press Ctrl-C to abort the turn, then run with debug frames (below) and share the output |
 | Stuck right after `allow … [y/N]` (your `y` shows as a new prompt) | Fixed in ago ≥ 0.5.9 — the REPL reader and the confirmation prompt used to race for stdin, so `y` was sent as a chat message and the confirmation hung | `ago self update` to 0.5.9+ |
 
 ### Debug mode (frame-level trace)

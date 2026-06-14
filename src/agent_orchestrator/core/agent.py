@@ -60,7 +60,13 @@ class AgentConfig:
     # so a long run stops re-sending its whole history on every step. The
     # cost of an uncompacted run grows ~quadratically. 0 disables.
     compaction_token_threshold: int = 60000
-    compaction_keep_head: int = 2  # task/context/history setup messages
+    # Keep the first N messages verbatim. 4 (not 2) so the first tool RESULT
+    # survives: the head is [user task, assistant tool_call, tool result, …], so
+    # keep_head=2 kept only the task + the first tool_call and dropped the first
+    # result the moment compaction fired — losing early evidence at no cost
+    # saving. The deterministic sweep in evals/context_benchmark.py (--sweep)
+    # showed keep_head=4 retains the early fact with identical token cost.
+    compaction_keep_head: int = 4
     compaction_keep_tail: int = 20  # most-recent messages to preserve verbatim
     # After compaction, retain at most this fraction of the threshold in
     # estimated tokens. The kept tail is sized *dynamically* to fit this

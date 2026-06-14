@@ -7,6 +7,13 @@
 //! can be flipped on the fly with `:agent`, `:model`, `:provider`,
 //! `:max-steps`. `:reset` mints a new conversation_id, `:clear` is an
 //! alias. `:info`/`:help`/`:quit` round out the v0.2 surface.
+//!
+//! Ctrl-C is context-sensitive: at the `>` prompt it clears the current line
+//! (rustyline), but *during a turn* it cancels the in-flight agent run and
+//! drops you back to the prompt instead of killing the process — see
+//! [`drive_agent_stream`]. A [`TurnGuardrail`] also nudges you when a single
+//! turn's cost balloons, since the context that drives that cost is grown
+//! server-side and can't be trimmed from here.
 
 use crate::cli::{ChatArgs, ChatMode};
 use crate::client::{AgentRunRequest, AgentRunResponse, ApiClient, PromptRequest, RunEvent};
@@ -783,6 +790,119 @@ async fn send_turn_prompt(
     Ok(stats)
 }
 
+/// Soft, client-side guardrail over a single turn.
+///
+/// The orchestrator assembles and grows the per-step context server-side, so
+/// the CLI cannot shrink a runaway turn — but it *can* make one visible. The
+/// spinner only ever shows the latest line, so a turn quietly ballooning to
+/// 90+ steps and dollars of spend used to look like "frozen". This emits a
+/// one-line nudge into the scrollback the first time cumulative cost crosses
+/// each `warn_step_usd` increment, reminding the user that Ctrl-C now cancels.
+///
+/// Pure logic (no I/O) so the threshold behaviour is unit-tested directly.
+struct TurnGuardrail {
+    /// Dollars between successive warnings; `0.0` disables the guardrail.
+    warn_step_usd: f64,
+    /// Next cumulative-cost threshold that triggers a warning.
+    next_warn_usd: f64,
+}
+
+impl TurnGuardrail {
+    fn new(warn_step_usd: f64) -> Self {
+        Self {
+            warn_step_usd,
+            next_warn_usd: warn_step_usd,
+        }
+    }
+
+    /// Resolve the warning increment from `AGO_TURN_COST_WARN_USD` (a non-negative
+    /// float; `0` disables), falling back to a sensible default that fires on the
+    /// expensive turns without nagging on cheap ones.
+    fn from_env() -> Self {
+        const DEFAULT_WARN_USD: f64 = 0.10;
+        let step = std::env::var("AGO_TURN_COST_WARN_USD")
+            .ok()
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .unwrap_or(DEFAULT_WARN_USD);
+        Self::new(step)
+    }
+
+    /// Feed the latest cumulative turn cost. Returns a warning line the first
+    /// time a new threshold is crossed (advancing past every increment a single
+    /// large jump skips), otherwise `None`.
+    fn observe(&mut self, cost_usd: f64, step: u64) -> Option<String> {
+        if self.warn_step_usd <= 0.0 || cost_usd < self.next_warn_usd {
+            return None;
+        }
+        while self.next_warn_usd <= cost_usd {
+            self.next_warn_usd += self.warn_step_usd;
+        }
+        Some(format!(
+            "⚠ this turn so far: {step} steps · ${cost_usd:.4} — press Ctrl-C to stop"
+        ))
+    }
+}
+
+/// How the agent event stream ended.
+enum AgentStreamEnd {
+    /// Server sent the terminal `complete` event carrying this payload.
+    Complete(serde_json::Value),
+    /// User pressed Ctrl-C; the turn was abandoned client-side.
+    Interrupted,
+    /// Stream closed before any `complete` event arrived (server hung up).
+    Closed,
+}
+
+/// Drive the agent SSE stream to its end, updating `spinner` on each step,
+/// while racing a `cancel` future (Ctrl-C). Returns as soon as the server
+/// completes, the stream closes, or `cancel` fires — whichever comes first.
+///
+/// Pulled out of [`send_turn_agent`] so the three terminal conditions can be
+/// unit-tested without a live server or a real SIGINT: the loop is generic
+/// over any `Stream` of events and any `cancel` future.
+async fn drive_agent_stream<S, F>(
+    mut stream: S,
+    cancel: F,
+    spinner: Option<&ProgressBar>,
+    guardrail: &mut TurnGuardrail,
+) -> Result<AgentStreamEnd>
+where
+    S: futures_util::Stream<Item = Result<RunEvent>> + Unpin,
+    F: std::future::Future<Output = ()>,
+{
+    tokio::pin!(cancel);
+    let mut step: u64 = 0;
+    loop {
+        tokio::select! {
+            item = stream.next() => match item {
+                Some(item) => {
+                    let event = item?;
+                    if event.event == "complete" {
+                        return Ok(AgentStreamEnd::Complete(event.data));
+                    }
+                    step += 1;
+                    if let Some(pb) = spinner {
+                        update_spinner(pb, &event.event, &event, step);
+                    }
+                    // Surface a runaway turn into the scrollback. `pb.println`
+                    // prints *above* the live spinner so the meter stays put.
+                    let cost = event.data.get("cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    if let Some(msg) = guardrail.observe(cost, step) {
+                        let line = format!("\x1b[33m{msg}\x1b[0m");
+                        match spinner {
+                            Some(pb) => pb.println(line),
+                            None => eprintln!("{line}"),
+                        }
+                    }
+                }
+                None => return Ok(AgentStreamEnd::Closed),
+            },
+            _ = &mut cancel => return Ok(AgentStreamEnd::Interrupted),
+        }
+    }
+}
+
 async fn send_turn_agent(
     client: &ApiClient,
     settings: &ChatSettings,
@@ -803,26 +923,39 @@ async fn send_turn_agent(
     };
     let show_progress = !no_progress && std::io::stderr().is_terminal();
     let spinner = show_progress.then(make_spinner);
-    let mut step: u64 = 0;
-    let mut final_payload: Option<serde_json::Value> = None;
 
-    let mut stream = client.agent_run_stream(&req).await?;
-    while let Some(item) = stream.next().await {
-        let event = item?;
-        if event.event == "complete" {
-            final_payload = Some(event.data);
-            break;
-        }
-        step += 1;
-        if let Some(pb) = &spinner {
-            update_spinner(pb, &event.event, &event, step);
-        }
-    }
+    let stream = client.agent_run_stream(&req).await?;
+    // Race the event stream against Ctrl-C so a running turn can be abandoned
+    // mid-flight. Without this the REPL only honoured Ctrl-C at the `>` prompt,
+    // so a long or runaway turn could not be stopped short of killing the
+    // process. `tokio::signal::ctrl_c()` installs a SIGINT handler for the
+    // duration of the turn (rustyline's raw-mode prompt swallows Ctrl-C as a
+    // keypress, so the two never collide).
+    let mut guardrail = TurnGuardrail::from_env();
+    let outcome = drive_agent_stream(
+        stream,
+        async {
+            let _ = tokio::signal::ctrl_c().await;
+        },
+        spinner.as_ref(),
+        &mut guardrail,
+    )
+    .await;
     if let Some(pb) = spinner {
         pb.finish_and_clear();
     }
-    let payload = final_payload
-        .ok_or_else(|| AgoError::Other("server closed stream before completion".into()))?;
+    let payload = match outcome? {
+        AgentStreamEnd::Complete(data) => data,
+        AgentStreamEnd::Interrupted => {
+            eprintln!("\x1b[33m⊘ turn interrupted (Ctrl-C) — back to prompt\x1b[0m");
+            return Ok(TurnStats::default());
+        }
+        AgentStreamEnd::Closed => {
+            return Err(AgoError::Other(
+                "server closed stream before completion".into(),
+            ));
+        }
+    };
     let resp = AgentRunResponse { raw: payload };
 
     if let Some(output) = resp.output() {
@@ -1127,6 +1260,95 @@ mod tests {
             Runtime::with_components(Config::default(), cfg_path, storage),
             dir,
         )
+    }
+
+    fn ev(kind: &str) -> Result<RunEvent> {
+        Ok(RunEvent {
+            event: kind.into(),
+            data: serde_json::json!({ "agent": "backend" }),
+        })
+    }
+
+    #[tokio::test]
+    async fn drive_stream_returns_complete_payload() {
+        // A normal turn: a couple of steps, then the terminal `complete`.
+        let s = futures_util::stream::iter(vec![
+            ev("step"),
+            ev("step"),
+            Ok(RunEvent {
+                event: "complete".into(),
+                data: serde_json::json!({ "ok": true }),
+            }),
+        ]);
+        let out = drive_agent_stream(
+            s,
+            std::future::pending::<()>(),
+            None,
+            &mut TurnGuardrail::new(0.0),
+        )
+        .await
+        .unwrap();
+        match out {
+            AgentStreamEnd::Complete(v) => assert_eq!(v["ok"], serde_json::json!(true)),
+            _ => panic!("expected Complete"),
+        }
+    }
+
+    #[tokio::test]
+    async fn drive_stream_ctrl_c_interrupts_running_turn() {
+        // Stream never completes; Ctrl-C fires immediately. Must return
+        // promptly with Interrupted instead of hanging on the dead turn.
+        let s = futures_util::stream::pending::<Result<RunEvent>>();
+        let out = drive_agent_stream(
+            s,
+            std::future::ready(()),
+            None,
+            &mut TurnGuardrail::new(0.0),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(out, AgentStreamEnd::Interrupted));
+    }
+
+    #[tokio::test]
+    async fn drive_stream_closed_before_complete() {
+        // Server hangs up after one step without ever sending `complete`.
+        let s = futures_util::stream::iter(vec![ev("step")]);
+        let out = drive_agent_stream(
+            s,
+            std::future::pending::<()>(),
+            None,
+            &mut TurnGuardrail::new(0.0),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(out, AgentStreamEnd::Closed));
+    }
+
+    #[test]
+    fn guardrail_warns_once_per_threshold() {
+        let mut g = TurnGuardrail::new(0.10);
+        assert!(g.observe(0.05, 1).is_none()); // below first threshold
+        assert!(g.observe(0.10, 2).is_some()); // crosses $0.10
+        assert!(g.observe(0.12, 3).is_none()); // still inside same bucket
+        assert!(g.observe(0.20, 4).is_some()); // crosses $0.20
+    }
+
+    #[test]
+    fn guardrail_big_jump_warns_once() {
+        // A single step that leaps past several increments must warn once,
+        // not once per skipped increment.
+        let mut g = TurnGuardrail::new(0.10);
+        assert!(g.observe(0.95, 1).is_some());
+        assert!(g.observe(0.99, 2).is_none()); // next threshold is now $1.00
+        assert!(g.observe(1.00, 3).is_some());
+    }
+
+    #[test]
+    fn guardrail_disabled_never_warns() {
+        let mut g = TurnGuardrail::new(0.0);
+        assert!(g.observe(5.0, 100).is_none());
+        assert!(g.observe(100.0, 9999).is_none());
     }
 
     #[test]

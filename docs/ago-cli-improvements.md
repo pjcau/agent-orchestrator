@@ -389,6 +389,99 @@ Config: `compaction_target_ratio` (0.6), `compaction_min_keep_tail` (4) on
 
 ---
 
+### Measuring context strategies — `evals/context_benchmark.py`
+
+> **Why a benchmark, and why not in the CLI.** Compaction lives in the
+> **server-side** agent loop; the Rust CLI only streams events and cannot trim a
+> context it never sees. So "how correct and fast is this context approach?" is
+> answered at the core level, by running the *same* scripted long run through
+> `core.Agent.execute` under several `AgentConfig` compaction settings and
+> comparing the numbers.
+
+Deterministic and free: a scripted provider issues a fixed number of tool calls
+(each growing the working context) and reports, as its input-token usage, the
+actual size of the message list it was handed — so the recorded tokens/cost are
+exactly what compaction does or does not trim, with no LLM spend and no
+flakiness. Token/step/cost are identical run to run; only wall time varies.
+
+```bash
+python -m evals.context_benchmark                 # default 40 rounds, table
+python -m evals.context_benchmark --rounds 40 --json
+```
+
+Representative output (40 rounds) — note `no-compaction` reproduces the
+~1.6 M-input-token turn seen in the live trace, and every strategy still
+completes (`ok`), i.e. compaction does not break correctness:
+
+```
+strategy             steps   peak_in     total_in  Δtotal     cost$  wall_ms  ok
+--------------------------------------------------------------------------------
+no-compaction           41    80,251    1,645,179     +0%    1.6458      2.2  OK
+compact-60k             41    58,182    1,204,238    -27%    1.2049      2.4  OK
+compact-30k             41    28,128      775,483    -53%    0.7761      2.1  OK
+compact-15k             41    14,084      418,642    -75%    0.4193      1.7  OK
+compact-15k-tight       41    14,084      346,419    -79%    0.3470      1.5  OK
+```
+
+**Real mode (`--real`) — does cheaper stay correct?** Deterministic mode proves
+a strategy is *cheap* but not that it stays *correct* (the scripted provider
+never reads the tool output). `--real` closes that gap with a live provider
+driving the loop and an `LLMJudge` scoring each run, over a needle-in-a-haystack
+scenario: one code is planted in the **first** file (compaction keeps the head,
+so it should survive) and another in a **middle** file (which aggressive
+compaction may drop). A strategy that over-compacts gets cheaper but starts
+losing the late needle — the trade-off, measured. Live runs are
+non-deterministic, so each strategy runs `--trials` times and figures are means:
+
+```bash
+export OPENROUTER_API_KEY=...   # required for --provider openrouter
+python -m evals.context_benchmark --real --rounds 12 --trials 3 \
+    --model deepseek/deepseek-v4-flash
+# columns: steps · tokens · cost$ · wall_ms · correct (judge score) · pass · done
+```
+
+Tests: `tests/test_context_benchmark.py` (deterministic-mode metrics + real-mode
+plumbing exercised with a mock provider and a stub judge — no live calls).
+
+**Sweep mode (`--sweep`) — cost AND correctness, deterministically.** Real mode
+needs paid LLM calls to score correctness; the sweep gets a correctness signal
+for free by measuring *information retention*. It plants a fact in the first
+tool result ("early") and another mid-run ("mid"), runs short/medium/long
+scenarios under each strategy, and inspects the **final working context** to see
+which facts survived compaction:
+
+```bash
+python -m evals.context_benchmark --sweep        # free; columns include early / mid
+```
+
+#### Finding — `compaction_keep_head` default raised 2 → 4 ✅ DONE
+
+The first sweep exposed a latent fault: the moment compaction fired, **both**
+planted facts were dropped, including the *early* one. Cause — the working
+context is `[user task, assistant tool_call, tool result, …]`, so `keep_head=2`
+preserved only the task and the first *tool_call* and discarded the first
+*result*. Early evidence vanished **at no cost saving**:
+
+```
+[long] 50 rounds — BEFORE (keep_head=2)        AFTER (keep_head=4)
+compact-15k   total -79%   early NO  mid NO  →  total -79%   early YES  mid NO
+```
+
+Fix: `AgentConfig.compaction_keep_head` default is now **4**, so the first tool
+result survives. Same token cost, early facts retained; the *mid* fact is still
+dropped — that span is exactly what compaction is meant to elide. With the new
+default, every compacting strategy keeps `early` while cutting total context
+34–81% on the long scenario. Tests: `test_default_keep_head_retains_early_fact*`
+and the `keep_head=2` regression in `tests/test_context_benchmark.py`.
+
+**Recommended settings.** Keep `compaction_token_threshold=60000` as the default
+(normal runs never compact, so they lose nothing); the `keep_head=4` fix makes
+the rare long run that *does* compact retain its setup/early context. Projects
+that want maximum savings on long runs can lower the threshold (15–30k) — the
+sweep shows that still keeps `early` facts, trading only mid-run detail.
+
+---
+
 ### P1 — Tool outputs are not capped before re-entering context — ✅ DONE
 
 > **Status: implemented.** `core/agent.py` now folds each tool result into

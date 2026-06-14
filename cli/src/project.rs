@@ -50,6 +50,15 @@ pub struct ProjectPreset {
     /// toolchain. Consumed by the `ago` wrapper; precedence is
     /// `AGO_JAIL_IMAGE` env > this key > the built-in default.
     pub jail_image: Option<String>,
+    /// Opt-in: bind-mount the host Docker socket into the jail so `shell_exec`
+    /// can drive the host daemon (`docker compose up`, …), and mount the project
+    /// at its real host path so Compose volume paths resolve. Consumed by the
+    /// `ago` wrapper (`AGO_JAIL_DOCKER` env > this key); the binary only needs to
+    /// *recognize* the key so strict parsing does not reject `.ago.yaml`.
+    ///
+    /// DANGER: handing the Docker socket to the sandbox is root-equivalent on the
+    /// host and punctures the jail's file isolation. Defaults to `false`.
+    pub jail_docker: Option<bool>,
 }
 
 /// Project-scoped shell policy layered on top of the global allowlist cache.
@@ -106,6 +115,13 @@ impl ProjectPreset {
     /// from `.ago.yaml`; set `jail: false` to opt out.
     pub fn jail_enabled(&self) -> bool {
         self.jail.unwrap_or(true)
+    }
+
+    /// Whether the host Docker socket should be passed through into the jail.
+    /// Defaults to `false` (off) when `jail_docker:` is omitted. Consumed by the
+    /// `ago` wrapper; exposed here so callers/tests can read the parsed value.
+    pub fn jail_docker_enabled(&self) -> bool {
+        self.jail_docker.unwrap_or(false)
     }
 
     /// Walk up from `start_dir` looking for the project file. Stops at
@@ -346,6 +362,27 @@ mod tests {
             preset.jail_image.as_deref(),
             Some("ghcr.io/acme/ago-jail:latest")
         );
+    }
+
+    #[test]
+    fn jail_docker_omitted_is_off() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".ago.yaml"), "agent: a\n");
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert_eq!(preset.jail_docker, None);
+        assert!(!preset.jail_docker_enabled());
+    }
+
+    #[test]
+    fn jail_docker_true_parses() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join(".ago.yaml"),
+            "jail: true\njail_docker: true\n",
+        );
+        let (_, preset) = ProjectPreset::discover(dir.path(), None).unwrap().unwrap();
+        assert_eq!(preset.jail_docker, Some(true));
+        assert!(preset.jail_docker_enabled());
     }
 
     #[test]

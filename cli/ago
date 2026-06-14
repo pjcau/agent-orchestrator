@@ -70,6 +70,24 @@ read_jail_image_from_yaml() {
   done
 }
 
+# Read `jail_docker:` (true/false) from the nearest .ago.yaml. Opt-in passthrough
+# of the host Docker socket into the jail. OFF unless explicitly set — see the
+# DANGER note at the mount site below.
+read_jail_docker_from_yaml() {
+  local dir="$PWD"
+  while :; do
+    for f in "$dir/.ago.yaml" "$dir/.ago.yml"; do
+      if [ -f "$f" ]; then
+        grep -E '^[[:space:]]*jail_docker[[:space:]]*:' "$f" | head -1 \
+          | sed -E 's/.*:[[:space:]]*//; s/#.*//; s/[[:space:]]//g'
+        return
+      fi
+    done
+    [ "$dir" = "/" ] && return
+    dir="$(dirname "$dir")"
+  done
+}
+
 jail="${AGO_JAIL:-}"
 [ -z "$jail" ] && jail="$(read_jail_from_yaml)"
 [ -z "$jail" ] && jail="$(read_jail_from_launcher)"
@@ -93,6 +111,51 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ago"
 IMAGE="${AGO_JAIL_IMAGE:-}"
 [ -z "$IMAGE" ] && IMAGE="$(read_jail_image_from_yaml)"
 IMAGE="${IMAGE:-ubuntu:24.04}"
+
+# ── Opt-in Docker passthrough (jail_docker / AGO_JAIL_DOCKER) ──────────────────
+# DANGER: bind-mounting the host Docker socket lets anything in this container
+# create privileged containers / mount the host filesystem — it is effectively
+# host root and PUNCTURES the jail's isolation. OFF by default; enable per project
+# only when you accept that, e.g. to let the agent run `docker compose up`.
+#
+# Two things are needed for `docker compose up` to actually work from inside:
+#   1. the socket itself, with the container user added to the socket's group;
+#   2. the project mounted at its REAL host path (not /work) — otherwise Compose
+#      sends container-side paths (/work/…) to the HOST daemon, which bind-mounts
+#      nonexistent host dirs and the app comes up with empty volumes.
+jail_docker="${AGO_JAIL_DOCKER:-}"
+[ -z "$jail_docker" ] && jail_docker="$(read_jail_docker_from_yaml)"
+jail_docker="${jail_docker:-false}"
+
+PROJECT_MOUNT=(-v "$PROJECT":/work:rw)
+WORKDIR=/work
+DOCKER_MOUNT=()
+if [ "$jail_docker" = "true" ]; then
+  # Resolve the socket: explicit override > DOCKER_HOST unix path > active docker
+  # context > common OrbStack/system paths.
+  sock="${AGO_JAIL_DOCKER_SOCK:-}"
+  case "${DOCKER_HOST:-}" in unix://*) [ -z "$sock" ] && sock="${DOCKER_HOST#unix://}" ;; esac
+  if [ -z "$sock" ]; then
+    ctx="$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)"
+    case "$ctx" in unix://*) sock="${ctx#unix://}" ;; esac
+  fi
+  for cand in "$sock" "$HOME/.orbstack/run/docker.sock" /var/run/docker.sock; do
+    [ -n "$cand" ] && [ -S "$cand" ] && { sock="$cand"; break; }
+  done
+  if [ ! -S "${sock:-}" ]; then
+    echo "ago: jail_docker is enabled but no Docker socket was found." >&2
+    echo "     Set AGO_JAIL_DOCKER_SOCK=/path/to/docker.sock and retry." >&2
+    exit 1
+  fi
+  sock_gid="$(stat -c '%g' "$sock")"
+  DOCKER_MOUNT=(-v "$sock":/var/run/docker.sock:rw --group-add "$sock_gid")
+  # Mount the project at its real host path so Compose volume paths resolve on the
+  # host daemon, and run there. This re-exposes the host path the plain jail hides
+  # — acceptable only because the socket already removed that boundary.
+  PROJECT_MOUNT=(-v "$PROJECT":"$PROJECT":rw)
+  WORKDIR="$PROJECT"
+  echo "ago: ⚠ jail_docker ON — host Docker socket ($sock) mounted; jail isolation is punctured." >&2
+fi
 
 mkdir -p "$CACHE_DIR"
 
@@ -156,11 +219,12 @@ exec docker run --rm "${TTY_FLAGS[@]}" \
   -e AGO_IN_JAIL=1 \
   -e AGO_TOKEN \
   -e AGO_INSECURE="${AGO_INSECURE:-}" \
-  -v "$PROJECT":/work:rw \
+  "${PROJECT_MOUNT[@]}" \
+  ${DOCKER_MOUNT[@]+"${DOCKER_MOUNT[@]}"} \
   -v "$REAL_BIN":/usr/local/bin/ago:ro \
   -v "$CONFIG_DIR":/home/u/.config/ago:rw \
   -v "$CACHE_DIR":/home/u/.cache/ago:rw \
   ${LOG_MOUNT[@]+"${LOG_MOUNT[@]}"} \
-  -w /work \
+  -w "$WORKDIR" \
   "$IMAGE" \
   ago "$@"
