@@ -506,6 +506,170 @@ def format_real_table(rows: list[RealResult]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Sweep mode — deterministic cost AND correctness across scenarios.
+#
+# Real mode needs a paid LLM to score correctness. The sweep gets a correctness
+# signal for free by measuring *information retention*: a fact is planted in the
+# first tool result (an "early" fact) and another mid-run (a "mid" fact); after
+# the run we inspect the final working context to see which survived compaction.
+# A strategy that over-compacts shows up as a dropped fact — cost and
+# correctness, both deterministic, across short/medium/long runs.
+# ---------------------------------------------------------------------------
+
+SIM_EARLY = "EARLY-FACT-7Q2"
+SIM_MID = "MID-FACT-5K8"
+
+# (scenario name, rounds, read_chars)
+DEFAULT_SCENARIOS: list[tuple[str, int, int]] = [
+    ("short", 10, 6_000),
+    ("medium", 25, 12_000),
+    ("long", 50, 12_000),
+]
+
+
+class _NeedleReadSkill(Skill):
+    """Like ``_GrowingReadSkill`` but plants a retrievable fact at the **start**
+    of the first result (survives the per-result cap's kept head) and another in
+    the middle round — so the final context reveals what compaction kept."""
+
+    def __init__(self, chars: int, rounds: int) -> None:
+        self._chars = chars
+        self._mid = max(2, rounds // 2)
+        self._calls = 0
+
+    @property
+    def name(self) -> str:
+        return "file_read"
+
+    @property
+    def description(self) -> str:
+        return "Read a file."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"path": {"type": "string"}}}
+
+    async def execute(self, params: dict) -> SkillResult:
+        self._calls += 1
+        body = "D" * self._chars
+        if self._calls == 1:
+            body = f"{SIM_EARLY}\n{body}"
+        elif self._calls == self._mid:
+            body = f"{SIM_MID}\n{body}"
+        return SkillResult(success=True, output=body)
+
+
+@dataclass
+class SimResult:
+    """Cost + information-retention for one strategy on one scenario."""
+
+    strategy: str
+    scenario: str
+    rounds: int
+    total_tokens: int
+    peak_tokens: int
+    cost_usd: float
+    early_retained: bool
+    mid_retained: bool
+
+
+async def run_sim_one(
+    name: str,
+    overrides: dict[str, Any],
+    *,
+    scenario: str,
+    rounds: int,
+    read_chars: int,
+) -> SimResult:
+    """Run the scripted scenario with planted facts and report cost + which
+    facts survived in the final context."""
+    provider = _ScriptedProvider(rounds=rounds)
+    registry = SkillRegistry()
+    registry.register(_NeedleReadSkill(read_chars, rounds))
+    config = AgentConfig(
+        name="sim",
+        role="You are a benchmark agent. Keep reading files until told to stop.",
+        provider_key="scripted",
+        tools=["file_read"],
+        max_steps=rounds + 5,
+        **overrides,
+    )
+    agent = Agent(config, provider, registry)
+    await agent.execute(Task(description="Read the files."))
+
+    # The loop compacts ``agent._messages`` in place, so the final list is the
+    # context the model would still have at the end of the turn.
+    final_ctx = "\n".join(m.content or "" for m in agent._messages)
+    sent = provider.sent or [0]
+    return SimResult(
+        strategy=name,
+        scenario=scenario,
+        rounds=rounds,
+        total_tokens=sum(sent),
+        peak_tokens=max(sent),
+        cost_usd=agent_total_cost(sent),
+        early_retained=SIM_EARLY in final_ctx,
+        mid_retained=SIM_MID in final_ctx,
+    )
+
+
+def agent_total_cost(sent: list[int]) -> float:
+    """Cost of a run from its per-call input sizes, at the scripted pricing
+    (output is a flat 5 tokens/call, as the scripted provider emits)."""
+    return sum(s * _INPUT_USD_PER_M / 1_000_000 + 5 * _OUTPUT_USD_PER_M / 1_000_000 for s in sent)
+
+
+async def run_sweep(
+    *,
+    scenarios: list[tuple[str, int, int]] | None = None,
+    strategies: list[tuple[str, dict[str, Any]]] | None = None,
+) -> list[SimResult]:
+    scenarios = scenarios or DEFAULT_SCENARIOS
+    strategies = strategies or DEFAULT_STRATEGIES
+    rows: list[SimResult] = []
+    for scenario, rounds, read_chars in scenarios:
+        for name, overrides in strategies:
+            rows.append(
+                await run_sim_one(
+                    name,
+                    overrides,
+                    scenario=scenario,
+                    rounds=rounds,
+                    read_chars=read_chars,
+                )
+            )
+    return rows
+
+
+def format_sim_table(rows: list[SimResult]) -> str:
+    """Render the sweep grouped by scenario, with Δcost vs that scenario's
+    no-compaction baseline and which planted facts survived."""
+    by_scenario: dict[str, list[SimResult]] = {}
+    for r in rows:
+        by_scenario.setdefault(r.scenario, []).append(r)
+
+    header = (
+        f"{'strategy':<20} {'peak_tok':>9} {'total_tok':>11} {'cost$':>9} "
+        f"{'Δcost':>7} {'early':>6} {'mid':>5}"
+    )
+    out: list[str] = []
+    for scenario, group in by_scenario.items():
+        base = group[0].cost_usd  # no-compaction is first in DEFAULT_STRATEGIES
+        out.append(f"\n[{scenario}] {group[0].rounds} rounds")
+        out.append(header)
+        out.append("-" * len(header))
+        for r in group:
+            delta = f"{100.0 * (r.cost_usd - base) / base:+.0f}%" if base else ""
+            out.append(
+                f"{r.strategy:<20} {r.peak_tokens:>9,} {r.total_tokens:>11,} "
+                f"{r.cost_usd:>9.4f} {delta:>7} "
+                f"{('yes' if r.early_retained else 'NO'):>6} "
+                f"{('yes' if r.mid_retained else 'NO'):>5}"
+            )
+    return "\n".join(out)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark context-compaction strategies on the real agent loop."
@@ -526,6 +690,12 @@ def main(argv: list[str] | None = None) -> int:
         help="repeat each strategy; only wall time is averaged (the rest is deterministic)",
     )
     parser.add_argument("--json", action="store_true", help="emit JSON instead of a table")
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="deterministic cost + information-retention across short/medium/long "
+        "scenarios (free; measures which planted facts survive each strategy)",
+    )
     parser.add_argument(
         "--real",
         action="store_true",
@@ -553,6 +723,20 @@ def main(argv: list[str] | None = None) -> int:
     # by compaction — healthy hygiene, but it drowns the table. Quiet it so the
     # benchmark output stays readable (callers of run_benchmark are unaffected).
     logging.getLogger("agent_orchestrator").setLevel(logging.ERROR)
+
+    if args.sweep:
+        sim_rows = asyncio.run(run_sweep())
+        if args.json:
+            print(json.dumps([asdict(r) for r in sim_rows], indent=2))
+        else:
+            print(format_sim_table(sim_rows))
+            print(
+                "\nDeterministic. 'early'/'mid' = whether the fact planted at the "
+                "first / middle read survived compaction in the final context. "
+                "The best strategy is the cheapest one that still keeps the facts "
+                "your task needs."
+            )
+        return 0
 
     if args.real:
         try:

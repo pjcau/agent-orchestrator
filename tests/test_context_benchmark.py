@@ -31,10 +31,13 @@ from evals.context_benchmark import (
     RealResult,
     build_live_provider,
     format_real_table,
+    format_sim_table,
     format_table,
     run_benchmark,
     run_one,
     run_real_one,
+    run_sim_one,
+    run_sweep,
 )
 
 
@@ -187,3 +190,58 @@ def test_build_live_provider_requires_key(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(RuntimeError):
         build_live_provider("openrouter", "vendor/model")
+
+
+# --- sweep / information-retention (the basis for the recommended default) ---
+
+
+async def test_default_keep_head_retains_early_fact_under_compaction():
+    """With the (new) default keep_head, the fact planted in the FIRST tool
+    result survives even when compaction fires — the keep_head=4 fix."""
+    r = await run_sim_one(
+        "default",
+        {"compaction_token_threshold": 8_000},  # low → forces compaction
+        scenario="x",
+        rounds=25,
+        read_chars=12_000,
+    )
+    assert r.early_retained
+    assert r.peak_tokens < 40_000  # sanity: compaction actually fired
+
+
+async def test_keep_head_2_drops_early_fact_regression():
+    """The old default (keep_head=2) dropped the first tool result on the first
+    compaction — the regression this change fixes."""
+    r = await run_sim_one(
+        "head2",
+        {"compaction_token_threshold": 8_000, "compaction_keep_head": 2},
+        scenario="x",
+        rounds=25,
+        read_chars=12_000,
+    )
+    assert not r.early_retained
+
+
+async def test_no_compaction_retains_every_fact():
+    r = await run_sim_one(
+        "none",
+        {"compaction_token_threshold": 0},
+        scenario="x",
+        rounds=25,
+        read_chars=12_000,
+    )
+    assert r.early_retained and r.mid_retained
+
+
+async def test_run_sweep_grid_and_table():
+    rows = await run_sweep(
+        scenarios=[("s", 8, 6_000)],
+        strategies=[
+            ("none", {"compaction_token_threshold": 0}),
+            ("agg", {"compaction_token_threshold": 4_000}),
+        ],
+    )
+    assert len(rows) == 2
+    assert rows[0].early_retained and rows[0].mid_retained  # no-compaction keeps all
+    table = format_sim_table(rows)
+    assert "early" in table and "[s]" in table

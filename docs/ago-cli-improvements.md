@@ -443,6 +443,43 @@ python -m evals.context_benchmark --real --rounds 12 --trials 3 \
 Tests: `tests/test_context_benchmark.py` (deterministic-mode metrics + real-mode
 plumbing exercised with a mock provider and a stub judge — no live calls).
 
+**Sweep mode (`--sweep`) — cost AND correctness, deterministically.** Real mode
+needs paid LLM calls to score correctness; the sweep gets a correctness signal
+for free by measuring *information retention*. It plants a fact in the first
+tool result ("early") and another mid-run ("mid"), runs short/medium/long
+scenarios under each strategy, and inspects the **final working context** to see
+which facts survived compaction:
+
+```bash
+python -m evals.context_benchmark --sweep        # free; columns include early / mid
+```
+
+#### Finding — `compaction_keep_head` default raised 2 → 4 ✅ DONE
+
+The first sweep exposed a latent fault: the moment compaction fired, **both**
+planted facts were dropped, including the *early* one. Cause — the working
+context is `[user task, assistant tool_call, tool result, …]`, so `keep_head=2`
+preserved only the task and the first *tool_call* and discarded the first
+*result*. Early evidence vanished **at no cost saving**:
+
+```
+[long] 50 rounds — BEFORE (keep_head=2)        AFTER (keep_head=4)
+compact-15k   total -79%   early NO  mid NO  →  total -79%   early YES  mid NO
+```
+
+Fix: `AgentConfig.compaction_keep_head` default is now **4**, so the first tool
+result survives. Same token cost, early facts retained; the *mid* fact is still
+dropped — that span is exactly what compaction is meant to elide. With the new
+default, every compacting strategy keeps `early` while cutting total context
+34–81% on the long scenario. Tests: `test_default_keep_head_retains_early_fact*`
+and the `keep_head=2` regression in `tests/test_context_benchmark.py`.
+
+**Recommended settings.** Keep `compaction_token_threshold=60000` as the default
+(normal runs never compact, so they lose nothing); the `keep_head=4` fix makes
+the rare long run that *does* compact retain its setup/early context. Projects
+that want maximum savings on long runs can lower the threshold (15–30k) — the
+sweep shows that still keeps `early` facts, trading only mid-run detail.
+
 ---
 
 ### P1 — Tool outputs are not capped before re-entering context — ✅ DONE
