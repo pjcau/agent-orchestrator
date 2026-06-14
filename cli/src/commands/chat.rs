@@ -488,6 +488,9 @@ struct ChatSettings {
     shell_allow: Vec<String>,
     shell_deny: Vec<String>,
     shell_allow_all: bool,
+    /// Resolved client-side thrash-guard config (default < `.ago.yaml` `guard:`
+    /// < env). Only consumed by the `--client-tools` (`run_repl`) path.
+    guard: crate::agent_host::thrash_guard::GuardConfig,
 }
 
 impl ChatSettings {
@@ -519,6 +522,9 @@ impl ChatSettings {
             .and_then(|p| p.shell.as_ref())
             .map(|s| (s.allow.clone(), s.deny.clone(), s.allow_all))
             .unwrap_or_default();
+        let guard = crate::agent_host::thrash_guard::GuardConfig::resolve(
+            preset.and_then(|p| p.guard.as_ref()),
+        );
         Ok(Self {
             mode: args.mode,
             agent,
@@ -529,6 +535,7 @@ impl ChatSettings {
             shell_allow,
             shell_deny,
             shell_allow_all,
+            guard,
         })
     }
 }
@@ -1223,6 +1230,7 @@ async fn run_native_agent_host(
         &settings.shell_allow,
         &settings.shell_deny,
         settings.shell_allow_all,
+        settings.guard.clone(),
         instructions,
     )
     .await
@@ -1249,6 +1257,7 @@ mod tests {
             shell_allow: Vec::new(),
             shell_deny: Vec::new(),
             shell_allow_all: false,
+            guard: crate::agent_host::thrash_guard::GuardConfig::default(),
         }
     }
 

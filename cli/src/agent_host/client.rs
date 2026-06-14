@@ -237,6 +237,8 @@ pub async fn run_repl(
     shell_allow: &[String],
     shell_deny: &[String],
     shell_allow_all: bool,
+    // Resolved client-side thrash-guard config (default < .ago.yaml < env).
+    guard_config: GuardConfig,
     // Project instructions (AGO.md). The agent-host Prompt frame carries only
     // text, so we fold these into the FIRST prompt of the session — the server
     // keeps them in the conversation for the rest of the run.
@@ -254,8 +256,7 @@ pub async fn run_repl(
     // Client-side thrash guard at the tool-execution boundary (loop guard,
     // consecutive-failure breaker, hard step/cost caps). Shared across the
     // concurrently-spawned tool tasks and the step-frame handler.
-    let guard: Arc<Mutex<TurnGuard>> =
-        Arc::new(Mutex::new(TurnGuard::new(GuardConfig::from_env())));
+    let guard: Arc<Mutex<TurnGuard>> = Arc::new(Mutex::new(TurnGuard::new(guard_config)));
 
     // Split the WS into sink + stream so the receive loop can keep
     // reading while we send prompts and tool_results from another task.

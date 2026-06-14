@@ -51,6 +51,9 @@ pub struct GuardConfig {
     pub fail_warn: u32,
     /// Consecutive failures that halt the turn (0 = off).
     pub fail_halt: u32,
+    /// Failures within the window (any command) that halt the turn — catches
+    /// scattered-failure thrash the exact-repeat loop guard misses (0 = off).
+    pub fail_density: u32,
     /// Step index that halts the turn (0 = off).
     pub max_steps: u64,
     /// Cumulative turn cost (USD) that halts the turn (0 = off).
@@ -65,6 +68,7 @@ impl Default for GuardConfig {
             loop_window: 10,
             fail_warn: 8,
             fail_halt: 0,
+            fail_density: 0,
             max_steps: 0,
             max_usd: 0.0,
         }
@@ -72,18 +76,46 @@ impl Default for GuardConfig {
 }
 
 impl GuardConfig {
-    /// Read overrides from the environment, falling back to [`Default`].
-    pub fn from_env() -> Self {
+    /// Resolve the effective config. Precedence per field, lowest to highest:
+    /// built-in [`Default`] < `.ago.yaml` `guard:` block < environment variable.
+    /// Env wins, matching the CLI's `flag > .ago.yaml > config` convention.
+    pub fn resolve(project: Option<&crate::project::GuardSettings>) -> Self {
         let d = Self::default();
+        let g = project;
         Self {
-            loop_guard: env_bool("AGO_LOOP_GUARD", d.loop_guard),
-            loop_threshold: env_u32("AGO_LOOP_THRESHOLD", d.loop_threshold).max(1),
-            loop_window: env_u32("AGO_LOOP_WINDOW", d.loop_window as u32).max(1) as usize,
-            fail_warn: env_u32("AGO_FAIL_WARN", d.fail_warn),
-            fail_halt: env_u32("AGO_FAIL_HALT", d.fail_halt),
-            max_steps: env_u64("AGO_TURN_MAX_STEPS", d.max_steps),
-            max_usd: env_f64("AGO_TURN_MAX_USD", d.max_usd),
+            loop_guard: env_bool_opt("AGO_LOOP_GUARD")
+                .or(g.and_then(|g| g.loop_guard))
+                .unwrap_or(d.loop_guard),
+            loop_threshold: env_u32_opt("AGO_LOOP_THRESHOLD")
+                .or(g.and_then(|g| g.loop_threshold))
+                .unwrap_or(d.loop_threshold)
+                .max(1),
+            loop_window: env_u32_opt("AGO_LOOP_WINDOW")
+                .or(g.and_then(|g| g.loop_window))
+                .unwrap_or(d.loop_window as u32)
+                .max(1) as usize,
+            fail_warn: env_u32_opt("AGO_FAIL_WARN")
+                .or(g.and_then(|g| g.fail_warn))
+                .unwrap_or(d.fail_warn),
+            fail_halt: env_u32_opt("AGO_FAIL_HALT")
+                .or(g.and_then(|g| g.fail_halt))
+                .unwrap_or(d.fail_halt),
+            fail_density: env_u32_opt("AGO_FAIL_DENSITY")
+                .or(g.and_then(|g| g.fail_density))
+                .unwrap_or(d.fail_density),
+            max_steps: env_u64_opt("AGO_TURN_MAX_STEPS")
+                .or(g.and_then(|g| g.max_steps))
+                .unwrap_or(d.max_steps),
+            max_usd: env_f64_opt("AGO_TURN_MAX_USD")
+                .or(g.and_then(|g| g.max_usd))
+                .filter(|v| v.is_finite() && *v >= 0.0)
+                .unwrap_or(d.max_usd),
         }
+    }
+
+    /// Env-only resolution (no `.ago.yaml` block).
+    pub fn from_env() -> Self {
+        Self::resolve(None)
     }
 }
 
@@ -172,6 +204,19 @@ impl TurnGuard {
             self.recent.pop_front();
         }
 
+        // Failure-density halt (any command): catches scattered-failure thrash —
+        // many *different* failing commands — that the exact-repeat loop guard
+        // misses. Evaluated over the same recent window on every result.
+        if self.cfg.fail_density > 0 && self.halted.is_none() {
+            let fails = self.recent.iter().filter(|(_, e)| *e).count() as u32;
+            if fails >= self.cfg.fail_density {
+                let win = self.recent.len();
+                return Some(self.halt(format!(
+                    "high failure density — {fails} of the last {win} tool calls failed"
+                )));
+            }
+        }
+
         if is_error {
             self.consec_fail += 1;
         } else {
@@ -244,36 +289,34 @@ impl TurnGuard {
     }
 }
 
-fn env_bool(key: &str, default: bool) -> bool {
-    match std::env::var(key) {
-        Ok(v) => !matches!(
+/// `Some` only when the env var is set and parses; otherwise `None` so the
+/// caller falls through to the next precedence layer. A set-but-garbage value
+/// is treated as unset.
+fn env_bool_opt(key: &str) -> Option<bool> {
+    std::env::var(key).ok().map(|v| {
+        !matches!(
             v.trim().to_ascii_lowercase().as_str(),
             "0" | "false" | "no" | "off"
-        ),
-        Err(_) => default,
-    }
+        )
+    })
 }
 
-fn env_u32(key: &str, default: u32) -> u32 {
+fn env_u32_opt(key: &str) -> Option<u32> {
     std::env::var(key)
         .ok()
         .and_then(|v| v.trim().parse::<u32>().ok())
-        .unwrap_or(default)
 }
 
-fn env_u64(key: &str, default: u64) -> u64 {
+fn env_u64_opt(key: &str) -> Option<u64> {
     std::env::var(key)
         .ok()
         .and_then(|v| v.trim().parse::<u64>().ok())
-        .unwrap_or(default)
 }
 
-fn env_f64(key: &str, default: f64) -> f64 {
+fn env_f64_opt(key: &str) -> Option<f64> {
     std::env::var(key)
         .ok()
         .and_then(|v| v.trim().parse::<f64>().ok())
-        .filter(|v| v.is_finite() && *v >= 0.0)
-        .unwrap_or(default)
 }
 
 #[cfg(test)]
@@ -288,6 +331,7 @@ mod tests {
             loop_window: 10,
             fail_warn: 0,
             fail_halt: 0,
+            fail_density: 0,
             max_steps: 0,
             max_usd: 0.0,
         }
@@ -401,6 +445,51 @@ mod tests {
         assert!(g.on_step(5, 0.49).is_none());
         assert!(g.on_step(6, 0.51).is_some_and(|m| m.contains("cost cap")));
         assert!(g.is_halted());
+    }
+
+    #[test]
+    fn failure_density_halts_on_scattered_failures() {
+        // Many *different* failing commands (loop guard alone never blocks them)
+        // must still trip the density halt: 7 of the last 10 failed.
+        let mut c = cfg();
+        c.fail_density = 7;
+        let mut g = TurnGuard::new(c);
+        let mut tripped = false;
+        for i in 0..10 {
+            let args = json!({ "argv": [format!("cmd{i}")] }); // each call is unique
+            assert_eq!(g.before("shell_exec", &args), Decision::Allow);
+            // 7 failures interleaved with 3 successes.
+            let is_err = i < 7;
+            if let Some(m) = g.after("shell_exec", &args, is_err) {
+                assert!(m.contains("failure density"), "got: {m}");
+                tripped = true;
+                break;
+            }
+        }
+        assert!(tripped, "density halt should fire on 7/10 failures");
+        assert!(g.is_halted());
+    }
+
+    #[test]
+    fn resolve_precedence_default_yaml_env() {
+        use crate::project::GuardSettings;
+        // Default when neither yaml nor env set.
+        assert_eq!(GuardConfig::resolve(None).loop_threshold, 3);
+        // YAML overrides default.
+        let ys = GuardSettings {
+            loop_threshold: Some(5),
+            max_usd: Some(0.25),
+            ..Default::default()
+        };
+        let r = GuardConfig::resolve(Some(&ys));
+        assert_eq!(r.loop_threshold, 5);
+        assert_eq!(r.max_usd, 0.25);
+        // Env overrides YAML (serialised: env vars are process-global).
+        std::env::set_var("AGO_LOOP_THRESHOLD", "9");
+        let r = GuardConfig::resolve(Some(&ys));
+        std::env::remove_var("AGO_LOOP_THRESHOLD");
+        assert_eq!(r.loop_threshold, 9);
+        assert_eq!(r.max_usd, 0.25); // untouched by env
     }
 
     #[test]
