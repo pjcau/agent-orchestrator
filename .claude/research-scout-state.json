@@ -188,7 +188,14 @@
       "improvements": [],
       "outcome": "no-improvements",
       "reason": "LLM returned an empty array — nothing actionable for our codebase"
+    },
+    "https://github.com/colbymchenry/codegraph": {
+      "processed_at": "2026-06-16T03:14:31.703042+00:00",
+      "summary": "colbymchenry/codegraph",
+      "improvements": [],
+      "outcome": "no-improvements",
+      "reason": "LLM response JSON is malformed: Unterminated string starting at"
     }
   },
-  "last_run": "2026-06-15T03:15:04.051948+00:00"
+  "last_run": "2026-06-16T03:14:31.703093+00:00"
 }
