@@ -482,6 +482,35 @@ sweep shows that still keeps `early` facts, trading only mid-run detail.
 
 ---
 
+### Diagnosing a session — richer `--log-file` + `analyze_ago_session.py` — ✅ DONE
+
+> **Observed.** Watching a live `--log-file`, a stuck turn read as "35 file_read,
+> 24 shell_exec, 0 file_write" — you could see it was *spinning* but not *which*
+> files or commands, because the trace logged only the tool **name**.
+
+Two changes make a session diagnosable from the log alone:
+
+- **`args=` in the `tool_call` line** (`cli/src/agent_host/client.rs`,
+  `summarize_args`): `shell_exec` logs the command, `file_read`/`file_write` log
+  the path. A failing or looping command is now named in the trace, not just
+  counted. Test: `summarize_args_shows_command_path_and_keys`.
+- **`scripts/analyze_ago_session.py`** turns one or more logs into a per-turn
+  table (agents, steps/budget, tokens, cost, writes, errors, status) plus **red
+  flags** that map straight to fixes: `0 file_write` (spinning), step overshoot,
+  `shell_timeout` (watch-mode hang), the same command failing ≥3×, and cost
+  blow-ups — and a **most-failed-commands** roll-up across the session.
+
+```bash
+python scripts/analyze_ago_session.py ~/ago-session_10.log
+python scripts/analyze_ago_session.py ~/ago-session*.log --json
+```
+
+Run against the 2026-06-14 testAgo trace it summarised **26 turns / $1.36** and
+flagged exactly the known faults (96-vs-40 overshoot, 3× `shell_timeout`,
+35× repeated `shell_exec` failure). Tests: `tests/test_analyze_ago_session.py`.
+
+---
+
 ### P1 — Tool outputs are not capped before re-entering context — ✅ DONE
 
 > **Status: implemented.** `core/agent.py` now folds each tool result into
