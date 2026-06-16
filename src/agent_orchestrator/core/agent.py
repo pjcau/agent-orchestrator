@@ -54,6 +54,18 @@ class AgentConfig:
     # large file_read / shell_exec can otherwise dominate the prompt for the
     # rest of the run (see docs/ago-cli-improvements.md, P1). 0 disables.
     max_tool_result_chars: int = 8000
+    # Progressive context relief. A file_read / shell_exec result is usually only
+    # needed for the next few steps; once it is older than the most recent
+    # ``stale_tool_result_keep_recent`` TOOL messages the agent has already acted
+    # on it, yet its verbatim bytes keep being re-sent on every later step (the
+    # 962k-input / $0.34 test-fix turn on 2026-06-16 was cost-capped purely by
+    # this accumulation). Each step, the content of stale tool results larger
+    # than ``stale_tool_result_stub_over`` chars is replaced with a one-line stub
+    # that still names the call — so the context SHRINKS as material becomes
+    # irrelevant, instead of only being cut at the compaction threshold. The
+    # agent can re-read deliberately if it truly needs the detail. 0 disables.
+    stale_tool_result_keep_recent: int = 6
+    stale_tool_result_stub_over: int = 1200
     # Mid-run context compaction (docs/ago-cli-improvements.md, P0). When the
     # context the provider just billed exceeds this many input tokens, the
     # oldest middle messages are elided — keeping task setup + recent turns —
@@ -148,6 +160,57 @@ def cap_tool_result_content(text: str, limit: int) -> str:
     head = text[:head_len]
     tail = text[-tail_len:] if tail_len > 0 else ""
     return f"{head}{marker.format(n=dropped)}{tail}"
+
+
+def shrink_stale_tool_results(
+    messages: list[Message],
+    *,
+    keep_recent: int,
+    stub_over: int,
+) -> tuple[list[Message], int]:
+    """Stub the content of TOOL results older than the most recent ``keep_recent``.
+
+    Within a run a tool result (a ``file_read`` body, a test/build log) is
+    usually only needed for the next handful of steps; after the agent has acted
+    on it the verbatim bytes are dead weight that every later LLM call re-sends,
+    so context — and cost — grow with run length. This replaces the *content* of
+    stale tool results larger than ``stub_over`` chars with a compact stub that
+    still names the call and its original size, **keeping the message and its
+    ``tool_call_id``** so provider tool-call pairing stays intact and the agent
+    can re-read deliberately if it genuinely needs the detail.
+
+    Unlike :func:`compact_messages` (a threshold-triggered head/tail elision),
+    this is meant to run every step so the context *shrinks as material ages
+    out* rather than only being cut once the threshold is crossed. The two
+    compose: this trims the bulk continuously, compaction handles the rest.
+
+    Returns ``(messages, shrunk_count)``. When nothing changes the original list
+    is returned unchanged; otherwise a new list of (mostly shared) messages is
+    returned and the inputs are never mutated.
+    """
+    if keep_recent < 0 or stub_over <= 0:
+        return messages, 0
+    tool_idxs = [i for i, m in enumerate(messages) if m.role == Role.TOOL]
+    if len(tool_idxs) <= keep_recent:
+        return messages, 0
+    stale = set(tool_idxs[: len(tool_idxs) - keep_recent])
+    from dataclasses import replace
+
+    out: list[Message] = []
+    shrunk = 0
+    for i, m in enumerate(messages):
+        content = m.content or ""
+        if i in stale and len(content) > stub_over:
+            first_line = content.splitlines()[0] if content else ""
+            preview = first_line[:80]
+            stub = f"[stale tool result elided — {len(content)} chars; began: {preview!r}]"
+            out.append(replace(m, content=stub))
+            shrunk += 1
+        else:
+            out.append(m)
+    if shrunk == 0:
+        return messages, 0
+    return out, shrunk
 
 
 def estimate_message_tokens(messages: list[Message]) -> int:

@@ -27,6 +27,7 @@ from ..core.agent import (
     cap_tool_result_content,
     compact_messages,
     estimate_message_tokens,
+    shrink_stale_tool_results,
 )
 from ..core.tool_recovery import recover_dangling_tool_calls
 from ..core.cache import InMemoryCache
@@ -447,6 +448,18 @@ async def _instrumented_execute(
                     "step_log": step_log,
                     "fallback_log": fallback_log,
                 },
+            )
+
+        # Progressive context relief BEFORE the threshold cut: stub the bulk of
+        # old tool-result bytes (file/test output) that the agent has already
+        # acted on, so the per-step context shrinks as material ages out instead
+        # of only being cut at the compaction threshold. This is what bounded a
+        # 962k-input test-fix turn that was cost-capped purely by accumulation.
+        if config.stale_tool_result_keep_recent >= 0 and config.stale_tool_result_stub_over > 0:
+            messages, _shrunk = shrink_stale_tool_results(
+                messages,
+                keep_recent=config.stale_tool_result_keep_recent,
+                stub_over=config.stale_tool_result_stub_over,
             )
 
         # Mid-run context compaction (mirrors core.Agent.execute, reusing the
