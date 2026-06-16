@@ -27,6 +27,31 @@ def _route_paths(app_or_router) -> set[str]:
     return {r.path for r in routes if hasattr(r, "path")}
 
 
+def _reload_dashboard_modules() -> None:
+    """Reload the dashboard router/app modules to a clean import state.
+
+    This file asserts full route coverage on the freshly composed app. Other
+    test modules import — and in a couple of cases ``importlib.reload`` —
+    dashboard submodules; under some interpreter/order combinations that leaves
+    a router registered on a stale module object, so the composed app looks
+    like it is missing every route. Reloading in dependency order guarantees we
+    build from a clean, self-consistent module graph regardless of what ran
+    before. Caught a CI-only failure on 2026-06-16 (suite passed locally on
+    Python 3.14 but `test_modular_split` failed on the CI 3.12 runner).
+    """
+    import importlib
+
+    from agent_orchestrator.dashboard import (
+        agent_runtime_router,
+        app,
+        gateway_api,
+        server,
+    )
+
+    for mod in (gateway_api, agent_runtime_router, server, app):
+        importlib.reload(mod)
+
+
 # ---------------------------------------------------------------------------
 # Independent import tests
 # ---------------------------------------------------------------------------
@@ -169,6 +194,7 @@ def test_runtime_router_does_not_contain_gateway_routes():
 
 @pytest.fixture
 def composed_app():
+    _reload_dashboard_modules()
     from agent_orchestrator.dashboard.app import create_dashboard_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -225,6 +251,7 @@ def test_composed_app_has_root_and_static(composed_app):
 
 @pytest.fixture
 def gateway_only_app():
+    _reload_dashboard_modules()
     from agent_orchestrator.dashboard.server import _create_gateway_only_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -259,6 +286,7 @@ def test_standalone_gateway_has_no_runtime_routes(gateway_only_app):
 
 @pytest.fixture
 def runtime_only_app():
+    _reload_dashboard_modules()
     from agent_orchestrator.dashboard.server import _create_runtime_only_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -348,6 +376,7 @@ def test_standalone_runtime_ws_connects(monkeypatch):
     # Remove ENVIRONMENT so dev mode is not blocked
     monkeypatch.delenv("ENVIRONMENT", raising=False)
 
+    _reload_dashboard_modules()
     bus = EventBus()
     # Re-create the app AFTER setting the env var so middleware picks it up
     app = _create_runtime_only_app(bus)
