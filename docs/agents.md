@@ -35,11 +35,29 @@ in `run_team` in `dashboard/agent_runner.py`). The plan prompt enforces:
   the user explicitly asked only for analysis.
 - **Fan out across layers** when a change spans them (API + UI → `backend` AND
   `frontend`); otherwise keep it to a single agent.
+- **Bug-fix / debug / "make it work" tasks → one owning agent, never a team.**
+  These need a tight edit→run→read-error→fix→re-run loop on a single shared
+  context. A parallel fan-out makes 3-4 agents re-read the same files, burns the
+  step budget on redundant exploration, and hits the step cap before any fix
+  converges (observed 2026-06-16: a `--client-tools` debug task fanned out to
+  backend+frontend+devops+code-reviewer and was halted at the 60-step cap with 0
+  fixes applied). Fan-out is reserved for genuinely multi-component feature work.
 
-Every sub-agent additionally carries an **outcome requirement** (the
-`_MINIMAL_CHANGES_STEER` suffix appended to its role): a fix / implement / build
-task that ends with analysis but no `file_write` is a failure — analysis-,
-review-, and audit-only tasks are exempt. Covered by `tests/test_prompt_rules.py`.
+Every sub-agent additionally carries an **outcome requirement** plus a
+**convergence loop** (the `_MINIMAL_CHANGES_STEER` suffix appended to its role):
+a fix / implement / build task that ends with analysis but no `file_write` is a
+failure (analysis-/review-/audit-only tasks are exempt); and a "make it work /
+pass / build / run" task must be driven to green in a loop — apply the smallest
+fix, **run the verification command and read its real error output**, fix the
+specific cause, and re-run until it exits cleanly, installing prerequisites
+first and never re-issuing the identical failing command or re-reading
+already-read files. Covered by `tests/test_prompt_rules.py`.
+
+> **Note on `--client-tools` convergence.** The server-side `RepairLoop`
+> (`core/repair_loop.py`, wired into `/api/team/run`) verifies the workspace
+> *on the server*; under `ago chat --client-tools` the files live on the
+> operator's machine, so convergence is driven by the agent's own
+> shell-delegated verify→fix loop (the steer above), not the server gate.
 
 ## Software Engineering (8 agents)
 

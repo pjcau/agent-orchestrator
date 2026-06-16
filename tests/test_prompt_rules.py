@@ -92,6 +92,33 @@ def test_minimal_changes_steer_requires_applying_the_change() -> None:
     assert "exempt" in steer
 
 
+def test_minimal_changes_steer_has_convergence_loop() -> None:
+    """Sub-agents must drive a make-it-work task to green in an edit→run→
+    read-error→fix→re-run loop instead of stopping at the first attempt.
+    Added 2026-06-16 after a --client-tools session thrashed: 4 agents fanned
+    out, re-read the same files, and the step cap halted them before any fix
+    converged."""
+    steer = agent_runner._MINIMAL_CHANGES_STEER.lower()
+    assert "convergence loop" in steer
+    # must RUN the verification command and read the real error output
+    assert "run the verification command" in steer
+    assert "error output" in steer
+    # must not spin on the identical failing command, and not re-read files
+    assert "same failing command" in steer
+    assert "re-read a file you already read" in steer
+
+
+def test_team_lead_plan_prompt_keeps_fixes_single_agent() -> None:
+    """Bug-fix / debug tasks must route to ONE owning agent, not a fan-out, so
+    the step budget goes to the fix→verify loop rather than redundant parallel
+    exploration that hits the step cap."""
+    src = inspect.getsource(agent_runner.run_team)
+    low = src.lower()
+    assert "one owning agent" in low
+    assert "step cap" in low
+    assert "redundant exploration" in low
+
+
 def test_team_lead_validation_has_wiring_check() -> None:
     """Validation must now check wiring + deps coherence + smoke-test evidence."""
     src = inspect.getsource(agent_runner.run_team)
