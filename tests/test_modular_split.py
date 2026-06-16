@@ -22,34 +22,31 @@ from fastapi.testclient import TestClient
 
 
 def _route_paths(app_or_router) -> set[str]:
-    """Return the set of path strings for all routes on an app or router."""
-    routes = getattr(app_or_router, "routes", [])
-    return {r.path for r in routes if hasattr(r, "path")}
+    """Return every route path reachable from an app or router.
 
-
-def _reload_dashboard_modules() -> None:
-    """Reload the dashboard router/app modules to a clean import state.
-
-    This file asserts full route coverage on the freshly composed app. Other
-    test modules import — and in a couple of cases ``importlib.reload`` —
-    dashboard submodules; under some interpreter/order combinations that leaves
-    a router registered on a stale module object, so the composed app looks
-    like it is missing every route. Reloading in dependency order guarantees we
-    build from a clean, self-consistent module graph regardless of what ran
-    before. Caught a CI-only failure on 2026-06-16 (suite passed locally on
-    Python 3.14 but `test_modular_split` failed on the CI 3.12 runner).
+    Recurses through mounts and Starlette 1.x ``_IncludedRouter`` wrappers.
+    In Starlette 1.0 ``app.include_router()`` no longer flattens the child
+    routes into ``app.routes``; instead each call appends a single
+    ``_IncludedRouter`` node (``path is None``) that exposes the real routes
+    via ``.original_router``. A shallow ``r.path`` scan therefore sees none of
+    them — which made the composed-app assertions below fail on CI (Starlette
+    1.3) while passing locally on the older 0.52. This walks both shapes so the
+    test is version-agnostic. (Caught 2026-06-16 when CI's fresh resolve pulled
+    starlette 1.3.1 vs 0.52.1 locally.)
     """
-    import importlib
-
-    from agent_orchestrator.dashboard import (
-        agent_runtime_router,
-        app,
-        gateway_api,
-        server,
-    )
-
-    for mod in (gateway_api, agent_runtime_router, server, app):
-        importlib.reload(mod)
+    paths: set[str] = set()
+    for route in getattr(app_or_router, "routes", []) or []:
+        path = getattr(route, "path", None)
+        if path:
+            paths.add(path)
+        # Starlette 1.x: include_router() wraps the child router here.
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            paths |= _route_paths(original)
+        # Mounts and nested routers (and Starlette 0.x include flattening).
+        if getattr(route, "routes", None):
+            paths |= _route_paths(route)
+    return paths
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +191,6 @@ def test_runtime_router_does_not_contain_gateway_routes():
 
 @pytest.fixture
 def composed_app():
-    _reload_dashboard_modules()
     from agent_orchestrator.dashboard.app import create_dashboard_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -207,14 +203,7 @@ def test_composed_app_has_all_gateway_routes(composed_app):
     from agent_orchestrator.dashboard.gateway_api import gateway_router
 
     gateway_paths = _route_paths(gateway_router)
-
-    # Collect all sub-router paths recursively from app
-    all_paths: set[str] = set()
-    for route in composed_app.routes:
-        all_paths.add(getattr(route, "path", ""))
-        # Mounted sub-routers
-        for sub in getattr(route, "routes", []):
-            all_paths.add(getattr(sub, "path", ""))
+    all_paths = _route_paths(composed_app)
 
     missing = gateway_paths - all_paths
     assert not missing, f"Composed app missing gateway routes: {sorted(missing)}"
@@ -225,12 +214,7 @@ def test_composed_app_has_all_runtime_routes(composed_app):
     from agent_orchestrator.dashboard.agent_runtime_router import runtime_router
 
     runtime_paths = _route_paths(runtime_router)
-
-    all_paths: set[str] = set()
-    for route in composed_app.routes:
-        all_paths.add(getattr(route, "path", ""))
-        for sub in getattr(route, "routes", []):
-            all_paths.add(getattr(sub, "path", ""))
+    all_paths = _route_paths(composed_app)
 
     missing = runtime_paths - all_paths
     assert not missing, f"Composed app missing runtime routes: {sorted(missing)}"
@@ -238,9 +222,7 @@ def test_composed_app_has_all_runtime_routes(composed_app):
 
 def test_composed_app_has_root_and_static(composed_app):
     """The composition root adds / and /static mount."""
-    all_paths: set[str] = set()
-    for route in composed_app.routes:
-        all_paths.add(getattr(route, "path", ""))
+    all_paths = _route_paths(composed_app)
     assert "/" in all_paths or "/static" in all_paths
 
 
@@ -251,7 +233,6 @@ def test_composed_app_has_root_and_static(composed_app):
 
 @pytest.fixture
 def gateway_only_app():
-    _reload_dashboard_modules()
     from agent_orchestrator.dashboard.server import _create_gateway_only_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -269,11 +250,7 @@ def test_standalone_gateway_health(gateway_only_app):
 
 def test_standalone_gateway_has_no_runtime_routes(gateway_only_app):
     """Standalone gateway app must not expose /api/agent/run or /ws."""
-    all_paths: set[str] = set()
-    for route in gateway_only_app.routes:
-        all_paths.add(getattr(route, "path", ""))
-        for sub in getattr(route, "routes", []):
-            all_paths.add(getattr(sub, "path", ""))
+    all_paths = _route_paths(gateway_only_app)
 
     assert "/api/agent/run" not in all_paths
     assert "/ws" not in all_paths
@@ -286,7 +263,6 @@ def test_standalone_gateway_has_no_runtime_routes(gateway_only_app):
 
 @pytest.fixture
 def runtime_only_app():
-    _reload_dashboard_modules()
     from agent_orchestrator.dashboard.server import _create_runtime_only_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -296,22 +272,14 @@ def runtime_only_app():
 
 def test_standalone_runtime_has_prompt_route(runtime_only_app):
     """Standalone runtime app exposes /api/prompt."""
-    all_paths: set[str] = set()
-    for route in runtime_only_app.routes:
-        all_paths.add(getattr(route, "path", ""))
-        for sub in getattr(route, "routes", []):
-            all_paths.add(getattr(sub, "path", ""))
+    all_paths = _route_paths(runtime_only_app)
 
     assert "/api/prompt" in all_paths
 
 
 def test_standalone_runtime_has_no_gateway_routes(runtime_only_app):
     """Standalone runtime app must not expose /api/models or /api/usage."""
-    all_paths: set[str] = set()
-    for route in runtime_only_app.routes:
-        all_paths.add(getattr(route, "path", ""))
-        for sub in getattr(route, "routes", []):
-            all_paths.add(getattr(sub, "path", ""))
+    all_paths = _route_paths(runtime_only_app)
 
     assert "/api/models" not in all_paths
     assert "/api/usage" not in all_paths
@@ -376,7 +344,6 @@ def test_standalone_runtime_ws_connects(monkeypatch):
     # Remove ENVIRONMENT so dev mode is not blocked
     monkeypatch.delenv("ENVIRONMENT", raising=False)
 
-    _reload_dashboard_modules()
     bus = EventBus()
     # Re-create the app AFTER setting the env var so middleware picks it up
     app = _create_runtime_only_app(bus)
