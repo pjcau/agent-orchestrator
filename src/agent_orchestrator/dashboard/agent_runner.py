@@ -53,6 +53,11 @@ _MINIMAL_CHANGES_STEER = (
     "*_SUMMARY.md, *_EVIDENCE.md, *_COMPLETE.md, CLEANUP_REPORT.md) — report "
     "what you did in your final reply, not as committed files. Do not "
     "restructure, rename, or reformat code that is unrelated to the task.\n\n"
+    "Stay on THIS task: the task description you were given is the goal for this "
+    "turn. Any earlier conversation is background context only — do exactly what "
+    "the task asks and nothing more. If the task is unrelated to prior work (e.g. "
+    "writing a small config / notes file after a coding session), do just that; "
+    "do not drift back into the previous task.\n\n"
     "Outcome requirement: if the task asks you to fix, implement, add, change, "
     "build, or create something, you MUST apply the change with file_write / "
     "edit before finishing — reading and exploring are only preparation. Ending "
@@ -1169,6 +1174,14 @@ async def run_team(
         messages=plan_messages,
         system=(
             "You are a team lead. Analyze the task and select the best agents.\n\n"
+            "CURRENT-TURN ANCHOR: plan for the user's LATEST message (the task "
+            "below) — that is THIS turn's goal. Earlier conversation is background "
+            "only. If the new message is a different or unrelated request from "
+            "what the conversation was doing (e.g. 'write a config/notes file' "
+            "after a long test-fixing session), SWITCH to it — do not keep "
+            "decomposing the previous task by inertia. A short or terse new "
+            "message still defines this turn; take it literally and do exactly "
+            "what it asks, nothing more.\n\n"
             f"{agent_catalog}\n\n"
             "Respond with ONLY a JSON array of assignments (max 5). "
             'Each item must have "agent" (exact name from the list) and "task" (specific instructions).\n'
