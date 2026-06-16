@@ -33,6 +33,14 @@ in `run_team` in `dashboard/agent_runner.py`). The plan prompt enforces:
 - **Outcome first.** Each assignment is phrased as a concrete edit ("add X to
   file Y"), never as "investigate" / "analyze" / "diagnose" / "review" — unless
   the user explicitly asked only for analysis.
+- **Current-turn anchor.** team-lead plans for the user's *latest* message;
+  earlier conversation is background only. A new or terse instruction in a
+  context saturated by a prior task (e.g. "write a rules file" after a long
+  test-fixing session) defines THIS turn's goal — team-lead switches to it
+  instead of continuing the previous task by inertia. The sub-agent steer
+  carries the matching "stay on this task" rule so the executor doesn't drift
+  back either. (Added after a 16-byte instruction was swallowed by a 900k-token
+  context, 2026-06-16.)
 - **Fan out across layers** when a change spans them (API + UI → `backend` AND
   `frontend`); otherwise keep it to a single agent.
 - **Bug-fix / debug / "make it work" tasks → one owning agent, never a team.**

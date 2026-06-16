@@ -119,6 +119,27 @@ def test_team_lead_plan_prompt_keeps_fixes_single_agent() -> None:
     assert "redundant exploration" in low
 
 
+def test_team_lead_plan_prompt_anchors_on_current_turn() -> None:
+    """A new/terse instruction in a saturated conversation must define THIS
+    turn's goal — team-lead must not keep decomposing the prior task by inertia.
+    Added after a 16-byte 'write a rules file' message was swallowed by a 900k-
+    token test-fixing context (2026-06-16)."""
+    src = inspect.getsource(agent_runner.run_team)
+    low = src.lower()
+    assert "current-turn anchor" in low
+    assert "by inertia" in low
+    assert "background" in low
+
+
+def test_minimal_changes_steer_stays_on_current_task() -> None:
+    """Sub-agents must treat their task as THIS turn's goal and not drift back
+    into prior work when the new task is unrelated."""
+    steer = agent_runner._MINIMAL_CHANGES_STEER.lower()
+    assert "stay on this task" in steer
+    assert "background context only" in steer
+    assert "drift back into the previous task" in steer
+
+
 def test_team_lead_plan_prompt_routes_tests_to_test_engineer() -> None:
     """Test work (make tests pass / fix failing tests / coverage) must route to
     the dedicated test-engineer, not be split across backend+frontend+devops."""
