@@ -94,6 +94,28 @@ tokens — see [ago-cli-improvements.md](ago-cli-improvements.md), P0).
   tool responses are produced. The `agent.compactions` OTel span attribute
   counts how often it fired in a run.
 
+## Progressive relief: stale tool-result shrinking
+
+Compaction above only fires once the context crosses the threshold, and it
+elides by *age* (middle messages), not by *relevance*. But the bulk of a long
+run's bytes are old **tool results** — a `file_read` body or a verbose test/build
+log the agent has already acted on. `shrink_stale_tool_results()` runs **every
+step** (before the threshold check) and replaces the *content* of any `Role.TOOL`
+result older than the most recent `stale_tool_result_keep_recent` (default **6**)
+that is larger than `stale_tool_result_stub_over` chars (default **1200**) with a
+one-line stub — e.g. `[stale tool result elided — 4096 chars; began: '…']`. So
+the per-step context **shrinks as material becomes irrelevant** instead of only
+being cut at the threshold.
+
+- The message and its `tool_call_id` are **kept**, so provider tool-call pairing
+  stays intact and the agent can re-read deliberately if it genuinely needs the
+  detail (the convergence-loop steer already discourages gratuitous re-reads).
+- Motivated by a 2026-06-16 `--client-tools` test-fix turn that hit the
+  per-turn **cost cap** ($0.30) at 962k input tokens / 47 steps purely through
+  tool-result accumulation, stopping `test-engineer` before it converged.
+- `0` for either knob disables it. Composes with compaction: this trims the bulk
+  continuously, `compact_messages()` handles whatever remains.
+
 ---
 
 ## Integration Points (Where to Wire Cache)

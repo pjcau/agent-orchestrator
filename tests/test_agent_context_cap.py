@@ -710,3 +710,67 @@ async def test_backoff_disabled_lets_command_rerun():
     # With back-off off, the command runs every step (no short-circuit).
     assert skill.calls == 5
     assert not any("[not executed]" in (m.content or "") for m in agent._messages)
+
+
+# ---------------------------------------------------------------------------
+# Progressive context relief: shrink_stale_tool_results
+# ---------------------------------------------------------------------------
+
+
+def _msgs_with_tool_results(n: int, body_chars: int = 4000):
+    """user task + n (assistant tool_call, tool result) pairs."""
+    out = [Message(role=Role.USER, content="task")]
+    for i in range(n):
+        out.append(Message(role=Role.ASSISTANT, content=f"calling {i}"))
+        out.append(Message(role=Role.TOOL, content="X" * body_chars, tool_call_id=f"tc-{i}"))
+    return out
+
+
+def test_shrink_stale_keeps_recent_tool_results_verbatim():
+    from agent_orchestrator.core.agent import shrink_stale_tool_results
+
+    msgs = _msgs_with_tool_results(10, body_chars=4000)
+    out, shrunk = shrink_stale_tool_results(msgs, keep_recent=6, stub_over=1200)
+    # 10 tool results, keep last 6 → 4 oldest stubbed
+    assert shrunk == 4
+    tool_msgs = [m for m in out if m.role == Role.TOOL]
+    # the last 6 stay full
+    assert all(len(m.content) == 4000 for m in tool_msgs[-6:])
+    # the first 4 are stubbed and much smaller
+    assert all("stale tool result elided" in m.content for m in tool_msgs[:4])
+    assert all(len(m.content) < 200 for m in tool_msgs[:4])
+
+
+def test_shrink_stale_preserves_tool_call_id():
+    from agent_orchestrator.core.agent import shrink_stale_tool_results
+
+    msgs = _msgs_with_tool_results(10, body_chars=4000)
+    out, _ = shrink_stale_tool_results(msgs, keep_recent=6, stub_over=1200)
+    stubbed = [m for m in out if m.role == Role.TOOL and "elided" in m.content]
+    # pairing must survive so providers don't reject an orphaned result
+    assert all(m.tool_call_id is not None for m in stubbed)
+
+
+def test_shrink_stale_noop_when_few_tool_results():
+    from agent_orchestrator.core.agent import shrink_stale_tool_results
+
+    msgs = _msgs_with_tool_results(5, body_chars=4000)
+    out, shrunk = shrink_stale_tool_results(msgs, keep_recent=6, stub_over=1200)
+    assert shrunk == 0 and out is msgs
+
+
+def test_shrink_stale_skips_small_results():
+    from agent_orchestrator.core.agent import shrink_stale_tool_results
+
+    # old results are below the stub_over threshold → left alone
+    msgs = _msgs_with_tool_results(10, body_chars=300)
+    out, shrunk = shrink_stale_tool_results(msgs, keep_recent=6, stub_over=1200)
+    assert shrunk == 0 and out is msgs
+
+
+def test_shrink_stale_disabled_by_zero():
+    from agent_orchestrator.core.agent import shrink_stale_tool_results
+
+    msgs = _msgs_with_tool_results(10, body_chars=4000)
+    out, shrunk = shrink_stale_tool_results(msgs, keep_recent=6, stub_over=0)
+    assert shrunk == 0 and out is msgs
