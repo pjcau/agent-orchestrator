@@ -70,8 +70,19 @@ already-read files. Covered by `tests/test_prompt_rules.py`.
   ├── ai-engineer (opus) ────── LLM integration, prompt engineering
   ├── scout (opus) ──────────── GitHub pattern discovery
   ├── research-scout (opus) ─── Analyzes starred repos, proposes code improvements
-  └── security-auditor (opus) ─ Vulnerability scanning, OWASP, secrets detection
+  ├── security-auditor (opus) ─ Vulnerability scanning, OWASP, secrets detection
+  └── test-engineer (sonnet) ─ Test specialist — fixes failing unit/sociable/integration/e2e tests, drives the suite to green
 ```
+
+> **`test-engineer`** is the dedicated owner of the test suite. team-lead routes
+> "make the tests pass / fix failing tests / add tests / improve coverage / flaky
+> tests" to it instead of splitting that work across backend+frontend+devops. Its
+> role (built by name in `_build_role_for_agent`, not from the generic SE
+> category) carries the test taxonomy (solitary vs sociable unit, integration,
+> e2e), the scoped run→read-failure→fix→re-run convergence loop, the deliberate
+> **fix-the-test vs fix-the-code** judgement, and the hard rule never to weaken a
+> test to make it pass. Defined in `.claude/agents/test-engineer.md`; covered by
+> `tests/test_prompt_rules.py`.
 
 ### Cross-Agent Dependencies
 

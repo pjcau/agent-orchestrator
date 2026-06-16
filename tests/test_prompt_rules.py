@@ -119,6 +119,50 @@ def test_team_lead_plan_prompt_keeps_fixes_single_agent() -> None:
     assert "redundant exploration" in low
 
 
+def test_team_lead_plan_prompt_routes_tests_to_test_engineer() -> None:
+    """Test work (make tests pass / fix failing tests / coverage) must route to
+    the dedicated test-engineer, not be split across backend+frontend+devops."""
+    src = inspect.getsource(agent_runner.run_team)
+    assert "test-engineer" in src
+    low = src.lower()
+    assert "fix the failing tests" in low or "make the tests pass" in low
+
+
+def test_test_engineer_role_is_a_specialist() -> None:
+    """test-engineer must get a name-based specialist role (taxonomy +
+    convergence loop + fix-test-vs-code), not the generic SE role."""
+    role = agent_runner._build_role_for_agent(
+        {
+            "name": "test-engineer",
+            "description": "Test specialist",
+            "category": "software-engineering",
+        }
+    )
+    low = role.lower()
+    assert "test taxonomy" in low
+    assert "sociable" in low  # knows the unit-test taxonomy
+    assert "convergence loop" in low
+    # the test-vs-code judgement
+    assert "stale" in low and "regressed" in low
+    # must not weaken tests to pass
+    assert "never weaken a test" in low
+    # it must NOT collapse to the generic SE role
+    generic = agent_runner._build_role_for_agent(
+        {"name": "backend", "description": "API", "category": "software-engineering"}
+    )
+    assert role != generic
+
+
+def test_test_engineer_is_registered() -> None:
+    """The test-engineer agent file must be discoverable by the registry."""
+    from agent_orchestrator.dashboard.agents_registry import AGENT_SKILLS, get_agent_registry
+
+    assert "test-engineer" in AGENT_SKILLS
+    registry = get_agent_registry()
+    names = {a["name"] for a in registry.get("agents", [])}
+    assert "test-engineer" in names
+
+
 def test_team_lead_validation_has_wiring_check() -> None:
     """Validation must now check wiring + deps coherence + smoke-test evidence."""
     src = inspect.getsource(agent_runner.run_team)

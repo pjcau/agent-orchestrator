@@ -25,6 +25,7 @@ AGENT_SKILLS: dict[str, list[str]] = {
     # software-engineering
     "team-lead": ["web-research"],
     "backend": ["test-runner", "lint-check", "code-review", "web-research"],
+    "test-engineer": ["test-runner", "lint-check", "code-review", "web-research"],
     "frontend": ["website-dev", "lint-check", "web-research"],
     "devops": ["docker-build", "deploy", "web-research"],
     "platform-engineer": ["docker-build", "deploy", "web-research"],
