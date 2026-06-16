@@ -60,6 +60,38 @@ def test_team_lead_plan_prompt_forbids_over_decomposition() -> None:
     assert "over-decompose" in src or "single agent" in src.lower()
 
 
+def test_team_lead_plan_prompt_routes_by_file_ownership() -> None:
+    """A failing command / Docker mention must not auto-route to devops; the
+    plan prompt must route code fixes to the file owner (backend/frontend) and
+    keep devops scoped to infra. Guards the always-devops regression seen in
+    the 2026-06-16 agent-host session (team-lead → devops → 0 file_write)."""
+    src = inspect.getsource(agent_runner.run_team)
+    low = src.lower()
+    assert "file ownership" in low
+    assert "do not default to devops" in low
+    # devops must be explicitly scoped to infra, not general code
+    assert "only dockerfile" in low or "infra config" in low
+
+
+def test_team_lead_plan_prompt_demands_applied_changes() -> None:
+    """The plan must produce applied edits, not analysis-only output."""
+    src = inspect.getsource(agent_runner.run_team)
+    low = src.lower()
+    assert "outcome first" in low
+    assert "result in applied changes" in low
+
+
+def test_minimal_changes_steer_requires_applying_the_change() -> None:
+    """Every sub-agent gets a standing rule: a fix/implement task that ends
+    with no file change is a failure (analysis-only tasks exempt)."""
+    steer = agent_runner._MINIMAL_CHANGES_STEER.lower()
+    assert "outcome requirement" in steer
+    assert "must apply the change" in steer
+    assert "no file change is a failure" in steer
+    # analysis/review tasks must stay exempt so we don't force pointless writes
+    assert "exempt" in steer
+
+
 def test_team_lead_validation_has_wiring_check() -> None:
     """Validation must now check wiring + deps coherence + smoke-test evidence."""
     src = inspect.getsource(agent_runner.run_team)

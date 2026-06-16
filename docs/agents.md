@@ -16,6 +16,31 @@ Agents live under `.claude/agents/<category>/`. Root-level agents live directly 
   └── test-runner (sonnet) ──────── run tests after code changes
 ```
 
+### team-lead routing rules
+
+`team-lead` decomposes a task into sub-agent assignments (the plan prompt lives
+in `run_team` in `dashboard/agent_runner.py`). The plan prompt enforces:
+
+- **Route by file ownership, not keyword.** Application / server / API /
+  business-logic code → `backend`; UI / components / styling → `frontend`;
+  **only** Dockerfile, docker-compose, CI/CD, deploy scripts and infra config →
+  `devops`. A failing build / run / test command is usually a code or config
+  bug — team-lead identifies the file that must change and assigns its **owner**
+  instead of defaulting to `devops` just because the task mentions a command,
+  Docker, or the word "fix". (Regression fixed 2026-06-16: an agent-host
+  session routed every turn to `devops`, which only read files and never wrote
+  any.)
+- **Outcome first.** Each assignment is phrased as a concrete edit ("add X to
+  file Y"), never as "investigate" / "analyze" / "diagnose" / "review" — unless
+  the user explicitly asked only for analysis.
+- **Fan out across layers** when a change spans them (API + UI → `backend` AND
+  `frontend`); otherwise keep it to a single agent.
+
+Every sub-agent additionally carries an **outcome requirement** (the
+`_MINIMAL_CHANGES_STEER` suffix appended to its role): a fix / implement / build
+task that ends with analysis but no `file_write` is a failure — analysis-,
+review-, and audit-only tasks are exempt. Covered by `tests/test_prompt_rules.py`.
+
 ## Software Engineering (8 agents)
 
 ```
