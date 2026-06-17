@@ -1007,6 +1007,7 @@ mod tests {
         assert_eq!(r.error_code.as_deref(), Some("shell_unparseable_command"));
     }
 
+    #[cfg(unix)] // requires a POSIX shell (bash); the Windows runner has no usable bash
     #[tokio::test]
     async fn shell_string_allow_all_runs_through_shell_with_cd() {
         // allow_all -> a string runs via `bash -lc`, so `cd sub && pwd` works
@@ -1025,6 +1026,7 @@ mod tests {
         assert!(out.trim_end().ends_with("sub"), "cwd not in sub: {out:?}");
     }
 
+    #[cfg(unix)] // requires a POSIX shell (bash); the Windows runner has no usable bash
     #[tokio::test]
     async fn shell_string_allow_all_runs_pipeline() {
         // Pipes/redirects work under allow_all (a real shell), not under strict.
@@ -1061,6 +1063,7 @@ mod tests {
         assert_eq!(line, "echo 'a b' && ls");
     }
 
+    #[cfg(unix)] // requires a POSIX shell (bash); the Windows runner has no usable bash
     #[tokio::test]
     async fn shell_list_cd_chain_runs_via_shell() {
         // The real-world regression: ["cd","sub","&&","pwd"] as a LIST must run.
@@ -1081,6 +1084,7 @@ mod tests {
             .ends_with("sub"));
     }
 
+    #[cfg(unix)] // requires a POSIX shell (bash); the Windows runner has no usable bash
     #[tokio::test]
     async fn shell_list_bare_cd_is_noop_success_not_error() {
         // ["cd","sub"] alone no longer errors as a builtin — it's a no-op ok.
@@ -1151,6 +1155,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)] // uses `bash -lc … sleep`; the Windows runner has no usable bash
     #[tokio::test]
     async fn long_running_command_returns_started_not_timeout() {
         // A server that outlives the grace window must come back as a SUCCESS
