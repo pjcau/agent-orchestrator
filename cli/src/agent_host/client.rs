@@ -43,6 +43,7 @@ use super::protocol::{
 };
 use super::runner::{CancelSignal, ChunkEmitter, LocalToolRunner, ShellConfirmer, ToolOutcome};
 use super::signing::{compute_signature, decode_hex_key};
+use super::thrash_guard::{Decision, GuardConfig, TurnGuard};
 use tracing::debug;
 
 /// What the client learned during HELLO/ACK.
@@ -236,6 +237,8 @@ pub async fn run_repl(
     shell_allow: &[String],
     shell_deny: &[String],
     shell_allow_all: bool,
+    // Resolved client-side thrash-guard config (default < .ago.yaml < env).
+    guard_config: GuardConfig,
     // Project instructions (AGO.md). The agent-host Prompt frame carries only
     // text, so we fold these into the FIRST prompt of the session — the server
     // keeps them in the conversation for the rest of the run.
@@ -250,6 +253,10 @@ pub async fn run_repl(
     ));
     let session = Arc::new(session);
     let cancels: Arc<Mutex<HashMap<String, CancelSignal>>> = Arc::new(Mutex::new(HashMap::new()));
+    // Client-side thrash guard at the tool-execution boundary (loop guard,
+    // consecutive-failure breaker, hard step/cost caps). Shared across the
+    // concurrently-spawned tool tasks and the step-frame handler.
+    let guard: Arc<Mutex<TurnGuard>> = Arc::new(Mutex::new(TurnGuard::new(guard_config)));
 
     // Split the WS into sink + stream so the receive loop can keep
     // reading while we send prompts and tool_results from another task.
@@ -273,6 +280,7 @@ pub async fn run_repl(
         session.clone(),
         runner.clone(),
         cancels.clone(),
+        guard.clone(),
         no_color,
     ));
 
@@ -499,6 +507,7 @@ async fn receive_loop(
     session: Arc<SessionInfo>,
     runner: Arc<LocalToolRunner>,
     cancels: Arc<Mutex<HashMap<String, CancelSignal>>>,
+    guard: Arc<Mutex<TurnGuard>>,
     no_color: bool,
 ) {
     let theme = AnsiTheme::detect(no_color);
@@ -595,6 +604,8 @@ async fn receive_loop(
                 let _ = std::io::stdout().flush();
                 print_turn_end(&theme, &t);
                 meter.reset();
+                // Per-turn thrash state is scoped to one turn.
+                guard.lock().await.reset();
             }
             Frame::Error(e) => {
                 // Flush whatever the assistant produced before the error so
@@ -621,8 +632,9 @@ async fn receive_loop(
                 let sink = sink.clone();
                 let cancels = cancels.clone();
                 let theme = theme.clone();
+                let guard = guard.clone();
                 tokio::spawn(async move {
-                    handle_tool_call(tc, session, runner, sink, cancels, theme).await;
+                    handle_tool_call(tc, session, runner, sink, cancels, guard, theme).await;
                 });
             }
             Frame::Cancel(c) => {
@@ -633,6 +645,14 @@ async fn receive_loop(
             }
             Frame::Step(s) => {
                 print_step(&theme, &s, &mut meter);
+                // Hard step/cost caps (opt-in). On trip, the guard halts the
+                // turn so subsequent tool calls are refused locally. Bind the
+                // result so the lock is released before the body (the tokio
+                // Mutex is not re-entrant).
+                let halt = guard.lock().await.on_step(s.index, s.cost_usd);
+                if let Some(msg) = halt {
+                    eprintln!("{}{}{}", theme.red, msg, theme.reset);
+                }
             }
             _ => {}
         }
@@ -645,6 +665,7 @@ async fn handle_tool_call(
     runner: Arc<LocalToolRunner>,
     sink: WsSink,
     cancels: Arc<Mutex<HashMap<String, CancelSignal>>>,
+    guard: Arc<Mutex<TurnGuard>>,
     theme: AnsiTheme,
 ) {
     let run_id = session.run_id.clone();
@@ -670,6 +691,34 @@ async fn handle_tool_call(
             &frame.name,
             key,
             &ToolOutcome::err("signature_invalid"),
+        )
+        .await;
+        return;
+    }
+
+    // Canonical (sorted-key) view of the args for the thrash guard's hash.
+    // `to_value` on a HashMap yields a BTreeMap-backed Object, so the hash is
+    // stable regardless of HashMap iteration order.
+    let args_val = serde_json::to_value(&frame.args).unwrap_or_default();
+
+    // Thrash guard: if this exact call has been failing on repeat, or the turn
+    // has been halted by a cap/breaker, refuse to run it and return a synthetic
+    // error so no further local side effects happen and the server is nudged to
+    // change approach. Bind the decision so the lock is released before the body
+    // — the tokio Mutex is NOT re-entrant, and the body locks the guard again.
+    let decision = guard.lock().await.before(&frame.name, &args_val);
+    if let Decision::Block(reason) = decision {
+        let outcome = ToolOutcome::err(&reason);
+        print_progress_finished(&theme, &frame, &outcome, 0);
+        guard.lock().await.after(&frame.name, &args_val, true);
+        send_tool_result(
+            &sink,
+            &run_id,
+            &frame.tool_call_id,
+            &frame.nonce,
+            &frame.name,
+            key,
+            &outcome,
         )
         .await;
         return;
@@ -701,7 +750,7 @@ async fn handle_tool_call(
     };
 
     let started = Instant::now();
-    let outcome = runner
+    let mut outcome = runner
         .run(
             &frame.name,
             frame.args.clone(),
@@ -712,6 +761,36 @@ async fn handle_tool_call(
     let elapsed_ms = started.elapsed().as_millis() as u64;
 
     print_progress_finished(&theme, &frame, &outcome, elapsed_ms);
+
+    // Record the outcome for the loop guard / failure breaker; print any notice
+    // (consecutive-failure warning or breaker halt) it raises. Bind first so the
+    // lock is released before the body (non-re-entrant tokio Mutex).
+    let notice = guard
+        .lock()
+        .await
+        .after(&frame.name, &args_val, outcome.error_code.is_some());
+    if let Some(msg) = notice {
+        eprintln!("{}{}{}", theme.red, msg, theme.reset);
+    }
+
+    // No-progress detection (feature B): if the same error *signature* (set by
+    // the runner's error digest) keeps recurring across attempts, inject a nudge
+    // into the result the agent sees, so it stops varying the command and fixes
+    // the unchanged root cause.
+    if let Some(sig) = outcome
+        .metadata
+        .get("error_signature")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+    {
+        let nudge = guard.lock().await.note_signature(&sig);
+        if let Some(msg) = nudge {
+            if let serde_json::Value::Object(map) = &mut outcome.output {
+                map.insert("guard_note".into(), serde_json::Value::String(msg.clone()));
+            }
+            eprintln!("{}{}{}", theme.red, msg, theme.reset);
+        }
+    }
 
     {
         let mut map = cancels.lock().await;
@@ -931,12 +1010,55 @@ fn failure_reason(outcome: &ToolOutcome) -> String {
     }
 }
 
+/// One-line, log-safe summary of a tool call's args, so `--log-file` traces
+/// show *what* a step did — the command for `shell_exec`, the path for the file
+/// tools — not just the tool name. Without this the trace is "35 file_read, 24
+/// shell_exec" with no way to see which files or commands (the gap that made a
+/// stuck session impossible to diagnose from the log alone).
+fn summarize_args(name: &str, args: &HashMap<String, Value>) -> String {
+    match name {
+        "shell_exec" => {
+            if let Some(Value::Array(argv)) = args.get("argv") {
+                let cmd = argv
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| v.to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                return compact_value(&Value::String(cmd));
+            }
+            match args.get("command").or_else(|| args.get("cmd")) {
+                Some(c) => compact_value(c),
+                None => "?".to_string(),
+            }
+        }
+        "file_read" | "file_write" => ["file_path", "path", "filepath"]
+            .iter()
+            .find_map(|k| args.get(*k))
+            .map(compact_value)
+            .unwrap_or_else(|| "?".to_string()),
+        _ => {
+            let mut keys: Vec<&str> = args.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            compact_value(&Value::String(keys.join(",")))
+        }
+    }
+}
+
 fn debug_frame(dir: &str, f: &Frame) {
     match f {
         Frame::Hello(h) => debug!("{dir} hello version={} agent={}", h.version, h.agent),
         Frame::Ack(a) => debug!("{dir} ack run_id={} model={}", a.run_id, a.model),
         Frame::Prompt(p) => debug!("{dir} prompt {}B", p.text.len()),
-        Frame::ToolCall(tc) => debug!("{dir} tool_call id={} name={}", tc.tool_call_id, tc.name),
+        Frame::ToolCall(tc) => debug!(
+            "{dir} tool_call id={} name={} args={}",
+            tc.tool_call_id,
+            tc.name,
+            summarize_args(&tc.name, &tc.args)
+        ),
         Frame::ToolResult(tr) => {
             if tr.status == "ok" {
                 debug!("{dir} tool_result id={} status=ok", tr.tool_call_id)
@@ -1186,19 +1308,26 @@ fn print_progress_finished(
     }
 }
 
+/// Truncate `s` to at most `max` bytes on a UTF-8 char boundary, appending `…`
+/// if it was shortened. Plain byte slicing (`&s[..n]`) / `String::truncate`
+/// panic when `n` lands inside a multibyte char (e.g. `…`, `—`, `×`).
+fn truncate_ellipsis(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
+}
+
 fn summarise_args(args: &HashMap<String, Value>) -> String {
     let mut parts: Vec<String> = Vec::new();
     for (k, v) in args {
         let snippet = match v {
             Value::String(s) if k == "content" => format!("content=<{}B>", s.len()),
-            Value::String(s) => {
-                let mut sv = s.clone();
-                if sv.len() > 40 {
-                    sv.truncate(37);
-                    sv.push('…');
-                }
-                format!("{k}={sv}")
-            }
+            Value::String(s) => format!("{k}={}", truncate_ellipsis(s, 40)),
             Value::Array(arr) => {
                 let preview = arr
                     .iter()
@@ -1217,12 +1346,7 @@ fn summarise_args(args: &HashMap<String, Value>) -> String {
         };
         parts.push(snippet);
     }
-    let joined = parts.join(", ");
-    if joined.len() > 80 {
-        format!("{}…", &joined[..79])
-    } else {
-        joined
-    }
+    truncate_ellipsis(&parts.join(", "), 80)
 }
 
 fn summarise_output(output: &Value) -> String {
@@ -1258,12 +1382,7 @@ fn summarise_output(output: &Value) -> String {
     if let Value::String(s) = output {
         return human_bytes(s.len());
     }
-    let s = output.to_string();
-    if s.len() > 60 {
-        format!("{}…", &s[..57])
-    } else {
-        s
-    }
+    truncate_ellipsis(&output.to_string(), 57)
 }
 
 fn human_bytes(n: usize) -> String {
@@ -1341,6 +1460,25 @@ fn build_runner(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn truncate_ellipsis_is_char_boundary_safe() {
+        // Short strings pass through unchanged.
+        assert_eq!(truncate_ellipsis("hello", 40), "hello");
+        // ASCII over the limit truncates + ellipsis.
+        let long = "a".repeat(100);
+        let out = truncate_ellipsis(&long, 80);
+        assert!(out.ends_with('…') && out.len() <= 80 + '…'.len_utf8());
+        // Multibyte char straddling the cut must NOT panic, and the result is
+        // valid UTF-8 ending on a boundary (regression for the `&s[..n]` panic).
+        let s = format!("{}…{}", "x".repeat(78), "y".repeat(40)); // '…' spans bytes 78..81
+        let out = truncate_ellipsis(&s, 80);
+        assert!(out.is_char_boundary(out.len() - '…'.len_utf8()));
+        // summarise_args with a long unicode value does not panic.
+        let mut args = std::collections::HashMap::new();
+        args.insert("cmd".to_string(), json!(" — ".repeat(50)));
+        let _ = summarise_args(&args);
+    }
 
     #[test]
     fn derive_ws_url_https() {
@@ -1497,6 +1635,38 @@ mod tests {
         assert_eq!(compact_value(&json!("a\nb")), "a b");
         let long = compact_value(&json!("x".repeat(500)));
         assert!(long.contains("…[+300 chars]"), "got {long}");
+    }
+
+    #[test]
+    fn summarize_args_shows_command_path_and_keys() {
+        let mut shell = HashMap::new();
+        shell.insert(
+            "argv".to_string(),
+            json!(["npm", "test", "--", "--watchAll=false"]),
+        );
+        assert_eq!(
+            summarize_args("shell_exec", &shell),
+            "npm test -- --watchAll=false"
+        );
+
+        let mut shell_str = HashMap::new();
+        shell_str.insert("command".to_string(), json!("pytest -q"));
+        assert_eq!(summarize_args("shell_exec", &shell_str), "pytest -q");
+
+        let mut path = HashMap::new();
+        path.insert("path".to_string(), json!("src/App.test.js"));
+        assert_eq!(summarize_args("file_read", &path), "src/App.test.js");
+        assert_eq!(summarize_args("file_write", &path), "src/App.test.js");
+
+        // Unknown tool → sorted key set, so the line is still informative.
+        let mut other = HashMap::new();
+        other.insert("zeta".to_string(), json!(1));
+        other.insert("alpha".to_string(), json!(2));
+        assert_eq!(summarize_args("mystery", &other), "alpha,zeta");
+
+        // Missing args never panic — they degrade to a marker.
+        assert_eq!(summarize_args("shell_exec", &HashMap::new()), "?");
+        assert_eq!(summarize_args("file_read", &HashMap::new()), "?");
     }
 
     #[test]

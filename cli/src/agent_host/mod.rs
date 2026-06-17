@@ -26,7 +26,9 @@
 
 pub mod allowlist;
 pub mod client;
+pub mod error_digest;
 pub mod protocol;
 pub mod runner;
 pub mod sandbox;
 pub mod signing;
+pub mod thrash_guard;

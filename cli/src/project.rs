@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 pub const PROJECT_FILE_PRIMARY: &str = ".ago.yaml";
 pub const PROJECT_FILE_FALLBACK: &str = ".ago.yml";
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq, Eq)]
+// No `Eq`: the nested `guard` block carries an f64 (`max_usd`), which is not
+// `Eq`. `PartialEq` is all the tests need.
+#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectPreset {
     pub server: Option<String>,
@@ -59,6 +61,41 @@ pub struct ProjectPreset {
     /// DANGER: handing the Docker socket to the sandbox is root-equivalent on the
     /// host and punctures the jail's file isolation. Defaults to `false`.
     pub jail_docker: Option<bool>,
+    /// Client-side thrash-guard tuning for `--client-tools` runs (loop guard,
+    /// failure breaker, hard step/cost caps). Lets a project that tends to thrash
+    /// pin sensible caps without remembering env vars each session. Env vars
+    /// (`AGO_LOOP_GUARD`, `AGO_TURN_MAX_STEPS`, …) still override these. See
+    /// [`crate::agent_host::thrash_guard`].
+    pub guard: Option<GuardSettings>,
+}
+
+/// Per-project overrides for the client-side thrash guard. Every field is
+/// optional; a `None` keeps the built-in default. Resolution precedence for the
+/// final value is **env var > this block > built-in default** (see
+/// [`crate::agent_host::thrash_guard::GuardConfig::resolve`]).
+#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct GuardSettings {
+    /// Block identical *failing* calls (default true).
+    pub loop_guard: Option<bool>,
+    /// Failing repeats within the window that trigger a block (default 3).
+    pub loop_threshold: Option<u32>,
+    /// Recent-call window the guard looks back over (default 10).
+    pub loop_window: Option<u32>,
+    /// Consecutive failures that print a warning (default 8; 0 = off).
+    pub fail_warn: Option<u32>,
+    /// Consecutive failures that halt the turn (default 0 = off).
+    pub fail_halt: Option<u32>,
+    /// Failures within the window (any command) that halt the turn — catches
+    /// scattered-failure thrash the exact-repeat guard misses (default 0 = off).
+    pub fail_density: Option<u32>,
+    /// Repeats of the same error signature that trigger a no-progress nudge
+    /// injected into the tool result (default 3; 0 = off).
+    pub no_progress: Option<u32>,
+    /// Step index that halts the turn (default 0 = off).
+    pub max_steps: Option<u64>,
+    /// Cumulative turn cost (USD) that halts the turn (default 0 = off).
+    pub max_usd: Option<f64>,
 }
 
 /// Project-scoped shell policy layered on top of the global allowlist cache.

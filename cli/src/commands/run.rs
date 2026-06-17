@@ -875,6 +875,7 @@ mod tests {
                 jail: None,
                 jail_image: None,
                 jail_docker: None,
+                guard: None,
             },
             None,
         );
@@ -927,6 +928,7 @@ mod tests {
                 jail: None,
                 jail_image: None,
                 jail_docker: None,
+                guard: None,
             },
             None,
         );

@@ -104,7 +104,7 @@ shell:
 ```
 
 Allowed keys: `server`, `agent`, `model`, `provider`, `max_steps`,
-`context`, `shell`, `jail`, `jail_image`, `jail_docker`. CLI flags override `.ago.yaml`;
+`context`, `shell`, `jail`, `jail_image`, `jail_docker`, `guard`. CLI flags override `.ago.yaml`;
 `.ago.yaml` overrides `~/.config/ago/config.toml`. Empty values fall through to
 the next layer.
 
@@ -434,6 +434,67 @@ Resource bounds the server enforces:
 - Up to `--max-steps` agent steps per turn (default **30**, server-clamped
   to 100). Sent in the handshake, so `ago chat --client-tools --max-steps 50`
   gives a long multi-step task more room before `Max steps reached`.
+
+### Thrash guard (client-side loop & cost limits)
+
+The agent loop runs **server-side**, and its own loop/failure guards can leak:
+in multi-agent fan-out `max_steps` is *per-agent* (so a team-lead run easily
+runs past it), and the server's loop detector hashes the *exact* tool call, so a
+shell command that varies by a byte slips past. The symptom is a turn that keeps
+re-running near-identical **failing** commands while per-step latency climbs with
+the context.
+
+The CLI adds an independent guard at the one choke point it controls — the
+tool-execution boundary. It needs no server cooperation and limits the *local*
+damage:
+
+| Mechanism | Env (default) | Behaviour |
+|---|---|---|
+| **Loop guard** | `AGO_LOOP_GUARD` (**on**), `AGO_LOOP_THRESHOLD` (3), `AGO_LOOP_WINDOW` (10) | If the **same** call has **failed** ≥ threshold times in the recent window, the next identical call is **not executed** — it returns a synthetic `loop_blocked` error that nudges the agent to change approach. Counts *failures only*, so legitimate polling (e.g. waiting for `docker compose ps` to go healthy, which returns success) never trips it. |
+| **Failure density** | `AGO_FAIL_DENSITY` (0 = off) | Catches *scattered*-failure thrash that the exact-repeat loop guard misses — many **different** failing commands. Halts the turn when ≥ N of the last `AGO_LOOP_WINDOW` tool calls failed, regardless of which command. |
+| **Failure breaker** | `AGO_FAIL_WARN` (8), `AGO_FAIL_HALT` (0 = off) | A global *consecutive*-failure streak. At `warn` it prints a notice; at `halt` (opt-in) it stops running further tools this turn. |
+| **Hard caps** | `AGO_TURN_MAX_STEPS` (0 = off), `AGO_TURN_MAX_USD` (0 = off) | Fed from each `Step` frame. Once a cap trips the turn is **halted**: every further tool call is refused so no more commands run on your machine. |
+| **No-progress nudge** | `AGO_NO_PROGRESS` (3; 0 = off) | Convergence aid, not a brake. Fingerprints each failed command's *error* (not the command). When the same error signature recurs ≥ N times — even across **different** commands — a `no-progress` note is injected into the tool result telling the agent the root cause is unchanged, so it stops varying the command and fixes the actual error. |
+
+These last two are the *anti-thrash* (halt) layer; the loop/density/breaker stop
+runaway. The **error digest** below is the *convergence* layer — it helps the
+agent fix the problem rather than just stopping it.
+
+**Error digest (`AGO_ERROR_DIGEST`, on; `AGO_ERROR_DIGEST_BYTES`, 4000).** When a
+`shell_exec` fails with large output (a pytest run, a `cargo`/`tsc` build, a
+`docker compose` log), the downstream context cap keeps only a head+tail slice —
+which preserves the *summary* (`34 errors`) but elides the **middle**, where the
+actual diagnosis lives (the first traceback, the `OperationalError: …` line, the
+`error[E0599]`). The CLI holds the full output, so for failures it sends an
+**error-salient digest** instead (head + the error/traceback lines + tail),
+guaranteeing the root cause survives. This is what feeds the no-progress
+fingerprint above. Disable with `AGO_ERROR_DIGEST=false` to send raw output.
+
+When a cap, the breaker, or density halts the turn you'll see, on stderr:
+
+```
+⊘ turn halted by client: high failure density — 8 of the last 10 tool calls failed.
+  No further tools will run this turn — press Ctrl-C or type :quit (resume with --resume).
+```
+
+Only the **loop guard** is on by default (it is precise — failures-only — and
+low-false-positive). Density, the breaker-halt, and the hard caps are opt-in;
+set them per session, e.g. `AGO_TURN_MAX_USD=0.50 ago chat --client-tools`.
+Disable the loop guard entirely with `AGO_LOOP_GUARD=false` if an agent
+legitimately needs to retry an identical failing command.
+
+**Pin the limits per project (`.ago.yaml`).** So you don't repeat env vars each
+session, set a `guard:` block — env vars still override it. Useful for a project
+whose agent tends to thrash on scattered failures:
+
+```yaml
+# .ago.yaml — precedence per field: built-in default < this block < env var
+guard:
+  fail_density: 8   # halt if 8 of the last 10 tool calls failed (any command)
+  max_steps: 60     # hard stop (multi-agent fan-out overruns the agent max_steps)
+  max_usd: 0.30     # hard cost ceiling per turn
+  # also available: loop_guard, loop_threshold, loop_window, fail_warn, fail_halt
+```
 
 ---
 

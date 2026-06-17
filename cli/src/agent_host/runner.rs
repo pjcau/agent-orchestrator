@@ -788,6 +788,63 @@ fn spawn_failure_detail(base: &str, argv0: &str, not_found: bool, in_jail: bool)
     }
 }
 
+/// Build the `output` Value for a shell result and, for failures, an error
+/// signature for no-progress detection. Large *failing* output is replaced by
+/// an error-salient digest (feature "A") so the diagnosis survives the
+/// downstream context cap instead of being elided from the middle.
+fn shell_output_value(
+    stdout: &str,
+    stderr: &str,
+    returncode: Option<i32>,
+    is_error: bool,
+) -> (Value, Option<String>) {
+    let signature = if is_error {
+        super::error_digest::error_signature(stdout, stderr)
+    } else {
+        None
+    };
+    let combined_len = stdout.len() + stderr.len();
+    let budget = digest_budget();
+    if is_error && digest_enabled() && combined_len > budget {
+        let excerpt = super::error_digest::salient_excerpt(stdout, stderr, budget);
+        let value = json!({
+            "returncode": returncode,
+            "error_digest": excerpt,
+            "note": format!(
+                "output trimmed to salient error lines ({} of {} bytes); \
+                 set AGO_ERROR_DIGEST=false for the raw output",
+                excerpt.len(),
+                combined_len
+            ),
+        });
+        (value, signature)
+    } else {
+        (
+            json!({"stdout": stdout, "stderr": stderr, "returncode": returncode}),
+            signature,
+        )
+    }
+}
+
+fn digest_enabled() -> bool {
+    !matches!(
+        std::env::var("AGO_ERROR_DIGEST")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "0" | "false" | "no" | "off"
+    )
+}
+
+fn digest_budget() -> usize {
+    std::env::var("AGO_ERROR_DIGEST_BYTES")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(4000)
+}
+
 fn finalise_shell(
     argv: Vec<String>,
     status: Option<std::process::ExitStatus>,
@@ -810,21 +867,20 @@ fn finalise_shell(
             );
     }
     if timed_out {
-        return ToolOutcome::err("shell_timeout")
+        let (output, signature) = shell_output_value(&stdout, &stderr, returncode, true);
+        let mut out = ToolOutcome::err("shell_timeout")
             .with_meta("argv0", json!(argv[0]))
-            .with_meta(
-                "output",
-                json!({"stdout": stdout, "stderr": stderr, "returncode": returncode}),
-            );
+            .with_meta("output", output);
+        if let Some(sig) = signature {
+            out.metadata.insert("error_signature".into(), json!(sig));
+        }
+        return out;
     }
     let success = returncode == Some(0);
+    let (output, signature) = shell_output_value(&stdout, &stderr, returncode, !success);
     let mut out = ToolOutcome {
         success,
-        output: json!({
-            "stdout": stdout,
-            "stderr": stderr,
-            "returncode": returncode,
-        }),
+        output,
         error_code: if success {
             None
         } else {
@@ -835,6 +891,9 @@ fn finalise_shell(
     out.metadata.insert("argv0".into(), json!(argv[0]));
     out.metadata
         .insert("elapsed_ms".into(), json!(elapsed.as_millis() as u64));
+    if let Some(sig) = signature {
+        out.metadata.insert("error_signature".into(), json!(sig));
+    }
     out
 }
 
