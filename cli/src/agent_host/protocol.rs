@@ -373,6 +373,11 @@ pub struct Step {
     pub output_tokens: u64,
     #[serde(default)]
     pub cost_usd: f64,
+    /// Cross-turn workspace-digest decision for THIS turn, stamped by the
+    /// orchestrator on the team-lead's first step (e.g. "injected (…, keep)",
+    /// "reset (pivot)", "empty"). Additive: empty when the server omits it.
+    #[serde(default)]
+    pub digest: String,
 }
 
 /// The wire kind is `error` but Rust reserves `Error` so we suffix.
@@ -606,6 +611,7 @@ mod tests {
             input_tokens: 4096,
             output_tokens: 512,
             cost_usd: 0.004,
+            digest: "injected (4 files, 1 ok-cmd, 2 bad-cmd, keep)".into(),
         });
         assert_eq!(round_trip(f.clone()), f);
     }
@@ -666,6 +672,8 @@ mod tests {
             assert_eq!(s.input_tokens, 0);
             assert_eq!(s.output_tokens, 0);
             assert_eq!(s.cost_usd, 0.0);
+            // A server that omits the digest note leaves it empty.
+            assert_eq!(s.digest, "");
         } else {
             panic!("kind drift");
         }

@@ -161,6 +161,32 @@ class TestFrameRoundTrip:
             )
         )
 
+    def test_step_with_digest(self):
+        self._round_trip(
+            Step(
+                index=1,
+                total=40,
+                label="thinking",
+                agent="team-lead",
+                digest="injected (4 files, 1 ok-cmd, 2 bad-cmd, keep)",
+            )
+        )
+
+    def test_old_step_without_digest_defaults_empty(self):
+        # A server that omits the digest note → client defaults it to "".
+        parsed = Step.from_dict(
+            {
+                "kind": Step.kind,
+                "frame_id": "f",
+                "timestamp": 0.0,
+                "index": 1,
+                "total": 0,
+                "label": "x",
+                "agent": "",
+            }
+        )
+        assert parsed.digest == ""
+
     def test_error(self):
         self._round_trip(Error(code="version_unsupported", message="v2 only"))
 

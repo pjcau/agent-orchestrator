@@ -279,6 +279,14 @@ class WorkspaceDigest:
     def is_empty(self) -> bool:
         return not (self.layout or self.commands_ok or self.commands_bad)
 
+    def summary(self) -> str:
+        """One-line count summary for telemetry/logging (e.g. step frames)."""
+        return (
+            f"{len(self.layout)} files, "
+            f"{len(self.commands_ok)} ok-cmd, "
+            f"{len(self.commands_bad)} bad-cmd"
+        )
+
     def _sorted(self, bucket: dict[str, _Entry]) -> list[_Entry]:
         return sorted(bucket.values(), key=lambda e: e.seq, reverse=True)
 

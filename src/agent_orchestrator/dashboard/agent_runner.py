@@ -1224,13 +1224,19 @@ async def run_team(
     # sub-agent re-discovering the layout. Updated once after the barrier.
     active_digest_store = digest_store or _digest_store
     team_digest_block = ""
+    # One-line summary stamped onto the team-lead Step frame so the client log
+    # can SEE the digest decision (injected / reset / empty) — the rendered
+    # block goes into the system prompt, which never reaches the client.
+    team_digest_summary = "empty"
     if conversation_id:
         existing_digest = active_digest_store.get(conversation_id)
         if existing_digest is not None and not existing_digest.is_empty():
             if is_followup_goal(existing_digest.goal, task_description):
                 team_digest_block = existing_digest.render()
+                team_digest_summary = f"injected ({existing_digest.summary()}, keep)"
             else:
                 existing_digest.reset()
+                team_digest_summary = "reset (pivot)"
 
     # --- Step 1: Team-lead plans with agent registry ---
     await bus.emit(
@@ -1251,7 +1257,7 @@ async def run_team(
         Event(
             event_type=EventType.AGENT_STEP,
             agent_name="team-lead",
-            data={"step": 1, "model": provider.model_id},
+            data={"step": 1, "model": provider.model_id, "digest": team_digest_summary},
         )
     )
 

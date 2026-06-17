@@ -684,6 +684,12 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                 elif event.event_type == EventType.AGENT_STEP:
                     step_index += 1
                     label = _step_label(event.data)
+                    # Surface the cross-turn workspace-digest decision (if the
+                    # orchestrator stamped one on this step) so the client log
+                    # can see when the digest is injected/reset.
+                    digest_note = ""
+                    if isinstance(event.data, dict):
+                        digest_note = str(event.data.get("digest") or "")
                     try:
                         await ws.send_json(
                             Step(
@@ -694,6 +700,7 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                                 input_tokens=usage["input_tokens"],
                                 output_tokens=usage["output_tokens"],
                                 cost_usd=usage["cost_usd"],
+                                digest=digest_note[:120],
                             ).to_dict()
                         )
                     except Exception as exc:  # noqa: BLE001

@@ -174,6 +174,15 @@ def test_render_empty_returns_empty_string():
     assert WorkspaceDigest().render() == ""
 
 
+def test_summary_counts():
+    d = WorkspaceDigest()
+    d.note_file("a.py")
+    d.note_file("b.py")
+    d.note_command("pytest -q", ok=True)
+    d.note_command("npm test", ok=False, reason="timeout")
+    assert d.summary() == "2 files, 1 ok-cmd, 1 bad-cmd"
+
+
 def test_render_contains_sections():
     d = WorkspaceDigest()
     d.note_file("src/app.py")

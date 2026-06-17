@@ -157,6 +157,13 @@ unbounded, cost + degradation) or carry **nothing** (re-exploration). The
   LangChain summary-buffer (recent verbatim + older condensed), Reflexion
   episodic memory (a compact lesson across consecutive attempts at the same
   task), and LangGraph procedural memory (the known-good commands).
+- **Observability** — the digest goes into the *system prompt*, which never
+  reaches the agent-host client, so its effect can't be seen in the CLI session
+  log. To make the decision visible, `run_team` stamps a one-line summary
+  (`injected (N files, …, keep)` / `reset (pivot)` / `empty`) on the team-lead's
+  first `AGENT_STEP`; the agent-host bridge forwards it as the `Step` frame's
+  additive `digest` field, and the CLI logs it (`step … digest="…"`). Lets a
+  `--log-file` trace show when the digest was injected vs reset.
 
 ---
 

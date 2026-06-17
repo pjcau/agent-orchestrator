@@ -341,6 +341,10 @@ class Step(Frame):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    # Optional cross-turn workspace-digest decision for THIS turn
+    # (e.g. "injected (4 files, …, keep)" / "reset (pivot)" / "empty").
+    # Stamped on the team-lead's first step; additive, so older clients ignore it.
+    digest: str = ""
 
 
 _KIND_MAP: dict[str, type[Frame]] = {

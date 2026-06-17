@@ -1099,10 +1099,26 @@ fn debug_frame(dir: &str, f: &Frame) {
         }
         Frame::Cancel(c) => debug!("{dir} cancel id={} reason={}", c.tool_call_id, c.reason),
         Frame::AssistantText(a) => debug!("{dir} assistant_text {}B", a.chunk.len()),
-        Frame::Step(s) => debug!(
-            "{dir} step idx={} total={} agent={:?} label={:?} in={} out={} cost={}",
-            s.index, s.total, s.agent, s.label, s.input_tokens, s.output_tokens, s.cost_usd
-        ),
+        Frame::Step(s) => {
+            if s.digest.is_empty() {
+                debug!(
+                    "{dir} step idx={} total={} agent={:?} label={:?} in={} out={} cost={}",
+                    s.index, s.total, s.agent, s.label, s.input_tokens, s.output_tokens, s.cost_usd
+                )
+            } else {
+                debug!(
+                    "{dir} step idx={} total={} agent={:?} label={:?} in={} out={} cost={} digest={:?}",
+                    s.index,
+                    s.total,
+                    s.agent,
+                    s.label,
+                    s.input_tokens,
+                    s.output_tokens,
+                    s.cost_usd,
+                    s.digest
+                )
+            }
+        }
         Frame::TurnEnd(t) => debug!(
             "{dir} turn_end status={:?} steps={} in={} out={} cost={} error={:?}",
             t.status, t.step_count, t.input_tokens, t.output_tokens, t.cost_usd, t.error
