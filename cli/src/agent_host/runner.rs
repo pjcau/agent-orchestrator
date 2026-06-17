@@ -26,6 +26,7 @@ use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::Notify;
+use tracing::debug;
 
 use super::allowlist::{is_high_risk, AllowlistError, ShellAllowlist};
 use super::sandbox::{enforce_workspace, SandboxError};
@@ -466,6 +467,12 @@ impl LocalToolRunner {
         let long_running = is_long_running_command(&argv);
         let mut detached = false;
         let effective_timeout = if long_running {
+            debug!(
+                "shell_exec: '{}' detected as long-running server → {}s grace instead of {}s timeout",
+                argv.join(" "),
+                self.long_running_grace.as_secs(),
+                self.shell_timeout.as_secs()
+            );
             self.long_running_grace
         } else {
             self.shell_timeout
@@ -548,6 +555,11 @@ impl LocalToolRunner {
             let argv0 = argv[0].clone();
             let snapshot = String::from_utf8_lossy(&out_buf).to_string();
             let grace_s = effective_timeout.as_secs();
+            debug!(
+                "shell_exec: '{}' still running after {}s grace → reported 'started', left running (detached)",
+                argv.join(" "),
+                grace_s
+            );
             tokio::spawn(async move {
                 let mut child = child;
                 let mut stdout = stdout;

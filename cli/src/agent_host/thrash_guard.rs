@@ -37,6 +37,7 @@
 use std::collections::VecDeque;
 
 use sha2::{Digest, Sha256};
+use tracing::debug;
 
 /// Resolved guard configuration. Built once per session from the environment.
 #[derive(Debug, Clone, PartialEq)]
@@ -191,6 +192,7 @@ impl TurnGuard {
             .filter(|(hh, was_err)| *hh == h && *was_err)
             .count() as u32;
         if failures >= self.cfg.loop_threshold {
+            debug!("thrash_guard: BLOCK `{name}` — failed {failures}× in recent window");
             return Decision::Block(format!(
                 "loop_blocked: this exact `{name}` call has already failed {failures}× recently \
                  — change approach instead of retrying the same command \
@@ -246,6 +248,7 @@ impl TurnGuard {
         if self.cfg.fail_warn > 0 && self.consec_fail == self.cfg.fail_warn && !self.warned {
             self.warned = true;
             let n = self.consec_fail;
+            debug!("thrash_guard: WARN — {n} consecutive tool failures");
             return Some(format!(
                 "⚠ {n} tool calls have failed in a row — the agent may be stuck; \
                  press Ctrl-C or type :quit to stop"
@@ -273,6 +276,7 @@ impl TurnGuard {
             .filter(|s| s.as_str() == signature)
             .count() as u32;
         if count >= self.cfg.no_progress {
+            debug!("thrash_guard: no-progress nudge — \"{signature}\" ×{count}");
             Some(format!(
                 "no-progress: the same error has occurred {count}× across your recent attempts — \
                  \"{signature}\". The root cause has not changed; stop varying the command and \
@@ -306,6 +310,7 @@ impl TurnGuard {
 
     /// Mark the turn halted and return the user-facing message.
     fn halt(&mut self, why: String) -> String {
+        debug!("thrash_guard: HALT — {why}");
         let msg = format!(
             "⊘ turn halted by client: {why}. No further tools will run this turn — \
              press Ctrl-C or type :quit (resume later with --resume)."

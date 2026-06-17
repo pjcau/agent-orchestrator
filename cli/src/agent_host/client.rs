@@ -1061,7 +1061,18 @@ fn debug_frame(dir: &str, f: &Frame) {
         ),
         Frame::ToolResult(tr) => {
             if tr.status == "ok" {
-                debug!("{dir} tool_result id={} status=ok", tr.tool_call_id)
+                // Surface a non-default status marker (e.g. a long-running
+                // server reported as `started`) so the trace isn't a blind
+                // `status=ok` for detached commands.
+                match tr.output.get("status").and_then(|v| v.as_str()) {
+                    Some(s) if !s.is_empty() => {
+                        debug!(
+                            "{dir} tool_result id={} status=ok detail={}",
+                            tr.tool_call_id, s
+                        )
+                    }
+                    _ => debug!("{dir} tool_result id={} status=ok", tr.tool_call_id),
+                }
             } else {
                 // P1: never log a bare `status=error`. Surface the typed
                 // error_code and any payload so `--log-file` traces are
