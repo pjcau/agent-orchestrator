@@ -1,6 +1,6 @@
 [package]
 name = "ago"
-version = "0.5.32"
+version = "0.5.33"
 edition = "2021"
 description = "Agent Orchestrator CLI — talk to a remote orchestrator from your local project."
 license = "MIT"
