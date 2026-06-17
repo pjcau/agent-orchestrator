@@ -34,6 +34,10 @@ from ..core.cache import InMemoryCache
 from ..core.conversation import ConversationManager
 from ..core.store import BaseStore
 from ..core.provider import Message, Provider, Role, ToolDefinition
+from ..core.workspace_digest import (
+    WorkspaceDigestStore,
+    is_followup_goal,
+)
 from ..core.sandbox import Sandbox
 from ..core.skill import SkillRegistry, cache_middleware
 from ..skills import FileReadSkill, FileWriteSkill, GlobSkill, ShellExecSkill
@@ -86,10 +90,20 @@ logger = logging.getLogger(__name__)
 # Module-level shared tool cache for all agent runs
 _tool_cache = InMemoryCache(max_entries=200)
 
+# Module-level shared cross-turn workspace digest store (see workspace_digest).
+# Keyed by conversation_id; lets consecutive iterations on the same goal reuse
+# durable facts (layout, known-good/known-bad commands) instead of re-exploring.
+_digest_store = WorkspaceDigestStore()
+
 
 def get_tool_cache() -> InMemoryCache:
     """Return the shared tool cache instance (for stats/clearing)."""
     return _tool_cache
+
+
+def get_digest_store() -> WorkspaceDigestStore:
+    """Return the shared workspace digest store (for stats/clearing/tests)."""
+    return _digest_store
 
 
 def create_skill_registry(
@@ -155,6 +169,7 @@ async def run_agent(
     sandbox: Sandbox | None = None,
     store: BaseStore | None = None,
     skill_registry_override: Any = None,
+    digest_store: WorkspaceDigestStore | None = None,
 ) -> dict[str, Any]:
     """Run an agent on a task with real-time event emissions.
 
@@ -169,6 +184,13 @@ async def run_agent(
         store: Optional BaseStore for per-agent long-term memory. When set,
             recent memories are injected into the system prompt and a summary
             is persisted after task completion.
+        digest_store: Optional WorkspaceDigestStore for cross-turn workspace
+            memory. When set together with conversation_id, durable facts
+            (known files, commands that worked / failed) from previous
+            iterations on the same goal are injected into the prompt and the
+            digest is updated after the run. Defaults to a shared module-level
+            store, so multi-turn conversations get this for free. A goal pivot
+            (see is_followup_goal) resets the digest.
 
     Returns a dict with success, output, steps, usage, etc.
     """
@@ -241,6 +263,21 @@ async def run_agent(
             if len(memory_block) > 2000:
                 memory_block = memory_block[:1997] + "..."
             role = memory_block + "\n\n" + role
+
+    # Inject the cross-turn workspace digest: durable facts (known files,
+    # commands that worked / failed) from previous CONSECUTIVE iterations on the
+    # same goal, so the agent stops re-exploring the workspace each turn. On a
+    # goal pivot the digest is reset so we don't re-introduce task inertia.
+    active_digest_store = digest_store or _digest_store
+    if conversation_id:
+        existing_digest = active_digest_store.get(conversation_id)
+        if existing_digest is not None and not existing_digest.is_empty():
+            if is_followup_goal(existing_digest.goal, task_description):
+                digest_block = existing_digest.render()
+                if digest_block:
+                    role = digest_block + "\n\n" + role
+            else:
+                existing_digest.reset()
 
     config = AgentConfig(
         name=agent_name,
@@ -362,6 +399,18 @@ async def run_agent(
     )
 
     artifacts = result.artifacts or {}
+
+    # Update the cross-turn workspace digest from this run's step log so the
+    # next iteration on the same goal inherits the durable facts.
+    if conversation_id:
+        try:
+            digest = active_digest_store.get_or_create(conversation_id)
+            digest.update_from_step_log(artifacts.get("step_log", []))
+            digest.goal = task_description
+            active_digest_store.put(conversation_id, digest)
+        except Exception:
+            pass  # Digest bookkeeping must never disrupt the agent result
+
     return {
         "success": result.status == TaskStatus.COMPLETED,
         "status": result.status.value,
@@ -652,14 +701,27 @@ async def _instrumented_execute(
                 consecutive_failures = 0
                 streak_error_codes.clear()
 
-            # Track files and steps
+            # Track files and steps. The step_log doubles as the source for the
+            # cross-turn workspace digest, so it records WHICH file was read and
+            # whether a command succeeded/failed (with a short reason).
             if tool_call.name == "file_write" and result.success:
                 fpath = tool_call.arguments.get("file_path", "?")
                 files_created.append(fpath)
                 step_log.append(f"wrote {fpath}")
+            elif tool_call.name in ("file_read", "glob_search") and result.success:
+                fpath = (
+                    tool_call.arguments.get("file_path")
+                    or tool_call.arguments.get("pattern")
+                    or "?"
+                )
+                step_log.append(f"read {fpath}")
             elif tool_call.name == "shell_exec":
-                cmd = tool_call.arguments.get("command", "")[:60]
-                step_log.append(f"ran: {cmd}")
+                cmd = tool_call.arguments.get("command", "")[:80]
+                if result.success:
+                    step_log.append(f"ran: {cmd}")
+                else:
+                    reason = (getattr(result, "error", None) or "failed").split(":")[0][:40]
+                    step_log.append(f"ran-failed[{reason}]: {cmd}")
             elif result.success:
                 step_log.append(f"{tool_call.name}: ok")
 
@@ -1068,6 +1130,7 @@ async def run_team(
     sandbox_manager: SandboxManager | None = None,
     store: BaseStore | None = None,
     skill_registry_override: Any = None,
+    digest_store: WorkspaceDigestStore | None = None,
 ) -> dict[str, Any]:
     """Run a multi-agent team with dynamic routing.
 
@@ -1143,6 +1206,21 @@ async def run_team(
         history = await conversation_manager.get_history(conversation_id)
         for msg in history:
             team_history_msgs.append(Message(role=Role(msg.role), content=msg.content))
+
+    # Cross-turn workspace digest (shared by every sub-agent this turn). Resolved
+    # once at the user-goal level: keep it while consecutive iterations hammer the
+    # same goal, reset it on a pivot. The rendered block is prepended to each
+    # sub-agent's role so the fan-out reuses durable facts instead of every
+    # sub-agent re-discovering the layout. Updated once after the barrier.
+    active_digest_store = digest_store or _digest_store
+    team_digest_block = ""
+    if conversation_id:
+        existing_digest = active_digest_store.get(conversation_id)
+        if existing_digest is not None and not existing_digest.is_empty():
+            if is_followup_goal(existing_digest.goal, task_description):
+                team_digest_block = existing_digest.render()
+            else:
+                existing_digest.reset()
 
     # --- Step 1: Team-lead plans with agent registry ---
     await bus.emit(
@@ -1346,6 +1424,12 @@ async def run_team(
             if agent_info
             else (f"You are {agent_name}. Be practical and thorough.")
         )
+
+        # Prepend the cross-turn workspace digest so this sub-agent reuses
+        # durable facts (known files, commands that worked / failed) from prior
+        # consecutive iterations on the same goal instead of re-exploring.
+        if team_digest_block:
+            role = team_digest_block + "\n\n" + role
 
         # Category-specific action instructions
         if agent_category in ("finance", "data-science", "marketing"):
@@ -1665,6 +1749,19 @@ async def run_team(
 
     elapsed = time.time() - start_time
     all_files = [f for files in agent_files.values() for f in files]
+
+    # Update the cross-turn workspace digest once, aggregating every sub-agent's
+    # step log from this turn (both the initial round and any re-delegation), so
+    # the next iteration on the same goal inherits the durable facts.
+    if conversation_id:
+        try:
+            digest = active_digest_store.get_or_create(conversation_id)
+            for sub_steps in agent_steps_log.values():
+                digest.update_from_step_log(sub_steps)
+            digest.goal = task_description
+            active_digest_store.put(conversation_id, digest)
+        except Exception:
+            pass  # Digest bookkeeping must never disrupt the team result
 
     # Save to conversation memory
     if conversation_id and conversation_manager:

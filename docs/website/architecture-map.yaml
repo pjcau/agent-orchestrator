@@ -159,6 +159,12 @@ clusters:
         cy: 280
         size: 28
         description: Compression + summarization of long histories.
+      - name: Workspace Digest
+        files: [core/workspace_digest.py]
+        cx: 640
+        cy: 200
+        size: 30
+        description: Bounded cross-turn facts, kept while the goal stays consecutive.
 
   - id: protocols
     label: Protocols

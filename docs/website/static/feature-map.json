@@ -28,9 +28,9 @@
       "description": "Agent runner for the dashboard.",
       "classes": [],
       "in_degree": 3,
-      "out_degree": 15,
-      "lines": 1673,
-      "weight": 10.22
+      "out_degree": 16,
+      "lines": 1874,
+      "weight": 10.27
     },
     {
       "id": "dashboard.agent_runtime_router",
@@ -57,7 +57,7 @@
       "classes": [],
       "in_degree": 4,
       "out_degree": 0,
-      "lines": 177,
+      "lines": 178,
       "weight": 11.25
     },
     {
@@ -420,8 +420,8 @@
       ],
       "in_degree": 3,
       "out_degree": 10,
-      "lines": 810,
-      "weight": 14.91
+      "lines": 879,
+      "weight": 14.94
     },
     {
       "id": "core.alerts",
@@ -1712,6 +1712,23 @@
       "weight": 6.08
     },
     {
+      "id": "core.workspace_digest",
+      "name": "workspace_digest",
+      "category": "Core",
+      "layer": "harness",
+      "path": "core/workspace_digest.py",
+      "description": "Workspace digest \u2014 bounded, cross-turn memory of durable workspace facts.",
+      "classes": [
+        "_Entry",
+        "WorkspaceDigest",
+        "WorkspaceDigestStore"
+      ],
+      "in_degree": 1,
+      "out_degree": 0,
+      "lines": 394,
+      "weight": 8.6
+    },
+    {
       "id": "core.yaml_config",
       "name": "yaml_config",
       "category": "Core",
@@ -2001,23 +2018,7 @@
   "edges": [
     {
       "source": "core.agent",
-      "target": "core.clarification"
-    },
-    {
-      "source": "core.agent",
-      "target": "core.tool_recovery"
-    },
-    {
-      "source": "core.agent",
-      "target": "core.skill"
-    },
-    {
-      "source": "core.agent",
-      "target": "core.loop_detection"
-    },
-    {
-      "source": "core.agent",
-      "target": "core.metrics"
+      "target": "core.personalized_memory"
     },
     {
       "source": "core.agent",
@@ -2025,19 +2026,35 @@
     },
     {
       "source": "core.agent",
+      "target": "core.prompt_markers"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.loop_detection"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.clarification"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.metrics"
+    },
+    {
+      "source": "core.agent",
+      "target": "core.skill"
+    },
+    {
+      "source": "core.agent",
       "target": "core.provider"
     },
     {
       "source": "core.agent",
+      "target": "core.tool_recovery"
+    },
+    {
+      "source": "core.agent",
       "target": "core.guardrails"
-    },
-    {
-      "source": "core.agent",
-      "target": "core.personalized_memory"
-    },
-    {
-      "source": "core.agent",
-      "target": "core.prompt_markers"
     },
     {
       "source": "core.benchmark",
@@ -2053,10 +2070,14 @@
     },
     {
       "source": "core.conformance",
-      "target": "core.provider"
+      "target": "core.checkpoint"
     },
     {
       "source": "core.conformance",
+      "target": "core.provider"
+    },
+    {
+      "source": "core.conversation",
       "target": "core.checkpoint"
     },
     {
@@ -2070,10 +2091,6 @@
     {
       "source": "core.conversation",
       "target": "core.memory_filter"
-    },
-    {
-      "source": "core.conversation",
-      "target": "core.checkpoint"
     },
     {
       "source": "core.cooperation",
@@ -2093,7 +2110,7 @@
     },
     {
       "source": "core.graph",
-      "target": "core.tracing"
+      "target": "core.checkpoint"
     },
     {
       "source": "core.graph",
@@ -2101,14 +2118,22 @@
     },
     {
       "source": "core.graph",
-      "target": "core.checkpoint"
+      "target": "core.tracing"
+    },
+    {
+      "source": "core.graph_patterns",
+      "target": "core.graph"
     },
     {
       "source": "core.graph_patterns",
       "target": "core.provider"
     },
     {
-      "source": "core.graph_patterns",
+      "source": "core.graph_templates",
+      "target": "core.llm_nodes"
+    },
+    {
+      "source": "core.graph_templates",
       "target": "core.graph"
     },
     {
@@ -2120,24 +2145,12 @@
       "target": "core.graph_patterns"
     },
     {
-      "source": "core.graph_templates",
-      "target": "core.graph"
-    },
-    {
-      "source": "core.graph_templates",
-      "target": "core.llm_nodes"
-    },
-    {
       "source": "core.guardrails",
       "target": "core.provider"
     },
     {
       "source": "core.knowledge",
-      "target": "core.knowledge.retrieval"
-    },
-    {
-      "source": "core.knowledge",
-      "target": "core.knowledge.embeddings"
+      "target": "core.knowledge.store"
     },
     {
       "source": "core.knowledge",
@@ -2149,11 +2162,11 @@
     },
     {
       "source": "core.knowledge",
-      "target": "core.knowledge.store"
+      "target": "core.knowledge.embeddings"
     },
     {
-      "source": "core.knowledge.ingestion",
-      "target": "core.knowledge.embeddings"
+      "source": "core.knowledge",
+      "target": "core.knowledge.retrieval"
     },
     {
       "source": "core.knowledge.ingestion",
@@ -2164,7 +2177,7 @@
       "target": "core.knowledge.chunker"
     },
     {
-      "source": "core.knowledge.retrieval",
+      "source": "core.knowledge.ingestion",
       "target": "core.knowledge.embeddings"
     },
     {
@@ -2172,20 +2185,32 @@
       "target": "core.knowledge.store"
     },
     {
-      "source": "core.llm_nodes",
-      "target": "core.provider"
+      "source": "core.knowledge.retrieval",
+      "target": "core.knowledge.embeddings"
     },
     {
       "source": "core.llm_nodes",
       "target": "core.cache"
     },
     {
-      "source": "core.observability",
-      "target": "core.observability.phoenix_exporter"
+      "source": "core.llm_nodes",
+      "target": "core.provider"
     },
     {
       "source": "core.observability",
       "target": "core.observability.langfuse_exporter"
+    },
+    {
+      "source": "core.observability",
+      "target": "core.observability.phoenix_exporter"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.router"
+    },
+    {
+      "source": "core.orchestrator",
+      "target": "core.cooperation"
     },
     {
       "source": "core.orchestrator",
@@ -2197,19 +2222,11 @@
     },
     {
       "source": "core.orchestrator",
-      "target": "core.mcp_server"
-    },
-    {
-      "source": "core.orchestrator",
       "target": "core.provider"
     },
     {
       "source": "core.orchestrator",
-      "target": "core.router"
-    },
-    {
-      "source": "core.orchestrator",
-      "target": "core.cooperation"
+      "target": "core.mcp_server"
     },
     {
       "source": "core.personalized_memory",
@@ -2221,11 +2238,11 @@
     },
     {
       "source": "core.prompt_registry",
-      "target": "core.store"
+      "target": "core.metrics"
     },
     {
       "source": "core.prompt_registry",
-      "target": "core.metrics"
+      "target": "core.store"
     },
     {
       "source": "core.provider",
@@ -2237,11 +2254,11 @@
     },
     {
       "source": "core.router",
-      "target": "core.health"
+      "target": "core.provider"
     },
     {
       "source": "core.router",
-      "target": "core.provider"
+      "target": "core.health"
     },
     {
       "source": "core.skill",
@@ -2253,11 +2270,11 @@
     },
     {
       "source": "core.store",
-      "target": "core.memory_filter"
+      "target": "core.conformance"
     },
     {
       "source": "core.store",
-      "target": "core.conformance"
+      "target": "core.memory_filter"
     },
     {
       "source": "core.store_postgres",
@@ -2277,7 +2294,11 @@
     },
     {
       "source": "core.verifiers",
-      "target": "core.verifiers.coherence"
+      "target": "core.verifiers.entrypoint"
+    },
+    {
+      "source": "core.verifiers",
+      "target": "core.verifiers.syntax"
     },
     {
       "source": "core.verifiers",
@@ -2285,11 +2306,7 @@
     },
     {
       "source": "core.verifiers",
-      "target": "core.verifiers.runtime_smoke"
-    },
-    {
-      "source": "core.verifiers",
-      "target": "core.verifiers.entrypoint"
+      "target": "core.verifiers.dependency"
     },
     {
       "source": "core.verifiers",
@@ -2297,15 +2314,15 @@
     },
     {
       "source": "core.verifiers",
-      "target": "core.verifiers.dependency"
+      "target": "core.verifiers.coherence"
+    },
+    {
+      "source": "core.verifiers",
+      "target": "core.verifiers.runtime_smoke"
     },
     {
       "source": "core.verifiers",
       "target": "core.verifiers.encoding"
-    },
-    {
-      "source": "core.verifiers",
-      "target": "core.verifiers.syntax"
     },
     {
       "source": "core.verifiers.coherence",
@@ -2333,11 +2350,11 @@
     },
     {
       "source": "core.verifiers.entrypoint",
-      "target": "core.verification_gate"
+      "target": "core.verifiers.runtime_smoke"
     },
     {
       "source": "core.verifiers.entrypoint",
-      "target": "core.verifiers.runtime_smoke"
+      "target": "core.verification_gate"
     },
     {
       "source": "core.verifiers.imports",
@@ -2357,27 +2374,7 @@
     },
     {
       "source": "dashboard.agent_runner",
-      "target": "core.agent"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "core.tool_recovery"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "skills"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "core.skill"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "dashboard.sandbox_manager"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "skills.sandboxed_shell"
+      "target": "core.atomic_tasks"
     },
     {
       "source": "dashboard.agent_runner",
@@ -2385,27 +2382,7 @@
     },
     {
       "source": "dashboard.agent_runner",
-      "target": "core.provider"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "core.atomic_tasks"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "core.store"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "core.sandbox"
-    },
-    {
-      "source": "dashboard.agent_runner",
       "target": "core.smoke_tester"
-    },
-    {
-      "source": "dashboard.agent_runner",
-      "target": "dashboard.events"
     },
     {
       "source": "dashboard.agent_runner",
@@ -2416,16 +2393,52 @@
       "target": "core.cache"
     },
     {
+      "source": "dashboard.agent_runner",
+      "target": "skills.sandboxed_shell"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "dashboard.sandbox_manager"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.agent"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.skill"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "skills"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.provider"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.store"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.tool_recovery"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.workspace_digest"
+    },
+    {
+      "source": "dashboard.agent_runner",
+      "target": "core.sandbox"
+    },
+    {
       "source": "dashboard.agent_runtime_router",
       "target": "dashboard.agent_runner"
-    },
-    {
-      "source": "dashboard.agent_runtime_router",
-      "target": "skills.retrieval_skill"
-    },
-    {
-      "source": "dashboard.agent_runtime_router",
-      "target": "core.repair_loop"
     },
     {
       "source": "dashboard.agent_runtime_router",
@@ -2433,11 +2446,7 @@
     },
     {
       "source": "dashboard.agent_runtime_router",
-      "target": "dashboard.auth"
-    },
-    {
-      "source": "dashboard.agent_runtime_router",
-      "target": "core.verifiers"
+      "target": "providers.local"
     },
     {
       "source": "dashboard.agent_runtime_router",
@@ -2449,19 +2458,11 @@
     },
     {
       "source": "dashboard.agent_runtime_router",
-      "target": "providers.openrouter"
+      "target": "dashboard.auth"
     },
     {
       "source": "dashboard.agent_runtime_router",
-      "target": "providers.local"
-    },
-    {
-      "source": "dashboard.agent_runtime_router",
-      "target": "core.provider"
-    },
-    {
-      "source": "dashboard.agent_runtime_router",
-      "target": "dashboard.events"
+      "target": "core.verifiers"
     },
     {
       "source": "dashboard.agent_runtime_router",
@@ -2469,75 +2470,27 @@
     },
     {
       "source": "dashboard.agent_runtime_router",
+      "target": "providers.openrouter"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
       "target": "core.failure_patterns"
     },
     {
-      "source": "dashboard.app",
-      "target": "dashboard.alert_webhook"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "core.mcp_client"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "core.checkpoint_postgres"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.sandbox_manager"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.knowledge_routes"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "core.prompt_registry"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.cli_device_flow"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "core.store_postgres"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.agent_runtime_router"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.job_logger"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.auth"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.gateway_api"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.cli_device_flow_postgres"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "core.sandbox"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.usage_db"
-    },
-    {
-      "source": "dashboard.app",
+      "source": "dashboard.agent_runtime_router",
       "target": "dashboard.events"
     },
     {
-      "source": "dashboard.app",
-      "target": "core.knowledge"
+      "source": "dashboard.agent_runtime_router",
+      "target": "core.provider"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "core.repair_loop"
+    },
+    {
+      "source": "dashboard.agent_runtime_router",
+      "target": "skills.retrieval_skill"
     },
     {
       "source": "dashboard.app",
@@ -2545,15 +2498,11 @@
     },
     {
       "source": "dashboard.app",
-      "target": "core.metrics"
+      "target": "dashboard.gateway_api"
     },
     {
       "source": "dashboard.app",
-      "target": "core.checkpoint"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "dashboard.user_store"
+      "target": "core.sandbox"
     },
     {
       "source": "dashboard.app",
@@ -2561,11 +2510,7 @@
     },
     {
       "source": "dashboard.app",
-      "target": "core.store"
-    },
-    {
-      "source": "dashboard.app",
-      "target": "core.personalized_memory"
+      "target": "core.mcp_client"
     },
     {
       "source": "dashboard.app",
@@ -2573,7 +2518,23 @@
     },
     {
       "source": "dashboard.app",
-      "target": "dashboard.sse"
+      "target": "dashboard.auth"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.usage_db"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.prompt_registry"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.agent_runtime_router"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.sandbox_manager"
     },
     {
       "source": "dashboard.app",
@@ -2581,11 +2542,71 @@
     },
     {
       "source": "dashboard.app",
+      "target": "core.personalized_memory"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.cli_device_flow_postgres"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.store"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.alert_webhook"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.job_logger"
+    },
+    {
+      "source": "dashboard.app",
       "target": "dashboard.oauth_routes"
     },
     {
       "source": "dashboard.app",
+      "target": "core.checkpoint_postgres"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.user_store"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.checkpoint"
+    },
+    {
+      "source": "dashboard.app",
       "target": "dashboard.evals_routes"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.cli_device_flow"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.sse"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.knowledge"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.metrics"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "dashboard.knowledge_routes"
+    },
+    {
+      "source": "dashboard.app",
+      "target": "core.store_postgres"
     },
     {
       "source": "dashboard.cli_device_flow_postgres",
@@ -2601,7 +2622,11 @@
     },
     {
       "source": "dashboard.cli_routes",
-      "target": "dashboard.cli_device_flow"
+      "target": "dashboard.agents_registry"
+    },
+    {
+      "source": "dashboard.cli_routes",
+      "target": "core.cache_context"
     },
     {
       "source": "dashboard.cli_routes",
@@ -2609,11 +2634,7 @@
     },
     {
       "source": "dashboard.cli_routes",
-      "target": "dashboard.agents_registry"
-    },
-    {
-      "source": "dashboard.cli_routes",
-      "target": "core.cache_context"
+      "target": "dashboard.cli_device_flow"
     },
     {
       "source": "dashboard.cli_routes",
@@ -2629,19 +2650,7 @@
     },
     {
       "source": "dashboard.gateway_api",
-      "target": "core.mcp_client"
-    },
-    {
-      "source": "dashboard.gateway_api",
       "target": "dashboard.graphs"
-    },
-    {
-      "source": "dashboard.gateway_api",
-      "target": "core.mcp_server"
-    },
-    {
-      "source": "dashboard.gateway_api",
-      "target": "dashboard.sse"
     },
     {
       "source": "dashboard.gateway_api",
@@ -2649,15 +2658,19 @@
     },
     {
       "source": "dashboard.gateway_api",
-      "target": "dashboard.tracing_metrics"
-    },
-    {
-      "source": "dashboard.gateway_api",
       "target": "dashboard.agents_registry"
     },
     {
       "source": "dashboard.gateway_api",
-      "target": "core.document_converter"
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.sse"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "dashboard.tracing_metrics"
     },
     {
       "source": "dashboard.gateway_api",
@@ -2669,11 +2682,19 @@
     },
     {
       "source": "dashboard.gateway_api",
-      "target": "core.conversation"
+      "target": "core.mcp_server"
     },
     {
       "source": "dashboard.gateway_api",
       "target": "core.graph"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.document_converter"
+    },
+    {
+      "source": "dashboard.gateway_api",
+      "target": "core.mcp_client"
     },
     {
       "source": "dashboard.graphs",
@@ -2681,7 +2702,19 @@
     },
     {
       "source": "dashboard.graphs",
-      "target": "core.graph"
+      "target": "providers.local"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "core.cache"
+    },
+    {
+      "source": "dashboard.graphs",
+      "target": "dashboard.events"
     },
     {
       "source": "dashboard.graphs",
@@ -2693,43 +2726,11 @@
     },
     {
       "source": "dashboard.graphs",
-      "target": "providers.local"
-    },
-    {
-      "source": "dashboard.graphs",
-      "target": "dashboard.events"
-    },
-    {
-      "source": "dashboard.graphs",
-      "target": "core.conversation"
-    },
-    {
-      "source": "dashboard.graphs",
-      "target": "core.cache"
-    },
-    {
-      "source": "dashboard.instrument",
-      "target": "core.agent"
-    },
-    {
-      "source": "dashboard.instrument",
-      "target": "core.orchestrator"
+      "target": "core.graph"
     },
     {
       "source": "dashboard.instrument",
       "target": "core.cache"
-    },
-    {
-      "source": "dashboard.instrument",
-      "target": "dashboard.tracing_metrics"
-    },
-    {
-      "source": "dashboard.instrument",
-      "target": "core.provider"
-    },
-    {
-      "source": "dashboard.instrument",
-      "target": "dashboard.events"
     },
     {
       "source": "dashboard.instrument",
@@ -2737,7 +2738,31 @@
     },
     {
       "source": "dashboard.instrument",
+      "target": "dashboard.tracing_metrics"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.agent"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "dashboard.events"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.provider"
+    },
+    {
+      "source": "dashboard.instrument",
+      "target": "core.orchestrator"
+    },
+    {
+      "source": "dashboard.instrument",
       "target": "core.graph"
+    },
+    {
+      "source": "dashboard.knowledge_routes",
+      "target": "skills.retrieval_skill"
     },
     {
       "source": "dashboard.knowledge_routes",
@@ -2748,56 +2773,16 @@
       "target": "core.knowledge"
     },
     {
-      "source": "dashboard.knowledge_routes",
-      "target": "skills.retrieval_skill"
+      "source": "dashboard.oauth_routes",
+      "target": "dashboard.auth"
     },
     {
       "source": "dashboard.oauth_routes",
       "target": "dashboard.user_store"
     },
     {
-      "source": "dashboard.oauth_routes",
-      "target": "dashboard.auth"
-    },
-    {
       "source": "dashboard.sandbox_manager",
       "target": "core.sandbox"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "core.mcp_client"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "dashboard.alert_webhook"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "core.checkpoint_postgres"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "dashboard.sandbox_manager"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "core.tracing"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "dashboard.app"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "dashboard.job_logger"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "dashboard.auth"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "dashboard.agent_runtime_router"
     },
     {
       "source": "dashboard.server",
@@ -2809,11 +2794,63 @@
     },
     {
       "source": "dashboard.server",
+      "target": "core.mcp_client"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.conversation"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.tracing"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.auth"
+    },
+    {
+      "source": "dashboard.server",
       "target": "dashboard.usage_db"
     },
     {
       "source": "dashboard.server",
-      "target": "dashboard.events"
+      "target": "dashboard.agent_runtime_router"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.sandbox_manager"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.memory_filter"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.app"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.instrument"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.store"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.alert_webhook"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.job_logger"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "dashboard.oauth_routes"
+    },
+    {
+      "source": "dashboard.server",
+      "target": "core.checkpoint_postgres"
     },
     {
       "source": "dashboard.server",
@@ -2825,35 +2862,19 @@
     },
     {
       "source": "dashboard.server",
-      "target": "core.store"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "core.conversation"
-    },
-    {
-      "source": "dashboard.server",
       "target": "dashboard.sse"
     },
     {
       "source": "dashboard.server",
-      "target": "dashboard.instrument"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "core.memory_filter"
-    },
-    {
-      "source": "dashboard.server",
-      "target": "dashboard.oauth_routes"
-    },
-    {
-      "source": "dashboard.sse",
       "target": "dashboard.events"
     },
     {
       "source": "dashboard.sse",
       "target": "core.graph"
+    },
+    {
+      "source": "dashboard.sse",
+      "target": "dashboard.events"
     },
     {
       "source": "dashboard.user_store",
@@ -2905,11 +2926,11 @@
     },
     {
       "source": "skills",
-      "target": "skills.doc_sync"
+      "target": "skills.clarification_skill"
     },
     {
       "source": "skills",
-      "target": "skills.clarification_skill"
+      "target": "skills.shell"
     },
     {
       "source": "skills",
@@ -2917,11 +2938,11 @@
     },
     {
       "source": "skills",
-      "target": "skills.sandboxed_shell"
+      "target": "skills.doc_sync"
     },
     {
       "source": "skills",
-      "target": "skills.shell"
+      "target": "skills.sandboxed_shell"
     },
     {
       "source": "skills.clarification_skill",
@@ -2945,7 +2966,7 @@
     },
     {
       "source": "skills.profile_extractor_skill",
-      "target": "core.personalized_memory"
+      "target": "core.skill"
     },
     {
       "source": "skills.profile_extractor_skill",
@@ -2953,11 +2974,11 @@
     },
     {
       "source": "skills.profile_extractor_skill",
-      "target": "core.skill"
+      "target": "core.personalized_memory"
     },
     {
       "source": "skills.retrieval_skill",
-      "target": "core.knowledge"
+      "target": "core.skill"
     },
     {
       "source": "skills.retrieval_skill",
@@ -2965,6 +2986,10 @@
     },
     {
       "source": "skills.retrieval_skill",
+      "target": "core.knowledge"
+    },
+    {
+      "source": "skills.sandboxed_shell",
       "target": "core.skill"
     },
     {
@@ -2972,20 +2997,16 @@
       "target": "core.sandbox"
     },
     {
-      "source": "skills.sandboxed_shell",
-      "target": "core.skill"
-    },
-    {
       "source": "skills.shell",
       "target": "core.skill"
     },
     {
       "source": "skills.skill_loader",
-      "target": "core.metrics"
+      "target": "core.skill"
     },
     {
       "source": "skills.skill_loader",
-      "target": "core.skill"
+      "target": "core.metrics"
     },
     {
       "source": "skills.web_reader",
@@ -2997,10 +3018,10 @@
     }
   ],
   "stats": {
-    "total_modules": 124,
-    "total_edges": 249,
+    "total_modules": 125,
+    "total_edges": 250,
     "by_category": {
-      "Core": 79,
+      "Core": 80,
       "Dashboard": 24,
       "Integration": 3,
       "Provider": 6,

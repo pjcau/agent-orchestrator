@@ -327,6 +327,19 @@
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/memory_filter.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/reducers.py"
           ]
+        },
+        {
+          "name": "Workspace Digest",
+          "files": [
+            "core/workspace_digest.py"
+          ],
+          "cx": 640,
+          "cy": 200,
+          "size": 30,
+          "description": "Bounded cross-turn facts, kept while the goal stays consecutive.",
+          "urls": [
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/workspace_digest.py"
+          ]
         }
       ]
     },
@@ -705,6 +718,6 @@
   ],
   "stats": {
     "total_clusters": 6,
-    "total_items": 42
+    "total_items": 43
   }
 }

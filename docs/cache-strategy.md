@@ -118,6 +118,48 @@ being cut at the threshold.
 
 ---
 
+## Cross-turn workspace digest
+
+Compaction and stale-shrinking bound context *within* a turn. The complementary
+problem is *between* turns. Today the only thing carried across iterations is the
+chat history (`conversation_manager.get_history()` — the final user/assistant
+messages); the working knowledge of a turn (which files were read, the project
+layout, which commands failed) is discarded. The observed result is **thrashing**:
+on a multi-turn fix, each turn restarts from `ls -la` / `find …`, re-reads the
+same Dockerfiles and `package.json`, and re-derives the same layout — burning the
+step budget without converging.
+
+The naïve fixes are both bad: carry the **full transcript** forward (context grows
+unbounded, cost + degradation) or carry **nothing** (re-exploration). The
+**workspace digest** (`core/workspace_digest.py`) is the bounded middle ground:
+
+- **What it keeps** — only *durable* facts in three deduplicated, capped
+  categories: `layout` (known file paths), `commands_ok` (non-trivial commands
+  that worked, e.g. `CI=true npm test`), `commands_bad` (commands that failed +
+  reason, e.g. `npm test → shell_timeout`). Each category is bounded
+  (`max_entries_per_category`, default **12**) with least-recently-touched
+  eviction; `render()` caps the emitted `<workspace_digest>` block at
+  `max_render_chars` (default **1600**). So it **never grows unbounded.**
+- **When it is carried** — only while iterations stay **consecutive on the same
+  goal**. `is_followup_goal(prev, new)` keeps the digest on an explicit follow-up
+  phrase ("still", "non va", "again", …) or topical word-overlap ≥ 0.2, and
+  **resets** it on a pivot. This mirrors the consecutive-failure circuit breaker
+  (keep state while hammering the same thing) and honours the "anchor on the
+  latest user message / no task inertia" rule (drop it when the user moves on).
+- **How it is wired** — a module-level `WorkspaceDigestStore` keyed by
+  `conversation_id` in `dashboard/agent_runner.py`. Before a run, the rendered
+  block is prepended to the agent's role (and to every `run_team` sub-agent's
+  role). After a run, the digest is updated from the run's `step_log` (which now
+  records `read <path>`, `ran: <cmd>`, `ran-failed[<reason>]: <cmd>`). On by
+  default for any multi-turn conversation; pass a custom `digest_store` to scope
+  it (tests do).
+- **Precedent** — recombines MemGPT tiered memory (in-context vs out-of-context),
+  LangChain summary-buffer (recent verbatim + older condensed), Reflexion
+  episodic memory (a compact lesson across consecutive attempts at the same
+  task), and LangGraph procedural memory (the known-good commands).
+
+---
+
 ## Integration Points (Where to Wire Cache)
 
 ### Point 1: LLM Node Cache (`llm_nodes.py`)
