@@ -33,6 +33,15 @@ use super::sandbox::{enforce_workspace, SandboxError};
 /// Default per-shell-call timeout matches the Python implementation.
 pub const SHELL_DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Grace period for a long-running server command (dev server, `compose up`,
+/// `uvicorn`, …). Such commands never exit on their own, so blocking on them to
+/// the full `shell_timeout` only ever yields a misleading `shell_timeout`
+/// failure even though the server started fine. Instead we wait this short grace
+/// for an early crash; if it is still alive afterwards we report success
+/// ("started, still running"), leave it running in the background, and drain its
+/// pipes so it never stalls. See `is_long_running_command`.
+pub const LONG_RUNNING_GRACE: Duration = Duration::from_secs(8);
+
 /// Cap on aggregate shell output (stdout + stderr) per call.
 pub const SHELL_OUTPUT_CAP: usize = 10 * 1024 * 1024;
 
@@ -118,6 +127,9 @@ pub struct LocalToolRunner {
     allowlist: tokio::sync::Mutex<ShellAllowlist>,
     confirm: Option<Box<dyn ShellConfirmer>>,
     shell_timeout: Duration,
+    /// Grace period before a long-running server command is reported as
+    /// "started" and detached (instead of blocking to `shell_timeout`).
+    long_running_grace: Duration,
     /// Project-scoped shell policy (from `.ago.yaml`). `deny` hard-blocks,
     /// `project_allow` pre-approves without touching the global cache.
     /// Both are `argv[0]` basenames. `allow_all` flips the gate to
@@ -134,6 +146,7 @@ impl LocalToolRunner {
             allowlist: tokio::sync::Mutex::new(ShellAllowlist::at_default()),
             confirm: None,
             shell_timeout: SHELL_DEFAULT_TIMEOUT,
+            long_running_grace: LONG_RUNNING_GRACE,
             deny: HashSet::new(),
             project_allow: HashSet::new(),
             allow_all: false,
@@ -169,6 +182,13 @@ impl LocalToolRunner {
 
     pub fn with_shell_timeout(mut self, timeout: Duration) -> Self {
         self.shell_timeout = timeout;
+        self
+    }
+
+    /// Override the grace period for long-running server commands (default
+    /// [`LONG_RUNNING_GRACE`]). Mainly for tests.
+    pub fn with_long_running_grace(mut self, grace: Duration) -> Self {
+        self.long_running_grace = grace;
         self
     }
 
@@ -440,6 +460,16 @@ impl LocalToolRunner {
         let mut err_buf = Vec::<u8>::new();
         let mut cancelled = false;
         let mut timed_out = false;
+        // Long-running server commands (dev server, `compose up`, uvicorn, …)
+        // never exit, so we wait only `long_running_grace` for an early crash;
+        // if still alive we detach instead of killing at `shell_timeout`.
+        let long_running = is_long_running_command(&argv);
+        let mut detached = false;
+        let effective_timeout = if long_running {
+            self.long_running_grace
+        } else {
+            self.shell_timeout
+        };
 
         // Co-operative reader loop: select between stdout / stderr /
         // process exit / cancel signal / timeout. Cap output at
@@ -452,7 +482,7 @@ impl LocalToolRunner {
             }
         };
         tokio::pin!(cancel_fut);
-        let timeout_fut = tokio::time::sleep(self.shell_timeout);
+        let timeout_fut = tokio::time::sleep(effective_timeout);
         tokio::pin!(timeout_fut);
 
         let mut stdout_done = false;
@@ -467,8 +497,14 @@ impl LocalToolRunner {
                     break;
                 }
                 _ = &mut timeout_fut => {
-                    timed_out = true;
-                    let _ = child.kill().await;
+                    if long_running {
+                        // Server still alive after the grace window: leave it
+                        // running, report success below.
+                        detached = true;
+                    } else {
+                        timed_out = true;
+                        let _ = child.kill().await;
+                    }
                     break;
                 }
                 res = read_chunk(&mut stdout, SHELL_CHUNK_BYTES), if !stdout_done => {
@@ -501,6 +537,51 @@ impl LocalToolRunner {
                     return finalise_shell(argv, status.ok(), started.elapsed(), out_buf, err_buf, cancelled, timed_out);
                 }
             }
+        }
+
+        // Long-running server still alive after the grace window: report it as
+        // started, then move the child + its pipes into a detached task that
+        // drains stdout/stderr until the process exits. Draining matters — an
+        // unread pipe buffer would eventually stall the server — and we never
+        // kill it, so the app stays up for the agent's follow-up health checks.
+        if detached {
+            let argv0 = argv[0].clone();
+            let snapshot = String::from_utf8_lossy(&out_buf).to_string();
+            let grace_s = effective_timeout.as_secs();
+            tokio::spawn(async move {
+                let mut child = child;
+                let mut stdout = stdout;
+                let mut stderr = stderr;
+                let mut sink_done = (false, false);
+                loop {
+                    tokio::select! {
+                        r = read_chunk(&mut stdout, SHELL_CHUNK_BYTES), if !sink_done.0 => {
+                            if matches!(r, Ok(None) | Err(_)) { sink_done.0 = true; }
+                        }
+                        r = read_chunk(&mut stderr, SHELL_CHUNK_BYTES), if !sink_done.1 => {
+                            if matches!(r, Ok(None) | Err(_)) { sink_done.1 = true; }
+                        }
+                        _ = child.wait() => { break; }
+                    }
+                }
+            });
+            return ToolOutcome::ok(json!({
+                "stdout": snapshot,
+                "stderr": "",
+                "returncode": Value::Null,
+                "status": "started",
+            }))
+            .with_meta("argv0", json!(argv0))
+            .with_meta("long_running", json!(true))
+            .with_meta(
+                "detail",
+                json!(format!(
+                    "'{argv0}' is a long-running server: it was still running after \
+                     {grace_s}s, so it was reported as started and left running in the \
+                     background. Do NOT re-run it; verify it with a health check \
+                     (e.g. `curl localhost:<port>` or `docker compose ps`)."
+                )),
+            );
         }
 
         // Cancelled / timed out: reap the dead process and drain
@@ -614,6 +695,70 @@ fn join_for_shell(argv: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Substrings that mark a long-running server command — one that stays up
+/// instead of exiting, so blocking on it to `shell_timeout` only ever yields a
+/// misleading `shell_timeout`. Matched against the lowercased, space-joined argv.
+const LONG_RUNNING_MARKERS: &[&str] = &[
+    "npm run dev",
+    "npm start",
+    "npm run start",
+    "pnpm dev",
+    "pnpm start",
+    "pnpm run dev",
+    "yarn dev",
+    "yarn start",
+    "vite",
+    "next dev",
+    "nuxt dev",
+    "react-scripts start",
+    "ng serve",
+    "webpack serve",
+    "webpack-dev-server",
+    "nodemon",
+    "uvicorn",
+    "gunicorn",
+    "flask run",
+    "rails server",
+    "rails s ",
+    "artisan serve",
+    "http.server",
+    "http-server",
+    ":dev",
+    ":serve",
+    "docker compose up",
+    "docker-compose up",
+];
+
+/// Markers that mean the command was ALREADY started in a non-blocking way
+/// (detached / backgrounded / time-boxed), so it must NOT be treated as a
+/// long-running server to detach again.
+const ALREADY_DETACHED_MARKERS: &[&str] = &[
+    " -d",
+    " --detach",
+    "--abort-on-container-exit",
+    "nohup ",
+    "timeout ",
+];
+
+/// Whether `argv` launches a long-running server that will not exit on its own.
+///
+/// Pure (no spawn) so it is unit-testable. Returns false when the command is
+/// already detached/backgrounded/time-boxed, true when it matches a known
+/// server marker.
+fn is_long_running_command(argv: &[String]) -> bool {
+    let joined = argv.join(" ").to_lowercase();
+    // An explicit background `&` (but not the `&&` AND operator) means the model
+    // already detached it. Checked on the joined line so it catches `&` whether
+    // it is its own argv token or embedded in a `bash -lc "… &"` string.
+    if joined.split_whitespace().any(|t| t == "&") {
+        return false;
+    }
+    if ALREADY_DETACHED_MARKERS.iter().any(|m| joined.contains(m)) {
+        return false;
+    }
+    LONG_RUNNING_MARKERS.iter().any(|m| joined.contains(m))
 }
 
 /// Build the `detail` for a `shell_spawn_failed` outcome.
@@ -967,6 +1112,70 @@ mod tests {
         assert_eq!(
             r.output["stdout"].as_str().unwrap_or_default().trim(),
             "hello world"
+        );
+    }
+
+    #[test]
+    fn long_running_detects_server_commands() {
+        let cases = [
+            vec!["pnpm", "docker:dev"],
+            vec!["npm", "run", "dev"],
+            vec!["npm", "start"],
+            vec!["yarn", "dev"],
+            vec!["bash", "-lc", "vite"],
+            vec!["uvicorn", "main:app"],
+            vec!["docker", "compose", "up"],
+            vec!["docker", "compose", "up", "--build"],
+        ];
+        for c in cases {
+            let argv: Vec<String> = c.iter().map(|s| s.to_string()).collect();
+            assert!(is_long_running_command(&argv), "should detect: {c:?}");
+        }
+    }
+
+    #[test]
+    fn long_running_ignores_one_shot_and_detached() {
+        let cases = [
+            vec!["pytest", "-q"],
+            vec!["npm", "run", "build"],
+            vec!["ls", "-la"],
+            vec!["docker", "compose", "up", "-d"], // detached
+            vec!["docker", "compose", "up", "--abort-on-container-exit"],
+            vec!["bash", "-lc", "npm start &"], // backgrounded inside the line
+            vec!["nohup", "npm", "start"],
+            vec!["timeout", "5", "npm", "start"],
+        ];
+        for c in cases {
+            let argv: Vec<String> = c.iter().map(|s| s.to_string()).collect();
+            assert!(!is_long_running_command(&argv), "should NOT detect: {c:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn long_running_command_returns_started_not_timeout() {
+        // A server that outlives the grace window must come back as a SUCCESS
+        // ("started"), not a shell_timeout — and well before shell_timeout.
+        let (_d, ws) = tmp_workspace();
+        let allow_path = ws.join(".allow.json");
+        let runner = LocalToolRunner::new(ws.clone())
+            .with_allowlist(ShellAllowlist::new(allow_path))
+            .with_shell_policy(&[], &[], true)
+            .with_long_running_grace(Duration::from_millis(300));
+        // `# vite` makes is_long_running_command match; `sleep 2` outlives the
+        // 300ms grace, then exits on its own so the detached drainer cleans up.
+        let mut args = HashMap::new();
+        args.insert("argv".into(), json!(["bash", "-lc", "# vite\nsleep 2"]));
+        let started = Instant::now();
+        let r = runner.run("shell_exec", args, None, None).await;
+        assert!(
+            r.success,
+            "long-running server should report success: {r:?}"
+        );
+        assert_eq!(r.error_code, None);
+        assert_eq!(r.metadata.get("long_running"), Some(&json!(true)));
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "must return after the grace, not block to shell_timeout"
         );
     }
 

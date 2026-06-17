@@ -1071,6 +1071,16 @@ async def test_instrumented_system_prompt_carries_minimal_changes_steer():
     assert _MINIMAL_CHANGES_STEER in captured["system"]
 
 
+def test_minimal_changes_steer_covers_long_running_servers():
+    # The steer must teach the agent not to block on server commands (dev
+    # server, compose up, uvicorn) and to verify via a separate health check.
+    steer = _MINIMAL_CHANGES_STEER.lower()
+    assert "long-running" in steer
+    assert "docker compose up -d" in steer
+    assert "health check" in steer
+    assert "timeout" in steer
+
+
 class _SpawnFailSkill(Skill):
     def __init__(self) -> None:
         self.calls = 0

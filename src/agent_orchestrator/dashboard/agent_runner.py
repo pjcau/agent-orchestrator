@@ -82,7 +82,17 @@ _MINIMAL_CHANGES_STEER = (
     "project's package manager, build the image with --build after editing a "
     "Dockerfile). Do NOT re-issue the exact same failing command unchanged — "
     "change something first. Stop only when the command is green, or report the "
-    "precise blocker if you exhaust your step budget."
+    "precise blocker if you exhaust your step budget.\n\n"
+    "Long-running / server commands: a command that starts a server and never "
+    "exits — a dev server (`npm run dev`, `pnpm dev`, `vite`, `next dev`, "
+    "`react-scripts start`), `docker compose up`, `uvicorn`/`gunicorn`/`flask "
+    "run`, etc. — must NOT be run as a blocking shell_exec: it cannot return, so "
+    "it only ever comes back as a timeout even when the app started fine. Start "
+    "it non-blocking and verify separately: prefer the detached form "
+    "(`docker compose up -d`, append `&`), then confirm it is up with a quick "
+    "health check (`curl -s localhost:<port>`, `docker compose ps`) — that "
+    "health check, not the server command, is your verification. Treat 'server "
+    "still running' as success, not failure."
 )
 
 logger = logging.getLogger(__name__)

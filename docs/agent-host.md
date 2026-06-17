@@ -168,6 +168,22 @@ agent-host channel — single-source-of-truth here is intentional.
   project-local pre-approval (runs with no prompt, never written to the
   global cache). Gate order: `deny` → project `allow` → cache/confirm.
   See [managing-local-projects.md § Shell policy](managing-local-projects.md#shell-policy-stop-the-allow-x-yn-prompts).
+* **Long-running server commands.** A command that starts a server and never
+  exits — a dev server (`npm run dev`, `pnpm dev`, `vite`, `next dev`,
+  `react-scripts start`), `docker compose up`, `uvicorn`/`gunicorn`/`flask run`,
+  a `:dev`/`:serve` script — would otherwise block to the full `shell_timeout`
+  (60s) and come back as a misleading `shell_timeout` *failure* even though the
+  server started fine. `is_long_running_command()` detects these (and skips
+  already-detached forms: `-d`, `--detach`, `--abort-on-container-exit`, a
+  trailing `&`, `nohup`, `timeout`). For a detected server the runner waits only
+  `LONG_RUNNING_GRACE` (default **8s**) for an early crash: if it exits in that
+  window the real exit code is reported as usual; if it is still alive the call
+  returns **success** with `long_running: true` and `status: "started"`, the
+  process is **left running in the background**, and a detached task keeps
+  draining its stdout/stderr so the OS pipe buffer never stalls it. The agent is
+  told (via the server-side convergence steer) to verify the server with a
+  separate health check (`curl localhost:<port>`, `docker compose ps`) rather
+  than re-running it. `cli/src/agent_host/runner.rs`.
 
 ## Telemetry
 
