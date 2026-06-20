@@ -414,6 +414,89 @@ def test_agent_host_other_agent_uses_single_run_agent(monkeypatch):
     assert seen["skills"] is skills
 
 
+def test_agent_host_threads_stable_conversation_id_and_digest(monkeypatch):
+    """The cross-turn workspace digest only works when a stable conversation_id
+    is threaded into run_agent/run_team. Regression for digest="empty" every
+    turn: the agent-host handler mints one id per WS connection and reuses it for
+    every turn, and passes the shared digest store."""
+    import asyncio
+
+    import agent_orchestrator.dashboard.cli_routes as cr
+
+    calls: list[dict] = []
+
+    async def _fake_run_agent(*args, **kwargs):
+        calls.append(kwargs)
+        return {"success": True, "output": "ok", "steps_taken": 1}
+
+    monkeypatch.setattr(cr, "run_agent", _fake_run_agent)
+    monkeypatch.setattr(cr, "_make_provider", lambda **kw: object())
+
+    class _FakeWS:
+        def __init__(self):
+            self.app = type("A", (), {"state": type("S", (), {})()})()
+
+        async def send_json(self, data):
+            pass
+
+    class _Hello:
+        agent = "backend"
+        model = "m"
+        provider = "openrouter"
+        max_steps = 0
+
+    # One handler == one WS connection == one session.
+    handler = cr._make_agent_host_prompt_handler(_FakeWS())
+    asyncio.run(handler("turn one", object(), "run-1", _Hello()))
+    asyncio.run(handler("turn two", object(), "run-2", _Hello()))
+
+    assert len(calls) == 2
+    conv1 = calls[0].get("conversation_id")
+    conv2 = calls[1].get("conversation_id")
+    assert conv1, "conversation_id must be threaded (was None/empty)"
+    assert conv1 == conv2, "conversation_id must be STABLE across turns of a session"
+    # The shared digest store is passed so durable facts persist across turns.
+    assert calls[0].get("digest_store") is not None
+    assert calls[0]["digest_store"] is calls[1]["digest_store"]
+
+
+def test_agent_host_distinct_connections_get_distinct_conversations(monkeypatch):
+    """Two separate `ago chat` sessions (WS connections) must not share a
+    conversation id, so one session's digest can't bleed into another."""
+    import asyncio
+
+    import agent_orchestrator.dashboard.cli_routes as cr
+
+    seen: list[str] = []
+
+    async def _fake_run_agent(*args, **kwargs):
+        seen.append(kwargs.get("conversation_id"))
+        return {"success": True, "output": "ok", "steps_taken": 1}
+
+    monkeypatch.setattr(cr, "run_agent", _fake_run_agent)
+    monkeypatch.setattr(cr, "_make_provider", lambda **kw: object())
+
+    class _FakeWS:
+        def __init__(self):
+            self.app = type("A", (), {"state": type("S", (), {})()})()
+
+        async def send_json(self, data):
+            pass
+
+    class _Hello:
+        agent = "backend"
+        model = "m"
+        provider = "openrouter"
+        max_steps = 0
+
+    h1 = cr._make_agent_host_prompt_handler(_FakeWS())
+    h2 = cr._make_agent_host_prompt_handler(_FakeWS())
+    asyncio.run(h1("a", object(), "r1", _Hello()))
+    asyncio.run(h2("b", object(), "r2", _Hello()))
+
+    assert seen[0] and seen[1] and seen[0] != seen[1]
+
+
 def test_agent_host_uses_client_max_steps(monkeypatch):
     # Client-requested value is honoured.
     assert _run_handler_capture_max_steps(25, monkeypatch) == 25

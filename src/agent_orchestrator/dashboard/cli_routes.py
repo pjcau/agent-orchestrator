@@ -27,7 +27,7 @@ from agent_orchestrator.agent_host import serve_agent_host
 from agent_orchestrator.agent_host.telemetry import bind as bind_agent_host_metrics
 from agent_orchestrator.core.cache_context import set_cache_context
 
-from .agent_runner import run_agent, run_team
+from .agent_runner import get_digest_store, run_agent, run_team
 from .agents_registry import get_agent_registry
 from .auth import check_ws_auth, create_cli_token
 from .cli_device_flow import (
@@ -645,10 +645,20 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
     the client can surface them — the WS stays alive for the next turn.
     """
     import os
+    import uuid
 
     from agent_orchestrator.agent_host.protocol import AssistantText, Error, Step, TurnEnd
 
     from .events import EventBus, EventType
+
+    # One stable conversation id per WS connection (= one `ago chat` session).
+    # The agent-host Hello carries no conversation_id, so we mint one here and
+    # reuse it for every turn of this connection. This turns ON the cross-turn
+    # workspace digest (keyed by conversation_id in run_agent/run_team): without
+    # it the digest was never read or written for `--client-tools`, so the agent
+    # re-discovered the same files/commands every turn (digest="empty").
+    conversation_id = f"agent-host-{uuid.uuid4().hex}"
+    digest_store = get_digest_store()
 
     async def _handler(text: str, skills, run_id: str, hello) -> None:
         # Per-turn bus so events from THIS turn cannot leak into the
@@ -730,6 +740,8 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                     max_sub_agent_steps=max_steps,
                     event_bus=bus,
                     skill_registry_override=skills,
+                    conversation_id=conversation_id,
+                    digest_store=digest_store,
                 )
             else:
                 result = await run_agent(
@@ -739,6 +751,8 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                     max_steps=max_steps,
                     event_bus=bus,
                     skill_registry_override=skills,
+                    conversation_id=conversation_id,
+                    digest_store=digest_store,
                 )
             output = str(result.get("output", "")) if isinstance(result, dict) else str(result)
             if output:

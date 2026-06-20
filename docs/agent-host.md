@@ -75,6 +75,33 @@ documented in
    [`dashboard/cli_routes.py`](../src/agent_orchestrator/dashboard/cli_routes.py)
    `forward_steps`.
 
+## Per-session memory (workspace digest)
+
+Each WS connection (= one `ago chat` session) is given a stable
+`conversation_id`, minted once in
+[`dashboard/cli_routes.py`](../src/agent_orchestrator/dashboard/cli_routes.py)
+`_make_agent_host_prompt_handler` and reused for every turn of that
+connection. It is passed — together with the shared
+`get_digest_store()` — into `run_agent`/`run_team`, which key the
+**cross-turn workspace digest** (`core/workspace_digest.py`) on it.
+
+This is what stops the agent from re-discovering the same files and
+re-running the same commands every turn: durable facts (files read,
+commands that succeeded/failed) from earlier turns on the same goal are
+rendered into a `<workspace_digest>` block and prepended to the next
+turn's system prompt. The `STEP` frame's `digest` field reports the
+decision (`injected …` / `reset (pivot)` / `empty`). Before this wiring
+the agent-host flow passed no `conversation_id`, so the digest was never
+read or written and every turn showed `digest="empty"`.
+
+Two known limits remain: within ONE turn the parallel sub-agents still
+do not share in-flight reads (the digest is updated after the fan-out
+barrier), and there is no aggregate step cap across sub-agents. A
+complementary CLI-side mitigation lives in the runner: a per-session
+`file_read` dedup cache that returns a compact `unchanged` marker on a
+repeat read of an unmodified file (`AGO_READ_CACHE=0` to disable),
+invalidated by `file_write`.
+
 ## Single-agent vs multi-agent turns
 
 The agent-host endpoint picks the runner from the HELLO's `agent` field
