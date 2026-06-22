@@ -22,7 +22,7 @@ jobs:
     name: Dependency Audit (pip-audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -62,7 +62,7 @@ jobs:
       matrix:
         language: [python, javascript]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -83,7 +83,7 @@ jobs:
     name: Container Scan (Trivy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Build dashboard image
         run: docker build -f docker/dashboard/Dockerfile -t dashboard-scan .
@@ -118,14 +118,14 @@ jobs:
     name: Secret Scan (TruffleHog)
     runs-on: ubuntu-latest
     steps:
-      # Pinned to v5: actions/checkout@v6 has a regression where fetch-depth: 0
+      # Pinned to v5: actions/checkout@v7 has a regression where fetch-depth: 0
       # fails with "could not read Username" because credentials are not wired
       # into the full-history fetch. See community discussion #183817.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: TruffleHog scan
-        uses: trufflesecurity/trufflehog@v3.95.5
+        uses: trufflesecurity/trufflehog@v3.95.6
         with:
           extra_args: --only-verified
