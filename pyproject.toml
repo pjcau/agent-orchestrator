@@ -46,7 +46,7 @@ rust = ["agent-orchestrator-rust"]
 # --- Combined extras ---
 all = ["anthropic>=0.107.1", "openai>=2.41.1", "google-generativeai>=0.8.6", "asyncpg>=0.31.0", "fastapi>=0.115", "uvicorn[standard]>=0.49.0", "websockets>=16.0", "httpx>=0.28.1", "authlib>=1.7.2", "PyJWT>=2.13.0", "itsdangerous>=2.2.0", "bcrypt>=5.0.0", "python-multipart>=0.0.31", "cryptography>=48.0.0", "pytesseract>=0.3.13", "Pillow>=10.0", "opentelemetry-api>=1.42.1", "opentelemetry-sdk>=1.42.1", "opentelemetry-instrumentation-fastapi>=0.63b1", "opentelemetry-instrumentation-httpx>=0.63b1", "opentelemetry-exporter-otlp-proto-http>=1.42.0", "opentelemetry-semantic-conventions>=0.63b1", "langfuse>=4.7.1", "arize-phoenix-otel>=0.16.1"]
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=9.1.0",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.15.16",
     "vulture>=2.16",
