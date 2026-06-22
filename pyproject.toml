@@ -55,7 +55,7 @@ dev = [
     "pyright>=1.1.410",
     # Used only by the AWS cost-exporter / job-archiver (which install it in
     # their own containers); needed in dev so their tests can import them.
-    "boto3>=1.43.24",
+    "boto3>=1.43.29",
 ]
 
 [tool.hatch.build.targets.wheel]
