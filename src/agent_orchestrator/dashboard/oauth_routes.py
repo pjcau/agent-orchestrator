@@ -199,11 +199,15 @@ async def auth_debug():
 #: only recognises an "obvious" sanitizer when the value passing into the
 #: redirect comes from a literal constant or a membership check against a
 #: literal collection — not when it is parsed and conditionally returned.
-_RETURN_TO_PREFIXES: tuple[str, ...] = (
+#
+# Note: the keys are exact path (no query string) – we validate that the
+# parsed path component of the cookie value matches one of these, then
+# return the *full* raw cookie (which may include query parameters).
+_ALLOWED_RETURN_PATHS: frozenset[str] = frozenset({
     "/api/cli/v1/auth/device",
     "/login",
-    "/",  # bare root as a fallback (matches everything else; checked last)
-)
+    "/",  # bare root as a fallback (checked last)
+})
 
 
 def _safe_return_to(request: Request) -> str:
@@ -214,9 +218,11 @@ def _safe_return_to(request: Request) -> str:
     from a static allowlist. We do exactly that:
 
     1. Read the cookie value.
-    2. Verify it starts with one of :data:`_RETURN_TO_PREFIXES`.
-    3. If it matches, return the literal cookie value (still a relative
-       path; no scheme or netloc could have survived the prefix match).
+    2. Parse it and verify the path component is in
+       :data:`_ALLOWED_RETURN_PATHS` (exact match) and that the URL has no
+       scheme or netloc (i.e. it is a relative URL).
+    3. If valid, return the *full* raw cookie value (including any query
+       string the caller might have attached).
     4. Otherwise fall back to ``/``.
 
     This pattern is the canonical "redirect allowlist" recipe CodeQL
@@ -224,14 +230,21 @@ def _safe_return_to(request: Request) -> str:
     threat model — we only ever want to send the user back to the
     device-flow approval page or the chat home.
     """
+    from urllib.parse import urlparse
+
     raw = request.cookies.get("auth_return_to", "")
     # A leading "//" makes the path protocol-relative (`//evil.com/foo`),
     # which the browser interprets as an absolute URL. Catch that first.
     if not raw or raw.startswith("//"):
         return "/"
-    for prefix in _RETURN_TO_PREFIXES:
-        if raw.startswith(prefix):
-            return raw
+    # Parse the URL to ensure it's a relative path with no scheme or netloc.
+    parsed = urlparse(raw)
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    # Check that the path (without query/fragment) is in our allowlist.
+    if parsed.path in _ALLOWED_RETURN_PATHS:
+        return raw
+    # If the path is the root, also allow it (but we already checked "/").
     return "/"
 
 
