@@ -1,0 +1,44 @@
+diff --git a/src/agent_orchestrator/dashboard/oauth_routes.py b/src/agent_orchestrator/dashboard/oauth_routes.py
+index 47046a1..c49e97e 100644
+--- a/src/agent_orchestrator/dashboard/oauth_routes.py
++++ b/src/agent_orchestrator/dashboard/oauth_routes.py
+@@ -20,6 +20,7 @@ from __future__ import annotations
+ 
+ import logging
+ import os
++from urllib.parse import urlparse
+ 
+ from fastapi import APIRouter, Request
+ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+@@ -214,20 +215,19 @@ def _safe_return_to(request: Request) -> str:
+     from a static allowlist. We do exactly that:
+ 
+     1. Read the cookie value.
+-    2. Verify it starts with one of :data:`_RETURN_TO_PREFIXES`.
+-    3. If it matches, return the literal cookie value (still a relative
+-       path; no scheme or netloc could have survived the prefix match).
+-    4. Otherwise fall back to ``/``.
+-
+-    This pattern is the canonical "redirect allowlist" recipe CodeQL
+-    recognises as a safe sanitizer, and it also fits the operational
+-    threat model — we only ever want to send the user back to the
+-    device-flow approval page or the chat home.
++    2. Parse it with ``urlparse`` to ensure it is a relative path
++       (no scheme, no netloc).
++    3. Verify the path starts with one of :data:`_RETURN_TO_PREFIXES`.
++    4. If it matches, return the literal cookie value (still a relative
++       path; the parsing guarantee prevents protocol-relative URLs).
++    5. Otherwise fall back to ``/``.
+     """
+     raw = request.cookies.get("auth_return_to", "")
+-    # A leading "//" makes the path protocol-relative (`//evil.com/foo`),
+-    # which the browser interprets as an absolute URL. Catch that first.
+-    if not raw or raw.startswith("//"):
++    if not raw:
++        return "/"
++    parsed = urlparse(raw)
++    # Reject any URL with a scheme or netloc (including protocol-relative)
++    if parsed.scheme or parsed.netloc:
+         return "/"
+     for prefix in _RETURN_TO_PREFIXES:
+         if raw.startswith(prefix):
