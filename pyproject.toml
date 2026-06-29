@@ -48,7 +48,7 @@ all = ["anthropic>=0.107.1", "openai>=2.41.1", "google-generativeai>=0.8.6", "as
 dev = [
     "pytest>=9.1.0",
     "pytest-asyncio>=1.4.0",
-    "ruff>=0.15.16",
+    "ruff>=0.15.18",
     "vulture>=2.16",
     # Static type checker — same engine as the editor's Pylance, so CLI/CI/editor
     # agree. Gate is incremental (changed files), see scripts/typecheck.sh.
