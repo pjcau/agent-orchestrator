@@ -418,5 +418,17 @@
     "added": "2026-06-14T08:56:41Z",
     "source": "github-star",
     "notes": "🙌 OpenHands: AI-Driven Development | Language: Python | Topics: agent, artificial-intelligence, chatgpt, claude-ai, cli"
+  },
+  {
+    "url": "https://github.com/ramziddin/solid-skills",
+    "added": "2026-07-02T22:01:18Z",
+    "source": "github-star",
+    "notes": "AI agent skill for writing senior-engineer quality code through SOLID principles, TDD, and clean architecture"
+  },
+  {
+    "url": "https://github.com/DeusData/codebase-memory-mcp",
+    "added": "2026-07-02T21:54:43Z",
+    "source": "github-star",
+    "notes": "High-performance code intelligence MCP server. Indexes codebases into a persistent knowledge graph — average repo in milliseconds. 158 languages, sub-ms queries, 99% fewer tokens. Single static binary | Language: C | Topics: aider, ast, claude-code, code-analysis, code-intelligence"
   }
 ]
