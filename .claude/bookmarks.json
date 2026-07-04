@@ -430,5 +430,23 @@
     "added": "2026-07-02T21:54:43Z",
     "source": "github-star",
     "notes": "High-performance code intelligence MCP server. Indexes codebases into a persistent knowledge graph — average repo in milliseconds. 158 languages, sub-ms queries, 99% fewer tokens. Single static binary | Language: C | Topics: aider, ast, claude-code, code-analysis, code-intelligence"
+  },
+  {
+    "url": "https://github.com/gregorojstersek/resources-to-become-a-great-engineering-leader",
+    "added": "2026-07-03T23:07:08Z",
+    "source": "github-star",
+    "notes": "List of books, blogs, newsletters and people!"
+  },
+  {
+    "url": "https://github.com/jhd3197/ServerKit",
+    "added": "2026-07-03T17:28:25Z",
+    "source": "github-star",
+    "notes": "ServerKit is a lightweight, modern server control panel for managing web applications, databases, and services on your VPS or dedicated server. Built with Python/Flask backend and React frontend. | Language: Python | Topics: cloudflare, control-panel, cyberpanel, dns, fable"
+  },
+  {
+    "url": "https://github.com/martin98-afk/CanvasMind",
+    "added": "2026-07-03T14:54:26Z",
+    "source": "github-star",
+    "notes": "A modern low-code visual programming IDE built on NodeGraphQt and qfluentwidgets, supporting drag-and-drop component orchestration, asynchronous execution, file operations, loop control, and one-click | Language: Python | Topics: nodegraphqt, pyqt-fluent-widgets"
   }
 ]
