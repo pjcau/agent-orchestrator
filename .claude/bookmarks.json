@@ -454,5 +454,11 @@
     "added": "2026-07-03T14:54:26Z",
     "source": "github-star",
     "notes": "A modern low-code visual programming IDE built on NodeGraphQt and qfluentwidgets, supporting drag-and-drop component orchestration, asynchronous execution, file operations, loop control, and one-click | Language: Python | Topics: nodegraphqt, pyqt-fluent-widgets"
+  },
+  {
+    "url": "https://github.com/repowise-dev/repowise",
+    "added": "2026-07-05T18:25:58Z",
+    "source": "github-star",
+    "notes": "Codebase intelligence for AI and humans: code health scores, auto-generated docs, git analytics, dead code detection, and architectural decisions via MCP. | Language: Python | Topics: ai, code-complexity, code-health, code-intelligence, code-quality"
   }
 ]
