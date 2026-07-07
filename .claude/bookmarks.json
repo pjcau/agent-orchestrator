@@ -454,5 +454,35 @@
     "added": "2026-07-03T14:54:26Z",
     "source": "github-star",
     "notes": "A modern low-code visual programming IDE built on NodeGraphQt and qfluentwidgets, supporting drag-and-drop component orchestration, asynchronous execution, file operations, loop control, and one-click | Language: Python | Topics: nodegraphqt, pyqt-fluent-widgets"
+  },
+  {
+    "url": "https://github.com/posquit0/Awesome-CV",
+    "added": "2026-07-06T18:14:35Z",
+    "source": "github-star",
+    "notes": ":page_facing_up: Awesome CV is LaTeX template for your outstanding job application | Language: TeX | Topics: awesome, coverletter, cv, latex, latex-template"
+  },
+  {
+    "url": "https://github.com/scanopy/scanopy",
+    "added": "2026-07-06T18:01:28Z",
+    "source": "github-star",
+    "notes": "Network diagrams that update themselves | Language: Rust | Topics: documentation, documentation-generator, documentation-tools, homelab, network-analysis"
+  },
+  {
+    "url": "https://github.com/qosf/awesome-quantum-software",
+    "added": "2026-07-06T14:24:39Z",
+    "source": "github-star",
+    "notes": "Curated list of open-source quantum software projects. | Topics: compilers, quantum-algorithms, quantum-annealing, quantum-assembly, quantum-chemistry"
+  },
+  {
+    "url": "https://github.com/schlae/cm5-reveng",
+    "added": "2026-07-06T11:23:05Z",
+    "source": "github-star",
+    "notes": "Reverse engineered Raspberry Pi Compute Module 5"
+  },
+  {
+    "url": "https://github.com/repowise-dev/repowise",
+    "added": "2026-07-05T18:25:58Z",
+    "source": "github-star",
+    "notes": "Codebase intelligence for AI and humans: code health scores, auto-generated docs, git analytics, dead code detection, and architectural decisions via MCP. | Language: Python | Topics: ai, code-complexity, code-health, code-intelligence, code-quality"
   }
 ]
