@@ -231,6 +231,11 @@ def _safe_return_to(request: Request) -> str:
         return "/"
     for prefix in _RETURN_TO_PREFIXES:
         if raw.startswith(prefix):
+            # Ensure the remainder does not contain ".." path traversal
+            # or a scheme/host (e.g. "//evil.com" after prefix).
+            suffix = raw[len(prefix):]
+            if ".." in suffix or suffix.startswith("//"):
+                return "/"
             return raw
     return "/"
 
