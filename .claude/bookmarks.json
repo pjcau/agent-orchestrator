@@ -490,5 +490,11 @@
     "added": "2026-07-05T18:25:58Z",
     "source": "github-star",
     "notes": "Codebase intelligence for AI and humans: code health scores, auto-generated docs, git analytics, dead code detection, and architectural decisions via MCP. | Language: Python | Topics: ai, code-complexity, code-health, code-intelligence, code-quality"
+  },
+  {
+    "url": "https://github.com/Pouzor/homelable",
+    "added": "2026-07-11T09:47:59Z",
+    "source": "github-star",
+    "notes": "Self-hosted homelab infrastructure visualizer — interactive network diagram with live status monitoring | Language: TypeScript | Topics: diagram, homelab, homelab-infrastructure-observability, network, proxmox-ve"
   }
 ]
