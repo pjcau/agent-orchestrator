@@ -496,5 +496,17 @@
     "added": "2026-07-11T09:47:59Z",
     "source": "github-star",
     "notes": "Self-hosted homelab infrastructure visualizer — interactive network diagram with live status monitoring | Language: TypeScript | Topics: diagram, homelab, homelab-infrastructure-observability, network, proxmox-ve"
+  },
+  {
+    "url": "https://github.com/umuterturk/email-verifier",
+    "added": "2026-07-12T17:09:12Z",
+    "source": "github-star",
+    "notes": "Privacy-first, Free, Open Source email verifier | Language: Go"
+  },
+  {
+    "url": "https://github.com/antirez/ds4",
+    "added": "2026-07-12T15:00:44Z",
+    "source": "github-star",
+    "notes": "DeepSeek 4 Flash and PRO local inference engine for Metal, CUDA and ROCm | Language: C"
   }
 ]
