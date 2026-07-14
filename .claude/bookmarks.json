@@ -508,5 +508,17 @@
     "added": "2026-07-12T15:00:44Z",
     "source": "github-star",
     "notes": "DeepSeek 4 Flash and PRO local inference engine for Metal, CUDA and ROCm | Language: C"
+  },
+  {
+    "url": "https://github.com/joeycastillo/Sensor-Watch",
+    "added": "2026-07-13T17:19:42Z",
+    "source": "github-star",
+    "notes": "A board replacement for the classic Casio F-91W wristwatch | Language: C"
+  },
+  {
+    "url": "https://github.com/okalachev/flix",
+    "added": "2026-07-13T17:02:45Z",
+    "source": "github-star",
+    "notes": "Making an ESP32-based quadcopter from scratch | Language: C++ | Topics: arduino, autopilot, control-theory, drone, esp32"
   }
 ]
