@@ -508,5 +508,29 @@
     "added": "2026-07-12T15:00:44Z",
     "source": "github-star",
     "notes": "DeepSeek 4 Flash and PRO local inference engine for Metal, CUDA and ROCm | Language: C"
+  },
+  {
+    "url": "https://github.com/pucherot/Pi.Alert",
+    "added": "2026-07-14T18:40:51Z",
+    "source": "github-star",
+    "notes": "WIFI / LAN intruder detector. Check the devices connected and alert you with unknown devices. It also warns of the disconnection of \"always connected\" devices | Language: JavaScript | Topics: adminlte, arp-scan, dnsmasq, ids, intrusion-detection"
+  },
+  {
+    "url": "https://github.com/openobserve/openobserve",
+    "added": "2026-07-14T16:04:14Z",
+    "source": "github-star",
+    "notes": "Open source observability platform for logs, metrics, traces, frontend monitoring, pipelines and LLM observability. A sophisticated, simple and highly performant alternative to Datadog, Splunk, and El | Language: TypeScript | Topics: analytics, apm, datadog, elasticsearch, grafana"
+  },
+  {
+    "url": "https://github.com/joeycastillo/Sensor-Watch",
+    "added": "2026-07-13T17:19:42Z",
+    "source": "github-star",
+    "notes": "A board replacement for the classic Casio F-91W wristwatch | Language: C"
+  },
+  {
+    "url": "https://github.com/okalachev/flix",
+    "added": "2026-07-13T17:02:45Z",
+    "source": "github-star",
+    "notes": "Making an ESP32-based quadcopter from scratch | Language: C++ | Topics: arduino, autopilot, control-theory, drone, esp32"
   }
 ]
