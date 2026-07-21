@@ -532,5 +532,17 @@
     "added": "2026-07-13T17:02:45Z",
     "source": "github-star",
     "notes": "Making an ESP32-based quadcopter from scratch | Language: C++ | Topics: arduino, autopilot, control-theory, drone, esp32"
+  },
+  {
+    "url": "https://github.com/Portabase/portabase",
+    "added": "2026-07-19T14:53:04Z",
+    "source": "github-star",
+    "notes": "Portabase - Database backup & restore tool for PostgreSQL, MySQL, MsSQL, MariaDB, Firebird SQL, SQLite, MongoDB, Redis and Docker Volume  | Language: TypeScript | Topics: backup, backup-tool, database, devops, docker"
+  },
+  {
+    "url": "https://github.com/yaqwsx/KiKit",
+    "added": "2026-07-19T12:49:54Z",
+    "source": "github-star",
+    "notes": "Automation tools for KiCAD | Language: Python | Topics: automation, kicad, panelization, pcb"
   }
 ]
