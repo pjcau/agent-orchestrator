@@ -422,6 +422,12 @@ async def prompt(body: dict, request: Request):
         result = dict(result)
         result["rag"] = rag_summary
 
+    # Explicitly strip any top-level "traceback", "stack", or "exc_info" keys
+    # to prevent accidental stack-trace exposure caused by runtime errors
+    # that may have been caught and attached to the result dict upstream.
+    for _key in ("traceback", "stack", "exc_info"):
+        result.pop(_key, None)
+
     return JSONResponse(content=result)
 
 
