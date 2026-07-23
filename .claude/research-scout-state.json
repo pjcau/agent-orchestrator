@@ -262,7 +262,14 @@
       "improvements": [],
       "outcome": "no-improvements",
       "reason": "LLM response JSON is malformed: Unterminated string starting at"
+    },
+    "https://github.com/schlae/cm5-reveng": {
+      "processed_at": "2026-07-23T03:05:50.827088+00:00",
+      "summary": "low-relevance: schlae/cm5-reveng",
+      "improvements": [],
+      "outcome": "low-relevance",
+      "reason": "only 0 of 11 relevance keywords matched in 9552 chars of README"
     }
   },
-  "last_run": "2026-07-22T03:07:12.487130+00:00"
+  "last_run": "2026-07-23T03:05:50.827192+00:00"
 }
