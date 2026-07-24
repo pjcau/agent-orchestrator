@@ -190,10 +190,10 @@ def traced(span_name: str | None = None, attributes: dict[str, Any] | None = Non
 class _NoOpSpan:
     """Minimal span that satisfies the context-manager protocol."""
 
-    def set_attribute(self, key: str, value: Any) -> None:  # noqa: ARG002
+    def set_attribute(self, key: str, value: Any) -> None:
         pass
 
-    def record_exception(self, exc: Exception) -> None:  # noqa: ARG002
+    def record_exception(self, exc: Exception) -> None:
         pass
 
     def set_status(self, *args: Any, **kwargs: Any) -> None:
@@ -202,18 +202,18 @@ class _NoOpSpan:
     def end(self) -> None:
         pass
 
-    def __enter__(self) -> "_NoOpSpan":
+    def __enter__(self) -> _NoOpSpan:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         pass
 
 
 class _NoOpTracer:
     """No-op tracer returned when OTel packages are not installed."""
 
-    def start_as_current_span(self, name: str, **kwargs: Any) -> _NoOpSpan:  # noqa: ARG002
+    def start_as_current_span(self, name: str, **kwargs: Any) -> _NoOpSpan:
         return _NoOpSpan()
 
-    def start_span(self, name: str, **kwargs: Any) -> _NoOpSpan:  # noqa: ARG002
+    def start_span(self, name: str, **kwargs: Any) -> _NoOpSpan:
         return _NoOpSpan()

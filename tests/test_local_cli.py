@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
-from agent_orchestrator.core.agent import TaskResult, TaskStatus
 from agent_orchestrator import local_cli
+from agent_orchestrator.core.agent import TaskResult, TaskStatus
 
 
 @pytest.mark.asyncio
@@ -32,7 +32,7 @@ async def test_run_returns_completed_envelope():
         steps_taken=3,
     )
 
-    async def fake_run_agent(self, **kwargs):  # noqa: ARG001 — interface match
+    async def fake_run_agent(self, **kwargs):
         return fake_result
 
     with (
@@ -69,7 +69,7 @@ async def test_run_failed_status_maps_to_error():
         error="provider unreachable",
     )
 
-    async def fake_run_agent(self, **kwargs):  # noqa: ARG001
+    async def fake_run_agent(self, **kwargs):
         return fake_result
 
     with (

@@ -3,7 +3,7 @@ execution with store preload (PR #84)."""
 
 import pytest
 
-from agent_orchestrator.core.graph import StateGraph, START, END
+from agent_orchestrator.core.graph import END, START, StateGraph
 from agent_orchestrator.core.metrics import MetricsRegistry
 from agent_orchestrator.core.modality import (
     Modality,
@@ -11,7 +11,6 @@ from agent_orchestrator.core.modality import (
     record_detection,
 )
 from agent_orchestrator.core.store import InMemoryStore
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # PR #88 — Modality detection

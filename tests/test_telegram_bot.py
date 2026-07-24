@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-
 # ---------------------------------------------------------------------------
 # Stub the telegram package so tests run without python-telegram-bot installed
 # ---------------------------------------------------------------------------
@@ -46,8 +45,7 @@ _telegram_mod.Update = MagicMock()
 sys.modules.setdefault("telegram", _telegram_mod)
 sys.modules.setdefault("telegram.ext", _ext_mod)
 
-from agent_orchestrator.integrations.telegram_bot import TelegramBot  # noqa: E402
-
+from agent_orchestrator.integrations.telegram_bot import TelegramBot
 
 # ---------------------------------------------------------------------------
 # Helpers

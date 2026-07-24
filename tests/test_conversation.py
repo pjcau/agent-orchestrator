@@ -8,12 +8,12 @@ Covers:
 
 import pytest
 
+from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
+from agent_orchestrator.core.checkpoint import InMemoryCheckpointer, SQLiteCheckpointer
 from agent_orchestrator.core.conversation import (
     ConversationManager,
     ConversationMessage,
 )
-from agent_orchestrator.core.checkpoint import InMemoryCheckpointer, SQLiteCheckpointer
-from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
 from agent_orchestrator.core.provider import (
     Completion,
     Message,
@@ -23,7 +23,6 @@ from agent_orchestrator.core.provider import (
     Usage,
 )
 from agent_orchestrator.core.skill import SkillRegistry
-
 
 # --- Mock graph functions ---
 
@@ -612,8 +611,8 @@ class TestSessionRestore:
     @pytest.mark.asyncio
     async def test_sqlite_checkpointer_survives_manager_recreation(self):
         """With SQLiteCheckpointer, data persists even with new manager instance."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "test.db")

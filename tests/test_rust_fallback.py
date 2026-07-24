@@ -7,7 +7,6 @@ Also tests that the fallback layer interface is wired correctly.
 
 from __future__ import annotations
 
-
 import pytest
 
 
@@ -27,7 +26,7 @@ class TestGraphRustFallback:
 
     def test_graph_works_without_rust(self):
         """Full graph build and validate should work in pure Python."""
-        from agent_orchestrator.core.graph import START, END, StateGraph
+        from agent_orchestrator.core.graph import END, START, StateGraph
 
         async def noop(state):
             return state
@@ -42,7 +41,7 @@ class TestGraphRustFallback:
         assert compiled is not None
 
     def test_find_reachable_without_rust(self):
-        from agent_orchestrator.core.graph import START, END, StateGraph
+        from agent_orchestrator.core.graph import END, START, StateGraph
 
         async def noop(state):
             return state
@@ -99,7 +98,7 @@ class TestTaskQueueRustFallback:
         assert task_queue._HAS_RUST is False
 
     def test_queue_works_without_rust(self):
-        from agent_orchestrator.core.task_queue import TaskQueue, QueuedTask
+        from agent_orchestrator.core.task_queue import QueuedTask, TaskQueue
 
         q = TaskQueue()
         assert q._rust is None
@@ -112,7 +111,7 @@ class TestTaskQueueRustFallback:
         assert result.status == "running"
 
     def test_queue_priority_ordering(self):
-        from agent_orchestrator.core.task_queue import TaskQueue, QueuedTask
+        from agent_orchestrator.core.task_queue import QueuedTask, TaskQueue
 
         q = TaskQueue()
         q.enqueue(QueuedTask(task_id="low", description="low", priority=1))
@@ -121,7 +120,7 @@ class TestTaskQueueRustFallback:
         assert result.task_id == "high"
 
     def test_queue_stats(self):
-        from agent_orchestrator.core.task_queue import TaskQueue, QueuedTask
+        from agent_orchestrator.core.task_queue import QueuedTask, TaskQueue
 
         q = TaskQueue()
         q.enqueue(QueuedTask(task_id="t1", description="test", priority=5))
@@ -140,7 +139,7 @@ class TestRateLimiterRustFallback:
 
     @pytest.mark.asyncio
     async def test_limiter_works_without_rust(self):
-        from agent_orchestrator.core.rate_limiter import RateLimiter, RateLimitConfig
+        from agent_orchestrator.core.rate_limiter import RateLimitConfig, RateLimiter
 
         limiter = RateLimiter(
             [RateLimitConfig(requests_per_minute=10, tokens_per_minute=1000, provider_key="test")]
@@ -152,7 +151,7 @@ class TestRateLimiterRustFallback:
 
     @pytest.mark.asyncio
     async def test_limiter_blocks_over_limit(self):
-        from agent_orchestrator.core.rate_limiter import RateLimiter, RateLimitConfig
+        from agent_orchestrator.core.rate_limiter import RateLimitConfig, RateLimiter
 
         limiter = RateLimiter(
             [RateLimitConfig(requests_per_minute=2, tokens_per_minute=1000, provider_key="test")]

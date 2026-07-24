@@ -9,13 +9,12 @@ import pytest
 from agent_orchestrator.core.skill import (
     Skill,
     SkillRegistry,
-    SkillResult,
     SkillRequest,
+    SkillResult,
     logging_middleware,
     retry_middleware,
     timeout_middleware,
 )
-
 
 # ─── Test Skill implementations ──────────────────────────────────────
 

@@ -16,6 +16,7 @@ def _isolate_env(monkeypatch):
 @pytest.mark.asyncio
 async def test_health_reports_enabled():
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app()
@@ -31,6 +32,7 @@ async def test_health_reports_enabled():
 @pytest.mark.asyncio
 async def test_ingest_then_search_round_trips():
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app()
@@ -67,6 +69,7 @@ async def test_ingest_then_search_round_trips():
 @pytest.mark.asyncio
 async def test_search_rejects_unknown_namespace_format():
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app()
@@ -82,6 +85,7 @@ async def test_search_rejects_unknown_namespace_format():
 @pytest.mark.asyncio
 async def test_namespaces_lists_after_ingest():
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app()
@@ -104,6 +108,7 @@ async def test_namespaces_lists_after_ingest():
 @pytest.mark.asyncio
 async def test_delete_namespace_drops_chunks():
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app()
@@ -120,11 +125,12 @@ async def test_delete_namespace_drops_chunks():
 @pytest.mark.asyncio
 async def test_prompt_with_rag_enabled_emits_event_and_attaches_summary(monkeypatch):
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
     from agent_orchestrator.dashboard.events import EventType
 
     # Stub run_graph so the test does NOT call any LLM.
-    async def fake_run_graph(*args, **kwargs):  # noqa: ANN001 — test stub
+    async def fake_run_graph(*args, **kwargs):
         return {
             "success": True,
             "output": "stub",

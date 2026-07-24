@@ -215,7 +215,7 @@ def _legacy_sha256_hash(salt: str, password: str) -> str:
     are rotated.
     """
     # Use hashlib.new() to construct the hash — intentional legacy verification
-    digest = hashlib.new("sha256")  # noqa: S324
+    digest = hashlib.new("sha256")
     digest.update(f"{salt}:{password}".encode())
     return digest.hexdigest()
 

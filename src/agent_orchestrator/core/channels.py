@@ -5,9 +5,11 @@ Each state key can be assigned a channel type via StateGraph's channel_config.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar, Sequence, Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any, Generic, TypeVar
 
 V = TypeVar("V")  # Value type
 U = TypeVar("U")  # Update type
@@ -16,13 +18,11 @@ U = TypeVar("U")  # Update type
 class EmptyChannelError(Exception):
     """Raised when reading from an empty channel."""
 
-    pass
 
 
 class InvalidUpdateError(Exception):
     """Raised when a channel receives conflicting updates."""
 
-    pass
 
 
 class BaseChannel(ABC, Generic[V, U]):
@@ -55,7 +55,6 @@ class BaseChannel(ABC, Generic[V, U]):
 
     def reset(self) -> None:
         """Called between supersteps for ephemeral channels."""
-        pass
 
 
 _MISSING = object()

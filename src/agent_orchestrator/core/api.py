@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-
 API_VERSION = "v1"
 API_PREFIX = f"/api/{API_VERSION}"
 

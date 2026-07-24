@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import pytest
 
@@ -543,7 +543,7 @@ class TestEvalReportSummaryMath:
         run_tuples = list(zip(cases, runs, scores))
         # Use EvalSuite._compute_summary directly
         suite = EvalSuite(name="math-test", cases=cases, evaluators=[])
-        summary = suite._compute_summary(run_tuples)  # noqa: SLF001
+        summary = suite._compute_summary(run_tuples)
         return EvalReport(suite="math-test", runs=run_tuples, summary=summary)
 
     def test_all_pass_rate_1(self):

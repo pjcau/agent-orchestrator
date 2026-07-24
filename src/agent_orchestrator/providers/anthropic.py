@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from ..core.provider import (
     Completion,

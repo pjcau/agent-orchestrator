@@ -6,17 +6,17 @@ LRU eviction, session reset, and integration with Agent.execute().
 
 import pytest
 
-from agent_orchestrator.core.loop_detection import (
-    LoopDetectedError,
-    LoopDetector,
-    LoopStatus,
-    _hash_tool_call,
-)
 from agent_orchestrator.core.agent import (
     Agent,
     AgentConfig,
     Task,
     TaskStatus,
+)
+from agent_orchestrator.core.loop_detection import (
+    LoopDetectedError,
+    LoopDetector,
+    LoopStatus,
+    _hash_tool_call,
 )
 from agent_orchestrator.core.provider import (
     Completion,

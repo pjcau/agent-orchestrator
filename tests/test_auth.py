@@ -5,6 +5,9 @@ import time
 import pytest
 
 from agent_orchestrator.dashboard.auth import (
+    HAS_AUTHLIB,
+    HAS_JWT,
+    JWT_ALGORITHM,
     APIKeyMiddleware,
     _load_allowed_emails,
     check_ws_auth,
@@ -12,11 +15,7 @@ from agent_orchestrator.dashboard.auth import (
     create_session_token,
     is_email_allowed,
     verify_session_token,
-    JWT_ALGORITHM,
-    HAS_JWT,
-    HAS_AUTHLIB,
 )
-
 
 # ---------------------------------------------------------------------------
 # JWT session token tests
@@ -249,10 +248,10 @@ class TestAPIKeyMiddleware:
         monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
         monkeypatch.setenv("OAUTH_CLIENT_ID", "test-id")
 
-        from starlette.testclient import TestClient
         from starlette.applications import Starlette
         from starlette.responses import JSONResponse as StarletteJSONResponse
         from starlette.routing import Route
+        from starlette.testclient import TestClient
 
         async def endpoint(request):
             return StarletteJSONResponse({"ok": True})
@@ -318,10 +317,10 @@ class TestAPIKeyMiddleware:
         monkeypatch.delenv("ALLOW_DEV_MODE", raising=False)
         monkeypatch.setenv("OAUTH_CLIENT_ID", "test-id")
 
-        from starlette.testclient import TestClient
         from starlette.applications import Starlette
         from starlette.responses import JSONResponse as StarletteJSONResponse
         from starlette.routing import Route
+        from starlette.testclient import TestClient
 
         async def endpoint(request):  # pragma: no cover - never reached
             return StarletteJSONResponse({"ok": True})
@@ -379,6 +378,7 @@ class TestSafeReturnTo:
 
     def test_missing_cookie_defaults_to_home(self):
         from starlette.requests import Request
+
         from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
 
         req = Request({"type": "http", "headers": []})
@@ -461,6 +461,7 @@ class TestCookieSameSite:
         causing CSRF state mismatch errors.
         """
         import inspect
+
         from agent_orchestrator.dashboard import oauth_routes
 
         source = inspect.getsource(oauth_routes)
@@ -470,6 +471,7 @@ class TestCookieSameSite:
     def test_session_middleware_uses_lax(self):
         """SessionMiddleware must use same_site='lax' so OAuth state survives redirects."""
         import inspect
+
         from agent_orchestrator.dashboard import app as app_module
 
         source = inspect.getsource(app_module.create_dashboard_app)
@@ -538,6 +540,7 @@ class TestPasswordHashing:
     def test_legacy_hash_still_verifies(self):
         """Legacy fixed-salt PBKDF2 hashes should still verify (migration)."""
         import hashlib
+
         from agent_orchestrator.core.users import _verify_password
 
         legacy_hash = hashlib.pbkdf2_hmac(
@@ -548,6 +551,7 @@ class TestPasswordHashing:
     def test_legacy_sha256_salt_hash_still_verifies(self):
         """Legacy SHA-256 with random salt hashes should still verify (pre-PBKDF2)."""
         import hashlib
+
         from agent_orchestrator.core.users import _verify_password
 
         salt = "abcdef1234567890"
@@ -557,7 +561,7 @@ class TestPasswordHashing:
 
     def test_pbkdf2_fallback_hash_format(self):
         """New non-bcrypt hashes use PBKDF2 format."""
-        from agent_orchestrator.core.users import _hash_password, HAS_BCRYPT
+        from agent_orchestrator.core.users import HAS_BCRYPT, _hash_password
 
         if HAS_BCRYPT:
             pytest.skip("bcrypt installed, fallback not used")

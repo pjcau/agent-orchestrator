@@ -64,7 +64,7 @@ class ShellExecSkill(Skill):
                 output=output,
                 error=f"Exit code: {proc.returncode}" if proc.returncode != 0 else None,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return SkillResult(
                 success=False, output=None, error=f"Command timed out after {self._timeout}s"
             )

@@ -336,7 +336,7 @@ class RunManager:
                                 future, timeout=hitl_config.timeout_seconds
                             )
                             run_info.status = "running"
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             run_info.status = "failed"
                             run_info.error = "HITL timeout: no human input received"
                             await self._broadcast(

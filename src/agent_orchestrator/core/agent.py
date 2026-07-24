@@ -352,7 +352,7 @@ class Agent:
         metrics: MetricsRegistry | None = None,
         guardrails: GuardrailManager | None = None,
         emit_event: Any | None = None,
-        personalized_memory: "PersonalizedMemory | None" = None,
+        personalized_memory: PersonalizedMemory | None = None,
         user_id: str | None = None,
     ):
         self.config = config

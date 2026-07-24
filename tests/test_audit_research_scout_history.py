@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -156,15 +157,15 @@ class TestWithinSinceDays:
         assert audit._within_since_days("2026-01-01T00:00:00+00:00", None) is True
 
     def test_within_window(self, audit):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(days=5)).isoformat()
         assert audit._within_since_days(recent, 14) is True
 
     def test_outside_window(self, audit):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+        old = (datetime.now(UTC) - timedelta(days=40)).isoformat()
         assert audit._within_since_days(old, 14) is False
 
     def test_malformed_timestamp_included(self, audit):
