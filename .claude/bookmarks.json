@@ -544,5 +544,23 @@
     "added": "2026-07-19T12:49:54Z",
     "source": "github-star",
     "notes": "Automation tools for KiCAD | Language: Python | Topics: automation, kicad, panelization, pcb"
+  },
+  {
+    "url": "https://github.com/evoiz/Agentic-Design-Patterns",
+    "added": "2026-07-23T22:41:58Z",
+    "source": "github-star",
+    "notes": " | Language: Jupyter Notebook"
+  },
+  {
+    "url": "https://github.com/karam-ajaj/atlas",
+    "added": "2026-07-23T22:01:50Z",
+    "source": "github-star",
+    "notes": "Open-source tool for network discovery, visualization, and monitoring. Built with Go, FastAPI, and React, supports Docker host scanning. | Language: JavaScript | Topics: container, devops, devops-tools, docker, docker-monitoring"
+  },
+  {
+    "url": "https://github.com/firezone/firezone",
+    "added": "2026-07-23T21:30:40Z",
+    "source": "github-star",
+    "notes": "Enterprise-ready zero-trust access platform built on WireGuard®. | Language: Elixir | Topics: cloud, devsecops, elixir, elixir-lang, firewall"
   }
 ]
