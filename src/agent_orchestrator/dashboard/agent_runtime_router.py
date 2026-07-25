@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
+from agent_orchestrator.core.cache_context import set_cache_context
 from agent_orchestrator.core.failure_patterns import load_default_registry
 from agent_orchestrator.core.repair_loop import RepairLoop
 from agent_orchestrator.core.verification_gate import VerificationGate
@@ -39,8 +40,6 @@ from agent_orchestrator.core.verifiers import (
     SyntaxVerifier,
     WorkspaceCoherenceVerifier,
 )
-
-from agent_orchestrator.core.cache_context import set_cache_context
 
 from .agent_runner import run_agent, run_team
 from .agents_registry import get_agent_registry
@@ -963,9 +962,9 @@ async def stream_endpoint(ws: WebSocket):
             openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
 
             try:
+                from ..core.provider import Message, Role
                 from ..providers.local import LocalProvider
                 from ..providers.openrouter import OpenRouterProvider
-                from ..core.provider import Message, Role
 
                 if provider_type == "openrouter":
                     provider = OpenRouterProvider(model=model, api_key=openrouter_key)
