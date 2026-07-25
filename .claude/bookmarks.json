@@ -562,5 +562,11 @@
     "added": "2026-07-23T21:30:40Z",
     "source": "github-star",
     "notes": "Enterprise-ready zero-trust access platform built on WireGuard®. | Language: Elixir | Topics: cloud, devsecops, elixir, elixir-lang, firewall"
+  },
+  {
+    "url": "https://github.com/Dyneteq/reconya",
+    "added": "2026-07-24T16:42:58Z",
+    "source": "github-star",
+    "notes": "Network reconnaissance and asset discovery tool | Language: Go"
   }
 ]
