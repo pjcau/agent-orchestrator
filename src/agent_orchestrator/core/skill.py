@@ -16,8 +16,9 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ class SkillRegistry:
     def list_skills(self) -> list[str]:
         return list(self._skills.keys())
 
-    def register_mcp_tools(self, client_manager: "Any") -> int:
+    def register_mcp_tools(self, client_manager: Any) -> int:
         """Register external MCP tools as skills.
 
         Creates a wrapper skill for each tool returned by
@@ -327,7 +328,7 @@ def timeout_middleware(timeout_seconds: float = 30.0) -> SkillMiddleware:
     ) -> SkillResult:
         try:
             return await asyncio.wait_for(next_fn(request), timeout=timeout_seconds)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return SkillResult(
                 success=False,
                 output=None,
