@@ -27,7 +27,8 @@ import asyncio
 import logging
 import os
 import secrets
-from typing import Any, Awaitable, Callable, Protocol
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
 
 from ..core.skill import Skill, SkillRegistry, SkillResult
 from .protocol import (
@@ -401,7 +402,7 @@ class RemoteSkillAdapter(Skill):
             result = await self._registry.issue(
                 ws=self._ws, run_id=self._run_id, name=self._name, args=params
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return SkillResult(
                 success=False,
                 output=None,
@@ -589,7 +590,7 @@ async def perform_handshake(
     """
     try:
         raw = await asyncio.wait_for(ws.receive_json(), timeout=HANDSHAKE_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         raise AgentHostError("handshake_timeout", "no HELLO within timeout") from e
 
     try:
@@ -680,7 +681,7 @@ async def drive_session(
     while True:
         try:
             raw = await ws.receive_json()
-        except (asyncio.CancelledError, RuntimeError):  # noqa: PERF203
+        except (asyncio.CancelledError, RuntimeError):
             _cleanup()
             return "closed_by_peer"
         try:
