@@ -10,7 +10,6 @@ from agent_orchestrator.dashboard.agents_registry import (
     get_agent_registry,
 )
 
-
 # --- Frontmatter parsing ---
 
 
