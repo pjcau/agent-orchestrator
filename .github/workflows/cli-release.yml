@@ -63,7 +63,7 @@ jobs:
             runner: windows-latest
             archive: zip
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute release name
         shell: bash
@@ -234,7 +234,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
