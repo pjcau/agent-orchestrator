@@ -1,0 +1,128 @@
+{
+  "started_at": "2026-06-04T22:17:24Z",
+  "model": "tencent/hy3-preview",
+  "min_value_score": 6.0,
+  "total_candidates": 13,
+  "results": [
+    {
+      "url": "https://github.com/mixelpixx/KiCAD-MCP-Server",
+      "title": "mixelpixx/KiCAD-MCP-Server",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 104.6,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/ministackorg/ministack",
+      "title": "ministackorg/ministack",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 2.3,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/autorope/donkeycar",
+      "title": "autorope/donkeycar",
+      "outcome": "improvements-found",
+      "items": 30,
+      "top_value_score": 9.0,
+      "elapsed_s": 85.7,
+      "findings_file": ".claude/audit-findings/autorope__donkeycar.md"
+    },
+    {
+      "url": "https://github.com/pracdata/awesome-open-source-data-engineering",
+      "title": "pracdata/awesome-open-source-data-engineering",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 72.9,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/evangelosmeklis/deepdrone",
+      "title": "evangelosmeklis/deepdrone",
+      "outcome": "improvements-found",
+      "items": 15,
+      "top_value_score": 9.0,
+      "elapsed_s": 35.1,
+      "findings_file": ".claude/audit-findings/evangelosmeklis__deepdrone.md"
+    },
+    {
+      "url": "https://github.com/lance0/ttl",
+      "title": "lance0/ttl",
+      "outcome": "improvements-found",
+      "items": 30,
+      "top_value_score": 9.0,
+      "elapsed_s": 78.9,
+      "findings_file": ".claude/audit-findings/lance0__ttl.md"
+    },
+    {
+      "url": "https://github.com/PegorK/f32",
+      "title": "PegorK/f32",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 3.4,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/RyanCodrai/turbovec",
+      "title": "RyanCodrai/turbovec",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 103.8,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/HKUDS/CLI-Anything",
+      "title": "HKUDS/CLI-Anything",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 91.3,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/poloclub/transformer-explainer",
+      "title": "poloclub/transformer-explainer",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 93.1,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/Pinperepette/MacPersistenceChecker",
+      "title": "Pinperepette/MacPersistenceChecker",
+      "outcome": "improvements-found",
+      "items": 8,
+      "top_value_score": 9.0,
+      "elapsed_s": 82.7,
+      "findings_file": ".claude/audit-findings/Pinperepette__MacPersistenceChecker.md"
+    },
+    {
+      "url": "https://github.com/floci-io/floci",
+      "title": "floci-io/floci",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 65.3,
+      "skipped_pr": "no items"
+    },
+    {
+      "url": "https://github.com/virgiliojr94/book-to-skill",
+      "title": "virgiliojr94/book-to-skill",
+      "outcome": "no-improvements",
+      "items": 0,
+      "top_value_score": 0,
+      "elapsed_s": 58.2,
+      "skipped_pr": "no items"
+    }
+  ],
+  "finished_at": "2026-06-04T22:32:02Z",
+  "repos_with_findings_file": 4,
+  "total_improvements": 83
+}
