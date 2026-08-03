@@ -1,0 +1,16 @@
+diff --git a/src/agent_orchestrator/dashboard/oauth_routes.py b/src/agent_orchestrator/dashboard/oauth_routes.py
+index 47046a1..bb40bb0 100644
+--- a/src/agent_orchestrator/dashboard/oauth_routes.py
++++ b/src/agent_orchestrator/dashboard/oauth_routes.py
+@@ -231,6 +231,11 @@ def _safe_return_to(request: Request) -> str:
+         return "/"
+     for prefix in _RETURN_TO_PREFIXES:
+         if raw.startswith(prefix):
++            # Ensure the remainder does not contain ".." path traversal
++            # or a scheme/host (e.g. "//evil.com" after prefix).
++            suffix = raw[len(prefix):]
++            if ".." in suffix or suffix.startswith("//"):
++                return "/"
+             return raw
+     return "/"
+ 
