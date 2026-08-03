@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -214,10 +215,12 @@ def _safe_return_to(request: Request) -> str:
     from a static allowlist. We do exactly that:
 
     1. Read the cookie value.
-    2. Verify it starts with one of :data:`_RETURN_TO_PREFIXES`.
-    3. If it matches, return the literal cookie value (still a relative
-       path; no scheme or netloc could have survived the prefix match).
-    4. Otherwise fall back to ``/``.
+    2. Parse it with ``urlparse`` to reject any URL that has a scheme
+       or netloc (absolute URL).
+    3. Reject protocol-relative URLs (``//``).
+    4. Verify it starts with one of :data:`_RETURN_TO_PREFIXES`.
+    5. If all checks pass, return the literal cookie value.
+    6. Otherwise fall back to ``/``.
 
     This pattern is the canonical "redirect allowlist" recipe CodeQL
     recognises as a safe sanitizer, and it also fits the operational
@@ -225,14 +228,20 @@ def _safe_return_to(request: Request) -> str:
     device-flow approval page or the chat home.
     """
     raw = request.cookies.get("auth_return_to", "")
-    # A leading "//" makes the path protocol-relative (`//evil.com/foo`),
-    # which the browser interprets as an absolute URL. Catch that first.
-    if not raw or raw.startswith("//"):
+    if not raw:
         return "/"
-    for prefix in _RETURN_TO_PREFIXES:
-        if raw.startswith(prefix):
-            return raw
-    return "/"
+    parsed = urlparse(raw)
+    # Reject if it has a scheme or netloc (absolute URL)
+    if parsed.scheme or parsed.netloc:
+        return "/"
+    # Reject protocol-relative URLs (starting with //)
+    if raw.startswith("//"):
+        return "/"
+    # Reject if it doesn't start with an allowed prefix
+    allowed = any(raw.startswith(p) for p in _RETURN_TO_PREFIXES)
+    if not allowed:
+        return "/"
+    return raw
 
 
 @router.get("/login", response_class=HTMLResponse)
