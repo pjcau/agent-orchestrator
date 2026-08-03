@@ -422,6 +422,13 @@ async def prompt(body: dict, request: Request):
         result = dict(result)
         result["rag"] = rag_summary
 
+    # Strip any exception traceback or stack-trace fields from the result
+    # before returning it to the client (py/stack-trace-exposure).
+    if isinstance(result, dict):
+        result.pop("traceback", None)
+        result.pop("stack_trace", None)
+        result.pop("exc_info", None)
+
     return JSONResponse(content=result)
 
 
