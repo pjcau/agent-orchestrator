@@ -24,7 +24,6 @@ import uuid
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar
 
-
 # ---------------------------------------------------------------------------
 # Message kinds
 # ---------------------------------------------------------------------------
