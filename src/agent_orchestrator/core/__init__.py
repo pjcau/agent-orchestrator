@@ -1,171 +1,174 @@
-from .provider import Provider, ModelCapabilities, Completion, Message
 from .agent import Agent, AgentConfig, TaskResult
-from .skill import Skill, SkillRegistry
-from .cooperation import CooperationProtocol, TaskAssignment
-from .router import (
-    TaskRouter,
-    TaskComplexityClassifier,
-    RouterConfig,
-    RoutingStrategy,
-    TaskComplexity,
-)
-from .orchestrator import Orchestrator, OrchestratorConfig
-from .usage import UsageTracker, BudgetConfig, UsageRecord
-from .health import HealthMonitor, ProviderHealth
-from .benchmark import BenchmarkSuite, BenchmarkResult
-from .rate_limiter import RateLimiter, RateLimitConfig
-from .audit import AuditLog, AuditEntry
-from .task_queue import TaskQueue, QueuedTask
-from .metrics import MetricsRegistry, Counter, Gauge, Histogram, default_metrics
 from .alerts import AlertManager, AlertRule
-from .graph import (
-    StateGraph,
-    CompiledGraph,
-    GraphConfig,
-    GraphInterrupt,
-    Interrupt,
-    InterruptType,
-    StreamEvent,
-    StreamEventType,
-    START,
-    END,
+from .api import APIEndpoint, APIRegistry, APIResponse
+from .atomic_tasks import (
+    AtomicTaskIssue,
+    record_issues,
+    validate_atomic_tasks,
 )
-from .checkpoint import Checkpointer, InMemoryCheckpointer, SQLiteCheckpointer
-from .reducers import append_reducer, add_reducer, merge_dict_reducer
-from .llm_nodes import llm_node, multi_provider_node, chat_node, get_llm_cache
-from .graph_patterns import (
-    SubGraphNode,
-    retry_node,
-    loop_node,
-    map_reduce_node,
-    provider_annotated_node,
-    long_context_node,
-)
-from .graph_templates import (
-    GraphTemplate,
-    GraphTemplateStore,
-    NodeTemplate,
-    EdgeTemplate,
-)
-from .plugins import PluginLoader, PluginManifest
-from .webhook import WebhookRegistry, WebhookConfig
-from .mcp_server import MCPServerRegistry, MCPTool, MCPResource
-from .offline import OfflineManager, OfflineConfig
-from .config_manager import (
-    ConfigManager,
-    OrchestratorConfiguration,
-    AgentConfigEntry,
-    ProviderConfigEntry,
-)
-from .yaml_config import (
-    YAMLConfigLoader,
-    OrchestratorConfig as YAMLOrchestratorConfig,
-    YAMLConfigError,
-    load_class,
-    substitute_env_vars,
-    validate_raw_config,
-    CURRENT_CONFIG_VERSION,
-)
-from .yaml_config import BudgetConfig as YAMLBudgetConfig  # noqa: F811 — avoids clash with usage.BudgetConfig
-from .project import ProjectManager, ProjectConfig
-from .users import UserManager, User, UserRole
-from .provider_presets import ProviderPresetManager, ProviderPreset
-from .migration import MigrationManager, MigrationResult
-from .api import APIRegistry, APIEndpoint, APIResponse
-from .channels import (
-    BaseChannel,
-    LastValue,
-    BinaryOperatorChannel,
-    TopicChannel,
-    EphemeralChannel,
-    BarrierChannel,
-    ChannelManager,
-    EmptyChannelError,
-    InvalidUpdateError,
-)
+from .audit import AuditEntry, AuditLog
+from .benchmark import BenchmarkResult, BenchmarkSuite
 from .cache import (
     BaseCache,
-    InMemoryCache,
-    CachePolicy,
     CacheEntry,
+    CachePolicy,
     CacheStats,
+    InMemoryCache,
     cached_node,
     make_cache_key,
 )
-from .conformance import (
-    run_provider_conformance,
-    run_checkpointer_conformance,
-    ConformanceReport,
-    TestResult,
-    TestStatus,
+from .channels import (
+    BarrierChannel,
+    BaseChannel,
+    BinaryOperatorChannel,
+    ChannelManager,
+    EmptyChannelError,
+    EphemeralChannel,
+    InvalidUpdateError,
+    LastValue,
+    TopicChannel,
 )
-from .store import (
-    BaseStore,
-    InMemoryStore,
-    SessionStore,
-    Item,
-    SearchItem,
-    run_store_conformance,
-)
+from .checkpoint import Checkpointer, InMemoryCheckpointer, SQLiteCheckpointer
 from .clarification import (
     ClarificationManager,
     ClarificationRequest,
     ClarificationResponse,
     ClarificationType,
 )
+from .config_manager import (
+    AgentConfigEntry,
+    ConfigManager,
+    OrchestratorConfiguration,
+    ProviderConfigEntry,
+)
+from .conformance import (
+    ConformanceReport,
+    TestResult,
+    TestStatus,
+    run_checkpointer_conformance,
+    run_provider_conformance,
+)
 from .conversation import ConversationManager, ConversationMessage, ConversationResult
-from .prompt_markers import (
-    inject_marker_sections,
-    extract_marker_sections,
-    diff_sections,
-)
-from .prompt_registry import PromptRegistry, PromptTemplate, PROMPT_NAMESPACE
-from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
-from .sandbox import Sandbox, SandboxConfig, SandboxResult, SandboxType, SandboxError
-from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
-from .loop_detection import LoopDetector, LoopDetectedError, LoopStatus
+from .cooperation import CooperationProtocol, TaskAssignment
 from .document_converter import (
-    DocumentConverter,
-    ConvertedDocument,
-    DocumentConversionError,
-    UnsupportedFormatError,
-    FileTooLargeError,
-    DependencyMissingError,
     ContentLimitError,
+    ConvertedDocument,
+    DependencyMissingError,
+    DocumentConversionError,
+    DocumentConverter,
+    FileTooLargeError,
+    UnsupportedFormatError,
 )
+from .evaluator import (
+    EvalCase,
+    EvalReport,
+    EvalRun,
+    EvalScore,
+    EvalSuite,
+    Evaluator,
+    JsonDataset,
+    LLMJudge,
+    RubricEvaluator,
+)
+from .graph import (
+    END,
+    START,
+    CompiledGraph,
+    GraphConfig,
+    GraphInterrupt,
+    Interrupt,
+    InterruptType,
+    StateGraph,
+    StreamEvent,
+    StreamEventType,
+)
+from .graph_patterns import (
+    SubGraphNode,
+    long_context_node,
+    loop_node,
+    map_reduce_node,
+    provider_annotated_node,
+    retry_node,
+)
+from .graph_templates import (
+    EdgeTemplate,
+    GraphTemplate,
+    GraphTemplateStore,
+    NodeTemplate,
+)
+from .health import HealthMonitor, ProviderHealth
+from .llm_nodes import chat_node, get_llm_cache, llm_node, multi_provider_node
+from .loop_detection import LoopDetectedError, LoopDetector, LoopStatus
+from .mcp_server import MCPResource, MCPServerRegistry, MCPTool
+from .memory_filter import PLACEHOLDER, SESSION_FILE_PATTERNS, MemoryFilter
+from .metrics import Counter, Gauge, Histogram, MetricsRegistry, default_metrics
+from .migration import MigrationManager, MigrationResult
+from .modality import Modality, detect_modality, record_detection
+from .offline import OfflineConfig, OfflineManager
+from .orchestrator import Orchestrator, OrchestratorConfig
+from .plugins import PluginLoader, PluginManifest
+from .project import ProjectConfig, ProjectManager
+from .prompt_markers import (
+    diff_sections,
+    extract_marker_sections,
+    inject_marker_sections,
+)
+from .prompt_registry import PROMPT_NAMESPACE, PromptRegistry, PromptTemplate
+from .provider import Completion, Message, ModelCapabilities, Provider
+from .provider_presets import ProviderPreset, ProviderPresetManager
+from .rate_limiter import RateLimitConfig, RateLimiter
+from .reducers import add_reducer, append_reducer, merge_dict_reducer
+from .router import (
+    RouterConfig,
+    RoutingStrategy,
+    TaskComplexity,
+    TaskComplexityClassifier,
+    TaskRouter,
+)
+from .sandbox import Sandbox, SandboxConfig, SandboxError, SandboxResult, SandboxType
 from .skill import (
-    SkillRequest,
+    Skill,
     SkillMiddleware,
+    SkillRegistry,
+    SkillRequest,
+    cache_middleware,
+    context_loader_middleware,
     logging_middleware,
     retry_middleware,
     timeout_middleware,
-    cache_middleware,
     verification_middleware,
-    context_loader_middleware,
-)
-from .atomic_tasks import (
-    AtomicTaskIssue,
-    validate_atomic_tasks,
-    record_issues,
 )
 from .store import (
-    path_to_namespace,
-    namespace_to_path,
+    NAMESPACE_SEP,
+    BaseStore,
+    InMemoryStore,
+    Item,
+    SearchItem,
+    SessionStore,
     descends_from,
     namespace_depth,
-    NAMESPACE_SEP,
+    namespace_to_path,
+    path_to_namespace,
+    run_store_conformance,
 )
-from .modality import Modality, detect_modality, record_detection
-from .evaluator import (
-    EvalCase,
-    EvalRun,
-    EvalScore,
-    EvalReport,
-    Evaluator,
-    RubricEvaluator,
-    LLMJudge,
-    EvalSuite,
-    JsonDataset,
+from .task_queue import QueuedTask, TaskQueue
+from .tracing import get_tracer, instrument_fastapi, setup_tracing, traced
+from .usage import BudgetConfig, UsageRecord, UsageTracker
+from .users import User, UserManager, UserRole
+from .webhook import WebhookConfig, WebhookRegistry
+from .yaml_config import (
+    CURRENT_CONFIG_VERSION,
+    YAMLConfigError,
+    YAMLConfigLoader,
+    load_class,
+    substitute_env_vars,
+    validate_raw_config,
+)
+from .yaml_config import (
+    BudgetConfig as YAMLBudgetConfig,
+)
+from .yaml_config import (
+    OrchestratorConfig as YAMLOrchestratorConfig,
 )
 
 __all__ = [
@@ -208,7 +211,6 @@ __all__ = [
     "RouterConfig",
     "RoutingStrategy",
     "TaskComplexity",
-    "Orchestrator",
     "OrchestratorConfig",
     "UsageTracker",
     "BudgetConfig",
@@ -359,7 +361,6 @@ __all__ = [
     # v1.4 — YAML Configuration
     "YAMLConfigLoader",
     "YAMLOrchestratorConfig",
-    "BudgetConfig",
     "YAMLConfigError",
     "YAMLBudgetConfig",
     "load_class",
