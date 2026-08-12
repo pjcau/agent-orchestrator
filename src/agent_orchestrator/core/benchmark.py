@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from .provider import Message, Provider, Role
 
@@ -16,7 +15,7 @@ class BenchmarkResult:
     task_type: str
     latency_ms: float
     tokens_per_second: float
-    output_quality: Optional[float]  # 0-1, if measured; None if not applicable
+    output_quality: float | None  # 0-1, if measured; None if not applicable
     cost_usd: float
 
 
