@@ -22,7 +22,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ─── Data Models ──────────────────────────────────────────────────────
 
 Namespace = tuple[str, ...]
@@ -281,7 +280,7 @@ class InMemoryStore(BaseStore):
                        the value dict are filtered on put.
     """
 
-    def __init__(self, memory_filter: "MemoryFilter | None" = None) -> None:  # noqa: F821
+    def __init__(self, memory_filter: MemoryFilter | None = None) -> None:  # noqa: F821
         from .memory_filter import MemoryFilter as _MF
 
         self._data: dict[tuple[Namespace, str], Item] = {}
