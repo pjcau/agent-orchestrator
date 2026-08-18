@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -52,23 +53,85 @@ def _is_local(provider: str) -> bool:
     return any(provider.lower().startswith(p) for p in _LOCAL_PROVIDER_PREFIXES)
 
 
+class ProviderCallCapExceeded(RuntimeError):
+    """Raised when a call is attempted on a provider disabled by its call cap."""
+
+    def __init__(self, provider: str, cap: int) -> None:
+        super().__init__(f"Provider '{provider}' disabled: exceeded hard call cap of {cap} calls")
+        self.provider = provider
+        self.cap = cap
+
+
 class UsageTracker:
     """In-memory store for token usage and cost records.
 
     All costs are in USD. Timestamps are Unix epoch floats (time.time()).
+
+    Optionally enforces *hard per-provider call caps*: pass
+    ``call_caps={"openai": 500}`` and the tracker counts every recorded call;
+    once a provider reaches its cap it is auto-disabled — ``check_call_cap()``
+    raises :class:`ProviderCallCapExceeded` and ``is_provider_disabled()``
+    returns True until ``reset_provider()`` re-arms it. This complements
+    dollar budgets (:class:`BudgetConfig` / the CostGuard guardrail): a
+    misbehaving retry loop on a cheap model can burn thousands of calls while
+    staying under a USD budget.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, call_caps: dict[str, int] | None = None) -> None:
         self._records: list[UsageRecord] = []
         self._session_start: float = time.time()
+        self._call_caps: dict[str, int] = dict(call_caps or {})
+        self._call_counts: dict[str, int] = {}
+        self._disabled_providers: set[str] = set()
 
     # ------------------------------------------------------------------
     # Recording
     # ------------------------------------------------------------------
 
     def record(self, record: UsageRecord) -> None:
-        """Append a usage record."""
+        """Append a usage record and count the call against its provider cap."""
         self._records.append(record)
+        self._count_call(record.provider)
+
+    # ------------------------------------------------------------------
+    # Per-provider hard call caps
+    # ------------------------------------------------------------------
+
+    def _count_call(self, provider: str) -> None:
+        self._call_counts[provider] = self._call_counts.get(provider, 0) + 1
+        cap = self._call_caps.get(provider)
+        if cap is not None and self._call_counts[provider] >= cap:
+            if provider not in self._disabled_providers:
+                self._disabled_providers.add(provider)
+                logging.getLogger(__name__).warning(
+                    "Provider %s auto-disabled: reached hard call cap of %d calls",
+                    provider,
+                    cap,
+                )
+
+    def check_call_cap(self, provider: str) -> None:
+        """Raise :class:`ProviderCallCapExceeded` if *provider* is disabled.
+
+        Call this before dispatching an LLM request; it is a no-op for
+        providers without a configured cap.
+        """
+        if provider in self._disabled_providers:
+            raise ProviderCallCapExceeded(provider, self._call_caps.get(provider, 0))
+
+    def is_provider_disabled(self, provider: str) -> bool:
+        return provider in self._disabled_providers
+
+    @property
+    def disabled_providers(self) -> frozenset[str]:
+        return frozenset(self._disabled_providers)
+
+    def get_call_count(self, provider: str) -> int:
+        return self._call_counts.get(provider, 0)
+
+    def reset_provider(self, provider: str) -> None:
+        """Re-enable a capped provider and zero its call count (manual override)."""
+        self._disabled_providers.discard(provider)
+        self._call_counts.pop(provider, None)
 
     # ------------------------------------------------------------------
     # Budget checking

@@ -314,6 +314,56 @@ class Sandbox:
         self._start_time = None
         self._mapped_ports = {}
 
+    async def reset(self) -> bool:
+        """Restore the sandbox to a clean state so it can be reused safely.
+
+        Threat model: a pooled sandbox is handed to a *different* task after
+        release, so anything the previous task left behind is a cross-task
+        contamination channel. Reset therefore:
+
+        1. Kills every process except PID 1 (the container's ``sleep infinity``
+           keep-alive) — background daemons a task started must not observe
+           the next task.
+        2. Wipes the contents of every writable path — files are the other
+           persistence channel (tmpfs mounts survive ``docker exec`` exits).
+
+        Environment variables are fixed at container start from the pool's
+        single shared ``SandboxConfig`` and cannot be mutated across ``docker
+        exec`` calls, so they need no scrubbing.
+
+        Returns True when the sandbox is clean and healthy for reuse, False
+        when it should be discarded (caller must ``stop()`` it). LOCAL
+        sandboxes always return False: they have no isolation boundary, so
+        "reuse after reset" is meaningless — and wiping ``writable_paths``
+        would delete real host directories.
+        """
+        if not self._started:
+            return False
+        if self._config.type != SandboxType.DOCKER or not self._container_id:
+            return False
+
+        # 1. Kill everything but PID 1 and the killer shell itself.
+        kill_cmd = (
+            "for p in /proc/[0-9]*; do pid=${p#/proc/}; "
+            'if [ "$pid" != 1 ] && [ "$pid" != "$$" ]; then '
+            "kill -9 $pid 2>/dev/null; fi; done; true"
+        )
+        # 2. Wipe writable paths (quote each; config paths, not user input).
+        wipe_parts = [
+            f"find '{path}' -mindepth 1 -delete 2>/dev/null" for path in self._config.writable_paths
+        ]
+        cmd = kill_cmd + ("; " + "; ".join(wipe_parts) if wipe_parts else "") + "; true"
+
+        try:
+            result = await self._execute_docker(cmd, self._config.timeout_seconds)
+        except Exception:
+            return False
+        if result.timed_out or result.exit_code != 0:
+            return False
+
+        # Health check: the container must still be running.
+        return await self._get_docker_status() == "running"
+
     async def execute(self, command: str, timeout: int | None = None) -> SandboxResult:
         """Execute a command inside the sandbox.
 
@@ -583,6 +633,10 @@ class Sandbox:
             duration_seconds=round(duration, 3),
         )
 
+    # NOTE: SandboxPool below assumes execute()/reset() are the only ways a
+    # task touches a pooled container — direct docker CLI access bypasses the
+    # reset guarantees.
+
     async def _execute_local(self, command: str, timeout: int) -> SandboxResult:
         """Execute a command locally (no isolation — for testing only)."""
         start = time.monotonic()
@@ -611,3 +665,179 @@ class Sandbox:
             timed_out=timed_out,
             duration_seconds=round(duration, 3),
         )
+
+
+class SandboxPool:
+    """Pre-provisioned pool of warm sandboxes for millisecond acquire latency.
+
+    Every sandboxed execution normally pays full ``docker run`` startup
+    (~1-3s). The pool keeps ``min_ready`` started sandboxes idle so
+    ``acquire()`` returns one in microseconds; ``release()`` resets it
+    (process kill + workspace wipe — see :meth:`Sandbox.reset`) and requeues
+    it only if the reset succeeded, otherwise the sandbox is destroyed and a
+    fresh replacement is spawned. Inspired by CubeSandbox's warm-pool design.
+
+    All sandboxes in a pool share one ``SandboxConfig`` — a pool is
+    homogeneous by construction, so a reused container never leaks another
+    config's image, env vars, or mounts.
+
+    Usage::
+
+        pool = SandboxPool(SandboxConfig(), min_ready=2, max_total=8)
+        await pool.start()
+        sb = await pool.acquire()
+        try:
+            result = await sb.execute("python -c 'print(42)'")
+        finally:
+            await pool.release(sb)
+        ...
+        await pool.stop()
+
+    Concurrency: ``acquire()`` blocks (up to ``timeout``) when all
+    ``max_total`` sandboxes are in use; releases wake waiters in FIFO order.
+    """
+
+    def __init__(
+        self,
+        config: SandboxConfig | None = None,
+        min_ready: int = 2,
+        max_total: int = 8,
+    ) -> None:
+        if min_ready < 0:
+            raise ValueError("min_ready must be >= 0")
+        if max_total < max(min_ready, 1):
+            raise ValueError("max_total must be >= max(min_ready, 1)")
+        self._config = config or SandboxConfig()
+        self._min_ready = min_ready
+        self._max_total = max_total
+        self._idle: asyncio.Queue[Sandbox] = asyncio.Queue()
+        self._in_use: set[Sandbox] = set()
+        # Sandboxes being spawned right now — counted against max_total so a
+        # burst of acquires can't over-provision past the cap.
+        self._spawning = 0
+        self._lock = asyncio.Lock()
+        self._closed = False
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    @property
+    def idle_count(self) -> int:
+        return self._idle.qsize()
+
+    @property
+    def in_use_count(self) -> int:
+        return len(self._in_use)
+
+    @property
+    def total_count(self) -> int:
+        return self.idle_count + self.in_use_count + self._spawning
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def start(self) -> None:
+        """Pre-warm ``min_ready`` sandboxes concurrently."""
+        if self._closed:
+            raise SandboxError("Pool is stopped")
+        spawns = []
+        async with self._lock:
+            budget = min(self._min_ready, self._max_total) - self.total_count
+            if budget > 0:
+                self._spawning += budget
+                spawns = [self._spawn_ready() for _ in range(budget)]
+        if spawns:
+            await asyncio.gather(*spawns)
+
+    async def stop(self) -> None:
+        """Stop every idle and in-use sandbox and refuse further acquires."""
+        self._closed = True
+        victims: list[Sandbox] = list(self._in_use)
+        self._in_use.clear()
+        while True:
+            try:
+                victims.append(self._idle.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        if victims:
+            await asyncio.gather(*(sb.stop() for sb in victims), return_exceptions=True)
+
+    # ------------------------------------------------------------------
+    # Acquire / release
+    # ------------------------------------------------------------------
+
+    async def acquire(self, timeout: float = 30.0) -> Sandbox:
+        """Return a warm sandbox, spawning a new one if the pool has room.
+
+        Raises SandboxError when the pool is stopped, and
+        ``asyncio.TimeoutError`` when ``max_total`` sandboxes are busy for
+        longer than ``timeout`` seconds.
+        """
+        if self._closed:
+            raise SandboxError("Pool is stopped")
+
+        try:
+            sb = self._idle.get_nowait()
+        except asyncio.QueueEmpty:
+            # Nothing idle: spawn a replacement if the cap allows, then wait.
+            async with self._lock:
+                if self.total_count < self._max_total:
+                    self._spawning += 1
+                    asyncio.ensure_future(self._spawn_ready())
+            sb = await asyncio.wait_for(self._idle.get(), timeout=timeout)
+
+        self._in_use.add(sb)
+        # Background refill keeps the next caller warm too.
+        async with self._lock:
+            if self.idle_count < self._min_ready and self.total_count < self._max_total:
+                self._spawning += 1
+                asyncio.ensure_future(self._spawn_ready())
+        return sb
+
+    async def release(self, sb: Sandbox) -> None:
+        """Return a sandbox to the pool after resetting it.
+
+        A sandbox that fails reset (dirty, unhealthy, or LOCAL type) is
+        destroyed; a replacement is spawned only if the idle set dropped
+        below ``min_ready``.
+        """
+        self._in_use.discard(sb)
+        if self._closed:
+            await sb.stop()
+            return
+
+        if await sb.reset():
+            await self._idle.put(sb)
+            return
+
+        await sb.stop()
+        async with self._lock:
+            if self.idle_count < self._min_ready and self.total_count < self._max_total:
+                self._spawning += 1
+                asyncio.ensure_future(self._spawn_ready())
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _new_sandbox(self) -> Sandbox:
+        """Factory hook — tests override this to inject fake sandboxes."""
+        return Sandbox(self._config)
+
+    async def _spawn_ready(self) -> None:
+        sb = self._new_sandbox()
+        try:
+            await sb.start()
+        except Exception:
+            # Spawn failures must not leak the reserved slot.
+            async with self._lock:
+                self._spawning -= 1
+            return
+        async with self._lock:
+            self._spawning -= 1
+        if self._closed:
+            await sb.stop()
+            return
+        await self._idle.put(sb)

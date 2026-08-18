@@ -10,7 +10,7 @@ from .router import (
     TaskComplexity,
 )
 from .orchestrator import Orchestrator, OrchestratorConfig
-from .usage import UsageTracker, BudgetConfig, UsageRecord
+from .usage import BudgetConfig, ProviderCallCapExceeded, UsageRecord, UsageTracker
 from .health import HealthMonitor, ProviderHealth
 from .benchmark import BenchmarkSuite, BenchmarkResult
 from .rate_limiter import RateLimiter, RateLimitConfig
@@ -121,7 +121,14 @@ from .prompt_markers import (
 )
 from .prompt_registry import PromptRegistry, PromptTemplate, PROMPT_NAMESPACE
 from .memory_filter import MemoryFilter, SESSION_FILE_PATTERNS, PLACEHOLDER
-from .sandbox import Sandbox, SandboxConfig, SandboxResult, SandboxType, SandboxError
+from .sandbox import (
+    Sandbox,
+    SandboxConfig,
+    SandboxError,
+    SandboxPool,
+    SandboxResult,
+    SandboxType,
+)
 from .tracing import setup_tracing, instrument_fastapi, get_tracer, traced
 from .loop_detection import LoopDetector, LoopDetectedError, LoopStatus
 from .document_converter import (
@@ -211,6 +218,7 @@ __all__ = [
     "Orchestrator",
     "OrchestratorConfig",
     "UsageTracker",
+    "ProviderCallCapExceeded",
     "BudgetConfig",
     "UsageRecord",
     "HealthMonitor",
@@ -351,6 +359,7 @@ __all__ = [
     "SandboxResult",
     "SandboxType",
     "SandboxError",
+    "SandboxPool",
     # v1.3 — OpenTelemetry Tracing
     "setup_tracing",
     "instrument_fastapi",

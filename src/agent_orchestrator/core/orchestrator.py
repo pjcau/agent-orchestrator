@@ -135,6 +135,20 @@ class Orchestrator:
         self._cost_tracker = decomposition.total_cost_usd
 
         while True:
+            if self.protocol.is_stopped:
+                result = OrchestratorResult(
+                    success=False,
+                    output=f"Emergency stop ({self.protocol.stop_source}): "
+                    f"{self.protocol.stop_reason}",
+                    agent_results=agent_results,
+                    total_cost_usd=self._cost_tracker,
+                )
+                await self._emit(
+                    "orchestrator.end",
+                    data={"success": False, "emergency_stop": True},
+                )
+                return result
+
             batches = self.protocol.get_parallel_batches()
             if not batches and self.protocol.all_complete():
                 break
@@ -174,7 +188,7 @@ class Orchestrator:
                 )
 
                 for assignment, result in zip(batch, results):
-                    if isinstance(result, Exception):
+                    if isinstance(result, BaseException):
                         task_result = TaskResult(
                             status=TaskStatus.FAILED,
                             output=str(result),

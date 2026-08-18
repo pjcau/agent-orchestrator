@@ -94,7 +94,8 @@ class AgentMessage:
     from_agent: str
     to_agent: str | None  # None = broadcast to all
     content: str
-    message_type: str = "info"  # "info", "request", "response", "conflict"
+    # "info", "request", "response", "conflict", "emergency_stop"
+    message_type: str = "info"
     related_task_id: str | None = None
     timestamp: float = field(default_factory=time.time)
 
@@ -226,13 +227,68 @@ class SharedContextStore:
 
 
 class CooperationProtocol:
-    """Manages the delegation, parallel execution, and result collection workflow."""
+    """Manages the delegation, parallel execution, and result collection workflow.
+
+    Includes an *emergency stop* (kill switch): :meth:`emergency_stop`
+    broadcasts a high-priority ``emergency_stop`` message to every agent
+    subscribed to the shared store and latches a flag that execution loops
+    (the orchestrator's batch loop, long-running agent steps) must check via
+    :attr:`is_stopped` before dispatching further work. Without it, a
+    runaway team run only halts by exhausting its budgets.
+    """
 
     def __init__(self) -> None:
         self.store = SharedContextStore()
         self._pending: dict[str, TaskAssignment] = {}
         self._completed: dict[str, TaskReport] = {}
         self._running: set[str] = set()
+        self._stop_event = asyncio.Event()
+        self._stop_reason: str | None = None
+        self._stop_source: str | None = None
+
+    # --- Emergency stop (kill switch) ---
+
+    def emergency_stop(self, reason: str, source: str = "operator") -> None:
+        """Latch the kill switch and broadcast it to all agents.
+
+        Idempotent: only the first call records reason/source and emits the
+        broadcast; later calls are no-ops so the original cause is preserved.
+        """
+        if self._stop_event.is_set():
+            return
+        self._stop_reason = reason
+        self._stop_source = source
+        self._stop_event.set()
+        self.store.send_message(
+            AgentMessage(
+                from_agent=source,
+                to_agent=None,  # broadcast
+                content=reason,
+                message_type="emergency_stop",
+            )
+        )
+
+    @property
+    def is_stopped(self) -> bool:
+        return self._stop_event.is_set()
+
+    @property
+    def stop_reason(self) -> str | None:
+        return self._stop_reason
+
+    @property
+    def stop_source(self) -> str | None:
+        return self._stop_source
+
+    async def wait_for_stop(self) -> None:
+        """Block until the kill switch fires (for supervisor tasks)."""
+        await self._stop_event.wait()
+
+    def clear_emergency_stop(self) -> None:
+        """Re-arm the protocol after a stop (explicit operator action only)."""
+        self._stop_event = asyncio.Event()
+        self._stop_reason = None
+        self._stop_source = None
 
     def assign(self, assignment: TaskAssignment) -> None:
         self._pending[assignment.task_id] = assignment

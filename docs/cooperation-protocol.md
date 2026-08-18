@@ -46,6 +46,24 @@ All messages share a header: `message_id` (UUID), `from_agent`, `to_agent`
 (may be `None` for broadcasts), `timestamp` (epoch seconds), and `kind`.
 Frozen dataclasses guarantee header immutability after construction.
 
+### Emergency stop (kill switch)
+
+`CooperationProtocol.emergency_stop(reason, source)` latches a protocol-wide
+stop flag and broadcasts an `AgentMessage` with
+`message_type="emergency_stop"` (`to_agent=None`) through the shared store,
+so every subscribed agent sees it immediately. Semantics:
+
+- **Latching and idempotent** — only the first call records `stop_reason` /
+  `stop_source` and emits the broadcast; later calls are no-ops, preserving
+  the original cause.
+- **Checked by execution loops** — the orchestrator's batch loop checks
+  `protocol.is_stopped` before dispatching each batch and aborts the run
+  with `success=false` and an `Emergency stop (<source>): <reason>` output.
+  Long-running agents can also `await protocol.wait_for_stop()` in a
+  supervisor task.
+- **Explicit re-arm** — `clear_emergency_stop()` resets the flag; it is an
+  operator action, never called automatically.
+
 ## Typical task — sequence diagram
 
 ```mermaid

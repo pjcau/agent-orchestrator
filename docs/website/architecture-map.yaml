@@ -26,11 +26,11 @@ clusters:
         size: 56
         description: Top-level entry point. Composes agents, providers and skills into a run.
       - name: Provider
-        files: [core/provider.py, providers/anthropic.py, providers/openai.py, providers/google.py, providers/openrouter.py, providers/local.py]
+        files: [core/provider.py, providers/anthropic.py, providers/openai.py, providers/google.py, providers/openrouter.py, providers/local.py, providers/mock.py]
         cx: 380
         cy: 330
         size: 40
-        description: Vendor-agnostic LLM interface (Anthropic, OpenAI, Google, OpenRouter, local).
+        description: Vendor-agnostic LLM interface (Anthropic, OpenAI, Google, OpenRouter, local, scripted mock).
       - name: Router
         files: [core/router.py]
         cx: 620
@@ -48,7 +48,7 @@ clusters:
         cx: 340
         cy: 420
         size: 34
-        description: Process/network isolation for untrusted skill code.
+        description: Docker/local isolated execution + pre-warmed SandboxPool (warm reuse, reset-on-release).
       - name: Cache
         files: [core/cache.py]
         cx: 620
@@ -186,7 +186,7 @@ clusters:
         cx: 800
         cy: 620
         size: 34
-        description: Typed messages between agents (state machine).
+        description: Typed messages between agents (state machine) + emergency-stop kill switch.
       - name: Webhook
         files: [core/webhook.py, skills/webhook_skill.py]
         cx: 620
@@ -265,7 +265,7 @@ clusters:
         cx: 270
         cy: 740
         size: 26
-        description: Liveness probes + token-usage accounting.
+        description: Liveness probes + token-usage accounting with per-provider hard call caps.
       - name: Alerts
         files: [core/alerts.py]
         cx: 410

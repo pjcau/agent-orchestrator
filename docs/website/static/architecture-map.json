@@ -33,19 +33,21 @@
             "providers/openai.py",
             "providers/google.py",
             "providers/openrouter.py",
-            "providers/local.py"
+            "providers/local.py",
+            "providers/mock.py"
           ],
           "cx": 380,
           "cy": 330,
           "size": 40,
-          "description": "Vendor-agnostic LLM interface (Anthropic, OpenAI, Google, OpenRouter, local).",
+          "description": "Vendor-agnostic LLM interface (Anthropic, OpenAI, Google, OpenRouter, local, scripted mock).",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/provider.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/anthropic.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/openai.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/google.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/openrouter.py",
-            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/local.py"
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/local.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/mock.py"
           ]
         },
         {
@@ -88,7 +90,7 @@
           "cx": 340,
           "cy": 420,
           "size": 34,
-          "description": "Process/network isolation for untrusted skill code.",
+          "description": "Docker/local isolated execution + pre-warmed SandboxPool (warm reuse, reset-on-release).",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/sandbox.py"
           ]
@@ -377,7 +379,7 @@
           "cx": 800,
           "cy": 620,
           "size": 34,
-          "description": "Typed messages between agents (state machine).",
+          "description": "Typed messages between agents (state machine) + emergency-stop kill switch.",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/cooperation.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/cooperation_messages.py"
@@ -543,7 +545,7 @@
           "cx": 270,
           "cy": 740,
           "size": 26,
-          "description": "Liveness probes + token-usage accounting.",
+          "description": "Liveness probes + token-usage accounting with per-provider hard call caps.",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/health.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/usage.py"

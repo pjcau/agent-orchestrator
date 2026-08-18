@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from agent_orchestrator.core.sandbox import (
     SandboxConfig,
     SandboxError,
     SandboxInfo,
+    SandboxPool,
     SandboxResult,
     SandboxType,
     _validate_path,
@@ -360,7 +362,7 @@ class TestSandboxedShellSkill:
             skill = SandboxedShellSkill(sandbox=sandbox)
             result = await skill.execute({"command": ""})
             assert result.success is False
-            assert "No command" in result.error
+            assert "No command" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_missing_command(self):
@@ -378,7 +380,7 @@ class TestSandboxedShellSkill:
 
             result = await skill.execute({"command": "rm -rf /"})
             assert result.success is False
-            assert "not allowed" in result.error
+            assert "not allowed" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_sandbox_not_running(self):
@@ -386,7 +388,7 @@ class TestSandboxedShellSkill:
         skill = SandboxedShellSkill(sandbox=sandbox)
         result = await skill.execute({"command": "echo hello"})
         assert result.success is False
-        assert "not running" in result.error
+        assert "not running" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_command_failure_returns_exit_code(self):
@@ -394,7 +396,7 @@ class TestSandboxedShellSkill:
             skill = SandboxedShellSkill(sandbox=sandbox)
             result = await skill.execute({"command": "false"})
             assert result.success is False
-            assert "Exit code" in result.error
+            assert "Exit code" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_timeout_handling(self):
@@ -403,7 +405,7 @@ class TestSandboxedShellSkill:
             skill = SandboxedShellSkill(sandbox=sandbox, timeout=1)
             result = await skill.execute({"command": "sleep 30"})
             assert result.success is False
-            assert "timed out" in result.error
+            assert "timed out" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_stderr_included_in_output(self):
@@ -563,3 +565,143 @@ class TestSandboxGetInfo:
         sandbox._mapped_ports = {8000: 9001}  # Simulate port mapping
         await sandbox.stop()
         assert sandbox._mapped_ports == {}
+
+
+# ─── Sandbox.reset() ────────────────────────────────────────────────
+
+
+class TestSandboxReset:
+    @pytest.mark.asyncio
+    async def test_reset_refuses_local_type(self):
+        """LOCAL sandboxes must never be reused: reset() wiping writable_paths
+        would delete real host directories, so it always reports unhealthy."""
+        sandbox = Sandbox(SandboxConfig(type=SandboxType.LOCAL))
+        await sandbox.start()
+        assert await sandbox.reset() is False
+
+    @pytest.mark.asyncio
+    async def test_reset_refuses_not_started(self):
+        sandbox = Sandbox(SandboxConfig(type=SandboxType.LOCAL))
+        assert await sandbox.reset() is False
+
+
+# ─── SandboxPool ────────────────────────────────────────────────────
+
+
+class _FakeSandbox(Sandbox):
+    """Stub sandbox: no Docker, scripted reset outcomes, lifecycle counters."""
+
+    def __init__(self, config, reset_ok=True):
+        super().__init__(config)
+        self.reset_ok = reset_ok
+        self.reset_calls = 0
+        self.stopped = False
+
+    async def start(self):
+        self._started = True
+
+    async def stop(self):
+        self._started = False
+        self.stopped = True
+
+    async def reset(self):
+        self.reset_calls += 1
+        return self.reset_ok
+
+
+class _FakePool(SandboxPool):
+    def __init__(self, *args, reset_ok=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._reset_ok = reset_ok
+        self.spawned: list[_FakeSandbox] = []
+
+    def _new_sandbox(self):
+        sb = _FakeSandbox(self._config, reset_ok=self._reset_ok)
+        self.spawned.append(sb)
+        return sb
+
+
+class TestSandboxPool:
+    @pytest.mark.asyncio
+    async def test_start_prewarms_min_ready(self):
+        pool = _FakePool(SandboxConfig(type=SandboxType.LOCAL), min_ready=3, max_total=8)
+        await pool.start()
+        assert pool.idle_count == 3
+        assert pool.total_count == 3
+        await pool.stop()
+
+    @pytest.mark.asyncio
+    async def test_acquire_returns_warm_sandbox_instantly(self):
+        pool = _FakePool(SandboxConfig(type=SandboxType.LOCAL), min_ready=1, max_total=2)
+        await pool.start()
+        sb = await pool.acquire(timeout=1.0)
+        assert sb.is_running
+        assert pool.in_use_count == 1
+        await pool.stop()
+
+    @pytest.mark.asyncio
+    async def test_release_resets_and_requeues_healthy_sandbox(self):
+        pool = _FakePool(SandboxConfig(type=SandboxType.LOCAL), min_ready=1, max_total=1)
+        await pool.start()
+        sb = await pool.acquire(timeout=1.0)
+        assert isinstance(sb, _FakeSandbox)
+        await pool.release(sb)
+        assert sb.reset_calls == 1
+        assert not sb.stopped
+        assert pool.idle_count == 1
+        # The same (reset) sandbox comes back on the next acquire.
+        assert await pool.acquire(timeout=1.0) is sb
+        await pool.stop()
+
+    @pytest.mark.asyncio
+    async def test_release_discards_sandbox_that_fails_reset(self):
+        pool = _FakePool(
+            SandboxConfig(type=SandboxType.LOCAL), min_ready=1, max_total=2, reset_ok=False
+        )
+        await pool.start()
+        sb = await pool.acquire(timeout=1.0)
+        assert isinstance(sb, _FakeSandbox)
+        await pool.release(sb)
+        assert sb.stopped, "a dirty sandbox must be destroyed, never requeued"
+        # A replacement respawn was scheduled; give the loop a tick.
+        await asyncio.sleep(0)
+        assert pool.idle_count >= 1
+        assert all(s is not sb for s in pool._idle._queue)  # type: ignore[attr-defined]
+        await pool.stop()
+
+    @pytest.mark.asyncio
+    async def test_acquire_blocks_at_max_total_then_times_out(self):
+        pool = _FakePool(SandboxConfig(type=SandboxType.LOCAL), min_ready=1, max_total=1)
+        await pool.start()
+        await pool.acquire(timeout=1.0)
+        with pytest.raises(asyncio.TimeoutError):
+            await pool.acquire(timeout=0.05)
+        await pool.stop()
+
+    @pytest.mark.asyncio
+    async def test_release_unblocks_waiting_acquire(self):
+        pool = _FakePool(SandboxConfig(type=SandboxType.LOCAL), min_ready=1, max_total=1)
+        await pool.start()
+        sb = await pool.acquire(timeout=1.0)
+        waiter = asyncio.ensure_future(pool.acquire(timeout=2.0))
+        await asyncio.sleep(0)
+        await pool.release(sb)
+        assert await waiter is sb
+        await pool.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_drains_pool_and_refuses_acquire(self):
+        pool = _FakePool(SandboxConfig(type=SandboxType.LOCAL), min_ready=2, max_total=4)
+        await pool.start()
+        sb = await pool.acquire(timeout=1.0)
+        await pool.stop()
+        assert all(s.stopped for s in pool.spawned if s is not sb or s.stopped)
+        with pytest.raises(SandboxError):
+            await pool.acquire(timeout=0.1)
+
+    @pytest.mark.asyncio
+    async def test_invalid_sizing_rejected(self):
+        with pytest.raises(ValueError):
+            SandboxPool(SandboxConfig(), min_ready=-1)
+        with pytest.raises(ValueError):
+            SandboxPool(SandboxConfig(), min_ready=4, max_total=2)

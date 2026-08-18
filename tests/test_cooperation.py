@@ -80,7 +80,9 @@ class TestSharedContextStore:
         store = SharedContextStore()
         store.publish(Artifact(name="api_spec", type="spec", content="v1", produced_by="backend"))
         store.publish(Artifact(name="api_spec", type="spec", content="v2", produced_by="backend"))
-        assert store.get_artifact("api_spec").version == 2
+        artifact = store.get_artifact("api_spec")
+        assert artifact is not None
+        assert artifact.version == 2
 
     def test_conflict_detection(self):
         store = SharedContextStore()
@@ -454,3 +456,72 @@ class TestOrchestratorParallel:
         result = await orchestrator._run_single_agent("do stuff", None)
         # Single agent run doesn't check budget, but the cost is tracked
         assert result.total_cost_usd > 0
+
+
+# --- Emergency Stop (kill switch) ---
+
+
+class TestEmergencyStop:
+    def test_latches_flag_reason_and_source(self):
+        protocol = CooperationProtocol()
+        assert not protocol.is_stopped
+        protocol.emergency_stop("cost runaway", source="ops")
+        assert protocol.is_stopped
+        assert protocol.stop_reason == "cost runaway"
+        assert protocol.stop_source == "ops"
+
+    def test_broadcasts_to_all_subscribers(self):
+        protocol = CooperationProtocol()
+        queue = protocol.store.subscribe_messages()
+        protocol.emergency_stop("halt now")
+        msg = queue.get_nowait()
+        assert msg.message_type == "emergency_stop"
+        assert msg.to_agent is None  # broadcast
+        assert msg.content == "halt now"
+
+    def test_idempotent_first_cause_preserved(self):
+        protocol = CooperationProtocol()
+        protocol.emergency_stop("first", source="a")
+        protocol.emergency_stop("second", source="b")
+        assert protocol.stop_reason == "first"
+        assert protocol.stop_source == "a"
+        # Only one broadcast recorded.
+        stops = [m for m in protocol.store.get_messages() if m.message_type == "emergency_stop"]
+        assert len(stops) == 1
+
+    def test_clear_rearms(self):
+        protocol = CooperationProtocol()
+        protocol.emergency_stop("halt")
+        protocol.clear_emergency_stop()
+        assert not protocol.is_stopped
+        assert protocol.stop_reason is None
+
+    @pytest.mark.asyncio
+    async def test_wait_for_stop_unblocks(self):
+        protocol = CooperationProtocol()
+        waiter = asyncio.ensure_future(protocol.wait_for_stop())
+        await asyncio.sleep(0)
+        assert not waiter.done()
+        protocol.emergency_stop("halt")
+        await asyncio.wait_for(waiter, timeout=1.0)
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_run_aborts_on_emergency_stop(self):
+        """A latched kill switch must abort the batch loop before dispatching."""
+        provider = MockProvider(responses=["done"])
+        agents = {
+            "team-lead": AgentConfig(name="team-lead", role="lead", provider_key="mock"),
+            "backend": AgentConfig(name="backend", role="backend dev", provider_key="mock"),
+        }
+        orchestrator = Orchestrator(
+            config=OrchestratorConfig(),
+            agents=agents,
+            providers={"mock": provider},
+            skill_registry=SkillRegistry(),
+        )
+        orchestrator.protocol.emergency_stop("budget breach", source="cost-guard")
+
+        result = await orchestrator.run("build something")
+        assert result.success is False
+        assert "Emergency stop" in result.output
+        assert "budget breach" in result.output
