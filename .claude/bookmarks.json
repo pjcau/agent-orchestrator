@@ -568,5 +568,11 @@
     "added": "2026-07-24T16:42:58Z",
     "source": "github-star",
     "notes": "Network reconnaissance and asset discovery tool | Language: Go"
+  },
+  {
+    "url": "https://github.com/Szybet/Yatchy",
+    "added": "2026-08-17T09:15:16Z",
+    "source": "github-star",
+    "notes": "A modular, hackable, improved watchy like watch | Language: HTML | Topics: eink, esp32, esp32c6, hackable, modular-watch"
   }
 ]
