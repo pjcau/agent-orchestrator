@@ -89,6 +89,41 @@ Same legend as above. Implemented items landed on main in `dd90e3b`.
 
 ---
 
+
+## Triage of the 7-score findings (2026-08-18)
+
+Same legend. 114 findings triaged; the quality drop at this score is steep — most entries duplicate existing abstractions (including the two batches above), restate SOLID principles without a concrete defect, or are too vague to act on. Implemented items landed on main in `6a0faef`.
+
+### Implemented (5 findings, 3 features)
+
+| # | Finding | Notes |
+|---|---------|-------|
+| 173 | Standardized error taxonomy | ✅ `SkillErrorCode` enum + `SkillResult.error_code`, wired into built-in middlewares |
+| 170, 180, 185 | Per-skill rate limiting (one feature) | ✅ `rate_limit_middleware` reusing the provider `RateLimiter` engine |
+| 187 | User-defined routing rules override | ✅ `RouterConfig.rules` — ordered regex overrides checked before any strategy |
+
+### Already in the codebase / covered (~78)
+
+Grouped by what covers them:
+
+- **Covered by this PR's earlier batches**: 136 (SemanticCache), 164 (Sandbox.reset), 129 + 96/97/179/77 (call caps, CostGuard, budget alerts), 133/137/162 (checkpoint fork/replay), 88 (fork + list_thread; the "AI explanation" half is vague), 168/181/125 (circuit breaker + error taxonomy), 105 (conflict records + fork), 154 (usage per-agent attribution).
+- **Graph**: 78, 104 (conditional edges), 87 (explore() covers branch search), 114, 122, 123, 124, 126, 130, 161, 188 (HITL, StreamEvent timing, SubGraphNode, frontend editor).
+- **Routing**: 103, 108, 109, 117, 121, 128, 131, 149, 153 (RoutingStrategy enum: local-first, cost-optimized, complexity, fallback chain + health failover).
+- **Checkpoint/Store**: 83, 141, 148, 152, 160, 166, 176, 182, 183 (SQLite/Postgres checkpointers, per-step saves, Checkpoint.metadata, namespace TTL store, summarization).
+- **Agent loop**: 80, 89, 90, 91, 101, 106, 111, 119, 120, 127, 140, 157, 165, 171, 177, 178 (cooperation protocol, context_loader_middleware, anti-stall + escalation + loop detection + failure patterns, LLM decomposition, async runs).
+- **Providers**: 79, 85, 139, 143, 151, 153, 156, 175 (ModelCapabilities, LocalProvider serves Ollama/vLLM OpenAI-compatible endpoints, compaction).
+- **Channels**: 98, 116, 147 (LastValue/Topic/Ephemeral/Barrier already in core/channels.py).
+- **Cache**: 76, 112, 184 (TTL + eviction present), 99, 167 (niche).
+- **Observability**: 81, 84, 102, 107, 134, 150 (OTel spans, Prometheus metrics, sandbox stats, Grafana alert pipeline).
+- **Security**: 115 (network=none by default; egress allowlist would need in-container iptables/eBPF — out of scope), 132/169 (shell allowlist + verification_middleware + guardrails), 135 (SandboxPool + path sandbox), 155 (PIIScanner guardrail exists).
+
+### Discarded (~31)
+
+- **SOLID/refactoring platitudes with no concrete defect**: 92, 93, 94, 95, 100 (the middleware chain *is* chain-of-responsibility), 118, 142, 158, 159, 163, 174, 186.
+- **Vague or niche**: 82, 86/172 (cron jitter — scheduling lives in GitHub Actions), 110 (diff preview lives in the agent-host CLI), 113, 138 (summarization exists; a second compressor would compete), 144/145 (IP allowlisting belongs at nginx, not app middleware), 146 (config sugar), 189 (HealthMonitor is the watchdog).
+
+---
+
 ## Index
 
 1. [9.0] Add 'Emergency Stop' Signal for Agent Teams — from [unknown] (PR #173)
