@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -21,9 +20,9 @@ class UsageRecord:
 
 @dataclass
 class BudgetConfig:
-    max_per_task: Optional[float] = None  # USD cap for a single task_id
-    max_per_session: Optional[float] = None  # USD cap for the current session
-    max_per_day: Optional[float] = None  # USD cap for the current calendar day
+    max_per_task: float | None = None  # USD cap for a single task_id
+    max_per_session: float | None = None  # USD cap for the current session
+    max_per_day: float | None = None  # USD cap for the current calendar day
 
 
 @dataclass

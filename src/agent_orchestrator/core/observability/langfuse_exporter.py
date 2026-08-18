@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ _LANGFUSE_SDK_AVAILABLE = False
 
 try:
     from langfuse.decorators import observe as _langfuse_observe  # noqa: F401
-    from langfuse.otel import LangfuseExporter as _LangfuseSDKExporter  # noqa: F401
+    from langfuse.otel import LangfuseExporter as _LangfuseSDKExporter
 
     _LANGFUSE_SDK_AVAILABLE = True
 except ImportError:
@@ -85,7 +86,7 @@ class LangfuseSpanExporter:
 
     # --- SpanExporter protocol -------------------------------------------------
 
-    def export(self, spans: "Sequence[ReadableSpan]") -> int:
+    def export(self, spans: Sequence[ReadableSpan]) -> int:
         """Forward spans to the Langfuse backend.
 
         Returns:
