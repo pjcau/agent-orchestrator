@@ -109,6 +109,7 @@ class TestDeployWorkflowAlerts:
         """
         steps = wf["jobs"]["deploy"]["steps"]
         probe = next((s for s in steps if "public" in s.get("name", "").lower()), None)
+        assert probe is not None, "deploy.yml must keep the public HTTPS probe step"
         run = probe["run"]
         assert "deploy continues" not in run, (
             "Untrusted-cert branch must no longer silently continue the deploy"
@@ -164,6 +165,38 @@ class TestDeployWorkflowAlerts:
         assert "deploy-failure" in issue_step["with"]["script"], (
             "Failure issues must carry the deploy-failure label for dedup"
         )
+
+    def test_playwright_install_steps_bounded_and_retried(self, wf: dict) -> None:
+        """Regression guard: a stalled apt mirror must not eat the E2E job.
+
+        On 2026-08-18 `playwright install --with-deps` hung on `apt-get update`
+        (flaky Azure Ubuntu mirror) until the 15-minute job timeout cancelled
+        the whole run — so Deploy to EC2 never executed and the site stayed on
+        a stale build. Each install step must carry its own step timeout and a
+        `timeout`-wrapped retry loop so a stall fails fast and retries.
+        """
+        steps = wf["jobs"]["frontend-e2e"]["steps"]
+        install_steps = [
+            s
+            for s in steps
+            if "playwright install" in s.get("run", "") and "npx" in s.get("run", "")
+        ]
+        assert len(install_steps) >= 2, (
+            "Expected the cache-miss and cache-hit playwright install steps"
+        )
+        for step in install_steps:
+            name = step.get("name", "<unnamed>")
+            assert "timeout-minutes" in step, (
+                f"'{name}' must set a step-level timeout-minutes below the job timeout"
+            )
+            assert step["timeout-minutes"] < wf["jobs"]["frontend-e2e"]["timeout-minutes"], (
+                f"'{name}' step timeout must be shorter than the job timeout"
+            )
+            run = step["run"]
+            assert re.search(r"\btimeout\s+\d+\s+npx", run), (
+                f"'{name}' must wrap npx in the `timeout` command so an apt stall is killed"
+            )
+            assert "for i in" in run, f"'{name}' must retry on failure"
 
 
 class TestAutoMergeMaintenanceWorkflow:

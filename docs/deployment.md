@@ -164,9 +164,10 @@ The deploy pipeline (`.github/workflows/deploy.yml`) auto-deploys on push to `ma
 ### Pipeline Steps
 
 1. **Test Suite** — Install deps (Python 3.12), run `pytest`, lint with `ruff`
-2. **Deploy to EC2** — rsync code, inject secrets into `.env.prod`, rebuild containers, health check
+2. **Frontend E2E (Playwright)** — build the React frontend and run browser tests. The `npx playwright install` steps are wrapped in a `timeout 240` + 3-attempt retry loop with their own `timeout-minutes: 10`: a flaky apt mirror on hosted runners once hung the install until the 15-minute job timeout cancelled the whole run, so Deploy to EC2 never executed and the site stayed on a stale build (guarded by `tests/test_ci_workflows.py::TestDeployWorkflow::test_playwright_install_steps_bounded_and_retried`).
+3. **Deploy to EC2** — rsync code, inject secrets into `.env.prod`, rebuild containers, health check
 
-Full chain: `test → lint → rsync code → inject secrets → build → deploy → health check`.
+Full chain: `test → lint → e2e → rsync code → inject secrets → build → deploy → health check`.
 
 ### Deploy Strategy
 

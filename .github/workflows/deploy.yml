@@ -105,13 +105,31 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
 
+      # `timeout` + retry: apt mirror stalls on hosted runners have hung
+      # `playwright install --with-deps` for the full 15m job timeout,
+      # cancelling the run before Deploy to EC2 executed. Fail each
+      # attempt fast instead and retry up to 3 times.
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: |
+          for i in 1 2 3; do
+            timeout 240 npx playwright install --with-deps chromium && exit 0
+            echo "::warning::playwright install attempt $i stalled or failed — retrying"
+            sleep 10
+          done
+          exit 1
 
       - name: Install system deps (cached browser)
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        timeout-minutes: 10
+        run: |
+          for i in 1 2 3; do
+            timeout 240 npx playwright install-deps chromium && exit 0
+            echo "::warning::playwright install-deps attempt $i stalled or failed — retrying"
+            sleep 10
+          done
+          exit 1
 
       - name: Run Playwright tests
         run: npm run e2e
