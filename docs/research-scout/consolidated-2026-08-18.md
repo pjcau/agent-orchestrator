@@ -31,6 +31,64 @@ Assessed against the actual codebase. Status legend: ✅ implemented · 🟡 alr
 
 ---
 
+
+## Triage of the 8-score findings (2026-08-18)
+
+Same legend as above. Implemented items landed on main in `dd90e3b`.
+
+| # | Finding | Status | Notes |
+|---|---------|--------|-------|
+| 28 | Circuit breaker for external skills | ✅ implemented | `circuit_breaker_middleware` in `core/skill.py` |
+| 31, 40, 43 | Checkpoint fork / replay (one feature) | ✅ implemented | `Checkpointer.fork()` + `get_at_step()`; replay via graph `resume_from=` |
+| 74 | Per-agent budget cap | ✅ implemented | `BudgetConfig.max_per_agent` + `agent_overrides` |
+| 61 | Skill lifecycle hooks | ✅ implemented | `Skill.setup()/teardown()` + `SkillRegistry.startup()/shutdown()` |
+| 71 | Standardized skill manifest | ✅ implemented | `SkillManifest` + `export_manifests()` |
+| 64 | Provider quota gauge | ✅ implemented | `QuotaConfig`/`QuotaStatus` in `HealthMonitor` |
+| 56, 70 | Unified notification dispatcher | ✅ implemented | `core/notifications.py` (Log/Webhook/Callable backends) |
+| 68, 69 | Semantic cache | ✅ implemented (opt-in) | `SemanticCache`, caller-supplied embedder, cosine threshold 0.95 |
+| 58 | Multi-model ensemble | ✅ implemented | `EnsembleProvider` (first-success / consensus / best-of) |
+| 60 | Parallel exploration via sandbox cloning | ✅ implemented | `explore()` in `core/exploration.py` (fork + SandboxPool) |
+| 20, 42 | HITL approval nodes | 🟡 already in codebase | `Interrupt` / `InterruptType.APPROVAL` in `core/graph.py` |
+| 21 | SQLite backing for StateGraph | 🟡 already in codebase | `SQLiteCheckpointer` |
+| 22 | Slack/GitHub skills | 🟡 already in codebase | `skills/github_skill.py`, Slack/Telegram integrations |
+| 23 | Local model backends (Ollama/vLLM) | 🟡 already in codebase | `providers/local.py` |
+| 24 | Webhook-based task routing | 🟡 already in codebase | `core/webhook.py` + `skills/webhook_skill.py` |
+| 25, 51 | Persona / persistent memory | 🟡 already in codebase | PersonalizedMemory (P4) + BaseStore |
+| 26 | Warm-standby auto-failover | 🟡 already in codebase | HealthMonitor availability + HTTP connection pooling |
+| 29, 30, 39, 53, 66 | Routing strategies (complexity, fallback, local-first, strategy pattern) | 🟡 already in codebase | `RoutingStrategy` enum in `core/router.py` |
+| 33 | Cross-thread memory topics | 🟡 already in codebase | namespace-based `BaseStore` |
+| 34 | Dependency inversion for checkpointers | 🟡 already in codebase | `Checkpointer` ABC |
+| 35 | Deterministic metadata extraction | 🟡 already in codebase | `core/modality.py`, atomic task validator |
+| 44 | Return-to-home fallback | 🟡 already in codebase | escalation-on-stall in `core/agent.py` |
+| 47 | Open/closed principle for providers | 🟡 already in codebase | Provider ABC design |
+| 48 | Persistent automation storage | 🟡 already in codebase | PostgresStore / checkpointers |
+| 49 | ReAct loop | 🟡 already in codebase | the agent loop is reason-act-observe |
+| 55 | Modular part registration | 🟡 already in codebase | `SkillRegistry` |
+| 57 | Multi-modal skill support | 🟡 already in codebase | capabilities.supports_vision, document converter |
+| 59 | Parallel execution node | 🟡 already in codebase | graph `enable_parallel` |
+| 62 | Per-hop latency/token breakdown | 🟡 already in codebase | StreamEvent timing + tracing node spans |
+| 63 | Verdict propagation across agents | 🟡 already in codebase | SharedContextStore reports/artifacts |
+| 67 | Role-based skill access control | 🟡 already in codebase | `AgentConfig.tools` allowlist |
+| 72 | System prompt templates | 🟡 already in codebase | PromptRegistry |
+| 73 | Template-based agent configuration | 🟡 already in codebase | `orchestrator.yaml` |
+| 75 | Graph export/import | 🟡 already in codebase | `GraphTemplateStore` JSON |
+| 32 | Cost blackhole detection | 🟡 covered | CostGuard + per-provider call caps (#2) |
+| 19 | Hardware/simulator fallback | 🟡 covered | MockProvider (#12) + router fallback |
+| 18 | GPU-aware scheduling | ❌ discarded | niche for this project |
+| 27 | Calibration phase | ❌ discarded | vague, no concrete mechanism |
+| 36 | Driver-style telemetry skill | ❌ discarded | observability stack covers it |
+| 37 | E2B-compatible REST shim | ❌ discarded | niche |
+| 38 | Enforce TDD workflow | ❌ discarded | process, not code |
+| 41 | Agent instance pooling | ❌ discarded | agents are stateless and cheap to create |
+| 45 | ECMP-style parallel routing | ❌ discarded | covered by routing strategies + ensemble |
+| 46 | Natural-language task primitives | ❌ discarded | vague |
+| 50 | TUI dashboard | ❌ discarded | web dashboard exists |
+| 52 | Lap-time performance budgeting | ❌ discarded | vague; timing exists in tracing |
+| 54 | Snapshot-and-clone skill testing | ❌ discarded | niche; MockProvider + fork cover the need |
+| 65 | Provider abstraction for local runtimes | ❌ discarded | vague duplicate of provider ABC |
+
+---
+
 ## Index
 
 1. [9.0] Add 'Emergency Stop' Signal for Agent Teams — from [unknown] (PR #173)
