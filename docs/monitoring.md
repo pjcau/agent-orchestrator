@@ -18,6 +18,15 @@ Prometheus alerts tied to this pipeline: `GraphNodeHung`, `LLMCallSlow`, `Fronte
 
 Implementation: `dashboard/alert_webhook.py` (`AlertHandler`).
 
+## Nightly Auto-heal Sweep
+
+`.github/workflows/auto-heal.yml` runs nightly, sweeps recent workflow failures and security alerts, applies known fixes, and opens/updates a PR on an `auto-heal/YYYY-MM-DD` branch (labels `auto-heal`, `ci`). When it finds failures it cannot fix, it opens an ops issue instead.
+
+Operational notes:
+
+- PR labels are applied **best-effort** (`gh pr edit --add-label … ||`), never on `gh pr create`. A hard `--label` on create once failed every nightly run for weeks because the `ci` label did not exist in the repo — the sweep committed and pushed its branch daily, but no PR was ever opened. `tests/test_ci_workflows.py::TestAutoHealWorkflow` guards against reintroducing this.
+- Each day gets its own branch; superseded `auto-heal/*` branches can be deleted once their date has passed.
+
 ## Uptime Monitoring
 
 External HTTPS probes for `agents-orchestrator.com` and `monitoring.agents-orchestrator.com` run from GitHub-hosted runners — independent from the EC2 host so an EC2 outage cannot also disable the alert path.

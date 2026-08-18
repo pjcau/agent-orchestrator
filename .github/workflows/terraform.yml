@@ -27,6 +27,10 @@ concurrency:
 jobs:
   terraform:
     name: Terraform Plan / Apply
+    # Dependabot PRs run without repository secrets (GitHub policy), so the
+    # AWS credentials step can only fail there. Skip — the action bumps are
+    # still validated by the push run once the PR merges.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     defaults:
       run:

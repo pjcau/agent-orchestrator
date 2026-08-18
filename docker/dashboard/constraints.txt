@@ -1,0 +1,12 @@
+# Security floors for transitive dependencies in the dashboard image.
+# Applied via PIP_CONSTRAINT in docker/dashboard/Dockerfile: a constraint only
+# takes effect when some dependency actually pulls the package in, so nothing
+# here adds a package to the image — it only forbids known-vulnerable versions.
+#
+# Remove an entry once every dependent's own floor is at or above ours.
+
+# GHSA-6v7p-g79w-8964: out-of-bounds read / crash on malformed input (< 1.2.1)
+msgpack>=1.2.1
+
+# CVE-2025-47273: path traversal in PackageIndex (< 78.1.1)
+setuptools>=78.1.1

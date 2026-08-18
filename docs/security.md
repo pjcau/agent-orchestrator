@@ -406,6 +406,16 @@ Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC).
 
 Dependabot opens PRs automatically for outdated/vulnerable dependencies.
 
+### Container scan hardening
+
+The Trivy gate (`security-scan.yml`, fails on fixed HIGH/CRITICAL) is kept green by three mechanisms:
+
+- **Base packages** — the dashboard Dockerfile runs `apt-get upgrade -y` in its final stage, because the `python:slim` tag lags Debian security releases.
+- **Python security floors** — `docker/dashboard/constraints.txt` is applied via `PIP_CONSTRAINT` during `pip install`. A constraint only takes effect when a dependency actually pulls the package in, so floors (e.g. `msgpack>=1.2.1`, `setuptools>=78.1.1`) never add packages to the image.
+- **Documented ignores** — `.trivyignore` (repo root, picked up automatically) lists findings we cannot fix from this repo, currently the Go-stdlib CVEs baked into Docker Inc.'s prebuilt `docker-ce-cli` binary. Every entry must carry a comment explaining why it is ignored and when to revisit; `tests/test_ci_workflows.py::TestContainerScanHardening` enforces the format.
+
+Note: Dependabot PRs run without repository secrets (GitHub policy). Workflows that need secrets (e.g. `terraform.yml`) skip `dependabot[bot]` runs instead of failing on missing credentials.
+
 ## Automated Security Fixes
 
 A daily GitHub Action (`.github/workflows/security-autofix.yml`) runs at 03:00 UTC:

@@ -350,9 +350,13 @@ jobs:
           else
             gh pr create --base main --head "$BR" \
               --title "auto-heal: nightly pipeline + security sweep" \
-              --body "$body" \
-              --label "auto-heal,ci"
+              --body "$body"
           fi
+          # Labels are best-effort: a missing label must never fail the sweep
+          # (a hard `--label` on pr create silently killed every nightly PR
+          # for weeks when the "ci" label did not exist in the repo).
+          gh pr edit "$BR" --add-label auto-heal --add-label ci \
+            || echo "::warning::could not apply labels to PR for $BR"
 
       - name: Open ops issue when nothing healed
         if: |
