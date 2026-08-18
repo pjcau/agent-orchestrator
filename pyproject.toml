@@ -48,7 +48,10 @@ all = ["anthropic>=0.113.0", "openai>=2.41.1", "google-generativeai>=0.8.6", "as
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "ruff>=0.15.20",
+    # Capped to the 0.15 series: new ruff minors add rules and turn green CI
+    # red without any code change (0.16.0 flagged 12 new errors). Bump the cap
+    # deliberately, together with the fixes the new rules require.
+    "ruff>=0.15.20,<0.16",
     "vulture>=2.16",
     # Static type checker — same engine as the editor's Pylance, so CLI/CI/editor
     # agree. Gate is incremental (changed files), see scripts/typecheck.sh.

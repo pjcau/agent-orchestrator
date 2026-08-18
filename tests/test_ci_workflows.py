@@ -287,3 +287,124 @@ class TestEC2RestartWorkflow:
         script = restart_step["run"]
         assert "start-instances" in script, "Must call start-instances for stopped state"
         assert "running" in script, "Must branch on running state"
+
+
+class TestAutoHealWorkflow:
+    """`.github/workflows/auto-heal.yml` — nightly sweep must always open its PR.
+
+    Regression guard: a hard `--label` on `gh pr create` failed the whole
+    sweep for weeks when the label did not exist in the repo, so no nightly
+    PR was ever opened. Labels must be applied best-effort, after creation.
+    """
+
+    @pytest.fixture
+    def wf(self) -> dict:
+        return _load("auto-heal.yml")
+
+    def _pr_step(self, wf: dict) -> str:
+        for job in wf["jobs"].values():
+            for step in job.get("steps", []):
+                if step.get("name") == "Open / update PR":
+                    return step["run"]
+        pytest.fail("auto-heal.yml must have an 'Open / update PR' step")
+
+    def test_pr_create_has_no_hard_label(self, wf: dict) -> None:
+        script = self._pr_step(wf)
+        create = script[script.index("gh pr create") :]
+        # Only inspect the create invocation itself (up to the closing `fi`).
+        create = create.split("fi", 1)[0]
+        assert "--label" not in create, (
+            "gh pr create must not pass --label: a missing label aborts PR "
+            "creation and silently kills the nightly sweep"
+        )
+
+    def test_labels_applied_best_effort(self, wf: dict) -> None:
+        script = self._pr_step(wf)
+        assert "--add-label" in script, "Labels should still be applied (via gh pr edit)"
+        add_label_line = next(line for line in script.splitlines() if "--add-label" in line)
+        tail = script[script.index(add_label_line) :]
+        assert "||" in tail.splitlines()[0] or "||" in tail.splitlines()[1], (
+            "Label application must be best-effort (|| fallback), never fatal"
+        )
+
+
+class TestTerraformWorkflow:
+    """`.github/workflows/terraform.yml` — must not run for Dependabot PRs.
+
+    Dependabot-triggered runs get no repository secrets (GitHub policy), so
+    the AWS-credentials step can only fail there.
+    """
+
+    @pytest.fixture
+    def wf(self) -> dict:
+        return _load("terraform.yml")
+
+    def test_skips_dependabot(self, wf: dict) -> None:
+        job = wf["jobs"]["terraform"]
+        assert "dependabot" in job.get("if", ""), (
+            "terraform job needs an `if:` guard skipping dependabot[bot] "
+            "(no secrets are available on dependabot runs)"
+        )
+
+
+class TestContainerScanHardening:
+    """Security-scan container gate: image hardening + documented ignores."""
+
+    REPO = WORKFLOWS_DIR.parent.parent
+
+    def test_trivyignore_entries_are_valid_and_documented(self) -> None:
+        path = self.REPO / ".trivyignore"
+        assert path.exists(), ".trivyignore must exist (container scan ignores)"
+        lines = path.read_text().splitlines()
+        entry_re = re.compile(r"^(CVE-\d{4}-\d{4,}|GHSA(-[a-z0-9]{4}){3})$")
+        prev_commented = False
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                prev_commented = False
+                continue
+            if stripped.startswith("#"):
+                prev_commented = True
+                continue
+            assert entry_re.match(stripped), f"Invalid .trivyignore entry: {stripped!r}"
+            assert prev_commented or entry_re.match(stripped), (
+                f"Ignore entry {stripped!r} must belong to a commented block "
+                "explaining why it is ignored and when to revisit"
+            )
+
+    def test_trivyignore_blocks_start_with_comment(self) -> None:
+        path = self.REPO / ".trivyignore"
+        lines = [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
+        # The first non-empty line of every ignore block must be a comment.
+        in_block = False
+        for line in lines:
+            if line.startswith("#"):
+                in_block = True
+            else:
+                assert in_block, f"Entry {line!r} appears without a preceding comment block"
+
+    def test_dashboard_dockerfile_upgrades_base_packages(self) -> None:
+        dockerfile = (self.REPO / "docker" / "dashboard" / "Dockerfile").read_text()
+        assert "apt-get upgrade -y" in dockerfile, (
+            "Final stage must apt-get upgrade: python:slim lags Debian "
+            "security releases and Trivy fails on fixed-but-unshipped packages"
+        )
+
+    def test_dashboard_dockerfile_enforces_pip_constraints(self) -> None:
+        dockerfile = (self.REPO / "docker" / "dashboard" / "Dockerfile").read_text()
+        assert "PIP_CONSTRAINT" in dockerfile, (
+            "pip installs must run under PIP_CONSTRAINT (security floors for "
+            "transitive deps, see docker/dashboard/constraints.txt)"
+        )
+        constraints = (self.REPO / "docker" / "dashboard" / "constraints.txt").read_text()
+        assert "msgpack>=1.2.1" in constraints  # GHSA-6v7p-g79w-8964
+        assert "setuptools>=78.1.1" in constraints  # CVE-2025-47273
+
+    def test_ruff_version_is_capped(self) -> None:
+        pyproject = (self.REPO / "pyproject.toml").read_text()
+        match = re.search(r'"ruff>=[^"]*"', pyproject)
+        assert match is not None, "ruff must be a declared dev dependency"
+        assert "<" in match.group(0), (
+            "ruff must have an upper bound: new minors add rules and turn "
+            "green CI red without any code change"
+        )

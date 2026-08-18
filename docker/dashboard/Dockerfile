@@ -31,7 +31,10 @@ WORKDIR /workspace
 
 # Install Docker CLI for sandbox container management (optional — sandbox
 # features degrade gracefully if Docker daemon is not accessible).
+# `apt-get upgrade` first: the python:slim tag lags Debian security releases,
+# and the weekly Trivy gate fails on fixed-but-not-shipped base packages.
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
@@ -55,7 +58,11 @@ RUN apt-get update && \
 # Copy source first so editable install works
 COPY pyproject.toml .
 COPY src/ src/
-RUN pip install --no-cache-dir -e ".[dev,dashboard,anthropic,openai,postgres,docs,images]"
+# PIP_CONSTRAINT enforces security floors on transitive deps (see constraints.txt).
+COPY docker/dashboard/constraints.txt /etc/pip-constraints.txt
+ENV PIP_CONSTRAINT=/etc/pip-constraints.txt
+RUN pip install --no-cache-dir --upgrade "setuptools>=78.1.1" && \
+    pip install --no-cache-dir -e ".[dev,dashboard,anthropic,openai,postgres,docs,images]"
 
 # Install Rust extension if built successfully (graceful: no-op if missing)
 COPY --from=rust-build /rust/dist/*.whl /tmp/wheels/

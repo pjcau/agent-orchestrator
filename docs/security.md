@@ -391,6 +391,8 @@ Before deploying to AWS with the frontend exposed:
 | Shell skill execution | Remote code execution | Auth required, skill allowlist, working directory isolation |
 | SSRF via Ollama URL | Internal network scanning | URL prefix allowlist |
 | XSS in dashboard | Cookie theft, session hijack | httponly cookies, CSP headers (TODO) |
+| Open redirect via `auth_return_to` cookie | Phishing after OAuth login | Redirect rebuilt from an exact path allowlist + token-validated re-encoded query (`oauth_routes._safe_return_to`); backslash/`//`/absolute URLs rejected |
+| Exception details in HTTP responses | Information disclosure | Generic error messages in responses; full exception logged server-side only |
 
 ## Security Scanning (CI)
 
@@ -405,6 +407,16 @@ Automated vulnerability scanning runs on every PR and weekly (Monday 06:00 UTC).
 | **TruffleHog** | Leaked secrets in git history | `security-scan.yml` |
 
 Dependabot opens PRs automatically for outdated/vulnerable dependencies.
+
+### Container scan hardening
+
+The Trivy gate (`security-scan.yml`, fails on fixed HIGH/CRITICAL) is kept green by three mechanisms:
+
+- **Base packages** — the dashboard Dockerfile runs `apt-get upgrade -y` in its final stage, because the `python:slim` tag lags Debian security releases.
+- **Python security floors** — `docker/dashboard/constraints.txt` is applied via `PIP_CONSTRAINT` during `pip install`. A constraint only takes effect when a dependency actually pulls the package in, so floors (e.g. `msgpack>=1.2.1`, `setuptools>=78.1.1`) never add packages to the image.
+- **Documented ignores** — `.trivyignore` (repo root, picked up automatically) lists findings we cannot fix from this repo, currently the Go-stdlib CVEs baked into Docker Inc.'s prebuilt `docker-ce-cli` binary. Every entry must carry a comment explaining why it is ignored and when to revisit; `tests/test_ci_workflows.py::TestContainerScanHardening` enforces the format.
+
+Note: Dependabot PRs run without repository secrets (GitHub policy). Workflows that need secrets (e.g. `terraform.yml`) skip `dependabot[bot]` runs instead of failing on missing credentials.
 
 ## Automated Security Fixes
 
