@@ -19,3 +19,16 @@ CVE-2026-56858
 CVE-2026-56859
 CVE-2026-56860
 CVE-2026-56862
+
+# --- Copies vendored inside pip itself (pip/_vendor/vendor.txt) ---
+# pip vendors msgpack and setuptools for its own internal use; only a pip
+# release can bump them (they are not installable packages we control).
+# Real site-packages copies are protected by the security floors in
+# docker/dashboard/constraints.txt, so ignoring these IDs cannot mask a
+# vulnerable copy that our own dependency tree pulls in.
+# Revisit: drop once the python:3.14-slim tag ships a pip whose vendor.txt
+# has msgpack >= 1.2.1 and setuptools >= 78.1.1.
+# GHSA-6v7p-g79w-8964: msgpack out-of-bounds read (vendored 1.1.2)
+GHSA-6v7p-g79w-8964
+# CVE-2025-47273: setuptools PackageIndex path traversal (vendored 70.3.0)
+CVE-2025-47273
