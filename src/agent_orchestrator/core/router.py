@@ -216,9 +216,39 @@ def _is_local(key: str) -> bool:
 
 
 @dataclass
+class RoutingRule:
+    """User-defined deterministic routing override (scout finding #187).
+
+    Rules are checked *before* any strategy: the first rule whose regex
+    matches the task text pins the request to ``provider_key`` — unless that
+    provider is missing or unhealthy, in which case later rules and finally
+    the configured strategy take over. Patterns are operator configuration
+    (validated at construction), matched case-insensitively.
+    """
+
+    pattern: str
+    provider_key: str
+    name: str = ""
+
+    def __post_init__(self) -> None:
+        import re as _re
+
+        try:
+            self._compiled = _re.compile(self.pattern, _re.IGNORECASE)
+        except _re.error as exc:
+            raise ValueError(f"Invalid routing rule pattern {self.pattern!r}: {exc}") from exc
+
+    def matches(self, task: str) -> bool:
+        return bool(self._compiled.search(task))
+
+
+@dataclass
 class RouterConfig:
     strategy: RoutingStrategy = RoutingStrategy.COMPLEXITY_BASED
     fallback_chain: list[str] = field(default_factory=list)
+    # Deterministic user-defined overrides, evaluated in order before the
+    # strategy (scout finding #187).
+    rules: list[RoutingRule] = field(default_factory=list)
     # Min coding_quality score required when task needs coding
     min_coding_quality: float = 0.5
     # Min reasoning_quality score required when task needs reasoning
@@ -259,6 +289,14 @@ class TaskRouter:
         required_capabilities: dict | None = None,
     ) -> Provider | None:
         """Return the best Provider for the given task, or None if none qualify."""
+        # User-defined rules override any strategy (scout finding #187):
+        # first matching rule with a known, healthy provider wins.
+        for rule in self._config.rules:
+            if rule.matches(task):
+                provider = self._providers.get(rule.provider_key)
+                if provider is not None and self._health.is_available(rule.provider_key):
+                    return provider
+
         if complexity is None:
             complexity = self._classifier.classify(task)
 

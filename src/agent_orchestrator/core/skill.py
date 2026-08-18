@@ -17,6 +17,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,41 @@ class SkillSummary:
     category: str = "general"
 
 
+class SkillErrorCode(str, Enum):
+    """Standardized skill error taxonomy (scout finding #173).
+
+    Machine-readable failure classes so callers (agents, retry logic,
+    dashboards) can react programmatically instead of parsing free-text
+    ``error`` strings. ``RATE_LIMITED`` and ``CIRCUIT_OPEN`` are transient —
+    retrying later can succeed; ``NOT_FOUND`` and ``INVALID_PARAMS`` are
+    permanent for the same request.
+    """
+
+    TIMEOUT = "timeout"
+    RATE_LIMITED = "rate_limited"
+    CIRCUIT_OPEN = "circuit_open"
+    NOT_FOUND = "not_found"
+    INVALID_PARAMS = "invalid_params"
+    UPSTREAM_ERROR = "upstream_error"
+    INTERNAL = "internal"
+
+    @property
+    def transient(self) -> bool:
+        return self in (
+            SkillErrorCode.TIMEOUT,
+            SkillErrorCode.RATE_LIMITED,
+            SkillErrorCode.CIRCUIT_OPEN,
+        )
+
+
 @dataclass
 class SkillResult:
     success: bool
     output: Any
     error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Optional machine-readable failure class (SkillErrorCode value).
+    error_code: str | None = None
 
     def __str__(self) -> str:
         if self.success:
@@ -242,7 +272,12 @@ class SkillRegistry:
     async def execute(self, name: str, params: dict) -> SkillResult:
         skill = self._skills.get(name)
         if skill is None:
-            return SkillResult(success=False, output=None, error=f"Unknown skill: {name}")
+            return SkillResult(
+                success=False,
+                output=None,
+                error=f"Unknown skill: {name}",
+                error_code=SkillErrorCode.NOT_FOUND.value,
+            )
 
         # Extract optional _description before forwarding params to the skill
         clean_params = dict(params)
@@ -262,7 +297,10 @@ class SkillRegistry:
             s = self._skills.get(req.skill_name)
             if s is None:
                 return SkillResult(
-                    success=False, output=None, error=f"Unknown skill: {req.skill_name}"
+                    success=False,
+                    output=None,
+                    error=f"Unknown skill: {req.skill_name}",
+                    error_code=SkillErrorCode.NOT_FOUND.value,
                 )
             try:
                 return await s.execute(req.params)
@@ -439,6 +477,7 @@ def timeout_middleware(timeout_seconds: float = 30.0) -> SkillMiddleware:
                 success=False,
                 output=None,
                 error=f"Skill '{request.skill_name}' timed out after {timeout_seconds}s",
+                error_code=SkillErrorCode.TIMEOUT.value,
             )
 
     return middleware
@@ -493,6 +532,7 @@ def circuit_breaker_middleware(
                         f"{cooldown_seconds - elapsed:.1f}s"
                     ),
                     metadata={"circuit_open": True},
+                    error_code=SkillErrorCode.CIRCUIT_OPEN.value,
                 )
             if st[2]:  # a probe is already in flight — fail fast, don't stampede
                 return SkillResult(
@@ -503,6 +543,7 @@ def circuit_breaker_middleware(
                         "probe in flight"
                     ),
                     metadata={"circuit_open": True},
+                    error_code=SkillErrorCode.CIRCUIT_OPEN.value,
                 )
             st[2] = True  # half-open: this call is the probe
 
@@ -523,6 +564,60 @@ def circuit_breaker_middleware(
             if st[0] >= failure_threshold:
                 st[1] = time.monotonic()
         return result
+
+    return middleware
+
+
+def rate_limit_middleware(
+    limiter: Any,
+    max_wait_seconds: float = 0.0,
+    poll_interval_seconds: float = 0.25,
+    skills: set[str] | None = None,
+    key_prefix: str = "skill:",
+) -> SkillMiddleware:
+    """Per-skill rate limiting reusing the provider RateLimiter (scout #170/#180/#185).
+
+    ``limiter`` is a :class:`~agent_orchestrator.core.rate_limiter.RateLimiter`
+    configured with ``RateLimitConfig(provider_key=f"skill:<name>", ...)``
+    entries — one sliding window per guarded skill, same engine as provider
+    limits (DRY). Behaviour when the window is full:
+
+    - ``max_wait_seconds == 0`` (default): fail fast with a transient
+      ``RATE_LIMITED`` result — the agent decides whether to try later.
+    - ``max_wait_seconds > 0``: poll until a slot frees or the deadline
+      passes, then fail with ``RATE_LIMITED``.
+
+    ``skills`` restricts the guard to the named skills; skills without a
+    configured window are passed through by the limiter itself.
+    """
+    import asyncio
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        if skills is not None and request.skill_name not in skills:
+            return await next_fn(request)
+
+        key = f"{key_prefix}{request.skill_name}"
+        deadline = time.monotonic() + max_wait_seconds
+        while not await limiter.acquire(key):
+            if time.monotonic() >= deadline:
+                return SkillResult(
+                    success=False,
+                    output=None,
+                    error=(
+                        f"Skill '{request.skill_name}' rate limit reached"
+                        + (f" (waited {max_wait_seconds}s)" if max_wait_seconds else "")
+                    ),
+                    metadata={"rate_limited": True},
+                    error_code=SkillErrorCode.RATE_LIMITED.value,
+                )
+            await asyncio.sleep(poll_interval_seconds)
+        # acquire() only checks — the slot must be recorded explicitly, or
+        # the sliding window never fills and the limit never applies.
+        limiter.record_usage(key, 0)
+        return await next_fn(request)
 
     return middleware
 

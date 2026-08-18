@@ -3,6 +3,7 @@ from .agent import Agent, AgentConfig, TaskResult
 from .skill import Skill, SkillRegistry
 from .cooperation import CooperationProtocol, TaskAssignment
 from .router import (
+    RoutingRule,
     TaskRouter,
     TaskComplexityClassifier,
     RouterConfig,
@@ -158,6 +159,7 @@ from .document_converter import (
     ContentLimitError,
 )
 from .skill import (
+    SkillErrorCode,
     SkillManifest,
     SkillRequest,
     SkillMiddleware,
@@ -165,6 +167,7 @@ from .skill import (
     retry_middleware,
     timeout_middleware,
     circuit_breaker_middleware,
+    rate_limit_middleware,
     cache_middleware,
     verification_middleware,
     context_loader_middleware,
@@ -381,6 +384,9 @@ __all__ = [
     "SandboxPool",
     # v-scout-8 — circuit breaker, quotas, ensemble, exploration, notifications
     "circuit_breaker_middleware",
+    "rate_limit_middleware",
+    "SkillErrorCode",
+    "RoutingRule",
     "SkillManifest",
     "QuotaConfig",
     "QuotaStatus",
