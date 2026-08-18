@@ -4,6 +4,33 @@ Consolidation of all open `research-scout/*` PRs as of 2026-08-18: every finding
 
 **189 findings** (from 575 across 40 PRs).
 
+
+## Triage of the 9-score findings (2026-08-18)
+
+Assessed against the actual codebase. Status legend: ✅ implemented · 🟡 already in the codebase (duplicate) · ⏸ deferred (second tier) · ❌ discarded.
+
+| # | Finding | Status | Notes |
+|---|---------|--------|-------|
+| 14 | Pre-warmed sandbox pool | ✅ implemented in `944a0ad` | `SandboxPool` in `core/sandbox.py` — warm reuse, security-reviewed `reset()` (process kill + writable-path wipe) |
+| 2 | Per-provider hard call caps with auto-disable | ✅ implemented in `944a0ad` | `UsageTracker(call_caps=...)` + `ProviderCallCapExceeded` in `core/usage.py` |
+| 1 | Emergency stop for agent teams | ✅ implemented in `944a0ad` | `CooperationProtocol.emergency_stop()` kill switch + orchestrator batch-loop abort |
+| 12 | Mock provider for simulation | ✅ implemented in `944a0ad` | First-class scripted `MockProvider` in `providers/mock.py` |
+| 4 | Anti-stall TTL / max_hops | 🟡 already in codebase | `core/agent.py` (`max_steps`, anti-stall enforcement, escalation) + `core/loop_detection.py` |
+| 6 | Conditional edge logic | 🟡 already in codebase | `core/graph.py` `add_conditional_edges()` (Python + Rust backend) |
+| 7 | Conditional edges based on skill output | 🟡 already in codebase | Duplicate of #6 — same existing API |
+| 13 | Parallel probing for graph nodes | 🟡 already in codebase | `core/graph.py` `enable_parallel` + `_execute_parallel` |
+| 3 | Safety guards and constraint validation | 🟡 already in codebase | Guardrails framework (`CostGuard`, `OutputSchemaGuard`, …) in `core/guardrails.py` |
+| 9 | Hardware-level isolation for code execution | 🟡 already in codebase | `core/sandbox.py` + `skills/sandboxed_shell.py` (Docker isolation) |
+| 10 | CoW state snapshots for rollbacks | 🟡 already in codebase | `Checkpointer` (InMemory/SQLite/Postgres); the sketch is a deepcopy, not CoW |
+| 15 | Quantized local provider (GGUF) | 🟡 already in codebase | `providers/local.py` wraps Ollama, which already serves quantized GGUF models |
+| 17 | Tub-style structured logging for replay | 🟡 already in codebase | Job logger + session explorer + OTel/Tempo tracing cover replay debugging |
+| 8 | Configuration-driven graph building | ⏸ deferred | Useful for dashboard/no-code, but declarative edge conditions without eval are non-trivial |
+| 16 | Threaded part execution (parallel skills) | ⏸ deferred | Real value (per-turn tool-call parallelism), but declared risk 5: shared state between concurrent skills |
+| 5 | Batch similar tasks via clustering | ❌ discarded | Only pays off for homogeneous workloads this project does not have; orchestrator already runs parallel batches |
+| 11 | Vehicle-loop execution cycle | ❌ discarded | Alternative execution model that conflicts with the existing graph engine |
+
+---
+
 ## Index
 
 1. [9.0] Add 'Emergency Stop' Signal for Agent Teams — from [unknown] (PR #173)
