@@ -357,7 +357,10 @@ async def prompt(body: dict, request: Request):
                     )
                 )
             except ValueError as exc:
-                rag_summary = {"error": str(exc)}
+                # Full detail goes to the server log only; the HTTP response
+                # gets a generic message (CodeQL py/stack-trace-exposure).
+                logger.warning("RAG retrieval skipped: %s", exc)
+                rag_summary = {"error": "retrieval skipped: invalid namespace or query"}
                 await bus.emit(
                     Event(
                         event_type=EventType.KNOWLEDGE_RETRIEVAL_SKIPPED,

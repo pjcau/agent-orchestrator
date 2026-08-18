@@ -391,6 +391,8 @@ Before deploying to AWS with the frontend exposed:
 | Shell skill execution | Remote code execution | Auth required, skill allowlist, working directory isolation |
 | SSRF via Ollama URL | Internal network scanning | URL prefix allowlist |
 | XSS in dashboard | Cookie theft, session hijack | httponly cookies, CSP headers (TODO) |
+| Open redirect via `auth_return_to` cookie | Phishing after OAuth login | Redirect rebuilt from an exact path allowlist + token-validated re-encoded query (`oauth_routes._safe_return_to`); backslash/`//`/absolute URLs rejected |
+| Exception details in HTTP responses | Information disclosure | Generic error messages in responses; full exception logged server-side only |
 
 ## Security Scanning (CI)
 

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -193,45 +195,52 @@ async def auth_debug():
     )
 
 
-#: Allowlist of relative path *prefixes* that the post-login return URL is
-#: permitted to land on. Everything outside this set is rewritten to ``/``.
-#: Hard-coded allowlist > input validation because CodeQL's taint analysis
-#: only recognises an "obvious" sanitizer when the value passing into the
-#: redirect comes from a literal constant or a membership check against a
-#: literal collection — not when it is parsed and conditionally returned.
-_RETURN_TO_PREFIXES: tuple[str, ...] = (
+#: Exact allowlist of relative paths the post-login redirect may land on.
+#: Everything else collapses to ``/``. Exact match (not prefix) so the
+#: redirect path is always one of these literal constants — no byte of the
+#: user-controlled cookie ever reaches the path component. This matches the
+#: operational threat model: we only ever return to the device-flow approval
+#: page, the login page, or the chat home.
+_RETURN_TO_PATHS: tuple[str, ...] = (
     "/api/cli/v1/auth/device",
     "/login",
-    "/",  # bare root as a fallback (matches everything else; checked last)
+    "/",
 )
+
+#: Query keys/values carried through the redirect (e.g. the device-flow
+#: ``user_code``) must be plain tokens. Anything richer is dropped — a value
+#: that fails this can't be one of ours.
+_RETURN_TO_TOKEN_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 def _safe_return_to(request: Request) -> str:
     """Resolve the `auth_return_to` cookie to a safe local URL.
 
-    The cookie is user-controllable; CodeQL `py/url-redirection` flags
-    any redirect built from external input unless the value is selected
-    from a static allowlist. We do exactly that:
+    The cookie is user-controllable, so the redirect is rebuilt from
+    scratch rather than echoing the cookie back:
 
-    1. Read the cookie value.
-    2. Verify it starts with one of :data:`_RETURN_TO_PREFIXES`.
-    3. If it matches, return the literal cookie value (still a relative
-       path; no scheme or netloc could have survived the prefix match).
-    4. Otherwise fall back to ``/``.
-
-    This pattern is the canonical "redirect allowlist" recipe CodeQL
-    recognises as a safe sanitizer, and it also fits the operational
-    threat model — we only ever want to send the user back to the
-    device-flow approval page or the chat home.
+    1. Reject anything with a scheme, netloc, backslash, or leading ``//``
+       (browsers treat ``/\\evil.com`` like ``//evil.com``).
+    2. The path must *exactly* match one of :data:`_RETURN_TO_PATHS`; the
+       matched literal constant — not the cookie value — becomes the path.
+    3. Query parameters are re-encoded via ``urlencode`` and only kept when
+       key and value are plain tokens, so nothing can escape the query
+       position or smuggle a second URL.
     """
     raw = request.cookies.get("auth_return_to", "")
-    # A leading "//" makes the path protocol-relative (`//evil.com/foo`),
-    # which the browser interprets as an absolute URL. Catch that first.
-    if not raw or raw.startswith("//"):
+    if not raw or "\\" in raw or raw.startswith("//"):
         return "/"
-    for prefix in _RETURN_TO_PREFIXES:
-        if raw.startswith(prefix):
-            return raw
+    parts = urlsplit(raw)
+    if parts.scheme or parts.netloc:
+        return "/"
+    for path in _RETURN_TO_PATHS:
+        if parts.path == path:
+            params = [
+                (k, v)
+                for k, v in parse_qsl(parts.query)
+                if _RETURN_TO_TOKEN_RE.fullmatch(k) and _RETURN_TO_TOKEN_RE.fullmatch(v)
+            ]
+            return f"{path}?{urlencode(params)}" if params else path
     return "/"
 
 

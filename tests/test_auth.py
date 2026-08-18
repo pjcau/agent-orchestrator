@@ -384,6 +384,33 @@ class TestSafeReturnTo:
         req = Request({"type": "http", "headers": []})
         assert _safe_return_to(req) == "/"
 
+    def test_backslash_rejected(self):
+        r"""`/\evil.com` is treated by browsers like `//evil.com` — must be rejected."""
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = self._make_request("/\\evil.com/x")
+        assert _safe_return_to(req) == "/"
+
+    def test_unlisted_path_collapses_to_home(self):
+        """Paths outside the exact allowlist fall back to `/`."""
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = self._make_request("/some/deep/page")
+        assert _safe_return_to(req) == "/"
+
+    def test_query_is_rebuilt_and_filtered(self):
+        """Query params survive only as plain tokens, re-encoded from scratch."""
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = self._make_request("/api/cli/v1/auth/device?user_code=ABCD-1234&evil=http://x/")
+        assert _safe_return_to(req) == "/api/cli/v1/auth/device?user_code=ABCD-1234"
+
+    def test_login_path_accepted(self):
+        from agent_orchestrator.dashboard.oauth_routes import _safe_return_to
+
+        req = self._make_request("/login")
+        assert _safe_return_to(req) == "/login"
+
 
 # ---------------------------------------------------------------------------
 # WebSocket auth helper tests
