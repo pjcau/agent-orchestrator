@@ -12,7 +12,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Sequence
 
 
 @dataclass
@@ -221,8 +221,107 @@ def cached_node(cache: BaseCache, policy: CachePolicy | None = None):
                 )
             return result
 
-        wrapper._cache = cache
-        wrapper._cache_policy = policy
+        # functools.wraps loses custom attributes for type checkers — attach
+        # introspection handles via __dict__ (runtime-identical).
+        wrapper.__dict__["_cache"] = cache
+        wrapper.__dict__["_cache_policy"] = policy
         return wrapper
 
     return decorator
+
+
+# ─── Semantic Cache (scout findings #68/#69) ─────────────────────────
+
+
+class SemanticCache:
+    """Opt-in cache keyed by *meaning* instead of exact SHA256 keys.
+
+    The exact-key caches above miss on any byte-level difference ("summarize
+    this report" vs "please summarize this report"). SemanticCache embeds the
+    lookup text with a caller-supplied ``embedder`` and returns the best
+    stored entry whose cosine similarity clears ``threshold``.
+
+    Deliberately conservative and dependency-free:
+
+    - **Opt-in only** — there is no default embedder; callers must provide
+      one (e.g. a provider-backed embedding function), so it can never
+      silently activate.
+    - **High default threshold (0.95)** — a false hit returns a *wrong
+      answer* for a task that merely looks similar; tune downward only with
+      eval coverage.
+    - Pure-Python cosine, no numpy. Linear scan — intended for hundreds to a
+      few thousand entries, not millions.
+    """
+
+    def __init__(
+        self,
+        embedder: "Callable[[str], Sequence[float]]",
+        threshold: float = 0.95,
+        max_entries: int = 1000,
+        ttl_seconds: int = 3600,
+    ) -> None:
+        if not 0.0 < threshold <= 1.0:
+            raise ValueError("threshold must be in (0, 1]")
+        self._embedder = embedder
+        self._threshold = threshold
+        self._max_entries = max_entries
+        self._ttl = ttl_seconds
+        # key text -> (embedding, CacheEntry)
+        self._store: dict[str, tuple[list[float], CacheEntry]] = {}
+        self._stats = CacheStats()
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _cosine(a: "Sequence[float]", b: "Sequence[float]") -> float:
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(y * y for y in b) ** 0.5
+        if norm_a == 0.0 or norm_b == 0.0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    def get(self, text: str) -> CacheEntry | None:
+        """Return the most similar non-expired entry above threshold, else None."""
+        query = list(self._embedder(text))
+        with self._lock:
+            best_key: str | None = None
+            best_score = self._threshold
+            for key, (embedding, entry) in self._store.items():
+                if entry.is_expired:
+                    continue
+                score = self._cosine(query, embedding)
+                if score >= best_score:
+                    best_score = score
+                    best_key = key
+            if best_key is None:
+                self._stats.misses += 1
+                return None
+            entry = self._store[best_key][1]
+            entry.hit_count += 1
+            self._stats.hits += 1
+            return entry
+
+    def put(self, text: str, value: Any, ttl_seconds: int | None = None) -> None:
+        embedding = list(self._embedder(text))
+        with self._lock:
+            if len(self._store) >= self._max_entries and text not in self._store:
+                oldest = min(self._store, key=lambda k: self._store[k][1].created_at)
+                del self._store[oldest]
+                self._stats.evictions += 1
+            self._store[text] = (
+                embedding,
+                CacheEntry(key=text, value=value, ttl_seconds=ttl_seconds or self._ttl),
+            )
+
+    def clear(self) -> int:
+        with self._lock:
+            count = len(self._store)
+            self._store.clear()
+            return count
+
+    def size(self) -> int:
+        with self._lock:
+            return len(self._store)
+
+    def get_stats(self) -> CacheStats:
+        return self._stats

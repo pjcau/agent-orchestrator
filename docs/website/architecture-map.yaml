@@ -26,7 +26,7 @@ clusters:
         size: 56
         description: Top-level entry point. Composes agents, providers and skills into a run.
       - name: Provider
-        files: [core/provider.py, providers/anthropic.py, providers/openai.py, providers/google.py, providers/openrouter.py, providers/local.py, providers/mock.py]
+        files: [core/provider.py, core/ensemble.py, providers/anthropic.py, providers/openai.py, providers/google.py, providers/openrouter.py, providers/local.py, providers/mock.py]
         cx: 380
         cy: 330
         size: 40
@@ -142,7 +142,7 @@ clusters:
         size: 34
         description: Message history (in-memory + PostgreSQL).
       - name: Checkpoint
-        files: [core/checkpoint.py, core/checkpoint_postgres.py]
+        files: [core/checkpoint.py, core/checkpoint_postgres.py, core/exploration.py]
         cx: 870
         cy: 150
         size: 30
@@ -267,7 +267,7 @@ clusters:
         size: 26
         description: Liveness probes + token-usage accounting with per-provider hard call caps.
       - name: Alerts
-        files: [core/alerts.py]
+        files: [core/alerts.py, core/notifications.py]
         cx: 410
         cy: 680
         size: 26

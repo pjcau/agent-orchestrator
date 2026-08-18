@@ -11,7 +11,7 @@ from .router import (
 )
 from .orchestrator import Orchestrator, OrchestratorConfig
 from .usage import BudgetConfig, ProviderCallCapExceeded, UsageRecord, UsageTracker
-from .health import HealthMonitor, ProviderHealth
+from .health import HealthMonitor, ProviderHealth, QuotaConfig, QuotaStatus
 from .benchmark import BenchmarkSuite, BenchmarkResult
 from .rate_limiter import RateLimiter, RateLimitConfig
 from .audit import AuditLog, AuditEntry
@@ -31,6 +31,22 @@ from .graph import (
     END,
 )
 from .checkpoint import Checkpointer, InMemoryCheckpointer, SQLiteCheckpointer
+from .ensemble import EnsembleProvider, EnsembleStrategy
+from .exploration import (
+    BranchContext,
+    ExplorationOutcome,
+    ExplorationResult,
+    explore,
+)
+from .notifications import (
+    CallableBackend,
+    LogBackend,
+    Notification,
+    NotificationBackend,
+    NotificationDispatcher,
+    NotificationLevel,
+    WebhookBackend,
+)
 from .reducers import append_reducer, add_reducer, merge_dict_reducer
 from .llm_nodes import llm_node, multi_provider_node, chat_node, get_llm_cache
 from .graph_patterns import (
@@ -91,6 +107,7 @@ from .cache import (
     CacheStats,
     cached_node,
     make_cache_key,
+    SemanticCache,
 )
 from .conformance import (
     run_provider_conformance,
@@ -141,11 +158,13 @@ from .document_converter import (
     ContentLimitError,
 )
 from .skill import (
+    SkillManifest,
     SkillRequest,
     SkillMiddleware,
     logging_middleware,
     retry_middleware,
     timeout_middleware,
+    circuit_breaker_middleware,
     cache_middleware,
     verification_middleware,
     context_loader_middleware,
@@ -360,6 +379,25 @@ __all__ = [
     "SandboxType",
     "SandboxError",
     "SandboxPool",
+    # v-scout-8 — circuit breaker, quotas, ensemble, exploration, notifications
+    "circuit_breaker_middleware",
+    "SkillManifest",
+    "QuotaConfig",
+    "QuotaStatus",
+    "SemanticCache",
+    "EnsembleProvider",
+    "EnsembleStrategy",
+    "BranchContext",
+    "ExplorationOutcome",
+    "ExplorationResult",
+    "explore",
+    "CallableBackend",
+    "LogBackend",
+    "Notification",
+    "NotificationBackend",
+    "NotificationDispatcher",
+    "NotificationLevel",
+    "WebhookBackend",
     # v1.3 — OpenTelemetry Tracing
     "setup_tracing",
     "instrument_fastapi",

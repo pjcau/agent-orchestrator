@@ -29,6 +29,7 @@
           "name": "Provider",
           "files": [
             "core/provider.py",
+            "core/ensemble.py",
             "providers/anthropic.py",
             "providers/openai.py",
             "providers/google.py",
@@ -42,6 +43,7 @@
           "description": "Vendor-agnostic LLM interface (Anthropic, OpenAI, Google, OpenRouter, local, scripted mock).",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/provider.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/ensemble.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/anthropic.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/openai.py",
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/providers/google.py",
@@ -291,7 +293,8 @@
           "name": "Checkpoint",
           "files": [
             "core/checkpoint.py",
-            "core/checkpoint_postgres.py"
+            "core/checkpoint_postgres.py",
+            "core/exploration.py"
           ],
           "cx": 870,
           "cy": 150,
@@ -299,7 +302,8 @@
           "description": "Resumable graph state for long-running jobs.",
           "urls": [
             "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/checkpoint.py",
-            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/checkpoint_postgres.py"
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/checkpoint_postgres.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/exploration.py"
           ]
         },
         {
@@ -554,14 +558,16 @@
         {
           "name": "Alerts",
           "files": [
-            "core/alerts.py"
+            "core/alerts.py",
+            "core/notifications.py"
           ],
           "cx": 410,
           "cy": 680,
           "size": 26,
           "description": "Webhook alerts on cost / error thresholds.",
           "urls": [
-            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/alerts.py"
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/alerts.py",
+            "https://github.com/pjcau/agent-orchestrator/blob/main/src/agent_orchestrator/core/notifications.py"
           ]
         }
       ]

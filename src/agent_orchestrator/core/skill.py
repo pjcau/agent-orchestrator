@@ -48,6 +48,58 @@ class SkillResult:
         return f"Error: {self.error}"
 
 
+@dataclass
+class SkillManifest:
+    """Standardized, serializable skill descriptor (scout finding #71).
+
+    A ``skill.json``-style manifest for discovery, marketplace listings, and
+    cross-process capability exchange. Metadata only — manifests never carry
+    executable code; importing one registers *knowledge* of a skill, not an
+    implementation.
+    """
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+    category: str = "general"
+    version: str = "1.0"
+    instructions: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.parameters,
+            "category": self.category,
+            "version": self.version,
+            "instructions": self.instructions,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SkillManifest":
+        """Validate and build a manifest from untrusted JSON data."""
+        if not isinstance(data, dict):
+            raise ValueError("Manifest must be a JSON object")
+        for field_name in ("name", "description", "parameters"):
+            if field_name not in data:
+                raise ValueError(f"Manifest missing required field '{field_name}'")
+        name = data["name"]
+        if not isinstance(name, str) or not name or len(name) > 128:
+            raise ValueError("Manifest 'name' must be a non-empty string (max 128 chars)")
+        if not isinstance(data["description"], str):
+            raise ValueError("Manifest 'description' must be a string")
+        if not isinstance(data["parameters"], dict):
+            raise ValueError("Manifest 'parameters' must be a JSON-Schema object")
+        return cls(
+            name=name,
+            description=data["description"],
+            parameters=data["parameters"],
+            category=data.get("category", "general"),
+            version=str(data.get("version", "1.0")),
+            instructions=data.get("instructions"),
+        )
+
+
 @dataclass(frozen=True)
 class SkillRequest:
     """Immutable request object passed through the middleware chain.
@@ -110,6 +162,27 @@ class Skill(ABC):
     @abstractmethod
     async def execute(self, params: dict) -> SkillResult: ...
 
+    # --- Lifecycle hooks (scout finding #61) ---------------------------
+    # Optional no-op hooks for stateful skills (browser sessions, DB
+    # connections, warm caches). The registry drives them via
+    # ``SkillRegistry.startup()`` / ``shutdown()``.
+
+    async def setup(self) -> None:
+        """Acquire long-lived resources before first use. Default: no-op."""
+
+    async def teardown(self) -> None:
+        """Release long-lived resources on shutdown. Default: no-op."""
+
+    def to_manifest(self) -> SkillManifest:
+        """Export this skill's metadata as a :class:`SkillManifest`."""
+        return SkillManifest(
+            name=self.name,
+            description=self.description,
+            parameters=self.parameters,
+            category=self.category,
+            instructions=self.full_instructions,
+        )
+
 
 class SkillRegistry:
     """Central registry of all available skills with middleware support."""
@@ -117,9 +190,43 @@ class SkillRegistry:
     def __init__(self) -> None:
         self._skills: dict[str, Skill] = {}
         self._middlewares: list[SkillMiddleware] = []
+        self._started = False
 
     def register(self, skill: Skill) -> None:
         self._skills[skill.name] = skill
+
+    async def startup(self) -> None:
+        """Run ``setup()`` on every registered skill (idempotent).
+
+        A skill whose setup raises is unregistered and reported, so one
+        broken integration cannot take the whole registry down.
+        """
+        if self._started:
+            return
+        self._started = True
+        for name, skill in list(self._skills.items()):
+            try:
+                await skill.setup()
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Skill %s setup failed — unregistering: %s", name, exc
+                )
+                self._skills.pop(name, None)
+
+    async def shutdown(self) -> None:
+        """Run ``teardown()`` on every registered skill, best-effort."""
+        if not self._started:
+            return
+        self._started = False
+        for name, skill in self._skills.items():
+            try:
+                await skill.teardown()
+            except Exception as exc:
+                logging.getLogger(__name__).warning("Skill %s teardown failed: %s", name, exc)
+
+    def export_manifests(self) -> list[dict]:
+        """Export every registered skill as a manifest dict (``skill.json`` style)."""
+        return [skill.to_manifest().to_dict() for skill in self._skills.values()]
 
     def get(self, name: str) -> Skill | None:
         return self._skills.get(name)
@@ -333,6 +440,89 @@ def timeout_middleware(timeout_seconds: float = 30.0) -> SkillMiddleware:
                 output=None,
                 error=f"Skill '{request.skill_name}' timed out after {timeout_seconds}s",
             )
+
+    return middleware
+
+
+def circuit_breaker_middleware(
+    failure_threshold: int = 5,
+    cooldown_seconds: float = 30.0,
+    skills: set[str] | None = None,
+) -> SkillMiddleware:
+    """Per-skill circuit breaker — stop hammering a skill that keeps failing.
+
+    Classic three-state breaker, tracked independently per skill name:
+
+    - **closed** — calls pass through; consecutive failures are counted.
+    - **open** — after ``failure_threshold`` consecutive failures the breaker
+      opens and calls fail fast (no execution) until ``cooldown_seconds``
+      elapse. This is what retry_middleware alone cannot do: without it a
+      skill backed by a dead external API is retried in full on every task.
+    - **half-open** — after the cooldown, exactly one probe call is let
+      through; success closes the breaker, failure reopens it for another
+      cooldown.
+
+    ``skills`` limits the breaker to the named skills (e.g. only external
+    integrations); None guards every skill. Place it *before*
+    retry_middleware in the chain so an open breaker also skips the retries.
+    """
+    if failure_threshold < 1:
+        raise ValueError("failure_threshold must be >= 1")
+
+    # skill_name -> [consecutive_failures, opened_at_monotonic | None, probing]
+    state: dict[str, list] = {}
+
+    async def middleware(
+        request: SkillRequest,
+        next_fn: Callable[[SkillRequest], Awaitable[SkillResult]],
+    ) -> SkillResult:
+        if skills is not None and request.skill_name not in skills:
+            return await next_fn(request)
+
+        st = state.setdefault(request.skill_name, [0, None, False])
+
+        if st[1] is not None:  # open
+            elapsed = time.monotonic() - st[1]
+            if elapsed < cooldown_seconds:
+                return SkillResult(
+                    success=False,
+                    output=None,
+                    error=(
+                        f"Circuit breaker open for skill '{request.skill_name}' "
+                        f"({st[0]} consecutive failures); retrying in "
+                        f"{cooldown_seconds - elapsed:.1f}s"
+                    ),
+                    metadata={"circuit_open": True},
+                )
+            if st[2]:  # a probe is already in flight — fail fast, don't stampede
+                return SkillResult(
+                    success=False,
+                    output=None,
+                    error=(
+                        f"Circuit breaker half-open for skill '{request.skill_name}': "
+                        "probe in flight"
+                    ),
+                    metadata={"circuit_open": True},
+                )
+            st[2] = True  # half-open: this call is the probe
+
+        try:
+            result = await next_fn(request)
+        except Exception:
+            st[0] += 1
+            st[2] = False
+            if st[0] >= failure_threshold:
+                st[1] = time.monotonic()
+            raise
+
+        if result.success:
+            state[request.skill_name] = [0, None, False]
+        else:
+            st[0] += 1
+            st[2] = False
+            if st[0] >= failure_threshold:
+                st[1] = time.monotonic()
+        return result
 
     return middleware
 

@@ -25,13 +25,18 @@ class BudgetConfig:
     max_per_task: Optional[float] = None  # USD cap for a single task_id
     max_per_session: Optional[float] = None  # USD cap for the current session
     max_per_day: Optional[float] = None  # USD cap for the current calendar day
+    # USD cap applied to each individual agent (scout finding #74): one
+    # hyperactive agent in a team must not burn the whole session budget.
+    max_per_agent: Optional[float] = None
+    # Per-agent overrides by agent name; take precedence over max_per_agent.
+    agent_overrides: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
 class BudgetStatus:
     within_budget: bool
     remaining_usd: float | None  # None if no applicable limit
-    limit_type: str | None  # "task", "session", "day", or None
+    limit_type: str | None  # "task", "session", "day", "agent", or None
 
 
 @dataclass
@@ -137,12 +142,36 @@ class UsageTracker:
     # Budget checking
     # ------------------------------------------------------------------
 
-    def check_budget(self, budget: BudgetConfig, task_id: str | None = None) -> BudgetStatus:
+    def _agent_cap(self, budget: BudgetConfig, agent_name: str) -> float | None:
+        return budget.agent_overrides.get(agent_name, budget.max_per_agent)
+
+    def get_agent_cost(self, agent_name: str) -> float:
+        """Total cost recorded for one agent."""
+        return sum(r.cost_usd for r in self._records if r.agent_name == agent_name)
+
+    def check_budget(
+        self,
+        budget: BudgetConfig,
+        task_id: str | None = None,
+        agent_name: str | None = None,
+    ) -> BudgetStatus:
         """Check whether the current usage is within the given budget.
 
-        Checks are applied in order: task → session → day.
+        Checks are applied in order: agent → task → session → day.
         Returns on the first limit that is breached (or nearest to breach).
         """
+        # Per-agent check
+        if agent_name is not None:
+            agent_cap = self._agent_cap(budget, agent_name)
+            if agent_cap is not None:
+                remaining = agent_cap - self.get_agent_cost(agent_name)
+                if remaining < 0:
+                    return BudgetStatus(
+                        within_budget=False,
+                        remaining_usd=remaining,
+                        limit_type="agent",
+                    )
+
         # Per-task check
         if budget.max_per_task is not None and task_id is not None:
             task_cost = sum(r.cost_usd for r in self._records if r.task_id == task_id)
@@ -178,6 +207,10 @@ class UsageTracker:
 
         # Within all limits — report the tightest remaining budget
         remaining_values: list[float] = []
+        if agent_name is not None:
+            agent_cap = self._agent_cap(budget, agent_name)
+            if agent_cap is not None:
+                remaining_values.append(agent_cap - self.get_agent_cost(agent_name))
         if budget.max_per_task is not None and task_id is not None:
             task_cost = sum(r.cost_usd for r in self._records if r.task_id == task_id)
             remaining_values.append(budget.max_per_task - task_cost)
