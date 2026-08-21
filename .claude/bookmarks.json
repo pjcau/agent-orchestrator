@@ -574,5 +574,23 @@
     "added": "2026-08-17T09:15:16Z",
     "source": "github-star",
     "notes": "A modular, hackable, improved watchy like watch | Language: HTML | Topics: eink, esp32, esp32c6, hackable, modular-watch"
+  },
+  {
+    "url": "https://github.com/vicliu624/trail-mate",
+    "added": "2026-08-20T16:35:19Z",
+    "source": "github-star",
+    "notes": "Trail Mate is an offline‑first handheld system for GPS navigation, LoRa communication, and real‑time team situational awareness in no‑network environments. | Language: C++ | Topics: gps-tracker, meshcore, meshtastic, outdoor, tak"
+  },
+  {
+    "url": "https://github.com/truefoundry/trueforge",
+    "added": "2026-08-19T22:44:24Z",
+    "source": "github-star",
+    "notes": "The open-source agent harness - the runtime layer that turns an LLM into a working agent. | Language: TypeScript | Topics: agent, agentic-ai, agents, harness, harness-engineering"
+  },
+  {
+    "url": "https://github.com/walkinglabs/learn-harness-engineering",
+    "added": "2026-08-19T13:02:41Z",
+    "source": "github-star",
+    "notes": "Harness engineering beginner tutorial, from 0 to 1 | Language: TypeScript | Topics: agent, agentic, agentic-ai, ai, ai-agent"
   }
 ]
