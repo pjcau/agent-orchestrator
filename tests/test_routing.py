@@ -1,7 +1,17 @@
 """Tests for v0.5.0 — Smart Routing & Cost Optimization."""
 
 import pytest
+
+from agent_orchestrator.core.benchmark import BenchmarkSuite
 from agent_orchestrator.core.health import HealthMonitor
+from agent_orchestrator.core.orchestrator import TaskComplexity
+from agent_orchestrator.core.provider import (
+    Completion,
+    ModelCapabilities,
+    Provider,
+    StreamChunk,
+    Usage,
+)
 from agent_orchestrator.core.router import (
     RouterConfig,
     RoutingStrategy,
@@ -13,16 +23,6 @@ from agent_orchestrator.core.usage import (
     UsageRecord,
     UsageTracker,
 )
-from agent_orchestrator.core.benchmark import BenchmarkSuite
-from agent_orchestrator.core.orchestrator import TaskComplexity
-from agent_orchestrator.core.provider import (
-    Completion,
-    ModelCapabilities,
-    Provider,
-    StreamChunk,
-    Usage,
-)
-
 
 # --- Mock Provider ---
 
