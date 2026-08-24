@@ -592,5 +592,17 @@
     "added": "2026-08-19T13:02:41Z",
     "source": "github-star",
     "notes": "Harness engineering beginner tutorial, from 0 to 1 | Language: TypeScript | Topics: agent, agentic, agentic-ai, ai, ai-agent"
+  },
+  {
+    "url": "https://github.com/geo-tp/ESP32-Bit-Pirate",
+    "added": "2026-08-22T16:01:36Z",
+    "source": "github-star",
+    "notes": "A Hardware Hacking Tool with Web-Based CLI That Speaks Every Protocol  | Language: C++ | Topics: arduino, bluetooth, can-bus, debugging, eeprom"
+  },
+  {
+    "url": "https://github.com/josejuanqm/docky",
+    "added": "2026-08-21T09:04:17Z",
+    "source": "github-star",
+    "notes": "Docky is a Dock replacement for macOS that elegantly replaces the system one. It brings the Dock back into reach: quieter, smarter, and native-feeling, with a configurable layout, widgets, a fullscree | Language: Swift | Topics: app, macos"
   }
 ]
