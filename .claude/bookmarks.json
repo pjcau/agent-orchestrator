@@ -604,5 +604,11 @@
     "added": "2026-08-21T09:04:17Z",
     "source": "github-star",
     "notes": "Docky is a Dock replacement for macOS that elegantly replaces the system one. It brings the Dock back into reach: quieter, smarter, and native-feeling, with a configurable layout, widgets, a fullscree | Language: Swift | Topics: app, macos"
+  },
+  {
+    "url": "https://github.com/ngai-jeremy/WeatherPaper",
+    "added": "2026-08-26T19:17:33Z",
+    "source": "github-star",
+    "notes": "WeatherPaper is a health and comfort-focused smart weather station designed around a 4.2-inch e-paper display and a custom PCB. Lasting over one year and a half on a single charge. Featured on XDA Dev | Language: C"
   }
 ]
