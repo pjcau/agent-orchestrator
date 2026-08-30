@@ -610,5 +610,11 @@
     "added": "2026-08-26T19:17:33Z",
     "source": "github-star",
     "notes": "WeatherPaper is a health and comfort-focused smart weather station designed around a 4.2-inch e-paper display and a custom PCB. Lasting over one year and a half on a single charge. Featured on XDA Dev | Language: C"
+  },
+  {
+    "url": "https://github.com/Agents365-ai/drawio-skill",
+    "added": "2026-08-29T11:04:18Z",
+    "source": "github-star",
+    "notes": "Generate draw.io diagrams from natural language — 11 presets (UML, SysML/MBSE, BPMN, network, C4…), 39 tools: codebase/CI/infra-to-diagram, image→editable diagram, Databricks product icons, mind maps, | Language: Python | Topics: agent-skills, architecture-diagram, bpmn, claude-code, claude-code-skill"
   }
 ]
