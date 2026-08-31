@@ -18,12 +18,12 @@ from agent_orchestrator.core.verifiers.runtime_smoke import RuntimeSmokeVerifier
 from agent_orchestrator.core.verifiers.syntax import SyntaxVerifier
 
 __all__ = [
-    "SyntaxVerifier",
     "DependencyVerifier",
-    "EncodingVerifier",
-    "ImportVerifier",
-    "WorkspaceCoherenceVerifier",
-    "RuntimeSmokeVerifier",
-    "EntrypointVerifier",
     "E2ESmokeVerifier",
+    "EncodingVerifier",
+    "EntrypointVerifier",
+    "ImportVerifier",
+    "RuntimeSmokeVerifier",
+    "SyntaxVerifier",
+    "WorkspaceCoherenceVerifier",
 ]
