@@ -18,6 +18,7 @@ import pytest
 
 def _make_client():
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app()
