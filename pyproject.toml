@@ -51,7 +51,7 @@ dev = [
     # Capped to the 0.15 series: new ruff minors add rules and turn green CI
     # red without any code change (0.16.0 flagged 12 new errors). Bump the cap
     # deliberately, together with the fixes the new rules require.
-    "ruff>=0.15.20,<0.16",
+    "ruff>=0.16.4,<0.17",
     "vulture>=2.16",
     # Static type checker — same engine as the editor's Pylance, so CLI/CI/editor
     # agree. Gate is incremental (changed files), see scripts/typecheck.sh.
