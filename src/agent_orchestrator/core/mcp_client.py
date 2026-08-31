@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,10 @@ class MCPServerConfig:
     """Configuration for connecting to an external MCP server."""
 
     transport: str  # "stdio" or "sse"
-    command: Optional[list[str]] = None  # used for stdio transport
-    url: Optional[str] = None  # used for sse transport
-    env: Optional[dict[str, str]] = None
-    headers: Optional[dict[str, str]] = None
+    command: list[str] | None = None  # used for stdio transport
+    url: str | None = None  # used for sse transport
+    env: dict[str, str] | None = None
+    headers: dict[str, str] | None = None
 
     def validate(self) -> None:
         """Raise ValueError when the config is inconsistent."""
@@ -111,10 +111,10 @@ class StdioTransport:
     subprocess stdin; responses are read from stdout one line at a time.
     """
 
-    def __init__(self, command: list[str], env: Optional[dict[str, str]] = None) -> None:
+    def __init__(self, command: list[str], env: dict[str, str] | None = None) -> None:
         self.command = command
         self.env = env
-        self._process: Optional[asyncio.subprocess.Process] = None
+        self._process: asyncio.subprocess.Process | None = None
 
     async def connect(self) -> None:
         import os as _os
@@ -172,12 +172,12 @@ class SSETransport:
     Requires ``httpx`` which is already a dashboard dependency.
     """
 
-    def __init__(self, url: str, headers: Optional[dict[str, str]] = None) -> None:
+    def __init__(self, url: str, headers: dict[str, str] | None = None) -> None:
         self.url = url.rstrip("/")
         self.headers = headers or {}
         self._client: Any = None  # httpx.AsyncClient
         self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        self._reader_task: Optional[asyncio.Task[None]] = None
+        self._reader_task: asyncio.Task[None] | None = None
 
     async def connect(self) -> None:
         try:
@@ -259,7 +259,7 @@ class MCPClient:
     # Internal JSON-RPC helpers
     # ------------------------------------------------------------------
 
-    def _make_request(self, method: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    def _make_request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         msg: dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": self._next_id,
@@ -270,7 +270,7 @@ class MCPClient:
         self._next_id += 1
         return msg
 
-    async def _call(self, method: str, params: Optional[dict[str, Any]] = None) -> Any:
+    async def _call(self, method: str, params: dict[str, Any] | None = None) -> Any:
         request = self._make_request(method, params)
         await self._transport.send(request)
         response = await self._transport.receive()
