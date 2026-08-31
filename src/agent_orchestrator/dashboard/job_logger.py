@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ class JobLogger:
         """Prepare a fresh session (directory created lazily on first write)."""
         # Clean up previous session dir if it was empty
         self._cleanup_empty_current()
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         short_id = uuid.uuid4().hex[:6]
         self._session_id = f"{ts}_{short_id}"
         self._session_dir = self._base_dir / f"job_{self._session_id}"
@@ -137,7 +137,7 @@ class JobLogger:
             "session_id": self._session_id,
             "job_number": self._job_counter,
             "job_type": job_type,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             **data,
         }
 

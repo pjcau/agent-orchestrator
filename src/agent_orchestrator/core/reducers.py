@@ -24,7 +24,7 @@ def append_reducer(current: list | None, update: list | Any) -> list:
     return current + [update]
 
 
-def add_reducer(current: int | float | None, update: int | float) -> int | float:
+def add_reducer(current: float | None, update: float) -> int | float:
     """Add numeric values."""
     return (current or 0) + update
 
@@ -49,7 +49,7 @@ def append_unique_reducer(current: list | None, update: list | Any) -> list:
     return current + [item for item in update if item not in current]
 
 
-def max_reducer(current: int | float | None, update: int | float) -> int | float:
+def max_reducer(current: float | None, update: float) -> int | float:
     """Keep the maximum value."""
     if current is None:
         return update
