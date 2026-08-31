@@ -12,13 +12,13 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator  # noqa: F401 (used in type annotation)
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Awaitable
+from typing import Any
 
+from .channels import BaseChannel, BinaryOperatorChannel, ChannelManager
 from .checkpoint import Checkpoint, Checkpointer
-from .channels import BaseChannel, ChannelManager, BinaryOperatorChannel
 
 # Rust acceleration (optional — falls back to pure Python)
 try:
@@ -308,7 +308,7 @@ class CompiledGraph:
         resume_from: str | None = None,
         human_input: dict[str, Any] | None = None,
         *,
-        preload: "list[tuple[tuple[str, ...], str, str]] | None" = None,
+        preload: list[tuple[tuple[str, ...], str, str]] | None = None,
         store: Any = None,
     ) -> GraphResult:
         """Execute the graph from START to END.
@@ -679,7 +679,7 @@ class CompiledGraph:
                 success=False,
                 interrupted=gi.interrupt,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             node_span.record_exception(
                 Exception(f"Node '{node_name}' timed out after {self._config.timeout_seconds}s")
             )
