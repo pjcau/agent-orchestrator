@@ -17,12 +17,11 @@ from agent_orchestrator.core.mcp_client import (
     MCPClientManager,
     MCPServerConfig,
     MCPTool,
-    SSETransport,
     ServerCapabilities,
+    SSETransport,
     StdioTransport,
 )
 from agent_orchestrator.core.skill import SkillRegistry
-
 
 # ---------------------------------------------------------------------------
 # Helpers — minimal in-memory transport stub
@@ -690,10 +689,9 @@ class TestMCPClientManager:
         with patch(
             "agent_orchestrator.core.mcp_client.StdioTransport",
             return_value=transport,
-        ):
-            with pytest.raises(RuntimeError):
-                manager = MCPClientManager()
-                await manager.add_server("bad", config)
+        ), pytest.raises(RuntimeError):
+            manager = MCPClientManager()
+            await manager.add_server("bad", config)
 
         assert transport.closed is True
         assert "bad" not in MCPClientManager().list_servers()

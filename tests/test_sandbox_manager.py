@@ -9,12 +9,11 @@ import pytest
 
 from agent_orchestrator.core.sandbox import PortMapping, SandboxConfig, SandboxType
 from agent_orchestrator.dashboard.sandbox_manager import (
-    SandboxManager,
     _DEFAULT_PORT_RANGE_END,
     _DEFAULT_PORT_RANGE_START,
     _MAX_CONCURRENT,
+    SandboxManager,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -250,6 +249,7 @@ class TestRunAgentWithSandbox:
     async def test_run_agent_accepts_sandbox_parameter(self):
         """run_agent accepts a sandbox kwarg without error (signature test)."""
         import inspect
+
         from agent_orchestrator.dashboard.agent_runner import run_agent
 
         sig = inspect.signature(run_agent)
@@ -284,6 +284,7 @@ class TestRunTeamWithSandboxManager:
     async def test_run_team_accepts_sandbox_manager_parameter(self):
         """run_team signature includes sandbox_manager."""
         import inspect
+
         from agent_orchestrator.dashboard.agent_runner import run_team
 
         sig = inspect.signature(run_team)
@@ -480,6 +481,7 @@ class TestSandboxAPIEndpoints:
     def _sandbox_app(self):
         """Create a minimal FastAPI app with sandbox manager wired up."""
         from fastapi import FastAPI
+
         from agent_orchestrator.dashboard.gateway_api import gateway_router
 
         app = FastAPI()
@@ -492,6 +494,7 @@ class TestSandboxAPIEndpoints:
     def _disabled_app(self):
         """Create a FastAPI app with sandbox disabled."""
         from fastapi import FastAPI
+
         from agent_orchestrator.dashboard.gateway_api import gateway_router
 
         app = FastAPI()
