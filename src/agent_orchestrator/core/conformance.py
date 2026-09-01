@@ -15,12 +15,13 @@ Usage:
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Awaitable
+from typing import Any
 
-from .provider import Provider, Message, Role, Completion
-from .checkpoint import Checkpointer, Checkpoint
+from .checkpoint import Checkpoint, Checkpointer
+from .provider import Completion, Message, Provider, Role
 
 
 class TestStatus(str, Enum):
