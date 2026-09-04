@@ -28,7 +28,6 @@ from agent_orchestrator.dashboard.cli_device_flow import (
 )
 from agent_orchestrator.dashboard.cli_routes import cli_router
 
-
 # ---------------------------------------------------------------------------
 # Pure unit tests on the store
 # ---------------------------------------------------------------------------

@@ -111,5 +111,5 @@ class Ingester:
 
 def _chunk_id(source_id: str, idx: int, text: str) -> str:
     """Deterministic ID so re-ingesting the same content is idempotent."""
-    digest = hashlib.sha1(f"{source_id}|{idx}|{text}".encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha1(f"{source_id}|{idx}|{text}".encode()).hexdigest()[:16]
     return f"{source_id}:{idx}:{digest}"
