@@ -8,11 +8,11 @@ produce plain NodeFunc callables that slot into any StateGraph.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .graph import CompiledGraph, NodeFunc, State
 from .provider import Provider
-
 
 # ---------------------------------------------------------------------------
 # SubGraphNode
