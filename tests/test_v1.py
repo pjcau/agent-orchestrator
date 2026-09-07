@@ -3,20 +3,7 @@
 import json
 
 import pytest
-from agent_orchestrator.core.config_manager import (
-    AgentConfigEntry,
-    ConfigManager,
-    OrchestratorConfiguration,
-    ProviderConfigEntry,
-)
-from agent_orchestrator.core.project import ProjectConfig, ProjectManager
-from agent_orchestrator.core.users import UserManager, UserRole, ROLE_PERMISSIONS
-from agent_orchestrator.core.provider_presets import (
-    ProviderPreset,
-    ProviderPresetEntry,
-    ProviderPresetManager,
-)
-from agent_orchestrator.core.migration import MigrationManager
+
 from agent_orchestrator.core.api import (
     API_PREFIX,
     APIEndpoint,
@@ -24,7 +11,20 @@ from agent_orchestrator.core.api import (
     APIResponse,
     HTTPMethod,
 )
-
+from agent_orchestrator.core.config_manager import (
+    AgentConfigEntry,
+    ConfigManager,
+    OrchestratorConfiguration,
+    ProviderConfigEntry,
+)
+from agent_orchestrator.core.migration import MigrationManager
+from agent_orchestrator.core.project import ProjectConfig, ProjectManager
+from agent_orchestrator.core.provider_presets import (
+    ProviderPreset,
+    ProviderPresetEntry,
+    ProviderPresetManager,
+)
+from agent_orchestrator.core.users import ROLE_PERMISSIONS, UserManager, UserRole
 
 # --- ConfigManager ---
 

@@ -2,13 +2,13 @@
 
 import asyncio
 
+from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 from agent_orchestrator.core.conformance import (
-    run_checkpointer_conformance,
     ConformanceReport,
     TestResult,
     TestStatus,
+    run_checkpointer_conformance,
 )
-from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 
 
 class TestConformanceReport:
