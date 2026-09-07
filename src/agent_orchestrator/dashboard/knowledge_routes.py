@@ -37,7 +37,7 @@ async def knowledge_health(request: Request):
     if ingester is None or retriever is None:
         return JSONResponse(content={"enabled": False})
     # Both share the same embedder; reading it from the retriever is fine.
-    embedder = retriever._embedder  # noqa: SLF001 — internal access by design
+    embedder = retriever._embedder
     return JSONResponse(
         content={
             "enabled": True,
@@ -175,7 +175,7 @@ async def list_namespaces(request: Request):
         return JSONResponse(
             content={"error": "Knowledge subsystem not configured"}, status_code=503
         )
-    store = retriever._store  # noqa: SLF001 — composition is intentional
+    store = retriever._store
     names = await store.list_namespaces()
     out = []
     for ns in names:
@@ -199,7 +199,7 @@ async def delete_namespace(namespace: str, request: Request):
             status_code=400,
         )
 
-    removed = await ingester._store.delete_namespace(ns)  # noqa: SLF001
+    removed = await ingester._store.delete_namespace(ns)
     return JSONResponse(
         content={"success": True, "namespace": render_namespace(ns), "removed": removed}
     )

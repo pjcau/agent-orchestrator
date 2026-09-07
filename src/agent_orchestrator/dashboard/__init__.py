@@ -1,6 +1,6 @@
-from .events import EventBus, Event, EventType
+from .events import Event, EventBus, EventType
 
-__all__ = ["EventBus", "Event", "EventType", "create_dashboard_app"]
+__all__ = ["Event", "EventBus", "EventType", "create_dashboard_app"]
 
 
 def create_dashboard_app(event_bus=None):
