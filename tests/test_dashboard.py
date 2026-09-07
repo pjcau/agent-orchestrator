@@ -1,34 +1,17 @@
 """Tests for the dashboard event bus, snapshot, instrumentation, and team graph."""
 
 import asyncio
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
-from agent_orchestrator.dashboard.events import Event, EventBus, EventType
-from agent_orchestrator.dashboard.instrument import (
-    _instrument_agent,
-    _instrument_graph,
-    _instrument_cooperation,
-)
-from agent_orchestrator.dashboard.graphs import (
-    _agent_node,
-    _build_team_graph,
-    _detect_graph_category,
-    _TEAM_COMPOSITIONS,
-    _last_run,
-    get_last_run_info,
-    list_openrouter_models,
-    replay_node,
-)
-from agent_orchestrator.providers.openrouter import OpenRouterProvider
+
 from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
-from agent_orchestrator.core.skill import SkillRegistry
 from agent_orchestrator.core.cooperation import (
     CooperationProtocol,
     TaskAssignment,
     TaskReport,
 )
-from agent_orchestrator.core.graph import StateGraph, CompiledGraph, START, END
+from agent_orchestrator.core.graph import END, START, CompiledGraph, StateGraph
 from agent_orchestrator.core.provider import (
     Completion,
     ModelCapabilities,
@@ -36,7 +19,24 @@ from agent_orchestrator.core.provider import (
     StreamChunk,
     Usage,
 )
-
+from agent_orchestrator.core.skill import SkillRegistry
+from agent_orchestrator.dashboard.events import Event, EventBus, EventType
+from agent_orchestrator.dashboard.graphs import (
+    _TEAM_COMPOSITIONS,
+    _agent_node,
+    _build_team_graph,
+    _detect_graph_category,
+    _last_run,
+    get_last_run_info,
+    list_openrouter_models,
+    replay_node,
+)
+from agent_orchestrator.dashboard.instrument import (
+    _instrument_agent,
+    _instrument_cooperation,
+    _instrument_graph,
+)
+from agent_orchestrator.providers.openrouter import OpenRouterProvider
 
 # --- Fixtures ---
 
@@ -829,8 +829,9 @@ class TestJobLogger:
         assert logger.session_dir.name == f"job_{logger.session_id}"
 
     def test_log_creates_json_file(self, tmp_path):
-        from agent_orchestrator.dashboard.job_logger import JobLogger
         import json
+
+        from agent_orchestrator.dashboard.job_logger import JobLogger
 
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         path = logger.log("prompt", {"prompt": "hello", "result": {"success": True}})
@@ -853,8 +854,9 @@ class TestJobLogger:
         assert p3.name == "0003_stream.json"
 
     def test_log_contains_timestamp(self, tmp_path):
-        from agent_orchestrator.dashboard.job_logger import JobLogger
         import json
+
+        from agent_orchestrator.dashboard.job_logger import JobLogger
 
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         path = logger.log("prompt", {"prompt": "test"})
@@ -863,8 +865,9 @@ class TestJobLogger:
         assert "T" in data["timestamp"]  # ISO format
 
     def test_log_preserves_nested_data(self, tmp_path):
-        from agent_orchestrator.dashboard.job_logger import JobLogger
         import json
+
+        from agent_orchestrator.dashboard.job_logger import JobLogger
 
         logger = JobLogger(jobs_dir=tmp_path / "jobs")
         result = {
@@ -1851,7 +1854,8 @@ class TestClientErrorEndpoint:
         """POST /api/errors/client responds with {status: recorded}."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
-        from agent_orchestrator.dashboard.app import create_dashboard_app, _frontend_error_count
+
+        from agent_orchestrator.dashboard.app import _frontend_error_count, create_dashboard_app
 
         app = create_dashboard_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -1875,6 +1879,7 @@ class TestClientErrorEndpoint:
         """Frontend error counter appears in /metrics output."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -1895,6 +1900,7 @@ class TestClientErrorEndpoint:
         """Oversized fields are truncated and the endpoint still succeeds."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -1914,6 +1920,7 @@ class TestClientErrorEndpoint:
     def test_tracing_metrics_record_and_get(self):
         """tracing_metrics records durations and stalls correctly."""
         import importlib
+
         import agent_orchestrator.dashboard.tracing_metrics as tm_mod
 
         # Reload to get a clean module state for this test.
@@ -1938,10 +1945,12 @@ class TestClientErrorEndpoint:
     async def test_metrics_includes_otel_histogram_sections(self, monkeypatch):
         """Prometheus /metrics output contains histogram and stall sections."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
-        from httpx import ASGITransport, AsyncClient
-        from agent_orchestrator.dashboard.app import create_dashboard_app
-        import agent_orchestrator.dashboard.tracing_metrics as tm_mod
         import importlib
+
+        from httpx import ASGITransport, AsyncClient
+
+        import agent_orchestrator.dashboard.tracing_metrics as tm_mod
+        from agent_orchestrator.dashboard.app import create_dashboard_app
 
         importlib.reload(tm_mod)
         tm_mod.record_llm_duration("openrouter", 0.8)
@@ -1967,6 +1976,7 @@ class TestConversationEndpoints:
         """POST /api/conversation/new returns an id; DELETE clears it server-side."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -1990,6 +2000,7 @@ class TestConversationEndpoints:
         best-effort cleanup path which must not block the UI reset."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -2007,6 +2018,7 @@ class TestUploadEndpoint:
         """A small .txt file round-trips through DocumentConverter as markdown."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -2030,6 +2042,7 @@ class TestUploadEndpoint:
         test_document_converter.py."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -2045,8 +2058,9 @@ class TestUploadEndpoint:
         """Files exceeding MAX_FILE_SIZE_BYTES return 413 Payload Too Large."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
-        from agent_orchestrator.dashboard.app import create_dashboard_app
+
         from agent_orchestrator.core.document_converter import MAX_FILE_SIZE_BYTES
+        from agent_orchestrator.dashboard.app import create_dashboard_app
 
         # 1 byte over the limit so we don't actually allocate huge memory.
         oversize = b"x" * (MAX_FILE_SIZE_BYTES + 1)
@@ -2066,6 +2080,7 @@ class TestUploadEndpoint:
         """Multipart body without a 'file' field is rejected cleanly."""
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()

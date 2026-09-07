@@ -9,7 +9,6 @@ import pytest
 
 from agent_orchestrator.dashboard.alert_webhook import AlertHandler, _find_gh_cli, _sanitize_log
 
-
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
@@ -233,6 +232,7 @@ async def test_alert_webhook_endpoint_resolved(monkeypatch):
     monkeypatch.setenv("ALLOW_DEV_MODE", "true")
 
     from fastapi.testclient import TestClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -255,6 +255,7 @@ async def test_alert_recent_endpoint_empty(monkeypatch):
     monkeypatch.setenv("ALLOW_DEV_MODE", "true")
 
     from fastapi.testclient import TestClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
     from agent_orchestrator.dashboard.events import EventBus
 
@@ -272,6 +273,7 @@ async def test_alert_recent_endpoint_after_webhook(monkeypatch):
     monkeypatch.setenv("ALLOW_DEV_MODE", "true")
 
     from fastapi.testclient import TestClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
     from agent_orchestrator.dashboard.events import EventBus
 

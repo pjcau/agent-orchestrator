@@ -12,7 +12,6 @@ Run after building the extension:
 
 from __future__ import annotations
 
-
 import pytest
 
 # ---------------------------------------------------------------------------
