@@ -95,7 +95,7 @@ class HashEmbedder(EmbeddingProvider):
         counter = 0
         # Generate `dim` floats by chaining MD5 digests (16 bytes each).
         while len(out) < self._dim:
-            digest = hashlib.md5(f"{counter}|{norm}".encode("utf-8")).digest()
+            digest = hashlib.md5(f"{counter}|{norm}".encode()).digest()
             for i in range(0, len(digest), 2):
                 if len(out) >= self._dim:
                     break
