@@ -16,9 +16,10 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 import yaml
 
@@ -152,7 +153,7 @@ class RubricEvaluator(Evaluator):
     def name(self) -> str:
         return "rubric"
 
-    async def evaluate(self, case: EvalCase, run: EvalRun) -> EvalScore:  # noqa: ARG002
+    async def evaluate(self, case: EvalCase, run: EvalRun) -> EvalScore:
         output = run.agent_output or ""
         total_weight = 0.0
         passed_weight = 0.0
