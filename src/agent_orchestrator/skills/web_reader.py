@@ -93,19 +93,18 @@ class WebReaderSkill(Skill):
             )
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url,
-                    timeout=aiohttp.ClientTimeout(total=self._timeout),
-                    headers={"User-Agent": "AgentOrchestrator-ResearchScout/1.0"},
-                ) as resp:
-                    if resp.status != 200:
-                        return SkillResult(
-                            success=False,
-                            output=None,
-                            error=f"HTTP {resp.status} fetching {url}",
-                        )
-                    raw = await resp.text(errors="replace")
+            async with aiohttp.ClientSession() as session, session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=self._timeout),
+                headers={"User-Agent": "AgentOrchestrator-ResearchScout/1.0"},
+            ) as resp:
+                if resp.status != 200:
+                    return SkillResult(
+                        success=False,
+                        output=None,
+                        error=f"HTTP {resp.status} fetching {url}",
+                    )
+                raw = await resp.text(errors="replace")
         except Exception as exc:
             return SkillResult(success=False, output=None, error=f"Fetch error: {exc}")
 
