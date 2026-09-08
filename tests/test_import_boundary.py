@@ -138,12 +138,14 @@ class TestImportBoundary:
     def test_harness_importable_without_dashboard(self):
         """Core harness modules can be imported without dashboard extras."""
         # These are pure-Python modules with no heavy external deps.
-        from agent_orchestrator.core import provider  # noqa: F401
-        from agent_orchestrator.core import agent  # noqa: F401
-        from agent_orchestrator.core import skill  # noqa: F401
-        from agent_orchestrator.core import orchestrator  # noqa: F401
-        from agent_orchestrator.core import cooperation  # noqa: F401
-        from agent_orchestrator.core import graph  # noqa: F401
+        from agent_orchestrator.core import (
+            agent,  # noqa: F401
+            cooperation,  # noqa: F401
+            graph,  # noqa: F401
+            orchestrator,  # noqa: F401
+            provider,  # noqa: F401
+            skill,  # noqa: F401
+        )
 
     def test_violation_detection_catches_bad_import(self):
         """Verify our detection logic actually flags a deliberate bad import."""
