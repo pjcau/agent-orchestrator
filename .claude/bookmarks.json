@@ -622,5 +622,11 @@
     "added": "2026-08-26T19:17:33Z",
     "source": "github-star",
     "notes": "WeatherPaper is a health and comfort-focused smart weather station designed around a 4.2-inch e-paper display and a custom PCB. Lasting over one year and a half on a single charge. Featured on XDA Dev | Language: C"
+  },
+  {
+    "url": "https://github.com/reubenstr/ElectroPup",
+    "added": "2026-09-07T18:51:22Z",
+    "source": "github-star",
+    "notes": "DIY 3D printed quadruped robot. | Language: Python | Topics: bldc-motor, diy-project, python3, quadruped, react-native"
   }
 ]
