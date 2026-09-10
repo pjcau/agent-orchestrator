@@ -628,5 +628,11 @@
     "added": "2026-09-07T18:51:22Z",
     "source": "github-star",
     "notes": "DIY 3D printed quadruped robot. | Language: Python | Topics: bldc-motor, diy-project, python3, quadruped, react-native"
+  },
+  {
+    "url": "https://github.com/paulneja/Linux-on-esp32-S3",
+    "added": "2026-09-09T17:48:37Z",
+    "source": "github-star",
+    "notes": "Real Linux 6.11 running natively on the ESP32-S3's Xtensa cores (not emulated), with working WiFi and the chip's hardware RSA accelerator exposed to the Linux Crypto API and fork(). One flashable imag | Language: C | Topics: buildroot, crypto, esp32, esp32-s3, linux"
   }
 ]
