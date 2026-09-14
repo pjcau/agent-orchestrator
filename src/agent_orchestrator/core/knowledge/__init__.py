@@ -36,7 +36,7 @@ from .embeddings import (
     LocalEmbeddingProvider,
     OpenAIEmbeddingProvider,
 )
-from .ingestion import IngestRequest, IngestResult, Ingester
+from .ingestion import Ingester, IngestRequest, IngestResult
 from .retrieval import RetrievalResult, Retriever
 from .store import (
     InMemoryKnowledgeStore,
@@ -47,19 +47,19 @@ from .store import (
 
 __all__ = [
     "Chunker",
-    "MarkdownChunker",
-    "TextChunker",
     "EmbeddingProvider",
     "HashEmbedder",
-    "LocalEmbeddingProvider",
-    "OpenAIEmbeddingProvider",
-    "Ingester",
+    "InMemoryKnowledgeStore",
     "IngestRequest",
     "IngestResult",
-    "Retriever",
-    "RetrievalResult",
-    "InMemoryKnowledgeStore",
+    "Ingester",
     "KnowledgeChunk",
     "KnowledgeStore",
+    "LocalEmbeddingProvider",
+    "MarkdownChunker",
+    "OpenAIEmbeddingProvider",
+    "RetrievalResult",
+    "Retriever",
     "SearchHit",
+    "TextChunker",
 ]
