@@ -34,7 +34,6 @@ import uuid
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar
 
-
 PROTOCOL_VERSION = 1
 
 KIND_HELLO = "hello"
@@ -106,7 +105,7 @@ class Frame:
         return out
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Frame":
+    def from_dict(cls, d: dict[str, Any]) -> Frame:
         own = {f.name for f in fields(cls)}
         kwargs = {k: v for k, v in d.items() if k in own}
         return cls(**kwargs)
