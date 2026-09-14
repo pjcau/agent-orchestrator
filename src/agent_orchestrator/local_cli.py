@@ -54,8 +54,8 @@ import os
 import sys
 import traceback
 
-from .core.agent import AgentConfig
 from .client import OrchestratorClient
+from .core.agent import AgentConfig
 
 
 def _build_provider(provider_key: str, model: str):
