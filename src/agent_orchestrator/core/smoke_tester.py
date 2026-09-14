@@ -404,7 +404,7 @@ async def run_smoke_test(cwd: str | Path, timeout: float = 30.0) -> SmokeResult:
             stderr=stderr_b.decode(errors="replace"),
             exit_code=proc.returncode,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return SmokeResult(
             language=spec.name,
             entry_point=entry,
