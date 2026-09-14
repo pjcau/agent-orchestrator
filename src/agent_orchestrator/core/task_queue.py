@@ -12,8 +12,10 @@ from typing import Any
 # Rust acceleration (optional — falls back to pure Python)
 try:
     from _agent_orchestrator_rust import (
-        RustTaskQueue as _RustTaskQueue,
         RustQueuedTask as _RustQueuedTask,
+    )
+    from _agent_orchestrator_rust import (
+        RustTaskQueue as _RustTaskQueue,
     )
 
     _HAS_RUST = True
@@ -79,10 +81,10 @@ def _from_rust_task(rt: _RustQueuedTask) -> QueuedTask:
 
 if not _HAS_RUST:
     # Placeholders when Rust is not available
-    def _to_rust_task(t):  # type: ignore[misc]  # noqa: F811
+    def _to_rust_task(t):  # type: ignore[misc]
         raise RuntimeError("Rust not available")
 
-    def _from_rust_task(rt):  # type: ignore[misc]  # noqa: F811
+    def _from_rust_task(rt):  # type: ignore[misc]
         raise RuntimeError("Rust not available")
 
 
