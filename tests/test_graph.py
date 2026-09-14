@@ -2,6 +2,7 @@
 
 import pytest
 
+from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 from agent_orchestrator.core.graph import (
     END,
     START,
@@ -11,9 +12,7 @@ from agent_orchestrator.core.graph import (
     StreamEvent,
     StreamEventType,
 )
-from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
-from agent_orchestrator.core.reducers import append_reducer, add_reducer
-
+from agent_orchestrator.core.reducers import add_reducer, append_reducer
 
 # --- Helper node functions ---
 
