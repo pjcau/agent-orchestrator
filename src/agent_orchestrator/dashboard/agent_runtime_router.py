@@ -488,6 +488,7 @@ async def agent_run(body: dict, request: Request):
         # clicking Stop, closing the tab, etc.) can cancel the entire chain
         # — every awaiting child (LLM call, tool, sub-step) sees the
         # CancelledError and unwinds, not just the current step.
+        mcp_client = getattr(request.app.state, "mcp_client_manager", None)
         run_task = asyncio.create_task(
             run_agent(
                 agent_name=agent_name,
@@ -503,6 +504,7 @@ async def agent_run(body: dict, request: Request):
                 conversation_id=conv_id,
                 conversation_manager=conv_manager if conv_id else None,
                 sandbox=_agent_sandbox,
+                mcp_client_manager=mcp_client,
             )
         )
 
