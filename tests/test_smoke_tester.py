@@ -19,7 +19,6 @@ from agent_orchestrator.core.smoke_tester import (
     suggest_agent_for_language,
 )
 
-
 # ---------------------------------------------------------------------------
 # Detection — one test per language, driven by (config file, entry file)
 # parametrisation so adding a new LanguageSpec is trivial.
