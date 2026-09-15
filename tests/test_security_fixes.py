@@ -16,7 +16,6 @@ import pytest
 
 from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
