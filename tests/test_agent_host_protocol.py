@@ -39,7 +39,6 @@ from agent_orchestrator.agent_host import (
 )
 from agent_orchestrator.agent_host.protocol import KIND_HELLO, KIND_TOOL_CALL
 
-
 # ---------------------------------------------------------------------------
 # Round-trip and dispatch
 # ---------------------------------------------------------------------------
