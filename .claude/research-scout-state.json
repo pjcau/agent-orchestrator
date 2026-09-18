@@ -265,7 +265,14 @@
       "improvements": [],
       "outcome": "llm-error",
       "reason": "OpenRouter API error: HTTP Error 401: Unauthorized"
+    },
+    "https://github.com/bobeff/open-source-games": {
+      "processed_at": "2026-09-18T07:05:56.545989+00:00",
+      "summary": "llm-error: OpenRouter API error: HTTP Error 401: Unauthorized",
+      "improvements": [],
+      "outcome": "llm-error",
+      "reason": "OpenRouter API error: HTTP Error 401: Unauthorized"
     }
   },
-  "last_run": "2026-09-17T07:12:03.778106+00:00"
+  "last_run": "2026-09-18T07:05:56.546078+00:00"
 }
