@@ -646,5 +646,11 @@
     "added": "2026-09-17T08:42:41Z",
     "source": "github-star",
     "notes": "A list of open source games. | Language: Python | Topics: awesome-list, games, open-source"
+  },
+  {
+    "url": "https://github.com/supermemoryai/supermemory",
+    "added": "2026-09-19T19:47:49Z",
+    "source": "github-star",
+    "notes": "Memory and context engine + app that is extremely fast, scalable, and can be run fully locally. The Memory API for the AI era. | Language: TypeScript | Topics: agent-memory, ai-memory, cloudflare-kv, cloudflare-pages, cloudflare-workers"
   }
 ]
