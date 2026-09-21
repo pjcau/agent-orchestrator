@@ -21,12 +21,12 @@ from pathlib import Path
 import pytest
 
 from agent_orchestrator.agent_host import (
+    PROTOCOL_VERSION,
     Ack,
     AgentHostClient,
     Error,
     LocalToolRunner,
     PathOutsideWorkspaceError,
-    PROTOCOL_VERSION,
     ShellAllowlist,
     ShellAllowlistError,
     ToolCall,
@@ -37,7 +37,6 @@ from agent_orchestrator.agent_host import (
     new_nonce,
     parse_frame,
 )
-
 
 # ---------------------------------------------------------------------------
 # Path sandbox
