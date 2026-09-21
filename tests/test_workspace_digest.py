@@ -7,15 +7,10 @@ workspace every turn). It keeps durable facts while iterations stay consecutive
 on the same goal, and resets on a pivot.
 """
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
 
-from agent_orchestrator.core.workspace_digest import (
-    WorkspaceDigest,
-    WorkspaceDigestStore,
-    is_followup_goal,
-)
 from agent_orchestrator.core.provider import (
     Completion,
     ModelCapabilities,
@@ -23,8 +18,12 @@ from agent_orchestrator.core.provider import (
     StreamChunk,
     Usage,
 )
+from agent_orchestrator.core.workspace_digest import (
+    WorkspaceDigest,
+    WorkspaceDigestStore,
+    is_followup_goal,
+)
 from agent_orchestrator.dashboard.agent_runner import get_digest_store, run_agent
-
 
 # ===== is_followup_goal =====
 
