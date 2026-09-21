@@ -11,8 +11,9 @@ import json
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import Any
 
 
 @dataclass
@@ -255,7 +256,7 @@ class SemanticCache:
 
     def __init__(
         self,
-        embedder: "Callable[[str], Sequence[float]]",
+        embedder: Callable[[str], Sequence[float]],
         threshold: float = 0.95,
         max_entries: int = 1000,
         ttl_seconds: int = 3600,
@@ -272,7 +273,7 @@ class SemanticCache:
         self._lock = threading.RLock()
 
     @staticmethod
-    def _cosine(a: "Sequence[float]", b: "Sequence[float]") -> float:
+    def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
         dot = sum(x * y for x, y in zip(a, b))
         norm_a = sum(x * x for x in a) ** 0.5
         norm_b = sum(y * y for y in b) ** 0.5
