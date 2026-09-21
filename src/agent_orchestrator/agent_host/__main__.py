@@ -137,7 +137,8 @@ async def _main(args: argparse.Namespace) -> int:
         )
 
         from .client import ToolProgress
-        from .protocol import AssistantText, Error as ErrorFrame, Step, TurnEnd
+        from .protocol import AssistantText, Step, TurnEnd
+        from .protocol import Error as ErrorFrame
 
         # ANSI sequences kept simple so non-TTY consumers (CI, |less) still
         # render readable lines after stripping. Override with NO_COLOR=1.
@@ -148,7 +149,7 @@ async def _main(args: argparse.Namespace) -> int:
         BOLD = "\x1b[1m" if use_color else ""
         RESET = "\x1b[0m" if use_color else ""
 
-        def render_progress(ev: "ToolProgress") -> str:
+        def render_progress(ev: ToolProgress) -> str:
             if ev.status == "called":
                 return f"{DIM}  ↳ {BOLD}{ev.name}{RESET}{DIM}({ev.args_summary}){RESET}\n"
             if ev.status == "ok":
@@ -188,7 +189,7 @@ async def _main(args: argparse.Namespace) -> int:
             parts.append(f"{tok_s:.0f} tok/s")
             return " · ".join(parts)
 
-        def render_step(s: "Step") -> str:
+        def render_step(s: Step) -> str:
             if s.total:
                 tag = f"[{s.index}/{s.total}]"
             elif s.index:
@@ -202,7 +203,7 @@ async def _main(args: argparse.Namespace) -> int:
                 line += f"  {DIM}{m}{RESET}"
             return line + "\n"
 
-        def render_turn_end(t: "TurnEnd") -> str:
+        def render_turn_end(t: TurnEnd) -> str:
             mark = GREEN + "✓" + RESET if t.status == "ok" else RED + "✗" + RESET
             bits = [f"{mark} {DIM}turn {t.status}"]
             if t.step_count:
