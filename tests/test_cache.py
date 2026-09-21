@@ -7,20 +7,13 @@ LLM node caching (Level 1), skill cache middleware (Level 2).
 import asyncio
 import time
 
-
 from agent_orchestrator.core.cache import (
-    InMemoryCache,
-    CachePolicy,
     CacheEntry,
+    CachePolicy,
     CacheStats,
+    InMemoryCache,
     cached_node,
     make_cache_key,
-)
-from agent_orchestrator.core.skill import (
-    Skill,
-    SkillRegistry,
-    SkillResult,
-    cache_middleware,
 )
 from agent_orchestrator.core.provider import (
     Completion,
@@ -29,7 +22,12 @@ from agent_orchestrator.core.provider import (
     StreamChunk,
     Usage,
 )
-
+from agent_orchestrator.core.skill import (
+    Skill,
+    SkillRegistry,
+    SkillResult,
+    cache_middleware,
+)
 
 # ─── CacheEntry ──────────────────────────────────────────────────────
 
@@ -229,7 +227,6 @@ class TestCachedNode:
         async def my_node(state):
             nonlocal call_count
             call_count += 1
-            return None
 
         asyncio.run(my_node({"x": 1}))
         asyncio.run(my_node({"x": 1}))
