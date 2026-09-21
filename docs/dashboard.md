@@ -195,6 +195,14 @@ The dashboard also acts as an MCP **client**, connecting outbound to external MC
 - **Tool injection**: `SkillRegistry.register_mcp_tools(manager)` registers all external tools as local skills (prefixed `{server}/{tool}`)
 - **Implementation**: `core/mcp_client.py` — `MCPClientManager`, `MCPClient`, `StdioTransport`, `SSETransport`
 
+### MCP bridge into the agent runner
+
+The runner wires the outbound MCP client into agent execution so external MCP tools (e.g. `zeroclaw`, `ntfy`) are treated like first-class skills:
+
+- `create_skill_registry(mcp_client_manager=...)` registers every external MCP tool as a skill keyed `{server}/{tool}`. A non-manager value is skipped defensively (never breaks the registry).
+- `_instrumented_execute(...)` auto-adds any MCP-bridged tool that is not already listed in `config.tools` to the tool definitions sent to the agent, so external tools are usable without extra configuration.
+- `agent_runtime_router.agent_run` passes `request.app.state.mcp_client_manager` through to `run_agent`.
+
 ## SSE Streaming Runs
 
 HTTP Server-Sent Events (SSE) for graph execution — an alternative to WebSocket streaming compatible with LangGraph SDK patterns.
