@@ -1,7 +1,7 @@
 """Tests for bookmark tracker — state loading, filtering, and cleanup."""
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -84,8 +84,8 @@ class TestLoadBookmarks:
 class TestFilterUnprocessed:
     def test_filters_already_processed(self):
         bookmarks = [
-            {"url": "https://example-alpha.test", "added": datetime.now(timezone.utc).isoformat()},
-            {"url": "https://example-beta.test", "added": datetime.now(timezone.utc).isoformat()},
+            {"url": "https://example-alpha.test", "added": datetime.now(UTC).isoformat()},
+            {"url": "https://example-beta.test", "added": datetime.now(UTC).isoformat()},
         ]
         state = {"processed": {"https://example-alpha.test": {}}}
         result = filter_unprocessed(bookmarks, state)
@@ -93,21 +93,21 @@ class TestFilterUnprocessed:
         assert result[0]["url"] == "https://example-beta.test"
 
     def test_filters_old_bookmarks(self):
-        old_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        old_date = (datetime.now(UTC) - timedelta(days=10)).isoformat()
         bookmarks = [{"url": "https://example-old.test", "added": old_date}]
         state = {"processed": {}}
         result = filter_unprocessed(bookmarks, state, lookback_days=7)
         assert len(result) == 0
 
     def test_includes_recent_bookmarks(self):
-        recent = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(days=2)).isoformat()
         bookmarks = [{"url": "https://example-new.test", "added": recent}]
         state = {"processed": {}}
         result = filter_unprocessed(bookmarks, state, lookback_days=7)
         assert len(result) == 1
 
     def test_skips_empty_urls(self):
-        bookmarks = [{"url": "", "added": datetime.now(timezone.utc).isoformat()}]
+        bookmarks = [{"url": "", "added": datetime.now(UTC).isoformat()}]
         result = filter_unprocessed(bookmarks, {"processed": {}})
         assert len(result) == 0
 
@@ -203,12 +203,12 @@ class TestClassifyLegacyOutcome:
 
 class TestCleanupOldEntries:
     def test_removes_old_entries(self):
-        old_date = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+        old_date = (datetime.now(UTC) - timedelta(days=40)).isoformat()
         state = {
             "processed": {
                 "https://example-old.test": {"processed_at": old_date},
                 "https://example-new.test": {
-                    "processed_at": datetime.now(timezone.utc).isoformat()
+                    "processed_at": datetime.now(UTC).isoformat()
                 },
             }
         }
@@ -221,7 +221,7 @@ class TestCleanupOldEntries:
         state = {
             "processed": {
                 "https://example-recent.test": {
-                    "processed_at": datetime.now(timezone.utc).isoformat()
+                    "processed_at": datetime.now(UTC).isoformat()
                 },
             }
         }
