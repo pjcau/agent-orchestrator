@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -22,12 +21,12 @@ class UsageRecord:
 
 @dataclass
 class BudgetConfig:
-    max_per_task: Optional[float] = None  # USD cap for a single task_id
-    max_per_session: Optional[float] = None  # USD cap for the current session
-    max_per_day: Optional[float] = None  # USD cap for the current calendar day
+    max_per_task: float | None = None  # USD cap for a single task_id
+    max_per_session: float | None = None  # USD cap for the current session
+    max_per_day: float | None = None  # USD cap for the current calendar day
     # USD cap applied to each individual agent (scout finding #74): one
     # hyperactive agent in a team must not burn the whole session budget.
-    max_per_agent: Optional[float] = None
+    max_per_agent: float | None = None
     # Per-agent overrides by agent name; take precedence over max_per_agent.
     agent_overrides: dict[str, float] = field(default_factory=dict)
 
