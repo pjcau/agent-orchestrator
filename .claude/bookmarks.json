@@ -664,5 +664,11 @@
     "added": "2026-09-21T13:29:17Z",
     "source": "github-star",
     "notes": "The cross-harness self-improving memory layer for AI agents. | Language: Go | Topics: agent-ai-cli, agent-harnesses, agent-security, browser-extension, ci"
+  },
+  {
+    "url": "https://github.com/ducalex/retro-go",
+    "added": "2026-09-27T09:42:20Z",
+    "source": "github-star",
+    "notes": "Retro emulation for the ODROID-GO and other ESP32 devices | Language: C | Topics: doom, emulator, esp32, esp32s3, gameboy"
   }
 ]
