@@ -12,20 +12,18 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 
 import pytest
 
+from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
 from agent_orchestrator.core.clarification import (
+    DEFAULT_CLARIFICATION_TIMEOUT,
     ClarificationManager,
     ClarificationRequest,
     ClarificationResponse,
     ClarificationType,
-    DEFAULT_CLARIFICATION_TIMEOUT,
 )
-from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
-from agent_orchestrator.core.skill import SkillRegistry
-from typing import AsyncIterator
-
 from agent_orchestrator.core.provider import (
     Completion,
     Message,
@@ -36,8 +34,8 @@ from agent_orchestrator.core.provider import (
     ToolDefinition,
     Usage,
 )
+from agent_orchestrator.core.skill import SkillRegistry
 from agent_orchestrator.skills.clarification_skill import ClarificationSkill
-
 
 # ─── Helpers ─────────────────────────────────────────────────────────
 
