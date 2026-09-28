@@ -38,9 +38,8 @@ import json
 import logging
 import os
 import tempfile
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +121,7 @@ class ShellAllowlist:
             self._allowed = set()
 
     def _save(self) -> None:
-        assert self._allowed is not None  # noqa: S101
+        assert self._allowed is not None
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps({"allowed": sorted(self._allowed)}, indent=2, sort_keys=True)
         # Atomic write: temp file in the same dir, then rename.
@@ -145,13 +144,13 @@ class ShellAllowlist:
     def allow(self, argv: Sequence[str]) -> None:
         self._load()
         bin0 = _basename_or_raise(argv)
-        assert self._allowed is not None  # noqa: S101
+        assert self._allowed is not None
         self._allowed.add(bin0)
         self._save()
 
     def revoke(self, binary: str) -> bool:
         self._load()
-        assert self._allowed is not None  # noqa: S101
+        assert self._allowed is not None
         if binary in self._allowed:
             self._allowed.remove(binary)
             self._save()
