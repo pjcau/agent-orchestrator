@@ -21,21 +21,21 @@ import pytest
 import pytest_asyncio
 
 from agent_orchestrator.core.graph import (
+    END,
+    START,
     CompiledGraph,
     GraphInterrupt,
     Interrupt,
     InterruptType,
-    START,
-    END,
     StateGraph,
     StreamEvent,
     StreamEventType,
 )
 from agent_orchestrator.dashboard.events import EventBus
 from agent_orchestrator.dashboard.sse import (
-    HITLConfig,
     RUN_LIMIT,
     RUN_TTL_SECONDS,
+    HITLConfig,
     RunInfo,
     RunManager,
     _sse_data,
@@ -43,7 +43,6 @@ from agent_orchestrator.dashboard.sse import (
     _stream_event_to_events_payload,
     _stream_event_to_values_payload,
 )
-
 
 # ------------------------------------------------------------------ helpers
 
@@ -555,6 +554,7 @@ class TestSSEIntegration:
     async def client(self, isolated_bus, monkeypatch):
         """Create a test client with dev mode enabled so auth is skipped."""
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         monkeypatch.setenv("ALLOW_DEV_MODE", "true")
