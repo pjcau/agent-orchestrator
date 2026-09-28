@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+
 from agent_orchestrator.core.agent import Agent, AgentConfig, Task, TaskStatus
 from agent_orchestrator.core.cooperation import (
     AgentMessage,
@@ -24,7 +25,6 @@ from agent_orchestrator.core.provider import (
     Usage,
 )
 from agent_orchestrator.core.skill import SkillRegistry
-
 
 # --- Mock Provider ---
 
