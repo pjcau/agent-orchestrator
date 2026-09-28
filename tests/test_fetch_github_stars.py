@@ -1,7 +1,7 @@
 """Tests for fetch_github_stars — merge logic and star parsing."""
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,8 +36,8 @@ class TestMergeBookmarks:
 
 class TestGetRecentStars:
     def test_filters_old_stars(self):
-        old_date = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
-        recent_date = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        old_date = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+        recent_date = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         api_response = [
             {
                 "starred_at": recent_date,
@@ -81,7 +81,7 @@ class TestGetRecentStars:
         assert result == []
 
     def test_includes_notes_with_metadata(self):
-        recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         api_response = [
             {
                 "starred_at": recent,
