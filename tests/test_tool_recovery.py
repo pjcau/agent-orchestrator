@@ -12,17 +12,16 @@ Covers:
 
 import pytest
 
+from agent_orchestrator.core.checkpoint import Checkpoint, InMemoryCheckpointer
+from agent_orchestrator.core.conversation import (
+    ConversationManager,
+    _recover_raw_messages,
+)
 from agent_orchestrator.core.provider import Message, Role, ToolCall
 from agent_orchestrator.core.tool_recovery import (
     PLACEHOLDER_CONTENT,
     recover_dangling_tool_calls,
 )
-from agent_orchestrator.core.conversation import (
-    ConversationManager,
-    _recover_raw_messages,
-)
-from agent_orchestrator.core.checkpoint import Checkpoint, InMemoryCheckpointer
-
 
 # ---------------------------------------------------------------------------
 # Helpers
