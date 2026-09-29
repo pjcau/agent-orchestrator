@@ -588,7 +588,7 @@ class AgentHostClient:
             pass
 
     async def _receive_loop(self) -> None:
-        assert self._session is not None  # noqa: S101
+        assert self._session is not None
         run_id = self._session.run_id
         try:
             while not self._closed:
@@ -666,7 +666,7 @@ class AgentHostClient:
         if self._stream_shell and frame.name == "shell_exec":
             seq_counter = [0]
 
-            async def emit_chunk(chunk: str) -> None:  # noqa: E306
+            async def emit_chunk(chunk: str) -> None:
                 seq = seq_counter[0]
                 seq_counter[0] += 1
                 tc_sig = compute_signature(
