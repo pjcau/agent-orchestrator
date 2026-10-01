@@ -670,5 +670,11 @@
     "added": "2026-09-27T09:42:20Z",
     "source": "github-star",
     "notes": "Retro emulation for the ODROID-GO and other ESP32 devices | Language: C | Topics: doom, emulator, esp32, esp32s3, gameboy"
+  },
+  {
+    "url": "https://github.com/obra/superpowers",
+    "added": "2026-09-30T18:53:36Z",
+    "source": "github-star",
+    "notes": "An agentic skills framework & software development methodology that works. | Language: Shell | Topics: ai, brainstorming, coding, obra, sdlc"
   }
 ]
