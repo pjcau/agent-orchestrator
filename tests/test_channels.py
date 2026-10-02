@@ -1,19 +1,19 @@
 """Tests for channel-based state management (v1.1 Sprint 1)."""
 
 import operator
+
 import pytest
 
 from agent_orchestrator.core.channels import (
-    LastValue,
-    BinaryOperatorChannel,
-    TopicChannel,
-    EphemeralChannel,
     BarrierChannel,
+    BinaryOperatorChannel,
     ChannelManager,
     EmptyChannelError,
+    EphemeralChannel,
     InvalidUpdateError,
+    LastValue,
+    TopicChannel,
 )
-
 
 # ─── LastValue ────────────────────────────────────────────────────────
 
