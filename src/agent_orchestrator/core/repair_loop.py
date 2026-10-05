@@ -23,9 +23,10 @@ verify. Everything else (event bus, cost tracking) is injected.
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from agent_orchestrator.core.verification_gate import (
     VerificationGate,
