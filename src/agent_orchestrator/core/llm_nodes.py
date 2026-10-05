@@ -36,7 +36,8 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .cache import BaseCache, CachePolicy, InMemoryCache, cached_node, make_cache_key
 from .provider import Message, Provider, Role, ToolDefinition
