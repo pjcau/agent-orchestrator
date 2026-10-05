@@ -20,14 +20,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from agent_orchestrator.core.memory_filter import MemoryFilter
 from agent_orchestrator.core.store import InMemoryStore
 from agent_orchestrator.core.store_postgres import (
     PostgresStore,
     _ns_to_str,
     _str_to_ns,
 )
-from agent_orchestrator.core.memory_filter import MemoryFilter
-
 
 # ─── Namespace encoding ────────────────────────────────────────────────
 
@@ -98,7 +97,7 @@ def _make_db_row(
     """Build a dict mimicking an asyncpg Record for store_items."""
     import datetime
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     return {
         "namespace": namespace,
         "key": key,
@@ -146,7 +145,7 @@ class TestPostgresStoreCRUD:
     async def test_aget_expired_item_returns_none(self):
         import datetime
 
-        past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=10)
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=10)
         row = _make_db_row("agent.backend", "k1", {"task": "hello"}, expires_at=past)
         pool, conn = _make_pool(rows=[row])
         conn.fetchrow = AsyncMock(return_value=row)
@@ -171,7 +170,7 @@ class TestPostgresStoreCRUD:
     async def test_aput_update_existing(self):
         import datetime
 
-        existing_row = {"created_at": datetime.datetime.now(datetime.timezone.utc)}
+        existing_row = {"created_at": datetime.datetime.now(datetime.UTC)}
         pool, conn = _make_pool()
         conn.fetchrow = AsyncMock(return_value=existing_row)
         store = PostgresStore(pool)
@@ -348,7 +347,7 @@ class TestPostgresStoreTTL:
         """aget returns None for a row whose expires_at is in the past."""
         import datetime
 
-        past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=5)
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=5)
         row = _make_db_row("ttl", "key", {"temp": True}, expires_at=past)
         pool, conn = _make_pool(rows=[row])
         conn.fetchrow = AsyncMock(return_value=row)
@@ -412,12 +411,12 @@ class TestSummarizationTrigger:
     @pytest.mark.asyncio
     async def test_summarization_fires_at_threshold(self):
         """ConversationManager summarizes when threshold is reached."""
+        from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
         from agent_orchestrator.core.conversation import (
             ConversationManager,
             SummarizationConfig,
             SummarizationTrigger,
         )
-        from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 
         summarize_called_with: list[list[dict]] = []
 
@@ -457,8 +456,8 @@ class TestSummarizationTrigger:
     @pytest.mark.asyncio
     async def test_summarization_disabled_when_not_configured(self):
         """Without SummarizationConfig, summarization never fires."""
-        from agent_orchestrator.core.conversation import ConversationManager
         from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
+        from agent_orchestrator.core.conversation import ConversationManager
 
         manager = ConversationManager(checkpointer=InMemoryCheckpointer())
         assert manager.summarization_count == 0
@@ -479,7 +478,6 @@ class TestPerAgentNamespaceWrites:
     @pytest.mark.asyncio
     async def test_run_agent_stores_task_summary(self):
         """After a successful run_agent, a summary is stored under (agent, name)."""
-        from agent_orchestrator.core.store import InMemoryStore
         from agent_orchestrator.core.provider import (
             Completion,
             ModelCapabilities,
@@ -487,6 +485,7 @@ class TestPerAgentNamespaceWrites:
             StreamChunk,
             Usage,
         )
+        from agent_orchestrator.core.store import InMemoryStore
         from agent_orchestrator.dashboard.agent_runner import run_agent
         from agent_orchestrator.dashboard.events import EventBus
 
@@ -548,7 +547,6 @@ class TestPerAgentNamespaceWrites:
     @pytest.mark.asyncio
     async def test_run_agent_injects_memory_into_role(self):
         """Memory from the store is prepended to the system prompt as <memory> block."""
-        from agent_orchestrator.core.store import InMemoryStore
         from agent_orchestrator.core.provider import (
             Completion,
             ModelCapabilities,
@@ -556,6 +554,7 @@ class TestPerAgentNamespaceWrites:
             StreamChunk,
             Usage,
         )
+        from agent_orchestrator.core.store import InMemoryStore
         from agent_orchestrator.dashboard.agent_runner import run_agent
         from agent_orchestrator.dashboard.events import EventBus
 
@@ -645,7 +644,7 @@ class TestMemoryAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_namespaces_endpoint_returns_list(self, app):
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/memory/namespaces")
@@ -656,7 +655,7 @@ class TestMemoryAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_stats_endpoint(self, app):
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/memory/stats")
@@ -668,7 +667,7 @@ class TestMemoryAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_list_entries_endpoint(self, app):
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
 
         # Seed the store through startup
 
@@ -687,7 +686,7 @@ class TestMemoryAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_delete_endpoint(self, app):
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             # Trigger startup to initialise store
@@ -706,7 +705,7 @@ class TestMemoryAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_delete_removes_from_store(self, app):
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await client.get("/health")
