@@ -1,21 +1,10 @@
 """Tests for agent_runner helpers and dynamic team routing (v1.2)."""
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from unittest.mock import patch
 
 import pytest
-from agent_orchestrator.dashboard.agent_runner import (
-    _build_agent_catalog,
-    _build_evidence,
-    _build_role_for_agent,
-    _detect_category,
-    _parse_team_plan,
-    _AGENT_ALIASES,
-    _CATEGORY_FALLBACK_AGENTS,
-    run_agent,
-    run_team,
-)
-from agent_orchestrator.dashboard.events import EventBus, EventType
+
 from agent_orchestrator.core.provider import (
     Completion,
     ModelCapabilities,
@@ -23,7 +12,18 @@ from agent_orchestrator.core.provider import (
     StreamChunk,
     Usage,
 )
-
+from agent_orchestrator.dashboard.agent_runner import (
+    _AGENT_ALIASES,
+    _CATEGORY_FALLBACK_AGENTS,
+    _build_agent_catalog,
+    _build_evidence,
+    _build_role_for_agent,
+    _detect_category,
+    _parse_team_plan,
+    run_agent,
+    run_team,
+)
+from agent_orchestrator.dashboard.events import EventBus, EventType
 
 # --- Mock registry ---
 
@@ -1035,18 +1035,18 @@ class TestTokenSplit:
 # instead of drifting (a live run peaked at ~251k tokens and ignored the
 # minimal-change rule because none of those lived in this loop).
 
-from agent_orchestrator.dashboard.agent_runner import (  # noqa: E402
-    _instrumented_execute,
-    _MINIMAL_CHANGES_STEER,
-)
-from agent_orchestrator.core.agent import (  # noqa: E402
+from agent_orchestrator.core.agent import (
     AgentConfig,
     Task,
     TaskStatus,
     estimate_message_tokens,
 )
-from agent_orchestrator.core.provider import ToolCall  # noqa: E402
-from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult  # noqa: E402
+from agent_orchestrator.core.provider import ToolCall
+from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult
+from agent_orchestrator.dashboard.agent_runner import (
+    _MINIMAL_CHANGES_STEER,
+    _instrumented_execute,
+)
 
 
 @pytest.mark.asyncio

@@ -21,8 +21,9 @@ accounting must show that.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Callable, Sequence
 from enum import Enum
-from typing import AsyncIterator, Callable, Sequence, cast
+from typing import cast
 
 from .provider import (
     Completion,
@@ -70,7 +71,7 @@ class EnsembleProvider(Provider):
         max_tokens: int = 4096,
         temperature: float = 0.0,
     ) -> Completion:
-        call = lambda p: p.complete(  # noqa: E731
+        call = lambda p: p.complete(
             messages, tools=tools, system=system, max_tokens=max_tokens, temperature=temperature
         )
 
