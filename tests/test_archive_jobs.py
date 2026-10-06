@@ -6,6 +6,7 @@ import importlib.util
 import json
 import sys
 import time
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -176,16 +177,16 @@ class TestCreateTarball:
 
 class TestS3Key:
     def test_key_format(self, arch):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        dt = datetime(2024, 3, 5, tzinfo=timezone.utc)
+        dt = datetime(2024, 3, 5, tzinfo=UTC)
         key = arch._s3_key("20240305_120000_abcdef", dt)
         assert key == "archives/2024/03/20240305_120000_abcdef.tar.gz"
 
     def test_key_zero_pads_month(self, arch):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        dt = datetime(2024, 1, 1, tzinfo=UTC)
         key = arch._s3_key("sess", dt)
         assert "/01/" in key
 
