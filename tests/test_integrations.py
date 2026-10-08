@@ -1,13 +1,13 @@
 """Tests for v0.8.0 — External Integrations."""
 
 import pytest
-from agent_orchestrator.core.plugins import PluginLoader, PluginManifest
-from agent_orchestrator.core.webhook import WebhookConfig, WebhookRegistry
+
 from agent_orchestrator.core.mcp_server import MCPResource, MCPServerRegistry, MCPTool
 from agent_orchestrator.core.offline import OfflineConfig, OfflineManager
+from agent_orchestrator.core.plugins import PluginLoader, PluginManifest
 from agent_orchestrator.core.skill import SkillRegistry
+from agent_orchestrator.core.webhook import WebhookConfig, WebhookRegistry
 from agent_orchestrator.skills.webhook_skill import WebhookSkill
-
 
 # --- PluginLoader ---
 
@@ -272,11 +272,11 @@ class TestOrchestratorMCPBridge:
     """Tests for Orchestrator.register_mcp_tools()."""
 
     def test_register_mcp_tools_creates_registry(self):
+        from agent_orchestrator.core.agent import AgentConfig
         from agent_orchestrator.core.orchestrator import (
             Orchestrator,
             OrchestratorConfig,
         )
-        from agent_orchestrator.core.agent import AgentConfig
 
         orch = Orchestrator(
             config=OrchestratorConfig(),
@@ -295,11 +295,11 @@ class TestOrchestratorMCPBridge:
         assert orch.mcp is server
 
     def test_register_mcp_tools_registers_agents(self):
+        from agent_orchestrator.core.agent import AgentConfig
         from agent_orchestrator.core.orchestrator import (
             Orchestrator,
             OrchestratorConfig,
         )
-        from agent_orchestrator.core.agent import AgentConfig
 
         orch = Orchestrator(
             config=OrchestratorConfig(),
@@ -324,11 +324,11 @@ class TestOrchestratorMCPBridge:
         assert "agent_run_frontend" in tool_names
 
     def test_register_mcp_tools_registers_skills(self):
+        from agent_orchestrator.core.agent import AgentConfig
         from agent_orchestrator.core.orchestrator import (
             Orchestrator,
             OrchestratorConfig,
         )
-        from agent_orchestrator.core.agent import AgentConfig
         from agent_orchestrator.skills.webhook_skill import WebhookSkill
 
         skill_reg = SkillRegistry()
@@ -385,11 +385,11 @@ class TestOrchestratorMCPBridge:
         assert result.server_name == "custom"
 
     def test_register_mcp_tools_manifest_export(self):
+        from agent_orchestrator.core.agent import AgentConfig
         from agent_orchestrator.core.orchestrator import (
             Orchestrator,
             OrchestratorConfig,
         )
-        from agent_orchestrator.core.agent import AgentConfig
 
         orch = Orchestrator(
             config=OrchestratorConfig(),
