@@ -676,5 +676,17 @@
     "added": "2026-09-30T18:53:36Z",
     "source": "github-star",
     "notes": "An agentic skills framework & software development methodology that works. | Language: Shell | Topics: ai, brainstorming, coding, obra, sdlc"
+  },
+  {
+    "url": "https://github.com/t4t5/omdrop-owl",
+    "added": "2026-10-10T08:48:03Z",
+    "source": "github-star",
+    "notes": "airdrop for non-apple devices | Language: Shell | Topics: airdrop, omarchy, opendrop"
+  },
+  {
+    "url": "https://github.com/a-funk/open-appleremote",
+    "added": "2026-10-10T08:09:32Z",
+    "source": "github-star",
+    "notes": "Use the first-gen Apple Siri Remote (A1513/A1962) on Linux: unlock it, decode touch and buttons, tvOS-style gestures, a virtual keyboard. Pure-stdlib Python. | Language: Python | Topics: apple-tv, bluetooth-low-energy, hid, linux, python"
   }
 ]
