@@ -77,13 +77,13 @@ class PostgresStore(BaseStore):
 
     def __init__(
         self,
-        pool: "asyncpg.Pool",
-        memory_filter: "MemoryFilter | None" = None,  # noqa: F821
+        pool: asyncpg.Pool,
+        memory_filter: MemoryFilter | None = None,  # noqa: F821
     ) -> None:
         from .memory_filter import MemoryFilter as _MF
 
         self._pool = pool
-        self._memory_filter: "_MF | None" = memory_filter
+        self._memory_filter: _MF | None = memory_filter
 
     # ------------------------------------------------------------------
     # Table bootstrap
@@ -146,7 +146,7 @@ class PostgresStore(BaseStore):
         if row["expires_at"] is not None:
             import datetime
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             if row["expires_at"] < now:
                 # Delete the expired row asynchronously
                 async with self._pool.acquire() as conn:
