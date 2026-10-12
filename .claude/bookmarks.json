@@ -688,5 +688,11 @@
     "added": "2026-10-10T08:09:32Z",
     "source": "github-star",
     "notes": "Use the first-gen Apple Siri Remote (A1513/A1962) on Linux: unlock it, decode touch and buttons, tvOS-style gestures, a virtual keyboard. Pure-stdlib Python. | Language: Python | Topics: apple-tv, bluetooth-low-energy, hid, linux, python"
+  },
+  {
+    "url": "https://github.com/amitshekhariitbhu/ai-engineering-interview-questions",
+    "added": "2026-10-11T17:07:42Z",
+    "source": "github-star",
+    "notes": "Your Cheat Sheet for AI Engineering Interview – Questions and Answers. | Language: Markdown | Topics: agents, ai, ai-agents, ai-engineering, fine-tuning"
   }
 ]
