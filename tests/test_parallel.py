@@ -6,7 +6,7 @@ import time
 import pytest
 
 from agent_orchestrator.core.graph import END, START, GraphConfig, StateGraph
-from agent_orchestrator.core.reducers import append_reducer, add_reducer
+from agent_orchestrator.core.reducers import add_reducer, append_reducer
 
 
 class TestParallelExecution:
