@@ -328,7 +328,14 @@
       "improvements": [],
       "outcome": "llm-error",
       "reason": "OpenRouter API error: HTTP Error 401: Unauthorized"
+    },
+    "https://github.com/rohitg00/ai-engineering-from-scratch": {
+      "processed_at": "2026-10-16T06:45:24.594255+00:00",
+      "summary": "llm-error: OpenRouter API error: HTTP Error 401: Unauthorized",
+      "improvements": [],
+      "outcome": "llm-error",
+      "reason": "OpenRouter API error: HTTP Error 401: Unauthorized"
     }
   },
-  "last_run": "2026-10-15T06:59:39.576519+00:00"
+  "last_run": "2026-10-16T06:45:24.594352+00:00"
 }
