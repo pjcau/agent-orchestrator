@@ -18,14 +18,14 @@ from unittest.mock import patch
 import pytest
 
 from agent_orchestrator.core.document_converter import (
+    MAX_FILE_SIZE_BYTES,
+    MAX_SPREADSHEET_ROWS,
     ContentLimitError,
     ConvertedDocument,
     DependencyMissingError,
     DocumentConversionError,
     DocumentConverter,
     FileTooLargeError,
-    MAX_FILE_SIZE_BYTES,
-    MAX_SPREADSHEET_ROWS,
     UnsupportedFormatError,
 )
 
@@ -340,7 +340,7 @@ def test_supported_types_include_expected_extensions():
 # ---------------------------------------------------------------------------
 
 
-import shutil  # noqa: E402
+import shutil
 
 _HAS_TESSERACT_BINARY = shutil.which("tesseract") is not None
 
@@ -392,9 +392,8 @@ async def test_image_ocr_missing_tesseract_binary_raises_dependency_error(
         pytesseract,
         "image_to_string",
         side_effect=pytesseract.TesseractNotFoundError(),
-    ):
-        with pytest.raises(DependencyMissingError) as exc_info:
-            await converter.convert(str(img_path))
+    ), pytest.raises(DependencyMissingError) as exc_info:
+        await converter.convert(str(img_path))
 
     msg = str(exc_info.value).lower()
     assert "tesseract" in msg
