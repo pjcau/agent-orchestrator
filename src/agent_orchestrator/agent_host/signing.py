@@ -110,7 +110,7 @@ def compute_signature(
     server-internal flows and unit tests.
     """
     secret = key if key is not None else _secret_bytes()
-    msg = f"{run_id}|{tool_call_id}|{nonce}|{name}".encode("utf-8")
+    msg = f"{run_id}|{tool_call_id}|{nonce}|{name}".encode()
     return hmac.new(secret, msg, hashlib.sha256).hexdigest()
 
 
