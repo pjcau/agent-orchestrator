@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def save_state(state_path: str | Path, state: dict) -> None:
     """Save the research scout state file."""
     path = Path(state_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    state["last_run"] = datetime.now(timezone.utc).isoformat()
+    state["last_run"] = datetime.now(UTC).isoformat()
     path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
@@ -62,7 +62,7 @@ def filter_unprocessed(
     lookback_days: int = LOOKBACK_DAYS,
 ) -> list[dict]:
     """Filter bookmarks to only unprocessed ones within the lookback window."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
     processed = state.get("processed", {})
     result = []
 
@@ -133,7 +133,7 @@ def mark_processed(
     if "processed" not in state:
         state["processed"] = {}
     entry: dict = {
-        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "processed_at": datetime.now(UTC).isoformat(),
         "summary": summary,
         "improvements": improvements or [],
     }
@@ -170,7 +170,7 @@ def classify_legacy_outcome(summary: str, improvements: list[str] | None) -> str
 
 def cleanup_old_entries(state: dict, max_age_days: int = 30) -> int:
     """Remove processed entries older than max_age_days. Returns count removed."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
     processed = state.get("processed", {})
     to_remove = []
 

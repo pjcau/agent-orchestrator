@@ -19,9 +19,9 @@ import pytest
 from agent_orchestrator.core.knowledge import (
     Chunker,
     HashEmbedder,
-    InMemoryKnowledgeStore,
     Ingester,
     IngestRequest,
+    InMemoryKnowledgeStore,
     KnowledgeChunk,
     MarkdownChunker,
     Retriever,
@@ -34,7 +34,6 @@ from agent_orchestrator.core.knowledge.store import (
     agent_namespace,
     user_namespace,
 )
-
 
 # ---------------------------------------------------------------------------
 # HashEmbedder
