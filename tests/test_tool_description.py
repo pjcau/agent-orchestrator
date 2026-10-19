@@ -16,16 +16,15 @@ from typing import Any
 import pytest
 
 from agent_orchestrator.core.audit import (
+    EVENT_TOOL_CALL,
     AuditEntry,
     AuditLog,
-    EVENT_TOOL_CALL,
 )
 from agent_orchestrator.core.skill import (
     Skill,
     SkillRegistry,
     SkillResult,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
