@@ -700,5 +700,11 @@
     "added": "2026-10-15T07:01:28Z",
     "source": "github-star",
     "notes": "Learn AI Engineering! Learn it. Build it. Ship it for others. | Language: Python | Topics: agents, ai, ai-agents, ai-engineering, computer-vision"
+  },
+  {
+    "url": "https://github.com/Kodoque1/sm64-gba",
+    "added": "2026-10-19T17:37:27Z",
+    "source": "github-star",
+    "notes": "Super Mario 64's movement and collision code on the Game Boy Advance, bit-exact with the original, plus a playable demo. Built with Claude Opus 5.5. | Language: C | Topics: demake, game-boy-advance, gba, llm, sm64"
   }
 ]
