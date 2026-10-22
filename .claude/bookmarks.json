@@ -706,5 +706,11 @@
     "added": "2026-10-19T17:37:27Z",
     "source": "github-star",
     "notes": "Super Mario 64's movement and collision code on the Game Boy Advance, bit-exact with the original, plus a playable demo. Built with Claude Opus 5.5. | Language: C | Topics: demake, game-boy-advance, gba, llm, sm64"
+  },
+  {
+    "url": "https://github.com/t4t5/owly",
+    "added": "2026-10-10T08:48:03Z",
+    "source": "github-star",
+    "notes": "airdrop for non-apple devices | Language: Rust | Topics: airdrop, awdl, omarchy, owl"
   }
 ]
