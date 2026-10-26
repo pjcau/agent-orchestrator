@@ -18,7 +18,8 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -392,7 +393,7 @@ def _ollama_url() -> str:
 def _sse(event: str, data: dict[str, Any]) -> bytes:
     """Format a single SSE message. One newline ends a field, two end the message."""
     payload = json.dumps(data, default=str)
-    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+    return f"event: {event}\ndata: {payload}\n\n".encode()
 
 
 def _keepalive() -> bytes:
@@ -540,7 +541,7 @@ async def cli_run(body: dict, request: Request) -> StreamingResponse | JSONRespo
             if not run_task.done():
                 run_task.cancel()
             return
-        except Exception:  # noqa: BLE001 — surface as terminal SSE event
+        except Exception:
             logger.exception("CLI run failed (run_id=%s)", run_id)
             yield _sse(
                 "complete",
@@ -620,7 +621,7 @@ async def agent_host_endpoint(ws: WebSocket) -> None:
             reason,
             user.get("name") or user.get("github_login") or "api-key",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("agent-host: unhandled error: %s", exc)
         try:
             await ws.close(code=1011, reason="internal_error")
@@ -772,7 +773,7 @@ def _make_agent_host_prompt_handler(ws: WebSocket):
                     error="" if turn_ok else str(result_dict.get("error") or "")[:300],
                 ).to_dict()
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("agent-host: turn failed: %s", exc)
             await ws.send_json(Error(code="turn_failed", message=str(exc)[:200]).to_dict())
         finally:
