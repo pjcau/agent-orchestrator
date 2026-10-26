@@ -1217,3 +1217,110 @@ async def test_instrumented_compaction_bounds_sent_context():
     peak = max(provider.sent)
     # Bounded near the threshold instead of climbing with run length.
     assert peak < threshold * 2.5, f"context not bounded: peak={peak}"
+
+
+# ===== MCP bridge: create_skill_registry + _instrumented_execute auto-include =====
+# The Imperio SOSAIA contribution (ab07176) wires external MCP tools into the
+# skill registry as skills and auto-adds any bridged MCP tool (not already in
+# config.tools) to the definitions sent to the agent.
+
+import agent_orchestrator.core.mcp_client as _mcp  # noqa: E402
+from agent_orchestrator.core.mcp_client import (  # noqa: E402
+    MCPClientManager,
+    MCPTool,
+)
+from agent_orchestrator.dashboard.agent_runner import create_skill_registry  # noqa: E402
+
+
+def _populated_mcp_manager() -> MCPClientManager:
+    """Build a real MCPClientManager with cached tools, no I/O."""
+    manager = MCPClientManager()
+    manager._tools = {
+        "zeroclaw": [
+            MCPTool(
+                name="summarize",
+                description="Summarize a document",
+                input_schema={"type": "object", "properties": {}},
+            ),
+            MCPTool(
+                name="translate",
+                description="Translate text",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ],
+        "ntfy": [
+            MCPTool(
+                name="notify",
+                description="Send a notification",
+                input_schema={"type": "object", "properties": {}},
+            ),
+        ],
+    }
+    return manager
+
+
+def test_create_skill_registry_bridges_mcp_tools():
+    registry = create_skill_registry(mcp_client_manager=_populated_mcp_manager())
+    # Each MCP tool is exposed as a skill keyed by "{server}/{tool}".
+    assert registry.get("zeroclaw/summarize") is not None
+    assert registry.get("zeroclaw/translate") is not None
+    assert registry.get("ntfy/notify") is not None
+    skills = registry.list_skills()
+    assert "zeroclaw/summarize" in skills
+    assert "ntfy/notify" in skills
+    # The built-in skills are still present alongside the bridge.
+    assert "file_read" in skills
+
+
+def test_create_skill_registry_without_mcp_manager_is_harmless():
+    registry = create_skill_registry(mcp_client_manager=None)
+    assert "file_read" in registry.list_skills()
+    assert not any(name.startswith(("zeroclaw", "ntfy")) for name in registry.list_skills())
+
+
+def test_bridge_rejects_non_mcp_objects_without_breaking_registry():
+    # A non-manager object is skipped defensively (catch in create_skill_registry);
+    # the registry still works and no bridge tools are added.
+    registry = create_skill_registry(mcp_client_manager=object())
+    assert "file_read" in registry.list_skills()
+    assert not any(name.startswith(("zeroclaw", "ntfy")) for name in registry.list_skills())
+
+
+@pytest.mark.asyncio
+async def test_instrumented_execute_auto_includes_mcp_tools_not_in_config():
+    captured_defs: dict = {}
+
+    class _CaptureMCP(MockProvider):
+        async def complete(self, messages, tools=None, system=None, **kwargs):
+            captured_defs["tools"] = tools
+            return Completion(content="ok", tool_calls=[], usage=Usage(10, 5, 0.0))
+
+    registry = create_skill_registry(mcp_client_manager=_populated_mcp_manager())
+    config = AgentConfig(
+        name="a",
+        role="r",
+        provider_key="x",
+        tools=["file_read"],
+        max_steps=2,
+    )
+    res = await _instrumented_execute(
+        config=config,
+        provider=_CaptureMCP(),
+        skill_registry=registry,
+        task=Task(description="bridged"),
+        event_bus=EventBus.get(),
+    )
+    names = {t.name for t in (captured_defs["tools"] or [])}
+    # config.tools (file_read) plus the auto-included MCP-bridged tools.
+    assert "file_read" in names
+    assert "zeroclaw/summarize" in names
+    assert "ntfy/notify" in names
+    assert res.status == TaskStatus.COMPLETED
+
+
+def test_import_boundary_mcp_bridge_keeps_harness_clean():
+    # core.mcp_client must never import the dashboard layer.
+    import inspect
+
+    src = inspect.getsource(_mcp)
+    assert "agent_orchestrator.dashboard" not in src
