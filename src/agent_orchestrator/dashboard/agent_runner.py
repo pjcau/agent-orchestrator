@@ -15,7 +15,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from ..core.agent import (
@@ -29,17 +29,17 @@ from ..core.agent import (
     estimate_message_tokens,
     shrink_stale_tool_results,
 )
-from ..core.tool_recovery import recover_dangling_tool_calls
 from ..core.cache import InMemoryCache
 from ..core.conversation import ConversationManager
-from ..core.store import BaseStore
 from ..core.provider import Message, Provider, Role, ToolDefinition
+from ..core.sandbox import Sandbox
+from ..core.skill import SkillRegistry, cache_middleware
+from ..core.store import BaseStore
+from ..core.tool_recovery import recover_dangling_tool_calls
 from ..core.workspace_digest import (
     WorkspaceDigestStore,
     is_followup_goal,
 )
-from ..core.sandbox import Sandbox
-from ..core.skill import SkillRegistry, cache_middleware
 from ..skills import FileReadSkill, FileWriteSkill, GlobSkill, ShellExecSkill
 from ..skills.sandboxed_shell import SandboxedShellSkill
 from .events import Event, EventBus, EventType
@@ -354,7 +354,7 @@ async def run_agent(
                 {
                     "task": task_summary,
                     "result_summary": result_summary,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "steps": result.steps_taken,
                 },
                 ttl=86400 * 30,  # 30-day TTL
