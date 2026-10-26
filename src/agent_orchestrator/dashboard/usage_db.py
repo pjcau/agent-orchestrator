@@ -392,7 +392,6 @@ class UsageDB:
     async def create_conversation(self, conv_id: str) -> None:
         """Create a conversation (no-op if DB unavailable — conv just won't persist)."""
         # Nothing to insert; the conv_id is implicit from messages.
-        pass
 
     async def append_message(self, conv_id: str, role: str, content: str) -> None:
         """Append a message to a conversation."""

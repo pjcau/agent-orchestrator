@@ -11,15 +11,14 @@ from __future__ import annotations
 
 import pytest
 
+from agent_orchestrator.core.metrics import MetricsRegistry, default_metrics
 from agent_orchestrator.core.skill import (
     Skill,
     SkillRegistry,
     SkillResult,
     SkillSummary,
 )
-from agent_orchestrator.core.metrics import MetricsRegistry, default_metrics
 from agent_orchestrator.skills.skill_loader import SkillLoaderSkill
-
 
 # ─── Fixture skills ──────────────────────────────────────────────────
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
 
 from ..core.sandbox import PortMapping, Sandbox, SandboxConfig, SandboxInfo
 
@@ -42,7 +41,7 @@ class SandboxManager:
 
     def __init__(
         self,
-        default_config: Optional[SandboxConfig] = None,
+        default_config: SandboxConfig | None = None,
         max_concurrent: int = _MAX_CONCURRENT,
         port_range_start: int = _DEFAULT_PORT_RANGE_START,
         port_range_end: int = _DEFAULT_PORT_RANGE_END,
