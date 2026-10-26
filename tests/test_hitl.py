@@ -2,6 +2,7 @@
 
 import pytest
 
+from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 from agent_orchestrator.core.graph import (
     END,
     START,
@@ -10,7 +11,6 @@ from agent_orchestrator.core.graph import (
     InterruptType,
     StateGraph,
 )
-from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 
 
 class TestHumanInTheLoop:
