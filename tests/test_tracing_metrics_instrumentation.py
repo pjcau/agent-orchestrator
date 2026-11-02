@@ -16,7 +16,6 @@ from agent_orchestrator.dashboard.tracing_metrics import (
     record_stall,
 )
 
-
 # ── tracing_metrics unit tests ───────────────────────────────────────────────
 
 
