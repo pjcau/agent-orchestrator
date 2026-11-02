@@ -14,7 +14,6 @@ from agent_orchestrator.core.verifiers import (
     WorkspaceCoherenceVerifier,
 )
 
-
 # ---------------------------- SyntaxVerifier ----------------------------
 
 
@@ -430,8 +429,9 @@ async def test_runtime_smoke_pip_install_failure_surfaces_as_pip_install_categor
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """When pip install fails, exactly one failure with category=pip_install."""
-    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
     import subprocess
+
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
 
     (tmp_path / "requirements.txt").write_text("not-a-real-package\n")
 
@@ -467,8 +467,9 @@ async def test_runtime_smoke_import_failure_emits_missing_dep_compatible_with_ex
 ):
     """Smoke failure for `No module named 'passlib'` must match the existing
     ImportVerifier auto-fix pattern (category=missing_dep, message+detail format)."""
-    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
     import subprocess
+
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
 
     (tmp_path / "requirements.txt").write_text("fastapi\n")
     (tmp_path / "main.py").write_text("from passlib.context import CryptContext\n")
@@ -508,8 +509,9 @@ async def test_runtime_smoke_caches_venv_by_requirements_hash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """Second verify() with identical requirements must not re-run pip."""
-    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
     import subprocess
+
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
 
     (tmp_path / "requirements.txt").write_text("fastapi\n")
 
@@ -567,8 +569,9 @@ async def test_runtime_smoke_canonical_set_cache_survives_formatting_edit(
     """Editing comments/versions/whitespace in requirements.txt must NOT
     invalidate the cache. Regression for 2026-05-16(e) where every byte
     change in requirements.txt forced a fresh `pip install`."""
-    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
     import subprocess
+
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
 
     cache = tmp_path / "cache"
     (tmp_path / "main.py").write_text("import fastapi\n")
@@ -604,8 +607,9 @@ async def test_runtime_smoke_delta_install_reuses_subset_parent(
 ):
     """When the new requirements is a superset of an existing cached set,
     the verifier must clone the parent venv and only install the delta."""
-    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
     import subprocess
+
+    from agent_orchestrator.core.verifiers import RuntimeSmokeVerifier
 
     cache = tmp_path / "cache"
     (tmp_path / "main.py").write_text("import fastapi\n")
@@ -681,6 +685,7 @@ async def test_entrypoint_verifier_catches_relative_import_crash(tmp_path: Path)
     """The 2026-05-16(g) failure mode: `from .database` under uvicorn from
     a non-package dir fails — entrypoint verifier must surface it."""
     import venv as _venv
+
     from agent_orchestrator.core.verifiers import EntrypointVerifier
 
     # Build a real backend with the broken relative import.
