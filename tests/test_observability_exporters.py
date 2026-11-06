@@ -216,8 +216,8 @@ class TestPhoenixExporterConfig:
         monkeypatch.delenv("PHOENIX_API_KEY", raising=False)
 
         from agent_orchestrator.core.observability.phoenix_exporter import (
-            PhoenixSpanExporter,
             _DEFAULT_PHOENIX_ENDPOINT,
+            PhoenixSpanExporter,
         )
 
         exp = PhoenixSpanExporter.__new__(PhoenixSpanExporter)
