@@ -8,6 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from agent_orchestrator.core.config_manager import (
+    AgentConfigEntry,
+    ConfigManager,
+    OrchestratorConfiguration,
+    ProviderConfigEntry,
+)
 from agent_orchestrator.core.yaml_config import (
     CURRENT_CONFIG_VERSION,
     OrchestratorConfig,
@@ -18,13 +24,6 @@ from agent_orchestrator.core.yaml_config import (
     upgrade_config,
     validate_raw_config,
 )
-from agent_orchestrator.core.config_manager import (
-    AgentConfigEntry,
-    ConfigManager,
-    OrchestratorConfiguration,
-    ProviderConfigEntry,
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
