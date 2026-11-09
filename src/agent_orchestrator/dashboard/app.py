@@ -21,34 +21,34 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..core.checkpoint import InMemoryCheckpointer
+from ..core.checkpoint_postgres import PostgresCheckpointer
 from ..core.conversation import (
     ConversationManager,
     SummarizationConfig,
     SummarizationTrigger,
 )
-from ..core.checkpoint import InMemoryCheckpointer
-from ..core.checkpoint_postgres import PostgresCheckpointer
 from ..core.memory_filter import MemoryFilter
 from ..core.metrics import default_metrics
 from ..core.prompt_registry import PromptRegistry
-from ..core.store import InMemoryStore
 from ..core.sandbox import SandboxConfig, SandboxType
-from .events import EventBus
-from .job_logger import JobLogger
-from .sandbox_manager import SandboxManager
-from .auth import APIKeyMiddleware
-from .oauth_routes import router as oauth_router
-from .user_store import setup_db as setup_user_db
-from .usage_db import UsageDB
-from .alert_webhook import AlertHandler
-from .gateway_api import gateway_router, health_router, metrics_router
+from ..core.store import InMemoryStore
 from .agent_runtime_router import runtime_router
-from .knowledge_routes import knowledge_router
-from .evals_routes import evals_router
-from .personalized_memory_routes import memory_router
-from .cli_routes import cli_router
+from .alert_webhook import AlertHandler
+from .auth import APIKeyMiddleware
 from .cli_device_flow import InMemoryDeviceFlowStore
+from .cli_routes import cli_router
+from .evals_routes import evals_router
+from .events import EventBus
+from .gateway_api import gateway_router, health_router, metrics_router
+from .job_logger import JobLogger
+from .knowledge_routes import knowledge_router
+from .oauth_routes import router as oauth_router
+from .personalized_memory_routes import memory_router
+from .sandbox_manager import SandboxManager
 from .sse import RunManager
+from .usage_db import UsageDB
+from .user_store import setup_db as setup_user_db
 
 logger = logging.getLogger(__name__)
 
@@ -300,8 +300,8 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
     # always available — production deployments swap these via env vars.
     from ..core.knowledge import (
         HashEmbedder,
-        InMemoryKnowledgeStore,
         Ingester,
+        InMemoryKnowledgeStore,
         MarkdownChunker,
         Retriever,
     )
@@ -367,6 +367,7 @@ def create_dashboard_app(event_bus: EventBus | None = None) -> FastAPI:
         if _db_url:
             try:
                 import asyncpg  # type: ignore[import]
+
                 from ..core.store_postgres import PostgresStore as _PostgresStore
 
                 _pg_pool = await asyncpg.create_pool(_db_url, min_size=1, max_size=5)
