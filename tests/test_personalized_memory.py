@@ -20,7 +20,6 @@ from agent_orchestrator.core.memory_filter import MemoryFilter
 from agent_orchestrator.core.personalized_memory import PersonalizedMemory
 from agent_orchestrator.core.store import InMemoryStore
 
-
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
 
@@ -372,6 +371,7 @@ class TestMemoryHTTPEndpoints:
 
         os.environ.setdefault("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -390,6 +390,7 @@ class TestMemoryHTTPEndpoints:
 
         os.environ.setdefault("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -407,6 +408,7 @@ class TestMemoryHTTPEndpoints:
 
         os.environ.setdefault("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -424,6 +426,7 @@ class TestMemoryHTTPEndpoints:
 
         os.environ.setdefault("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -436,6 +439,7 @@ class TestMemoryHTTPEndpoints:
 
         os.environ.setdefault("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -452,6 +456,7 @@ class TestMemoryHTTPEndpoints:
 
         os.environ.setdefault("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
@@ -464,6 +469,7 @@ class TestMemoryHTTPEndpoints:
 
         os.environ.setdefault("ALLOW_DEV_MODE", "true")
         from httpx import ASGITransport, AsyncClient
+
         from agent_orchestrator.dashboard.app import create_dashboard_app
 
         app = create_dashboard_app()
