@@ -19,14 +19,14 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from .checkpoint import Checkpoint, Checkpointer, InMemoryCheckpointer
 from .memory_filter import MemoryFilter
 from .metrics import MetricsRegistry
-
 
 # ---------------------------------------------------------------------------
 # Token estimation
