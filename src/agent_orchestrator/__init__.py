@@ -2,6 +2,6 @@
 
 __version__ = "0.1.0"
 
-from .client import OrchestratorClient  # noqa: F401
+from .client import OrchestratorClient
 
 __all__ = ["OrchestratorClient"]
