@@ -15,7 +15,6 @@ import pytest
 from agent_orchestrator.dashboard import agent_runtime_router as router_mod
 from agent_orchestrator.dashboard.events import EventBus, EventType
 
-
 # ---------------------------------------------------------------------------
 # _repair_loop_enabled
 # ---------------------------------------------------------------------------
