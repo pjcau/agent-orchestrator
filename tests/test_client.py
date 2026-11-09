@@ -24,7 +24,6 @@ from agent_orchestrator.core.provider import (
 )
 from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult
 
-
 # ---------------------------------------------------------------------------
 # Fixtures: mock provider and skill
 # ---------------------------------------------------------------------------
@@ -286,10 +285,11 @@ class TestRunGraph:
     async def test_run_graph_with_template(self, client):
         """run_graph executes a registered graph template."""
         import time
+
         from agent_orchestrator.core.graph_templates import (
+            EdgeTemplate,
             GraphTemplate,
             NodeTemplate,
-            EdgeTemplate,
         )
 
         # Register a simple passthrough template with a custom node
