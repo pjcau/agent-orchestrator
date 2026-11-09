@@ -152,7 +152,7 @@ class ClarificationManager:
         try:
             await asyncio.wait_for(event.wait(), timeout=request.timeout_seconds)
             return self._responses.get(request.request_id)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Clarification request %s timed out after %.0fs: %s",
                 request.request_id,
