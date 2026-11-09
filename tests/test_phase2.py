@@ -24,7 +24,6 @@ from agent_orchestrator.core.store import (
     path_to_namespace,
 )
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # PR #59 — Verification Gate Middleware
 # ═══════════════════════════════════════════════════════════════════════
