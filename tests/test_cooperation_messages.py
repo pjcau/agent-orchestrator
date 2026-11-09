@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import pytest
+
 from agent_orchestrator.core.cooperation import (
     AgentMessage,
     CooperationProtocol,
@@ -35,7 +36,6 @@ from agent_orchestrator.core.cooperation_messages import (
     ResultMessage,
     parse_message,
 )
-
 
 # ---------------------------------------------------------------------------
 # Round-trip
