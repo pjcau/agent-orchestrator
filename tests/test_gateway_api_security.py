@@ -12,6 +12,7 @@ import pytest
 def _make_client():
     """Build an AsyncClient wired to the dashboard ASGI app."""
     from httpx import ASGITransport, AsyncClient
+
     from agent_orchestrator.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app()
