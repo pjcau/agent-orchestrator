@@ -712,5 +712,11 @@
     "added": "2026-10-10T08:48:03Z",
     "source": "github-star",
     "notes": "airdrop for non-apple devices | Language: Rust | Topics: airdrop, awdl, omarchy, owl"
+  },
+  {
+    "url": "https://github.com/claynicholson/copper-kicad-mcp",
+    "added": "2026-11-13T09:23:35Z",
+    "source": "github-star",
+    "notes": "MCP server that lets any AI app design real, orderable KiCad boards: schematic, LCSC parts, PCB routing, ERC/DRC, JLCPCB fab files. | Language: Python | Topics: ai-agents, claude, cursor, eda, electronics"
   }
 ]
