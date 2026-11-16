@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class PhoenixSpanExporter:
 
     # --- SpanExporter protocol -------------------------------------------------
 
-    def export(self, spans: "Sequence[ReadableSpan]") -> int:
+    def export(self, spans: Sequence[ReadableSpan]) -> int:
         """Forward spans to the Phoenix OTLP endpoint.
 
         Returns:
