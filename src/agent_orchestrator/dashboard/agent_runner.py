@@ -120,6 +120,7 @@ def create_skill_registry(
     allowed_commands: list[str] | None = None,
     working_directory: str | None = None,
     sandbox: Sandbox | None = None,
+    mcp_client_manager: Any = None,
 ) -> SkillRegistry:
     """Create a skill registry with all built-in skills.
 
@@ -160,6 +161,17 @@ def create_skill_registry(
         )
     )
 
+    # Bridge external MCP tools (zeroclaw, ntfy, etc.) as skills
+    if mcp_client_manager is not None:
+        logger.info("MCP bridge: mcp_client_manager provided, registering tools")
+        try:
+            count = registry.register_mcp_tools(mcp_client_manager)
+            logger.info("MCP bridge: registered %d tools as skills", count)
+        except Exception:
+            logger.warning("MCP tool bridge failed", exc_info=True)
+    else:
+        logger.info("MCP bridge: no mcp_client_manager provided")
+
     return registry
 
 
@@ -180,6 +192,7 @@ async def run_agent(
     store: BaseStore | None = None,
     skill_registry_override: Any = None,
     digest_store: WorkspaceDigestStore | None = None,
+    mcp_client_manager: Any = None,
 ) -> dict[str, Any]:
     """Run an agent on a task with real-time event emissions.
 
@@ -223,7 +236,6 @@ async def run_agent(
                 "wc",
                 "grep",
                 "find",
-                "python",
                 "python3",
                 "pytest",
                 "ruff",
@@ -231,6 +243,7 @@ async def run_agent(
             ],
             working_directory=working_directory,
             sandbox=sandbox,
+            mcp_client_manager=mcp_client_manager,
         )
 
     # Default tools if none specified
@@ -470,6 +483,7 @@ async def _instrumented_execute(
 
     messages.append(Message(role=Role.USER, content=task.description))
 
+    explicit_tools = set(config.tools)
     tool_defs = [
         ToolDefinition(
             name=skill.name,
@@ -479,6 +493,22 @@ async def _instrumented_execute(
         for name in config.tools
         if (skill := skill_registry.get(name)) is not None
     ]
+    # Auto-include any MCP-bridged tools not already in config.tools
+    seen = set(t.name for t in tool_defs)
+    all_skills = skill_registry.list_skills()
+    logger.info("Skill registry has %d skills: %s", len(all_skills), sorted(all_skills))
+    for skill_name in all_skills:
+        if skill_name not in seen and skill_name not in explicit_tools:
+            skill = skill_registry.get(skill_name)
+            if skill is not None:
+                tool_defs.append(
+                    ToolDefinition(
+                        name=skill.name,
+                        description=skill.description,
+                        parameters=skill.parameters,
+                    )
+                )
+    logger.info("Tool definitions being sent to agent: %s", [t.name for t in tool_defs])
 
     steps = 0
     retry_counts: dict[str, int] = {}
