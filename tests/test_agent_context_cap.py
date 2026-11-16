@@ -7,10 +7,12 @@ folded into the conversation, independent of the agent-host transport cap.
 
 import pytest
 
+# TaskStatus lives alongside the agent types.
 from agent_orchestrator.core.agent import (
     Agent,
     AgentConfig,
     Task,
+    TaskStatus,
     cap_tool_result_content,
     compact_messages,
 )
@@ -26,9 +28,6 @@ from agent_orchestrator.core.provider import (
 )
 from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult
 from agent_orchestrator.core.tool_recovery import recover_dangling_tool_calls
-
-# TaskStatus lives alongside the agent types.
-from agent_orchestrator.core.agent import TaskStatus
 
 
 class _ReadFileSkill(Skill):
