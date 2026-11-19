@@ -718,5 +718,11 @@
     "added": "2026-11-13T09:23:35Z",
     "source": "github-star",
     "notes": "MCP server that lets any AI app design real, orderable KiCad boards: schematic, LCSC parts, PCB routing, ERC/DRC, JLCPCB fab files. | Language: Python | Topics: ai-agents, claude, cursor, eda, electronics"
+  },
+  {
+    "url": "https://github.com/brainbytes-dev/everything-claude-trading",
+    "added": "2026-11-18T10:21:43Z",
+    "source": "github-star",
+    "notes": "The complete trading and quantitative finance system for Claude Code — 18 agents, 82 skills, 20 commands | Language: JavaScript"
   }
 ]
