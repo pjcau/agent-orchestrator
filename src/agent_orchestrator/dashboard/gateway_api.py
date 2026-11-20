@@ -420,10 +420,7 @@ async def jobs_restore_conversation(session_id: str, request: Request):
         if job_type in ("prompt", "stream"):
             user_text = rec.get("prompt", "")
             assistant_text = result.get("output", "") if result.get("success") is not False else ""
-        elif job_type == "agent_run":
-            user_text = rec.get("task", "")
-            assistant_text = result.get("output", "") if result.get("success") else ""
-        elif job_type == "team_run":
+        elif job_type == "agent_run" or job_type == "team_run":
             user_text = rec.get("task", "")
             assistant_text = result.get("output", "") if result.get("success") else ""
         else:
@@ -617,12 +614,12 @@ async def upload_document(request: Request):
     Size limits: 10 MB file size, 50 pages PDF, 10,000 rows CSV/Excel.
     """
     from ..core.document_converter import (
+        MAX_FILE_SIZE_BYTES,
         ContentLimitError,
         DependencyMissingError,
         DocumentConversionError,
         DocumentConverter,
         FileTooLargeError,
-        MAX_FILE_SIZE_BYTES,
         UnsupportedFormatError,
     )
 
@@ -758,8 +755,8 @@ async def snapshot(request: Request):
 
 @gateway_router.get("/cache/stats")
 async def cache_stats():
-    from .agent_runner import get_tool_cache
     from ..core.llm_nodes import get_llm_cache
+    from .agent_runner import get_tool_cache
 
     llm = get_llm_cache()
     tool = get_tool_cache()
@@ -783,8 +780,8 @@ async def cache_stats():
 
 @gateway_router.post("/cache/clear")
 async def cache_clear():
-    from .agent_runner import get_tool_cache
     from ..core.llm_nodes import get_llm_cache
+    from .agent_runner import get_tool_cache
 
     llm_cleared = get_llm_cache().clear()
     tool_cleared = get_tool_cache().clear()
@@ -823,7 +820,7 @@ async def create_run(body: dict, request: Request):
     Returns ``{"run_id": "<uuid>"}`` immediately. Use ``GET /api/runs/{run_id}``
     to poll status and ``GET /api/runs/{run_id}/stream`` to subscribe to events.
     """
-    from ..core.graph import StateGraph, START, END
+    from ..core.graph import END, START, StateGraph
     from .sse import HITLConfig
 
     run_manager = request.app.state.run_manager
