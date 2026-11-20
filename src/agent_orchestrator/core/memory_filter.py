@@ -18,7 +18,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 # Default patterns matching session-scoped file paths that should not persist.
 SESSION_FILE_PATTERNS = [
     r"jobs/job_[a-f0-9\-]+/[^\s]*",
