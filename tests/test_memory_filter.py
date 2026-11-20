@@ -2,16 +2,15 @@
 
 import pytest
 
-from agent_orchestrator.core.memory_filter import (
-    MemoryFilter,
-    PLACEHOLDER,
-)
+from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
 from agent_orchestrator.core.conversation import (
     ConversationManager,
 )
-from agent_orchestrator.core.checkpoint import InMemoryCheckpointer
+from agent_orchestrator.core.memory_filter import (
+    PLACEHOLDER,
+    MemoryFilter,
+)
 from agent_orchestrator.core.store import InMemoryStore
-
 
 # ─── Unit Tests: MemoryFilter ─────────────────────────────────────────
 
