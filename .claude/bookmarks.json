@@ -724,5 +724,119 @@
     "added": "2026-11-18T10:21:43Z",
     "source": "github-star",
     "notes": "The complete trading and quantitative finance system for Claude Code — 18 agents, 82 skills, 20 commands | Language: JavaScript"
+  },
+  {
+    "url": "https://github.com/unslothai/unsloth",
+    "added": "2026-11-21T21:24:59Z",
+    "source": "github-star",
+    "notes": "Local UI to run and train LLMs and diffusion models. Supports GGUF, MLX, Qwen3.8, DeepSeek-V4.1, MiniMax-H3, Gemma 4, FLUX and more. | Language: Python | Topics: agent, ai, chatgpt, deepseek, fine-tuning"
+  },
+  {
+    "url": "https://github.com/Neywa-Labs/mlx-vlm",
+    "added": "2026-11-21T20:49:31Z",
+    "source": "github-star",
+    "notes": "MLX-VLM is a package for inference and fine-tuning of Vision Language Models (VLMs) on your Mac using MLX. | Language: Python | Topics: apple-silicon, florence2, idefics, llava, llm"
+  },
+  {
+    "url": "https://github.com/kajisho5/ffmpeg-skill",
+    "added": "2026-11-21T16:57:32Z",
+    "source": "github-star",
+    "notes": "Local video editor for coding agents: 42 FFmpeg tools with a machine-readable contract and an MCP server, for Claude Code, Cursor and Codex. Cut, captions, reframe, loudness, platform exports. No clou | Language: Python | Topics: agent-skills, ai-agents, audio-processing, captions, claude-code"
+  },
+  {
+    "url": "https://github.com/blader/humanizer",
+    "added": "2026-11-21T16:57:18Z",
+    "source": "github-star",
+    "notes": "Agent skill that removes signs of AI-generated writing from text | Language: Python | Topics: agent-skills, ai-humanizer, ai-writing, chatgpt, claude"
+  },
+  {
+    "url": "https://github.com/backnotprop/plannotator",
+    "added": "2026-11-21T16:56:57Z",
+    "source": "github-star",
+    "notes": "The workspace to stay in the loop and on top of agents - shape, decide, plan, annotate, review code, share with team, and send all feedback to agents with one click.  | Language: TypeScript | Topics: agents, claude-code, code-review, codex, obsidian"
+  },
+  {
+    "url": "https://github.com/anthropics/skills",
+    "added": "2026-11-21T16:56:17Z",
+    "source": "github-star",
+    "notes": "Public repository for Agent Skills | Language: Python | Topics: agent-skills"
+  },
+  {
+    "url": "https://github.com/alibaba/open-code-review",
+    "added": "2026-11-21T16:56:05Z",
+    "source": "github-star",
+    "notes": "Secure, fast, efficient, battle-tested at Alibaba's scale. Hybrid architecture code review tool: deterministic pipelines + LLM Agent, precise line-level comments, built-in multi-language ruleset (NPE, | Language: Go | Topics: agent, agent-skills, code-review, code-review-assistant, harness"
+  },
+  {
+    "url": "https://github.com/meta/astryx",
+    "added": "2026-11-21T16:55:54Z",
+    "source": "github-star",
+    "notes": "An open source design system that's fully customizable and agent ready | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/dream-num/univer",
+    "added": "2026-11-21T16:55:42Z",
+    "source": "github-star",
+    "notes": "Build your own AI office with Univer Office SDK. Bring editing, calculation, collaboration, and file processing into your product for people and AI agents. Built on an extensible open-source core. | Language: TypeScript | Topics: board, collaboration, doc, docx, excel"
+  },
+  {
+    "url": "https://github.com/GoogleChrome/modern-web-guidance-src",
+    "added": "2026-11-21T16:55:13Z",
+    "source": "github-star",
+    "notes": "Keep your coding agent up to date with the latest web best practices | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/Zagitta/gpu-unlock",
+    "added": "2026-11-21T15:51:16Z",
+    "source": "github-star",
+    "notes": "Your GeForce runs AI at half speed. This fixes it for 20/30/40 series cards. Up to 2× FP16 / BF16 / TF32 tensor throughput | Language: C"
+  },
+  {
+    "url": "https://github.com/VectifyAI/OpenKB",
+    "added": "2026-11-21T15:50:46Z",
+    "source": "github-star",
+    "notes": "OpenKB: Open LLM Knowledge Base | Language: Python | Topics: agents, ai, knowledge-base, llm, rag"
+  },
+  {
+    "url": "https://github.com/tt-a1i/archify",
+    "added": "2026-11-21T15:50:11Z",
+    "source": "github-star",
+    "notes": "Turn any idea, plan, or codebase into a beautiful interactive diagram. An agent skill for Claude Code, Codex, and more. | Language: JavaScript | Topics: agent-skills, ai-agents, architecture-diagram, claude-code, claude-skills"
+  },
+  {
+    "url": "https://github.com/plannotator/effective-html",
+    "added": "2026-11-21T15:49:48Z",
+    "source": "github-star",
+    "notes": "Agent skills for useful HTML artifacts, wireframes, interactive prototypes, plans, and diagrams. | Language: HTML | Topics: agent-skills, claude-code, codex, html-artifacts, html-prototype"
+  },
+  {
+    "url": "https://github.com/microsoft/markitdown",
+    "added": "2026-11-21T15:48:15Z",
+    "source": "github-star",
+    "notes": "Python tool for converting files and office documents to Markdown. | Language: Python | Topics: autogen, autogen-extension, langchain, markdown, microsoft-office"
+  },
+  {
+    "url": "https://github.com/erkamyaman/rust-anything",
+    "added": "2026-11-21T15:47:13Z",
+    "source": "github-star",
+    "notes": "Rewrite your whole app in Rust, one piece at a time, checked against the original's recorded behavior at every step. CLIs, HTTP servers and libraries in TypeScript, Python, C, Go, Ruby and Java. | Language: Rust | Topics: agent-skills, claude-code, cli, code-migration, codex"
+  },
+  {
+    "url": "https://github.com/jingyaogong/minimind",
+    "added": "2026-11-21T15:46:26Z",
+    "source": "github-star",
+    "notes": "🧠 两小时从 0 训出你的 64M 大模型。Train your own 64M LLM from scratch in 2 hours. | Language: Python | Topics: artificial-intelligence, large-language-model"
+  },
+  {
+    "url": "https://github.com/n8n-io/n8n",
+    "added": "2026-11-21T15:46:05Z",
+    "source": "github-star",
+    "notes": "Fair-code workflow automation platform with native AI capabilities. Combine visual building with custom code, self-host or cloud, 400+ integrations. | Language: TypeScript | Topics: ai, apis, automation, cli, data-flow"
+  },
+  {
+    "url": "https://github.com/tashfeenahmed/freellmapi",
+    "added": "2026-11-21T15:45:22Z",
+    "source": "github-star",
+    "notes": "10.1 billion tokens per month. 87 free LLM providers. 1,313 free model endpoints. All behind one /v1 endpoint, plus any custom OpenAI-compatible endpoint. Smart routing, automatic failover, encrypted  | Language: TypeScript"
   }
 ]
