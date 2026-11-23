@@ -9,7 +9,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -39,7 +39,7 @@ def _iso(dt: datetime) -> str:
 def test_report_with_modern_outcome_fields(explainer):
     """Entries written by the updated scout carry an `outcome` field — the
     report must pick it up verbatim instead of re-parsing the summary."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     state = {
         "processed": {
             "https://github.com/foo/bar": {
@@ -74,7 +74,7 @@ def test_report_with_legacy_entries_falls_back_to_summary_prefix(explainer):
     the whole point of `classify_legacy_outcome` being applied at render
     time. Without this, the historical 2+ weeks of state would all collapse
     into one "unknown" bucket."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     state = {
         "processed": {
             "https://github.com/a/low": {
@@ -107,7 +107,7 @@ def test_report_with_legacy_entries_falls_back_to_summary_prefix(explainer):
 
 
 def test_days_window_drops_old_entries(explainer):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     state = {
         "processed": {
             "https://github.com/recent/x": {
@@ -135,7 +135,7 @@ def test_empty_state_renders_friendly_placeholder(explainer):
 def test_pipe_in_reason_is_escaped_for_markdown_table(explainer):
     """A pipe in the reason would break the markdown table column count.
     We backslash-escape it so the table still renders."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     state = {
         "processed": {
             "https://github.com/a/x": {
