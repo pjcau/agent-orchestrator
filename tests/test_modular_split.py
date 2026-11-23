@@ -15,7 +15,6 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -56,7 +55,7 @@ def _route_paths(app_or_router) -> set[str]:
 
 def test_gateway_api_importable():
     """gateway_api can be imported without importing the full app."""
-    from agent_orchestrator.dashboard import gateway_api  # noqa: F401
+    from agent_orchestrator.dashboard import gateway_api
 
     assert hasattr(gateway_api, "gateway_router")
     assert hasattr(gateway_api, "health_router")
@@ -65,7 +64,7 @@ def test_gateway_api_importable():
 
 def test_agent_runtime_router_importable():
     """agent_runtime_router can be imported without importing the full app."""
-    from agent_orchestrator.dashboard import agent_runtime_router  # noqa: F401
+    from agent_orchestrator.dashboard import agent_runtime_router
 
     assert hasattr(agent_runtime_router, "runtime_router")
 
@@ -233,8 +232,8 @@ def test_composed_app_has_root_and_static(composed_app):
 
 @pytest.fixture
 def gateway_only_app():
-    from agent_orchestrator.dashboard.server import _create_gateway_only_app
     from agent_orchestrator.dashboard.events import EventBus
+    from agent_orchestrator.dashboard.server import _create_gateway_only_app
 
     bus = EventBus()
     return _create_gateway_only_app(bus)
@@ -263,8 +262,8 @@ def test_standalone_gateway_has_no_runtime_routes(gateway_only_app):
 
 @pytest.fixture
 def runtime_only_app():
-    from agent_orchestrator.dashboard.server import _create_runtime_only_app
     from agent_orchestrator.dashboard.events import EventBus
+    from agent_orchestrator.dashboard.server import _create_runtime_only_app
 
     bus = EventBus()
     return _create_runtime_only_app(bus)
@@ -336,8 +335,8 @@ def test_shared_state_frontend_error_count_is_mutable_list(composed_app):
 
 def test_standalone_runtime_ws_connects(monkeypatch):
     """WebSocket /ws endpoint accepts a connection when dev mode is enabled."""
-    from agent_orchestrator.dashboard.server import _create_runtime_only_app
     from agent_orchestrator.dashboard.events import EventBus
+    from agent_orchestrator.dashboard.server import _create_runtime_only_app
 
     # Enable dev mode so APIKeyMiddleware passes all requests through
     monkeypatch.setenv("ALLOW_DEV_MODE", "true")
