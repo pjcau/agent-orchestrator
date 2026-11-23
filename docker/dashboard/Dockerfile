@@ -11,7 +11,7 @@ RUN npm run build
 # ============================================================
 # Stage 2: Build Rust extension (optional — graceful failure)
 # ============================================================
-FROM python:3.14-slim AS rust-build
+FROM python:3.15-slim AS rust-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl build-essential pkg-config && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
@@ -25,7 +25,7 @@ RUN maturin build --release --out dist 2>/dev/null || echo "Rust build skipped"
 # ============================================================
 # Stage 3: Final Python image
 # ============================================================
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /workspace
 
