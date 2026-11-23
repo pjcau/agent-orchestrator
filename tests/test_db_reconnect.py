@@ -17,7 +17,6 @@ from agent_orchestrator.dashboard.usage_db import UsageDB
 class FakeConnectionDoesNotExistError(Exception):
     """Simulate asyncpg.exceptions.ConnectionDoesNotExistError."""
 
-    pass
 
 
 # Rename to match the pattern checked in _acquire
