@@ -1,14 +1,15 @@
 """Tests for core abstractions."""
 
 import pytest
-from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult
+
 from agent_orchestrator.core.cooperation import (
+    Artifact,
     CooperationProtocol,
+    SharedContextStore,
     TaskAssignment,
     TaskReport,
-    SharedContextStore,
-    Artifact,
 )
+from agent_orchestrator.core.skill import Skill, SkillRegistry, SkillResult
 
 
 class EchoSkill(Skill):
