@@ -55,8 +55,8 @@ class ProfileExtractorSkill(Skill):
 
     def __init__(
         self,
-        provider: "Provider",
-        personalized_memory: "PersonalizedMemory",
+        provider: Provider,
+        personalized_memory: PersonalizedMemory,
         max_messages: int = 20,
     ) -> None:
         self._provider = provider
