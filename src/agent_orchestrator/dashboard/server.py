@@ -149,22 +149,22 @@ def _create_gateway_only_app(bus: EventBus):
     """Build a minimal FastAPI app exposing only gateway endpoints."""
 
     from fastapi import FastAPI
+    from starlette.middleware.cors import CORSMiddleware
 
-    from ..core.conversation import ConversationManager, SummarizationConfig, SummarizationTrigger
     from ..core.checkpoint import InMemoryCheckpointer
     from ..core.checkpoint_postgres import PostgresCheckpointer
+    from ..core.conversation import ConversationManager, SummarizationConfig, SummarizationTrigger
+    from ..core.mcp_client import MCPClientManager
     from ..core.memory_filter import MemoryFilter
     from ..core.store import InMemoryStore
-    from ..core.mcp_client import MCPClientManager
-    from .job_logger import JobLogger
-    from .usage_db import UsageDB
     from .alert_webhook import AlertHandler
     from .auth import APIKeyMiddleware
-    from .oauth_routes import router as oauth_router
-    from .user_store import setup_db as setup_user_db
-    from .sse import RunManager
     from .gateway_api import gateway_router, health_router, metrics_router
-    from starlette.middleware.cors import CORSMiddleware
+    from .job_logger import JobLogger
+    from .oauth_routes import router as oauth_router
+    from .sse import RunManager
+    from .usage_db import UsageDB
+    from .user_store import setup_db as setup_user_db
 
     app = FastAPI(title="Agent Orchestrator Gateway", version="0.2.0")
 
@@ -265,16 +265,17 @@ def _create_runtime_only_app(bus: EventBus):
     """Build a minimal FastAPI app exposing only runtime endpoints."""
 
     from fastapi import FastAPI
-    from ..core.conversation import ConversationManager, SummarizationConfig, SummarizationTrigger
+    from starlette.middleware.cors import CORSMiddleware
+
     from ..core.checkpoint import InMemoryCheckpointer
     from ..core.checkpoint_postgres import PostgresCheckpointer
+    from ..core.conversation import ConversationManager, SummarizationConfig, SummarizationTrigger
     from ..core.sandbox import SandboxConfig, SandboxType
+    from .agent_runtime_router import runtime_router
+    from .auth import APIKeyMiddleware
     from .job_logger import JobLogger
     from .sandbox_manager import SandboxManager
     from .usage_db import UsageDB
-    from .auth import APIKeyMiddleware
-    from .agent_runtime_router import runtime_router
-    from starlette.middleware.cors import CORSMiddleware
 
     app = FastAPI(title="Agent Orchestrator Runtime", version="0.2.0")
 
