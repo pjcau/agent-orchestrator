@@ -838,5 +838,35 @@
     "added": "2026-11-21T15:45:22Z",
     "source": "github-star",
     "notes": "10.1 billion tokens per month. 87 free LLM providers. 1,313 free model endpoints. All behind one /v1 endpoint, plus any custom OpenAI-compatible endpoint. Smart routing, automatic failover, encrypted  | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/boykopovar/AnyPS5",
+    "added": "2026-11-22T20:39:21Z",
+    "source": "github-star",
+    "notes": "Tool for automatic PS5 executables porting to Linux and Windows | Language: C++ | Topics: anyps5, dynamic-library, game-porting, ps5, ps5-tools"
+  },
+  {
+    "url": "https://github.com/ItsNotRexed/Leonida",
+    "added": "2026-11-22T20:15:16Z",
+    "source": "github-star",
+    "notes": "Leonida Is A Native PC Recompilation Of The Xbox Version Of Grand Theft Auto 6 | Language: Python"
+  },
+  {
+    "url": "https://github.com/Niko1221/Strata",
+    "added": "2026-11-22T14:38:12Z",
+    "source": "github-star",
+    "notes": "Qwen3.8-Flash-Next on any consumer hardware: one-click install for Windows / Linux. Strata inference engine, OpenAI/Anthropic API on localhost, optional image input. | Language: C++"
+  },
+  {
+    "url": "https://github.com/Generated-Computers/Locals",
+    "added": "2026-11-22T11:56:28Z",
+    "source": "github-star",
+    "notes": "Run many AI agents at once on your Mac, up to 3x faster. | Language: Python | Topics: agents, apple-silicon, artificial-intelligence, coding-agents, inference-acceleration"
+  },
+  {
+    "url": "https://github.com/Ssbullock/pcb-layout-llm",
+    "added": "2026-11-22T11:47:31Z",
+    "source": "github-star",
+    "notes": "Fine-tuned Qwen2.5-Coder-32B (SFT + GRPO) for KiCad PCB architectural layout planning, routing strategy, and 23-board frontier benchmark | Language: Python"
   }
 ]
