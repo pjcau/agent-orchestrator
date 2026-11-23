@@ -38,7 +38,7 @@ def _user_namespace(user_id: str) -> tuple[str, ...]:
     return (_USER_NS_ROOT, user_id)
 
 
-def _filter_value(value: dict[str, Any], memory_filter: "MemoryFilter | None") -> dict[str, Any]:
+def _filter_value(value: dict[str, Any], memory_filter: MemoryFilter | None) -> dict[str, Any]:
     """Apply MemoryFilter to every string field in *value*, if filter is set."""
     if memory_filter is None:
         return value
@@ -72,8 +72,8 @@ class PersonalizedMemory:
 
     def __init__(
         self,
-        store: "BaseStore",
-        memory_filter: "MemoryFilter | None" = None,
+        store: BaseStore,
+        memory_filter: MemoryFilter | None = None,
     ) -> None:
         self._store = store
         self._memory_filter = memory_filter
