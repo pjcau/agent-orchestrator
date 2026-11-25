@@ -868,5 +868,11 @@
     "added": "2026-11-22T11:47:31Z",
     "source": "github-star",
     "notes": "Fine-tuned Qwen2.5-Coder-32B (SFT + GRPO) for KiCad PCB architectural layout planning, routing strategy, and 23-board frontier benchmark | Language: Python"
+  },
+  {
+    "url": "https://github.com/amosblomqvist/learnharness",
+    "added": "2026-11-24T16:56:44Z",
+    "source": "github-star",
+    "notes": "Agent harness for learning difficult things. | Language: TypeScript"
   }
 ]
