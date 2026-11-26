@@ -391,7 +391,14 @@
       "improvements": [],
       "outcome": "llm-error",
       "reason": "OpenRouter API error: HTTP Error 401: Unauthorized"
+    },
+    "https://github.com/backnotprop/plannotator": {
+      "processed_at": "2026-11-26T10:29:22.978220+00:00",
+      "summary": "llm-error: OpenRouter API error: HTTP Error 401: Unauthorized",
+      "improvements": [],
+      "outcome": "llm-error",
+      "reason": "OpenRouter API error: HTTP Error 401: Unauthorized"
     }
   },
-  "last_run": "2026-11-25T10:54:20.065787+00:00"
+  "last_run": "2026-11-26T10:29:22.978319+00:00"
 }

@@ -874,5 +874,17 @@
     "added": "2026-11-24T16:56:44Z",
     "source": "github-star",
     "notes": "Agent harness for learning difficult things. | Language: TypeScript"
+  },
+  {
+    "url": "https://github.com/RustingStudio/RustingStrata",
+    "added": "2026-11-25T17:59:35Z",
+    "source": "github-star",
+    "notes": "Pure-Rust LLM inference engine for GGUF (Qwen, DeepSeek, GLM, Hy4, Flint). Runs models bigger than your VRAM on CUDA and Vulkan, with MTP drafts and an OpenAI/Anthropic server. 12 GB RTX 3060 vs llama | Language: Rust | Topics: anthropic-api, cuda, gguf, inference, llama-cpp"
+  },
+  {
+    "url": "https://github.com/openvinotoolkit/openvino",
+    "added": "2026-11-25T17:58:18Z",
+    "source": "github-star",
+    "notes": "OpenVINO™ is an open source toolkit for optimizing and deploying AI inference | Language: C++ | Topics: ai, computer-vision, deep-learning, deploy-ai, diffusion-models"
   }
 ]
